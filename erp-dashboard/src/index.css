@@ -30,6 +30,7 @@
     --chart-5: 27 87% 67%;
     --radius: 0.5rem
   }
+
   .dark {
     --background: 222.2 84% 4.9%;
     --foreground: 210 40% 98%;
@@ -62,7 +63,27 @@
   * {
     @apply border-border;
   }
+
   body {
     @apply bg-background text-foreground;
   }
+}
+
+/* React Split Gutter Styles */
+.gutter {
+  background-color: #f1f5f9;
+  background-repeat: no-repeat;
+  background-position: 50%;
+  transition: background-color 0.2s;
+  z-index: 10;
+}
+
+.gutter:hover {
+  background-color: #cbd5e1;
+  cursor: col-resize;
+}
+
+.gutter.gutter-horizontal {
+  background-image: url('data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAUAAAAeCAYAAADkftS9AAAAIklEQVQoU2M4c+bMfxAGAgYYmwGrIIiDjrELjpo5aiZeOgF86wt78Yj6ZgAAAABJRU5ErkJggg==');
+  cursor: col-resize;
 }
