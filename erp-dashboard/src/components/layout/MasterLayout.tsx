@@ -29,16 +29,9 @@ export const MasterLayout: React.FC<MasterLayoutProps> = ({
             </header>
 
             {/* Main Split Content */}
-            <div className="flex-1 overflow-hidden relative">
+            <div className="flex-1 overflow-hidden relative flex flex-row">
                 <Split
-                    className="flex h-full w-full"
-                    sizes={rightContent ? [20, 60, 20] : [25, 75]}
-                    minSize={[200, 400, 50]}
-                    gutterSize={6}
-                    snapOffset={30}
-                    dragInterval={1}
-                    direction="horizontal"
-                    cursor="col-resize"
+                    className="flex h-full flex-1"
                 >
                     {/* LEFT PANE: Data/List */}
                     <div className="h-full overflow-hidden bg-white border-r border-gray-200 flex flex-col">
@@ -49,14 +42,10 @@ export const MasterLayout: React.FC<MasterLayoutProps> = ({
                     <div className="h-full overflow-y-auto bg-slate-50 flex flex-col">
                         {mainContent}
                     </div>
-
-                    {/* RIGHT PANE: Actions (Optional) */}
-                    {rightContent && (
-                        <div className="h-full overflow-y-auto bg-white border-l border-gray-200 shadow-[-4px_0_15px_-3px_rgba(0,0,0,0.05)] z-0">
-                            {rightContent}
-                        </div>
-                    )}
                 </Split>
+
+                {/* RIGHT BAR: Fixed Actions */}
+                {rightContent}
             </div>
         </div>
     );

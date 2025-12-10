@@ -2,19 +2,11 @@ import React from 'react';
 import { Settings, Printer, Download, Trash, Edit, Plus, ArrowRight, FileText, Share2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
-interface ActionGroupProps {
-    title: string;
-    children: React.ReactNode;
-}
 
-const ActionGroup = ({ title, children }: ActionGroupProps) => (
-    <div className="mb-6">
-        <h3 className="px-4 py-2 text-xs font-bold text-gray-500 uppercase tracking-wider bg-gray-50 border-y border-gray-100 mb-2">
-            {title}
-        </h3>
-        <div className="flex flex-col">
-            {children}
-        </div>
+
+const ActionGroup = ({ children }: { children: React.ReactNode }) => (
+    <div className="flex flex-col gap-2 py-4 border-b border-gray-100 last:border-0">
+        {children}
     </div>
 );
 
@@ -27,50 +19,47 @@ interface ActionItemProps {
 
 const ActionItem = ({ icon: Icon, label, onClick, variant = 'default' }: ActionItemProps) => {
     const colors = {
-        default: "text-gray-600 hover:bg-gray-50 hover:text-black",
-        danger: "text-red-500 hover:bg-red-50 hover:text-red-700",
+        default: "text-gray-500 hover:bg-gray-100 hover:text-gray-900",
+        danger: "text-gray-500 hover:bg-red-50 hover:text-red-600",
         primary: "text-emerald-600 hover:bg-emerald-50 hover:text-emerald-700"
     };
 
     return (
         <button
             onClick={onClick}
+            title={label}
             className={cn(
-                "w-full flex items-center gap-3 px-4 py-2 text-sm transition-colors text-left",
+                "w-10 h-10 flex items-center justify-center rounded-lg transition-colors mx-auto",
                 colors[variant]
             )}
         >
-            <Icon className="w-4 h-4 shrink-0" />
-            <span className="truncate">{label}</span>
+            <Icon className="w-5 h-5" />
+            <span className="sr-only">{label}</span>
         </button>
     );
 };
 
 export const ActionPanel = () => {
     return (
-        <div className="flex flex-col py-0 min-h-full bg-white">
-            <div className="p-4 border-b border-gray-100">
-                <h2 className="text-sm font-semibold text-gray-900">Actions</h2>
-            </div>
-
-            <ActionGroup title="Main Operations">
+        <div className="flex flex-col h-full bg-white border-l border-gray-200 w-14 shrink-0 shadow-sm z-20">
+            <ActionGroup>
                 <ActionItem icon={Plus} label="New Record" variant="primary" />
                 <ActionItem icon={Edit} label="Edit Record" />
                 <ActionItem icon={Trash} label="Delete" variant="danger" />
             </ActionGroup>
 
-            <ActionGroup title="Reports & Output">
+            <ActionGroup>
                 <ActionItem icon={Printer} label="Print Record" />
                 <ActionItem icon={Download} label="Export PDF" />
                 <ActionItem icon={FileText} label="Detailed Log" />
             </ActionGroup>
 
-            <ActionGroup title="Workflow">
+            <ActionGroup>
                 <ActionItem icon={ArrowRight} label="Submit for Approval" />
                 <ActionItem icon={Share2} label="Assign to User" />
             </ActionGroup>
 
-            <ActionGroup title="Simulation">
+            <ActionGroup>
                 <ActionItem icon={Settings} label="Debug View" />
             </ActionGroup>
         </div>
