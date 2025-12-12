@@ -25,6 +25,7 @@ import { MasterLayout } from '@/components/layout/MasterLayout';
 import { SageTabs, type TabItem } from '@/components/common/SageTabs';
 import { DataGrid } from '@/components/common/DataGrid';
 import { SageCollapsible } from '@/components/common/SageCollapsible';
+import { ConfirmationModal } from '@/components/common/ConfirmationModal';
 import { cn } from '@/lib/utils';
 
 // Register Ag-Grid Modules
@@ -128,16 +129,38 @@ const ActionItem = ({ icon: Icon, label, onClick, variant = 'default' }: ActionI
     );
 };
 
-const AdvActionPanel = () => {
+interface AdvActionPanelProps {
+    onApprove: () => void;
+    onReject: () => void;
+    onHold: () => void;
+    hasSelection: boolean;
+}
+
+const AdvActionPanel = ({ onApprove, onReject, onHold, hasSelection }: AdvActionPanelProps) => {
     return (
         <div className="flex flex-col h-full bg-white dark:bg-black border-l border-gray-200 dark:border-gray-800 w-11 shrink-0 shadow-[0_0_15px_rgba(0,0,0,0.05)] z-40 transition-all duration-300">
             <ActionGroup>
                 <div className="w-full flex justify-center mb-1">
                     <div className="w-6 h-0.5 bg-sage-500 rounded-full opacity-50"></div>
                 </div>
-                <ActionItem icon={CheckCircle} label="Valider BC" variant="sage" />
-                <ActionItem icon={XCircle} label="Rejeter" variant="danger" />
-                <ActionItem icon={Clock} label="Mettre en attente" variant="warning" />
+                <ActionItem
+                    icon={CheckCircle}
+                    label="Valider BC"
+                    variant="sage"
+                    onClick={hasSelection ? onApprove : undefined}
+                />
+                <ActionItem
+                    icon={XCircle}
+                    label="Rejeter"
+                    variant="danger"
+                    onClick={hasSelection ? onReject : undefined}
+                />
+                <ActionItem
+                    icon={Clock}
+                    label="Mettre en attente"
+                    variant="warning"
+                    onClick={hasSelection ? onHold : undefined}
+                />
             </ActionGroup>
 
             <ActionGroup>
@@ -576,6 +599,120 @@ export const AdvValidationPage = () => {
     const [loading, setLoading] = useState<boolean>(true);
     const [detailLoading, setDetailLoading] = useState<boolean>(false);
 
+    // Modal State
+    // Modal State
+    const [modalConfig, setModalConfig] = useState<{
+        isOpen: boolean;
+        type: 'approve' | 'reject' | 'hold' | null;
+        title: string;
+        description: string;
+        variant: 'sage' | 'danger' | 'warning';
+    }>({
+        isOpen: false,
+        type: null,
+        title: '',
+        description: '',
+        variant: 'sage'
+    });
+
+    // Form State
+    const [approvalMode, setApprovalMode] = useState<'standard' | 'manual' | 'forced'>('standard');
+    const [autoAdjustStock, setAutoAdjustStock] = useState(true);
+    const [comment, setComment] = useState('');
+    const [reason, setReason] = useState('');
+    const [quantities, setQuantities] = useState<Record<number, number>>({});
+
+    const handleAction = (action: 'approve' | 'reject' | 'hold') => {
+        if (!selectedBcId) return;
+
+        // Reset form state
+        setApprovalMode('standard');
+        setAutoAdjustStock(true);
+        setComment('');
+        setReason('');
+        setQuantities({});
+
+        // Pre-fill quantities for manual mode if needed
+        if (action === 'approve' && selectedBcDetails?.order_products) {
+            const initialQtys: Record<number, number> = {};
+            selectedBcDetails.order_products.forEach(line => {
+                initialQtys[line.product_id] = line.quantity;
+            });
+            setQuantities(initialQtys);
+        }
+
+        const config = {
+            approve: {
+                title: 'Valider le Bon de Commande',
+                description: 'Voulez-vous valider ce bon de commande ?',
+                variant: 'sage' as const
+            },
+            reject: {
+                title: 'Rejeter le Bon de Commande',
+                description: 'Voulez-vous rejeter ce bon de commande ? Cette action est irréversible.',
+                variant: 'danger' as const
+            },
+            hold: {
+                title: 'Mettre en Attente',
+                description: 'Voulez-vous mettre ce bon de commande en attente ?',
+                variant: 'warning' as const
+            }
+        }[action];
+
+        setModalConfig({
+            isOpen: true,
+            type: action,
+            ...config
+        });
+    };
+
+    const confirmAction = async () => {
+        if (!selectedBcId || !modalConfig.type) return;
+
+        try {
+            let payload: any = {};
+            let endpoint = '';
+
+            if (modalConfig.type === 'approve') {
+                endpoint = `approve`;
+                payload = {
+                    approval_mode: approvalMode,
+                    comment: comment
+                };
+                if (approvalMode === 'standard') {
+                    payload.auto_adjust_stock = autoAdjustStock;
+                } else if (approvalMode === 'manual') {
+                    payload.quantities = quantities;
+                }
+            } else if (modalConfig.type === 'reject') {
+                endpoint = `reject`;
+                if (!reason) {
+                    alert("Le motif est obligatoire pour le rejet.");
+                    return;
+                }
+                payload = { reason };
+            } else if (modalConfig.type === 'hold') {
+                endpoint = `hold`;
+                if (!reason) {
+                    alert("Le motif est obligatoire pour la mise en attente.");
+                    return;
+                }
+                payload = { reason };
+            }
+
+            await axios.post(`http://localhost:8000/api/backend/adv/bc/${selectedBcId}/${endpoint}`, payload);
+
+            // Refresh data
+            fetchData();
+            if (selectedBcId) fetchBcDetails(selectedBcId);
+            setModalConfig(prev => ({ ...prev, isOpen: false }));
+
+        } catch (error) {
+            console.error(`Failed to ${modalConfig.type} BC`, error);
+            alert(`Erreur lors de l'action: ${modalConfig.type}`);
+        }
+    };
+
     const fetchBcDetails = async (id: string) => {
         setDetailLoading(true);
         try {
@@ -681,23 +818,123 @@ export const AdvValidationPage = () => {
     );
 
     return (
-        <MasterLayout
-            leftContent={<div className="h-full w-full overflow-hidden flex flex-col">{SidebarContent}</div>}
-            mainContent={
-                <div className="h-full overflow-hidden flex flex-col">
-                    {detailLoading ? (
-                        <div className="h-full flex flex-col items-center justify-center text-gray-400">
-                            <Loader2 className="w-8 h-8 animate-spin mb-2 text-sage-500" />
-                            <p>Chargement du détail...</p>
+        <>
+            <MasterLayout
+                leftContent={<div className="h-full w-full overflow-hidden flex flex-col">{SidebarContent}</div>}
+                mainContent={
+                    <div className="h-full overflow-hidden flex flex-col">
+                        {detailLoading ? (
+                            <div className="h-full flex flex-col items-center justify-center text-gray-400">
+                                <Loader2 className="w-8 h-8 animate-spin mb-2 text-sage-500" />
+                                <p>Chargement du détail...</p>
+                            </div>
+                        ) : selectedBcDetails ? (
+                            <BcDetailView bc={selectedBcDetails} />
+                        ) : (
+                            <div className="h-full flex items-center justify-center text-gray-400">Sélectionnez une commande à traiter</div>
+                        )}
+                    </div>
+                }
+                rightContent={
+                    <AdvActionPanel
+                        onApprove={() => handleAction('approve')}
+                        onReject={() => handleAction('reject')}
+                        onHold={() => handleAction('hold')}
+                        hasSelection={!!selectedBcId}
+                    />
+                }
+            />
+            <ConfirmationModal
+                isOpen={modalConfig.isOpen}
+                onClose={() => setModalConfig(prev => ({ ...prev, isOpen: false }))}
+                onConfirm={confirmAction}
+                title={modalConfig.title}
+                description={modalConfig.description}
+                variant={modalConfig.variant}
+                confirmText={modalConfig.type === 'approve' ? 'Valider' : modalConfig.type === 'reject' ? 'Rejeter' : 'Confirmer'}
+            >
+                {modalConfig.type === 'approve' && (
+                    <div className="space-y-4">
+                        <div>
+                            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Mode de Validation</label>
+                            <select
+                                value={approvalMode}
+                                onChange={(e) => setApprovalMode(e.target.value as any)}
+                                className="w-full rounded-md border-gray-300 shadow-sm focus:border-sage-500 focus:ring-sage-500 dark:bg-gray-700 dark:border-gray-600 sm:text-sm p-2"
+                            >
+                                <option value="standard">Standard (Auto-ajustement)</option>
+                                <option value="manual">Manuel (Quantités personnalisées)</option>
+                                <option value="forced">Forcé (Bloqué au magasin)</option>
+                            </select>
                         </div>
-                    ) : selectedBcDetails ? (
-                        <BcDetailView bc={selectedBcDetails} />
-                    ) : (
-                        <div className="h-full flex items-center justify-center text-gray-400">Sélectionnez une commande à traiter</div>
-                    )}
-                </div>
-            }
-            rightContent={<AdvActionPanel />}
-        />
+
+                        {approvalMode === 'standard' && (
+                            <div className="flex items-center">
+                                <input
+                                    id="auto-adjust"
+                                    type="checkbox"
+                                    checked={autoAdjustStock}
+                                    onChange={(e) => setAutoAdjustStock(e.target.checked)}
+                                    className="h-4 w-4 text-sage-600 focus:ring-sage-500 border-gray-300 rounded"
+                                />
+                                <label htmlFor="auto-adjust" className="ml-2 block text-sm text-gray-900 dark:text-gray-300">
+                                    Ajuster automatiquement les quantités au stock disponible
+                                </label>
+                            </div>
+                        )}
+
+                        {approvalMode === 'manual' && selectedBcDetails?.order_products && (
+                            <div className="max-h-60 overflow-y-auto border border-gray-200 rounded-md p-2">
+                                {selectedBcDetails.order_products.map(line => (
+                                    <div key={line.product_id} className="flex items-center justify-between py-2 border-b last:border-0">
+                                        <span className="text-sm truncate w-1/2" title={line.product.name}>{line.product.name}</span>
+                                        <input
+                                            type="number"
+                                            value={quantities[line.product_id] ?? line.quantity}
+                                            onChange={(e) => setQuantities(prev => ({ ...prev, [line.product_id]: parseFloat(e.target.value) }))}
+                                            className="w-20 rounded-md border-gray-300 shadow-sm focus:border-sage-500 focus:ring-sage-500 sm:text-sm p-1"
+                                        />
+                                    </div>
+                                ))}
+                            </div>
+                        )}
+
+                        {approvalMode === 'forced' && (
+                            <div className="p-3 bg-amber-50 text-amber-800 text-sm rounded-md border border-amber-200">
+                                <div className="flex gap-2">
+                                    <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
+                                    <span>Attention: Cette commande sera envoyée au dépôt mais bloquée pour vérification magasinier.</span>
+                                </div>
+                            </div>
+                        )}
+
+                        <div>
+                            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Commentaire (Optionnel)</label>
+                            <textarea
+                                value={comment}
+                                onChange={(e) => setComment(e.target.value)}
+                                rows={3}
+                                className="w-full rounded-md border-gray-300 shadow-sm focus:border-sage-500 focus:ring-sage-500 dark:bg-gray-700 dark:border-gray-600 sm:text-sm p-2"
+                            />
+                        </div>
+                    </div>
+                )}
+
+                {(modalConfig.type === 'reject' || modalConfig.type === 'hold') && (
+                    <div>
+                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                            Motif {modalConfig.type === 'reject' ? 'du rejet' : 'de la mise en attente'} <span className="text-red-500">*</span>
+                        </label>
+                        <textarea
+                            value={reason}
+                            onChange={(e) => setReason(e.target.value)}
+                            rows={3}
+                            className="w-full rounded-md border-gray-300 shadow-sm focus:border-sage-500 focus:ring-sage-500 dark:bg-gray-700 dark:border-gray-600 sm:text-sm p-2"
+                            placeholder="Veuillez indiquer la raison..."
+                        />
+                    </div>
+                )}
+            </ConfirmationModal>
+        </>
     );
 };
