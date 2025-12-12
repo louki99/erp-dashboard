@@ -1,5 +1,6 @@
 import { useState, useEffect, useMemo, useRef } from 'react';
 import axios from 'axios';
+import toast from 'react-hot-toast';
 import {
     Search,
     Calendar,
@@ -687,14 +688,14 @@ export const AdvValidationPage = () => {
             } else if (modalConfig.type === 'reject') {
                 endpoint = `reject`;
                 if (!reason) {
-                    alert("Le motif est obligatoire pour le rejet.");
+                    toast.error("Le motif est obligatoire pour le rejet.");
                     return;
                 }
                 payload = { reason };
             } else if (modalConfig.type === 'hold') {
                 endpoint = `hold`;
                 if (!reason) {
-                    alert("Le motif est obligatoire pour la mise en attente.");
+                    toast.error("Le motif est obligatoire pour la mise en attente.");
                     return;
                 }
                 payload = { reason };
@@ -706,10 +707,11 @@ export const AdvValidationPage = () => {
             fetchData();
             if (selectedBcId) fetchBcDetails(selectedBcId);
             setModalConfig(prev => ({ ...prev, isOpen: false }));
+            toast.success(`Commande ${modalConfig.type === 'approve' ? 'validée' : modalConfig.type === 'reject' ? 'rejetée' : 'mise en attente'} avec succès`);
 
         } catch (error) {
             console.error(`Failed to ${modalConfig.type} BC`, error);
-            alert(`Erreur lors de l'action: ${modalConfig.type}`);
+            toast.error(`Erreur lors de l'action: ${modalConfig.type}`);
         }
     };
 
