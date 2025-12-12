@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { Search, X, LayoutGrid, Package, BarChart3, Settings, Database, ShoppingCart } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -52,6 +53,16 @@ const MENU_DATA: ModuleData[] = [
         ]
     },
     {
+        id: 'adv',
+        label: 'ADV',
+        icon: Package,
+        description: 'adminstrateur de vente',
+        categories: [
+            { title: 'Controles', items: ['Tableau de bord', 'Partner Validation', 'Credit Management', 'BC Approval', 'Écheances'] },
+            { title: 'Encaissement', items: ['Encaissement', 'Lettrages', 'Encours clients'] }
+        ]
+    },
+    {
         id: 'base',
         label: 'Données de base',
         icon: Database,
@@ -79,6 +90,7 @@ interface MegaMenuProps {
 }
 
 export const MegaMenu: React.FC<MegaMenuProps> = ({ isOpen, onClose }) => {
+    const navigate = useNavigate();
     const [activeModuleId, setActiveModuleId] = useState<string>('purch');
     const [searchQuery, setSearchQuery] = useState('');
 
@@ -212,10 +224,25 @@ export const MegaMenu: React.FC<MegaMenuProps> = ({ isOpen, onClose }) => {
                                                             <ul className="space-y-1">
                                                                 {category.items.map((item) => (
                                                                     <li key={item}>
-                                                                        <a href="#" className="flex items-center px-2 py-1.5 -mx-2 rounded-md group/item text-sm text-sage-700 dark:text-sage-300 hover:bg-white dark:hover:bg-sage-800 hover:text-sage-900 dark:hover:text-sage-100 transition-all">
+                                                                        <button
+                                                                            onClick={() => {
+                                                                                onClose();
+                                                                                // Simple mapping logic for demonstration
+                                                                                if (item === 'Commandes' || item === 'Liste commandes') {
+                                                                                    navigate('/orders');
+                                                                                } else if (item === 'Clients' || item === 'Tiers') {
+                                                                                    navigate('/partners');
+                                                                                } else if (item === 'Planning global') {
+                                                                                    navigate('/dashboard');
+                                                                                } else {
+                                                                                    navigate('/dashboard'); // Default fallback
+                                                                                }
+                                                                            }}
+                                                                            className="w-full text-left flex items-center px-2 py-1.5 -mx-2 rounded-md group/item text-sm text-sage-700 dark:text-sage-300 hover:bg-white dark:hover:bg-sage-800 hover:text-sage-900 dark:hover:text-sage-100 transition-all font-medium"
+                                                                        >
                                                                             <span className="w-1.5 h-1.5 rounded-full bg-sage-300 group-hover/item:bg-sage-500 mr-2.5 transition-colors"></span>
                                                                             {item}
-                                                                        </a>
+                                                                        </button>
                                                                     </li>
                                                                 ))}
                                                             </ul>

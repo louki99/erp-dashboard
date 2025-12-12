@@ -1,0 +1,113 @@
+import React, { useEffect } from 'react';
+import { motion, AnimatePresence } from 'framer-motion';
+import { AlertTriangle, X } from 'lucide-react';
+
+interface ConfirmationModalProps {
+    isOpen: boolean;
+    onClose: () => void;
+    onConfirm: () => void;
+    title: string;
+    description: string;
+    confirmText?: string;
+    cancelText?: string;
+    variant?: 'danger' | 'warning' | 'info';
+}
+
+export const ConfirmationModal: React.FC<ConfirmationModalProps> = ({
+    isOpen,
+    onClose,
+    onConfirm,
+    title,
+    description,
+    confirmText = 'Confirm',
+    cancelText = 'Cancel',
+    variant = 'danger'
+}) => {
+    // Lock body scroll
+    useEffect(() => {
+        if (isOpen) {
+            document.body.style.overflow = 'hidden';
+        } else {
+            document.body.style.overflow = 'unset';
+        }
+        return () => { document.body.style.overflow = 'unset'; };
+    }, [isOpen]);
+
+    return (
+        <AnimatePresence>
+            {isOpen && (
+                <>
+                    {/* Backdrop */}
+                    <motion.div
+                        initial={{ opacity: 0 }}
+                        animate={{ opacity: 1 }}
+                        exit={{ opacity: 0 }}
+                        onClick={onClose}
+                        className="fixed inset-0 bg-black/40 backdrop-blur-sm z-[60]"
+                    />
+
+                    {/* Modal */}
+                    <div className="fixed inset-0 z-[61] flex items-center justify-center p-4">
+                        <motion.div
+                            initial={{ opacity: 0, scale: 0.95, y: 10 }}
+                            animate={{ opacity: 1, scale: 1, y: 0 }}
+                            exit={{ opacity: 0, scale: 0.95, y: 10 }}
+                            transition={{ type: "spring", duration: 0.3, bounce: 0.2 }}
+                            className="w-full max-w-md bg-white dark:bg-gray-800 rounded-xl shadow-2xl border border-gray-100 dark:border-gray-700 overflow-hidden"
+                            role="dialog"
+                            aria-modal="true"
+                        >
+                            <div className="p-6">
+                                <div className="flex items-start gap-4">
+                                    <div className={`p-3 rounded-full shrink-0 ${variant === 'danger' ? 'bg-red-100 text-red-600' :
+                                            variant === 'warning' ? 'bg-amber-100 text-amber-600' :
+                                                'bg-blue-100 text-blue-600'
+                                        }`}>
+                                        <AlertTriangle className="w-6 h-6" />
+                                    </div>
+                                    <div className="flex-1">
+                                        <div className="flex items-center justify-between">
+                                            <h3 className="text-lg font-bold text-gray-900 dark:text-white">
+                                                {title}
+                                            </h3>
+                                            <button
+                                                onClick={onClose}
+                                                className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 transition-colors"
+                                            >
+                                                <X className="w-5 h-5" />
+                                            </button>
+                                        </div>
+                                        <p className="mt-2 text-sm text-gray-500 dark:text-gray-400 leading-relaxed">
+                                            {description}
+                                        </p>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div className="bg-gray-50 dark:bg-gray-900/50 px-6 py-4 flex items-center justify-end gap-3 border-t border-gray-100 dark:border-gray-700">
+                                <button
+                                    onClick={onClose}
+                                    className="px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 focus:ring-2 focus:ring-gray-200 transition-all"
+                                >
+                                    {cancelText}
+                                </button>
+                                <button
+                                    onClick={() => {
+                                        onConfirm();
+                                        onClose();
+                                    }}
+                                    className={`px-4 py-2 text-sm font-medium text-white rounded-lg shadow-sm focus:ring-2 focus:ring-offset-2 transition-all ${variant === 'danger' ? 'bg-red-600 hover:bg-red-700 focus:ring-red-500' :
+                                            variant === 'warning' ? 'bg-amber-600 hover:bg-amber-700 focus:ring-amber-500' :
+                                                'bg-blue-600 hover:bg-blue-700 focus:ring-blue-500'
+                                        }`}
+                                >
+                                    {confirmText}
+                                </button>
+                            </div>
+                        </motion.div>
+                    </div>
+                </>
+            )}
+        </AnimatePresence>
+    );
+};

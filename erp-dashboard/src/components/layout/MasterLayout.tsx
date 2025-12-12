@@ -3,6 +3,10 @@ import Split from 'react-split';
 import { cn } from '@/lib/utils';
 import { Search, Star, ChevronDown, ChevronLeft, ChevronRight, Maximize2, Minimize2, Bell, Moon, Sun, LayoutGrid } from 'lucide-react';
 import { MegaMenu } from './MegaMenu';
+import { ConfirmationModal } from '@/components/common/ConfirmationModal';
+
+import { useNavigate } from 'react-router-dom';
+import { useAuth } from '@/context/AuthContext';
 
 interface MasterLayoutProps {
     leftContent: React.ReactNode;
@@ -19,8 +23,13 @@ export const MasterLayout: React.FC<MasterLayoutProps> = ({
     rightContent,
     className,
 }) => {
+    const navigate = useNavigate();
+    const { user, logout } = useAuth();
+
     const [mode, setMode] = useState<LayoutMode>('split');
     const [isMegaMenuOpen, setIsMegaMenuOpen] = useState(false);
+    const [showUserMenu, setShowUserMenu] = useState(false);
+    const [isLogoutModalOpen, setIsLogoutModalOpen] = useState(false);
     const [isDark, setIsDark] = useState(false);
 
     // Theme Toggle Logic
@@ -38,6 +47,20 @@ export const MasterLayout: React.FC<MasterLayoutProps> = ({
         <div className={cn("h-screen w-full flex flex-col bg-background overflow-hidden font-sans", className)}>
             {/* Mega Menu Overlay */}
             <MegaMenu isOpen={isMegaMenuOpen} onClose={() => setIsMegaMenuOpen(false)} />
+
+            {/* Logout Confirmation Modal */}
+            <ConfirmationModal
+                isOpen={isLogoutModalOpen}
+                onClose={() => setIsLogoutModalOpen(false)}
+                onConfirm={() => {
+                    logout();
+                    navigate('/login');
+                }}
+                title="Sign out"
+                description="Are you sure you want to sign out of your account? You will need to log in again to access the dashboard."
+                confirmText="Sign out"
+                variant="danger"
+            />
 
             {/* Top Bar - Professional ERP Header */}
             <header className="h-14 bg-[#1a1a1a] dark:bg-black text-white flex items-center px-4 justify-between shrink-0 shadow-lg z-20 relative animate-in slide-in-from-top duration-300">
@@ -107,15 +130,66 @@ export const MasterLayout: React.FC<MasterLayoutProps> = ({
                     <div className="h-6 w-px bg-white/10 hidden md:block"></div>
 
                     {/* User Profile */}
-                    <button className="flex items-center gap-3 pl-2 pr-1 py-1 rounded-full hover:bg-white/5 border border-transparent hover:border-white/10 transition-all group">
-                        <div className="text-right hidden md:block">
-                            <div className="text-xs font-bold text-white group-hover:text-sage-400 transition-colors">IDRIS LOUKI</div>
-                            <div className="text-[10px] text-gray-400">Production Admin</div>
-                        </div>
-                        <div className="w-8 h-8 rounded-full bg-gradient-to-br from-sage-500 to-sage-700 flex items-center justify-center text-white font-bold text-xs shadow-lg ring-2 ring-transparent group-hover:ring-sage-500/50 transition-all">
-                            IL
-                        </div>
-                    </button>
+                    <div className="relative">
+                        <button
+                            onClick={() => setShowUserMenu(!showUserMenu)}
+                            className="flex items-center gap-3 pl-2 pr-1 py-1 rounded-full hover:bg-white/5 border border-transparent hover:border-white/10 transition-all group"
+                        >
+                            <div className="text-right hidden md:block">
+                                <div className="text-xs font-bold text-white group-hover:text-sage-400 transition-colors uppercase">{user?.name || 'User'}</div>
+                                <div className="text-[10px] text-gray-400 capitalize">{user?.roles?.[0]?.name || 'Guest'}</div>
+                            </div>
+                            <div className="w-8 h-8 rounded-full bg-gradient-to-br from-sage-500 to-sage-700 flex items-center justify-center text-white font-bold text-xs shadow-lg ring-2 ring-transparent group-hover:ring-sage-500/50 transition-all">
+                                {user?.name?.charAt(0).toUpperCase() || 'U'}
+                            </div>
+                        </button>
+
+                        {/* User Dropdown Menu */}
+                        {showUserMenu && (
+                            <>
+                                <div
+                                    className="fixed inset-0 z-40"
+                                    onClick={() => setShowUserMenu(false)}
+                                ></div>
+                                <div className="absolute right-0 mt-2 w-56 bg-white dark:bg-gray-800 rounded-lg shadow-xl border border-gray-200 dark:border-gray-700 z-50 py-2 animate-in fade-in slide-in-from-top-2 duration-200">
+                                    <div className="px-4 py-2 border-b border-gray-100 dark:border-gray-700 mb-1">
+                                        <p className="text-sm font-semibold text-gray-900 dark:text-white truncate">{user?.name}</p>
+                                        <p className="text-xs text-gray-500 dark:text-gray-400 truncate">{user?.email}</p>
+                                    </div>
+                                    <button
+                                        onClick={() => {
+                                            navigate('/profile');
+                                            setShowUserMenu(false);
+                                        }}
+                                        className="w-full text-left px-4 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-sage-50 dark:hover:bg-gray-700 hover:text-sage-600 transition-colors flex items-center gap-2"
+                                    >
+                                        <div className="w-2 h-2 rounded-full bg-sage-500"></div>
+                                        My Profile
+                                    </button>
+                                    <button
+                                        onClick={() => {
+                                            /* Settings logic */
+                                            setShowUserMenu(false);
+                                        }}
+                                        className="w-full text-left px-4 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-sage-50 dark:hover:bg-gray-700 hover:text-sage-600 transition-colors flex items-center gap-2"
+                                    >
+                                        <div className="w-2 h-2 rounded-full bg-gray-300"></div>
+                                        Settings
+                                    </button>
+                                    <div className="h-px bg-gray-100 dark:bg-gray-700 my-1"></div>
+                                    <button
+                                        onClick={() => {
+                                            setShowUserMenu(false);
+                                            setIsLogoutModalOpen(true);
+                                        }}
+                                        className="w-full text-left px-4 py-2 text-sm text-red-600 hover:bg-red-50 dark:hover:bg-red-900/10 transition-colors flex items-center gap-2"
+                                    >
+                                        Logout
+                                    </button>
+                                </div>
+                            </>
+                        )}
+                    </div>
                 </div>
             </header>
 
