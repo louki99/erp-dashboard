@@ -5,9 +5,20 @@ interface User {
     id: number;
     name: string;
     email: string;
-    // Add other fields as per API response if needed, for minimal auth these are enough
+    phone?: string;
+    gender?: string;
+    date_of_birth?: string;
+    branch_code?: string;
+    roles: Array<{
+        id: number;
+        name: string;
+    }>;
     permissions: any[];
-    roles: any[];
+    media?: {
+        id: number;
+        type: string;
+        src: string;
+    };
 }
 
 interface AuthContextType {
@@ -27,6 +38,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     useEffect(() => {
         // Check for persisted user session
         const storedUser = localStorage.getItem('erp_user');
+        const storedToken = localStorage.getItem('erp_token');
+
         if (storedUser) {
             try {
                 setUser(JSON.parse(storedUser));
@@ -35,6 +48,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
                 localStorage.removeItem('erp_user');
             }
         }
+
+        if (storedToken) {
+            axios.defaults.headers.common['Authorization'] = `Bearer ${storedToken}`;
+        }
+
         setLoading(false);
     }, []);
 
@@ -47,8 +65,16 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
             if (response.data.success) {
                 const userData = response.data.user;
+                const token = response.data.token || response.data.access_token; // Support both common patterns
+
                 setUser(userData);
                 localStorage.setItem('erp_user', JSON.stringify(userData));
+
+                if (token) {
+                    localStorage.setItem('erp_token', token);
+                    axios.defaults.headers.common['Authorization'] = `Bearer ${token}`; // Set global header
+                }
+
                 return { success: true };
             } else {
                 return { success: false, message: response.data.message || 'Login failed' };
@@ -65,6 +91,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const logout = () => {
         setUser(null);
         localStorage.removeItem('erp_user');
+        localStorage.removeItem('erp_token');
+        delete axios.defaults.headers.common['Authorization'];
         // Optional: Call API to invalidate token if backend requires it
     };
 

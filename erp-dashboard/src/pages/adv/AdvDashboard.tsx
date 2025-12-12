@@ -1,31 +1,131 @@
-import React from 'react';
+import { useState, useEffect } from 'react';
 import {
     Users,
-    CreditCard,
     FileCheck,
     AlertTriangle,
     TrendingUp,
-    Clock,
     CheckCircle2,
-    Ban
+    Ban,
+    Loader2 // Added for loading state
 } from 'lucide-react';
 import { MasterLayout } from '@/components/layout/MasterLayout';
+import axios from 'axios';
 
-// Mock Data for ADV Dashboard
-const STATS = [
-    { label: 'Commandes à Valider', value: '12', change: '+2', icon: FileCheck, color: 'text-amber-600', bg: 'bg-amber-100', trend: 'up' },
-    { label: 'Blocages Crédit', value: '5', change: '-1', icon: Ban, color: 'text-red-600', bg: 'bg-red-100', trend: 'down' },
-    { label: 'Encours Clients', value: '1.2M Dh', change: '+12%', icon: TrendingUp, color: 'text-emerald-600', bg: 'bg-emerald-100', trend: 'up' },
-    { label: 'Validation Partenaires', value: '3', change: '0', icon: Users, color: 'text-blue-600', bg: 'bg-blue-100', trend: 'neutral' },
-];
+interface AdvStats {
+    pending_partners: number;
+    pending_credit_approvals: number;
+    blocked_partners: number;
+    overdue_payments: number;
+    pending_bc: number;
+    total_credit_exposure: string;
+    available_credit: string;
+}
 
-const RECENT_ALERTS = [
-    { id: 1, type: 'credit', message: 'Dépassement encours - Client MARJANE', time: '10 min ago', severity: 'high' },
-    { id: 2, type: 'validation', message: 'Nouvelle commande > 50k Dh à valider', time: '1h ago', severity: 'medium' },
-    { id: 3, type: 'partner', message: 'Nouveau client BIM - Dossier incomplet', time: '3h ago', severity: 'low' },
-];
+interface CreditAlert {
+    id: number;
+    name: string;
+    credit_limit: string;
+    credit_used: string;
+    credit_hold: boolean;
+    created_at: string;
+    // Add other fields as needed from the payload
+}
+
+interface DashboardData {
+    stats: AdvStats;
+    recentPartners: any[]; // Assuming this is an array of any for now, as its structure wasn't detailed
+    creditAlerts: CreditAlert[];
+}
 
 const AdvDashboardContent = () => {
+    const [data, setData] = useState<DashboardData | null>(null);
+    const [loading, setLoading] = useState(true);
+    const [error, setError] = useState<string | null>(null);
+
+    const fetchData = async () => {
+        setLoading(true);
+        setError(null);
+        try {
+            const response = await axios.get('http://localhost:8000/api/backend/adv/dashboard');
+            console.log("ADV Dashboard Data:", response.data);
+            setData(response.data);
+        } catch (err) {
+            console.error("Failed to fetch ADV dashboard data", err);
+            setError("Failed to load dashboard data.");
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    useEffect(() => {
+        fetchData();
+    }, []);
+
+    if (loading) {
+        return (
+            <div className="h-full flex flex-col items-center justify-center text-gray-400">
+                <Loader2 className="w-8 h-8 animate-spin mb-2 text-sage-500" />
+                <p>Loading dashboard...</p>
+            </div>
+        );
+    }
+
+    if (error || !data) {
+        return (
+            <div className="p-8 text-center">
+                <p className="text-red-500 mb-4">{error || "No data available"}</p>
+                <button
+                    onClick={fetchData}
+                    className="px-4 py-2 bg-sage-500 text-white rounded hover:bg-sage-600 transition-colors"
+                >
+                    Retry
+                </button>
+            </div>
+        );
+    }
+
+    const { stats, creditAlerts } = data;
+
+    // Derived Stats for UI
+    const KPI_CARDS = [
+        {
+            label: 'Commandes à Valider',
+            value: stats.pending_bc.toString(),
+            change: 'Active',
+            icon: FileCheck,
+            color: 'text-amber-600',
+            bg: 'bg-amber-100',
+            trend: 'down' // Placeholder logic
+        },
+        {
+            label: 'Partenaires Bloqués',
+            value: stats.blocked_partners.toString(),
+            change: 'Action req.',
+            icon: Ban,
+            color: 'text-red-600',
+            bg: 'bg-red-100',
+            trend: 'down'
+        },
+        {
+            label: 'Encours Global',
+            value: `${parseFloat(stats.total_credit_exposure).toLocaleString()} Dh`,
+            change: 'Total Exposure',
+            icon: TrendingUp,
+            color: 'text-emerald-600',
+            bg: 'bg-emerald-100',
+            trend: 'up'
+        },
+        {
+            label: 'Validation Tiers',
+            value: stats.pending_partners.toString(),
+            change: 'New',
+            icon: Users,
+            color: 'text-blue-600',
+            bg: 'bg-blue-100',
+            trend: 'neutral'
+        },
+    ];
+
     return (
         <div className="p-8 space-y-8 animate-in fade-in duration-500">
             {/* Header */}
@@ -35,7 +135,10 @@ const AdvDashboardContent = () => {
                     <p className="text-gray-500 mt-1">Supervision de l'administration des ventes et du risque client.</p>
                 </div>
                 <div className="flex gap-2">
-                    <button className="px-4 py-2 bg-sage-600 text-white rounded-lg shadow-sm hover:bg-sage-700 transition-colors text-sm font-medium">
+                    <button
+                        onClick={fetchData}
+                        className="px-4 py-2 bg-sage-600 text-white rounded-lg shadow-sm hover:bg-sage-700 transition-colors text-sm font-medium"
+                    >
                         Rafraîchir
                     </button>
                 </div>
@@ -43,7 +146,7 @@ const AdvDashboardContent = () => {
 
             {/* KPI Grid */}
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-                {STATS.map((stat, idx) => {
+                {KPI_CARDS.map((stat, idx) => {
                     const Icon = stat.icon;
                     return (
                         <div key={idx} className="bg-white p-6 rounded-xl border border-gray-200 shadow-sm hover:shadow-md transition-shadow">
@@ -51,9 +154,8 @@ const AdvDashboardContent = () => {
                                 <div className={`p-3 rounded-lg ${stat.bg}`}>
                                     <Icon className={`w-6 h-6 ${stat.color}`} />
                                 </div>
-                                <span className={`text-xs font-medium px-2 py-1 rounded-full ${stat.trend === 'up' ? 'text-emerald-700 bg-emerald-50' :
-                                        stat.trend === 'down' ? 'text-rose-700 bg-rose-50' : 'text-gray-600 bg-gray-100'
-                                    }`}>
+                                {/* Trend Indicator Placeholder */}
+                                <span className="text-xs font-medium px-2 py-1 rounded-full text-gray-600 bg-gray-100">
                                     {stat.change}
                                 </span>
                             </div>
@@ -74,28 +176,10 @@ const AdvDashboardContent = () => {
                             <h3 className="font-semibold text-gray-900">Validations en attente</h3>
                             <button className="text-sm text-sage-600 hover:text-sage-700 font-medium">Voir tout</button>
                         </div>
-                        <div className="divide-y divide-gray-100">
-                            {[1, 2, 3].map((i) => (
-                                <div key={i} className="p-4 hover:bg-gray-50 transition-colors flex items-center justify-between group">
-                                    <div className="flex gap-4 items-center">
-                                        <div className="w-10 h-10 rounded-full bg-sage-100 flex items-center justify-center text-sage-700 font-bold text-sm">
-                                            CMD
-                                        </div>
-                                        <div>
-                                            <p className="text-sm font-semibold text-gray-900">Commande #CMD-2024-{100 + i}</p>
-                                            <p className="text-xs text-gray-500">Client: ACME Corp • 45,000.00 Dh</p>
-                                        </div>
-                                    </div>
-                                    <div className="flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                                        <button className="px-3 py-1.5 text-xs font-medium text-emerald-700 bg-emerald-50 hover:bg-emerald-100 rounded-md transition-colors">
-                                            Valider
-                                        </button>
-                                        <button className="px-3 py-1.5 text-xs font-medium text-gray-600 bg-gray-100 hover:bg-gray-200 rounded-md transition-colors">
-                                            Détails
-                                        </button>
-                                    </div>
-                                </div>
-                            ))}
+                        {/* Placeholder for Pending Validations List (Since it wasn't in the provided JSON, keeping static or empty for now) */}
+                        <div className="p-8 text-center text-gray-400">
+                            <CheckCircle2 className="w-12 h-12 mx-auto mb-3 text-gray-200" />
+                            <p>Aucune commande à valider pour le moment.</p>
                         </div>
                     </div>
                 </div>
@@ -105,20 +189,20 @@ const AdvDashboardContent = () => {
                     <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-6">
                         <h3 className="font-semibold text-gray-900 mb-4 flex items-center gap-2">
                             <AlertTriangle className="w-5 h-5 text-amber-500" />
-                            Alertes Récentes
+                            Alerte Crédit PARTENAIRES
                         </h3>
                         <div className="space-y-4">
-                            {RECENT_ALERTS.map((alert) => (
-                                <div key={alert.id} className="flex gap-3 items-start">
-                                    <div className={`mt-1.5 w-2 h-2 rounded-full shrink-0 ${alert.severity === 'high' ? 'bg-red-500' :
-                                            alert.severity === 'medium' ? 'bg-amber-500' : 'bg-blue-500'
-                                        }`} />
+                            {creditAlerts.length > 0 ? creditAlerts.map((alert) => (
+                                <div key={alert.id} className="flex gap-3 items-start border-l-2 border-amber-400 pl-3">
                                     <div>
-                                        <p className="text-sm text-gray-800 font-medium leading-tight">{alert.message}</p>
-                                        <span className="text-xs text-gray-400 mt-1 block">{alert.time}</span>
+                                        <p className="text-sm text-gray-800 font-bold leading-tight">{alert.name}</p>
+                                        <p className="text-xs text-gray-500 mt-1">Utilisé: {parseFloat(alert.credit_used).toLocaleString()} / {parseFloat(alert.credit_limit).toLocaleString()}</p>
+                                        <p className="text-[10px] text-gray-400 mt-0.5">{new Date(alert.created_at).toLocaleDateString()}</p>
                                     </div>
                                 </div>
-                            ))}
+                            )) : (
+                                <p className="text-sm text-gray-400 italic">Aucune alerte crédit.</p>
+                            )}
                         </div>
                     </div>
 
