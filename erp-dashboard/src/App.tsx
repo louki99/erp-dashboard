@@ -7,6 +7,7 @@ import { OrdersPage } from '@/pages/OrdersPage';
 import { Dashboard } from '@/pages/Dashboard';
 import { ProfilePage } from '@/pages/ProfilePage';
 import { AdvDashboard } from '@/pages/adv/AdvDashboard';
+import { AdvValidationPage } from '@/pages/adv/AdvValidationPage';
 import { MasterLayout } from '@/components/layout/MasterLayout';
 
 // Simple Navigation Wrapper to show active route in DevSwitcher style (optional, but let's stick to MegaMenu for now)
@@ -39,6 +40,7 @@ function AppRoutes() {
       <Route path="/orders" element={<ProtectedRoute><OrdersPage /></ProtectedRoute>} />
       <Route path="/profile" element={<ProtectedRoute><ProfilePage /></ProtectedRoute>} />
       <Route path="/adv/dashboard" element={<ProtectedRoute><AdvDashboard /></ProtectedRoute>} />
+      <Route path="/adv/validation" element={<ProtectedRoute><AdvValidationPage /></ProtectedRoute>} />
 
       {/* Catch all */}
       <Route path="*" element={<Navigate to="/dashboard" replace />} />

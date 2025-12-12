@@ -9,9 +9,10 @@ import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/context/AuthContext';
 
 interface MasterLayoutProps {
-    leftContent: React.ReactNode;
-    mainContent: React.ReactNode;
-    rightContent?: React.ReactNode;
+    children?: React.ReactNode;
+    leftContent?: React.ReactNode;
+    mainContent?: React.ReactNode; // New prop for explicit middle content
+    rightContent?: React.ReactNode; // New prop for custom action panel
     className?: string;
 }
 

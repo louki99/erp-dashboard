@@ -111,7 +111,7 @@ export const MegaMenu: React.FC<MegaMenuProps> = ({ isOpen, onClose }) => {
     const ROUTE_MAPPING: Record<string, string> = {
         // ADV Actions
         'Tableau de bord': '/adv/dashboard',
-        'Partner Validation': '/adv/partners',
+        'Partner Validation': '/adv/validation',
         'Credit Management': '/adv/credit',
 
         // Orders

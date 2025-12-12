@@ -9,9 +9,10 @@ interface DataGridProps {
     rowData: any[];
     columnDefs: any[];
     onRowSelected?: (data: any) => void;
+    loading?: boolean;
 }
 
-export const DataGrid = ({ rowData, columnDefs, onRowSelected }: DataGridProps) => {
+export const DataGrid = ({ rowData, columnDefs, onRowSelected, loading }: DataGridProps) => {
     const [gridApi, setGridApi] = useState<any>(null);
 
     const defaultColDef = {
@@ -54,7 +55,7 @@ export const DataGrid = ({ rowData, columnDefs, onRowSelected }: DataGridProps) 
                     rowData={rowData}
                     columnDefs={columnDefs}
                     defaultColDef={defaultColDef}
-                    rowSelection={{ mode: "singleRow", checkboxes: false }}
+                    rowSelection={{ mode: "singleRow", checkboxes: false, enableClickSelection: true }}
                     onSelectionChanged={(event) => {
                         const selectedRows = event.api.getSelectedRows();
                         if (selectedRows.length > 0 && onRowSelected) {
@@ -63,9 +64,10 @@ export const DataGrid = ({ rowData, columnDefs, onRowSelected }: DataGridProps) 
                     }}
                     onGridReady={onGridReady}
                     animateRows={true}
-                    suppressRowClickSelection={false}
                     headerHeight={32}
                     rowHeight={32}
+                    loading={loading}
+                    overlayLoadingTemplate={'<span class="ag-overlay-loading-center">Chargement...</span>'}
                 />
             </div>
         </div>
