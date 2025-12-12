@@ -3,6 +3,7 @@ import { MasterLayout } from '@/components/layout/MasterLayout';
 import { DataGrid } from '@/components/common/DataGrid';
 import { ActionPanel } from '@/components/layout/ActionPanel';
 import { BadgeCheck, Clock, MapPin } from 'lucide-react';
+import { PartnerPage } from '@/components/layout/PartnerPage';
 
 // Mock Data
 const MOCK_DATA = Array.from({ length: 50 }, (_, i) => ({
@@ -15,6 +16,7 @@ const MOCK_DATA = Array.from({ length: 50 }, (_, i) => ({
 }));
 
 function App() {
+  const [view, setView] = useState<'orders' | 'partners'>('partners');
   const [selectedRow, setSelectedRow] = useState<any>(MOCK_DATA[0]);
 
   const columnDefs = [
@@ -34,10 +36,9 @@ function App() {
     { field: 'site', headerName: 'Site', width: 150 }
   ];
 
-  // Left Content: List
-  const LeftPane = (
+  // Orders View Components
+  const LeftPaneOrders = (
     <div className="flex flex-col h-full">
-      {/* List Header / Search Info */}
       <div className="p-2 border-b border-gray-200 bg-gray-50/50 flex justify-between items-center text-xs">
         <span className="font-semibold text-gray-700">All Orders</span>
         <span className="text-gray-500">{MOCK_DATA.length} records</span>
@@ -48,12 +49,10 @@ function App() {
     </div>
   );
 
-  // Main Content: Details
-  const MainPane = (
+  const MainPaneOrders = (
     <div className="p-6 max-w-5xl mx-auto w-full">
       {selectedRow ? (
         <div className="space-y-8 animate-in fade-in duration-300">
-          {/* Header */}
           <div className="flex items-start justify-between">
             <div>
               <h1 className="text-2xl font-bold text-gray-900 flex items-center gap-3">
@@ -76,7 +75,6 @@ function App() {
             </div>
           </div>
 
-          {/* Tabs / Sections */}
           <div className="bg-white rounded-lg border border-gray-200 shadow-sm overflow-hidden">
             <div className="border-b border-gray-200 bg-gray-50 px-4 flex gap-6">
               {['Header', 'Lines', 'Delivery', 'Invoicing'].map((tab, i) => (
@@ -111,7 +109,6 @@ function App() {
             </div>
           </div>
 
-          {/* Mock Lines Grid */}
           <div className="bg-white rounded-lg border border-gray-200 shadow-sm p-0 overflow-hidden">
             <div className="px-4 py-3 border-b border-gray-200 bg-gray-50 flex justify-between">
               <h3 className="text-sm font-semibold text-gray-900">Order Lines</h3>
@@ -150,11 +147,33 @@ function App() {
   );
 
   return (
-    <MasterLayout
-      leftContent={LeftPane}
-      mainContent={MainPane}
-      rightContent={<ActionPanel />}
-    />
+    <div className="relative">
+      {/* Dev Switcher */}
+      <div className="fixed bottom-4 right-24 z-[9999] flex gap-2 bg-black/80 p-2 rounded-full shadow-lg">
+        <button
+          onClick={() => setView('partners')}
+          className={`px-3 py-1 rounded-full text-xs font-bold transition-colors ${view === 'partners' ? 'bg-[#00b06b] text-white' : 'text-gray-400 hover:text-white'}`}
+        >
+          Partners
+        </button>
+        <button
+          onClick={() => setView('orders')}
+          className={`px-3 py-1 rounded-full text-xs font-bold transition-colors ${view === 'orders' ? 'bg-[#00b06b] text-white' : 'text-gray-400 hover:text-white'}`}
+        >
+          Orders
+        </button>
+      </div>
+
+      {view === 'partners' ? (
+        <PartnerPage />
+      ) : (
+        <MasterLayout
+          leftContent={LeftPaneOrders}
+          mainContent={MainPaneOrders}
+          rightContent={<ActionPanel />}
+        />
+      )}
+    </div>
   );
 }
 

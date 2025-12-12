@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import Split from 'react-split';
 import { cn } from '@/lib/utils';
 import { Search, Compass, Star, HelpCircle, Calendar, ChevronDown, ChevronLeft, ChevronRight, Maximize2, Minimize2 } from 'lucide-react';
+import { MegaMenu } from './MegaMenu';
 
 interface MasterLayoutProps {
     leftContent: React.ReactNode;
@@ -19,9 +20,13 @@ export const MasterLayout: React.FC<MasterLayoutProps> = ({
     className,
 }) => {
     const [mode, setMode] = useState<LayoutMode>('split');
+    const [isMegaMenuOpen, setIsMegaMenuOpen] = useState(false);
 
     return (
         <div className={cn("h-screen w-full flex flex-col bg-slate-50 overflow-hidden", className)}>
+            {/* Mega Menu Overlay */}
+            <MegaMenu isOpen={isMegaMenuOpen} onClose={() => setIsMegaMenuOpen(false)} />
+
             {/* Top Bar - Sage X3 Style Helper */}
             <header className="h-10 bg-[#1a1a1a] text-white flex items-center px-4 justify-between shrink-0 shadow-sm z-20 font-sans text-sm">
                 {/* Left: Branding */}
@@ -60,7 +65,14 @@ export const MasterLayout: React.FC<MasterLayoutProps> = ({
                             <ChevronDown className="w-3 h-3 ml-1 text-white" />
                         </div>
 
-                        <button className="text-white hover:text-gray-300 transition-colors p-1.5 mx-1">
+                        {/* Compass - Mega Menu Toggle */}
+                        <button
+                            onClick={() => setIsMegaMenuOpen(!isMegaMenuOpen)}
+                            className={cn(
+                                "text-white hover:text-gray-300 transition-colors p-1.5 mx-1 rounded-full",
+                                isMegaMenuOpen && "bg-white/10 text-white"
+                            )}
+                        >
                             <Compass className="w-6 h-6" strokeWidth={1.5} />
                         </button>
 
