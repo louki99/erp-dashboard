@@ -4,6 +4,7 @@ import { DataGrid } from '@/components/common/DataGrid';
 import { ActionPanel } from '@/components/layout/ActionPanel';
 import { BadgeCheck, Clock, MapPin } from 'lucide-react';
 import { PartnerPage } from '@/components/layout/PartnerPage';
+import { Dashboard } from '@/pages/Dashboard';
 
 // Mock Data
 const MOCK_DATA = Array.from({ length: 50 }, (_, i) => ({
@@ -16,7 +17,7 @@ const MOCK_DATA = Array.from({ length: 50 }, (_, i) => ({
 }));
 
 function App() {
-  const [view, setView] = useState<'orders' | 'partners'>('partners');
+  const [view, setView] = useState<'orders' | 'partners' | 'dashboard'>('partners');
   const [selectedRow, setSelectedRow] = useState<any>(MOCK_DATA[0]);
 
   const columnDefs = [
@@ -149,29 +150,50 @@ function App() {
   return (
     <div className="relative">
       {/* Dev Switcher */}
-      <div className="fixed bottom-4 right-24 z-[9999] flex gap-2 bg-black/80 p-2 rounded-full shadow-lg">
+      <div className="fixed bottom-4 right-24 z-[9999] flex gap-2 bg-black/80 p-2 rounded-full shadow-lg backdrop-blur-md border border-white/10">
         <button
           onClick={() => setView('partners')}
-          className={`px-3 py-1 rounded-full text-xs font-bold transition-colors ${view === 'partners' ? 'bg-[#00b06b] text-white' : 'text-gray-400 hover:text-white'}`}
+          className={`px-3 py-1 rounded-full text-xs font-bold transition-colors ${view === 'partners' ? 'bg-sage-600 text-white' : 'text-gray-400 hover:text-white'}`}
         >
           Partners
         </button>
         <button
           onClick={() => setView('orders')}
-          className={`px-3 py-1 rounded-full text-xs font-bold transition-colors ${view === 'orders' ? 'bg-[#00b06b] text-white' : 'text-gray-400 hover:text-white'}`}
+          className={`px-3 py-1 rounded-full text-xs font-bold transition-colors ${view === 'orders' ? 'bg-sage-600 text-white' : 'text-gray-400 hover:text-white'}`}
         >
           Orders
         </button>
+        <button
+          onClick={() => setView('dashboard')}
+          className={`px-3 py-1 rounded-full text-xs font-bold transition-colors ${view === 'dashboard' ? 'bg-sage-600 text-white' : 'text-gray-400 hover:text-white'}`}
+        >
+          Dashboard
+        </button>
       </div>
 
-      {view === 'partners' ? (
-        <PartnerPage />
-      ) : (
+      {view === 'partners' && <PartnerPage />}
+      {view === 'orders' && (
         <MasterLayout
           leftContent={LeftPaneOrders}
           mainContent={MainPaneOrders}
           rightContent={<ActionPanel />}
         />
+      )}
+      {view === 'dashboard' && (
+        <div className="h-screen bg-muted/20 overflow-auto">
+          <MasterLayout
+            leftContent={<div></div>} // Empty left pane for dashboard mode, we might want to hide it
+            mainContent={<div className="h-full overflow-y-auto"><Dashboard /></div>}
+            className="bg-transparent"
+          />
+          {/* Note: MasterLayout expects 3 panes. For Dashboard we might want a full width layout. 
+                 But MasterLayout enforces split. We should probably just render MasterLayout with Dashboard as main content 
+                 and maybe collapsed left pane? 
+                 Actually, let's just render the header + Dashboard content since MasterLayout combines them strongly.
+                 Wait, MasterLayout HAS the header. So we should use MasterLayout.
+                 I'll just pass empty left content and maybe default to 'details' mode if I can control it, or just let users collapse it.
+              */}
+        </div>
       )}
     </div>
   );

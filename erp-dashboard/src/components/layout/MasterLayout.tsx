@@ -1,7 +1,7 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import Split from 'react-split';
 import { cn } from '@/lib/utils';
-import { Search, Compass, Star, HelpCircle, Calendar, ChevronDown, ChevronLeft, ChevronRight, Maximize2, Minimize2 } from 'lucide-react';
+import { Search, Star, ChevronDown, ChevronLeft, ChevronRight, Maximize2, Minimize2, Bell, Moon, Sun, LayoutGrid } from 'lucide-react';
 import { MegaMenu } from './MegaMenu';
 
 interface MasterLayoutProps {
@@ -21,70 +21,106 @@ export const MasterLayout: React.FC<MasterLayoutProps> = ({
 }) => {
     const [mode, setMode] = useState<LayoutMode>('split');
     const [isMegaMenuOpen, setIsMegaMenuOpen] = useState(false);
+    const [isDark, setIsDark] = useState(false);
+
+    // Theme Toggle Logic
+    useEffect(() => {
+        if (isDark) {
+            document.documentElement.classList.add('dark');
+        } else {
+            document.documentElement.classList.remove('dark');
+        }
+    }, [isDark]);
+
+    const toggleTheme = () => setIsDark(!isDark);
 
     return (
-        <div className={cn("h-screen w-full flex flex-col bg-slate-50 overflow-hidden", className)}>
+        <div className={cn("h-screen w-full flex flex-col bg-background overflow-hidden font-sans", className)}>
             {/* Mega Menu Overlay */}
             <MegaMenu isOpen={isMegaMenuOpen} onClose={() => setIsMegaMenuOpen(false)} />
 
-            {/* Top Bar - Sage X3 Style Helper */}
-            <header className="h-10 bg-[#1a1a1a] text-white flex items-center px-4 justify-between shrink-0 shadow-sm z-20 font-sans text-sm">
-                {/* Left: Branding */}
-                <div className="flex items-center gap-4">
-                    <div className="flex items-center gap-3 select-none">
-                        <span className="font-bold text-lg text-[#00b06b] tracking-tight">Sage</span>
-                        <div className="h-4 w-px bg-gray-600"></div>
-                        <span className="font-bold text-gray-100 tracking-wide text-base">X3</span>
-                    </div>
-                    <button className="text-gray-400 hover:text-white transition-colors ml-2">
-                        <Calendar className="w-5 h-5" />
+            {/* Top Bar - Professional ERP Header */}
+            <header className="h-14 bg-[#1a1a1a] dark:bg-black text-white flex items-center px-4 justify-between shrink-0 shadow-lg z-20 relative animate-in slide-in-from-top duration-300">
+                {/* Left: Branding & Mega Menu Trigger */}
+                <div className="flex items-center gap-6">
+                    <button
+                        onClick={() => setIsMegaMenuOpen(!isMegaMenuOpen)}
+                        className="p-2 -ml-2 rounded-lg hover:bg-white/10 text-gray-300 hover:text-white transition-colors group"
+                    >
+                        <LayoutGrid className="w-6 h-6 group-hover:text-sage-500 transition-colors" />
                     </button>
+
+                    <div className="flex items-center gap-3 select-none">
+                        <div className="flex flex-col">
+                            <span className="font-bold text-xl leading-none tracking-tight">
+                                <span className="text-sage-500">Sage</span>
+                                <span className="text-white ml-1">X3</span>
+                            </span>
+                            <span className="text-[10px] text-gray-400 uppercase tracking-widest font-medium">Enterprise</span>
+                        </div>
+                    </div>
+
+                    <div className="h-6 w-px bg-white/10 hidden md:block"></div>
+
+                    {/* Quick Access Toolbar */}
+                    <nav className="hidden md:flex items-center gap-1">
+                        <button className="flex items-center gap-2 px-3 py-1.5 rounded-md hover:bg-white/5 text-gray-300 hover:text-white transition-all text-sm font-medium group">
+                            <Star className="w-4 h-4 text-sage-500 group-hover:text-sage-400" />
+                            <span>Favorites</span>
+                            <ChevronDown className="w-3 h-3 opacity-50" />
+                        </button>
+                    </nav>
+                </div>
+
+                {/* Center: Global Search (Visual Placeholder for now) */}
+                <div className="flex-1 max-w-xl mx-8 hidden lg:block">
+                    <div className="relative group">
+                        <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500 group-hover:text-sage-500 transition-colors" />
+                        <input
+                            type="text"
+                            placeholder="Search interactions, orders, customers (Ctrl+K)..."
+                            className="w-full bg-white/5 border border-white/10 rounded-full pl-10 pr-4 py-1.5 text-sm text-gray-200 placeholder:text-gray-500 focus:outline-none focus:bg-white/10 focus:border-sage-500/50 transition-all"
+                        />
+                        <div className="absolute right-3 top-1/2 -translate-y-1/2 flex gap-1">
+                            <span className="px-1.5 py-0.5 rounded bg-white/10 text-[10px] font-medium text-gray-400 border border-white/5">Ctrl</span>
+                            <span className="px-1.5 py-0.5 rounded bg-white/10 text-[10px] font-medium text-gray-400 border border-white/5">K</span>
+                        </div>
+                    </div>
                 </div>
 
                 {/* Right: Controls & User Info */}
-                <div className="flex items-center gap-5">
-                    {/* User Info */}
-                    <div className="flex items-center gap-6 mr-2">
-                        <span className="text-[#fbce4c] font-medium tracking-wide text-xs">IDRIS LOUKI</span>
-                        <span className="text-gray-300 font-medium text-xs">Utilisateurs</span>
-                        <div className="flex items-center gap-2">
-                            <div className="w-3 h-3 bg-[#00b06b] rounded-[1px]"></div>
-                            <span className="text-gray-100 text-xs">FDP - Production</span>
+                <div className="flex items-center gap-2 md:gap-4">
+                    {/* Theme Toggle */}
+                    <button
+                        onClick={toggleTheme}
+                        className="p-2 rounded-full hover:bg-white/10 text-gray-400 hover:text-yellow-400 transition-colors"
+                        title="Toggle Theme"
+                    >
+                        {isDark ? <Sun className="w-5 h-5" /> : <Moon className="w-5 h-5" />}
+                    </button>
+
+                    <button className="p-2 rounded-full hover:bg-white/10 text-gray-400 hover:text-white transition-colors relative">
+                        <Bell className="w-5 h-5" />
+                        <span className="absolute top-1.5 right-1.5 w-2 h-2 bg-red-500 rounded-full border-2 border-[#1a1a1a]"></span>
+                    </button>
+
+                    <div className="h-6 w-px bg-white/10 hidden md:block"></div>
+
+                    {/* User Profile */}
+                    <button className="flex items-center gap-3 pl-2 pr-1 py-1 rounded-full hover:bg-white/5 border border-transparent hover:border-white/10 transition-all group">
+                        <div className="text-right hidden md:block">
+                            <div className="text-xs font-bold text-white group-hover:text-sage-400 transition-colors">IDRIS LOUKI</div>
+                            <div className="text-[10px] text-gray-400">Production Admin</div>
                         </div>
-                    </div>
-
-                    {/* Icons Toolbar */}
-                    <div className="flex items-center h-full">
-                        <button className="text-white hover:text-gray-300 transition-colors bg-transparent p-1.5 rounded-full hover:bg-white/10 mx-1">
-                            <HelpCircle className="w-5 h-5" />
-                        </button>
-
-                        {/* Star Menu with Green Background */}
-                        <div className="flex items-center bg-[#007040] h-10 px-2 mx-1 cursor-pointer hover:bg-[#00854d] transition-colors relative group">
-                            <Star className="w-5 h-5 fill-white text-white" />
-                            <ChevronDown className="w-3 h-3 ml-1 text-white" />
+                        <div className="w-8 h-8 rounded-full bg-gradient-to-br from-sage-500 to-sage-700 flex items-center justify-center text-white font-bold text-xs shadow-lg ring-2 ring-transparent group-hover:ring-sage-500/50 transition-all">
+                            IL
                         </div>
-
-                        {/* Compass - Mega Menu Toggle */}
-                        <button
-                            onClick={() => setIsMegaMenuOpen(!isMegaMenuOpen)}
-                            className={cn(
-                                "text-white hover:text-gray-300 transition-colors p-1.5 mx-1 rounded-full",
-                                isMegaMenuOpen && "bg-white/10 text-white"
-                            )}
-                        >
-                            <Compass className="w-6 h-6" strokeWidth={1.5} />
-                        </button>
-
-                        <button className="text-white hover:text-gray-300 transition-colors p-1.5 mx-1">
-                            <Search className="w-5 h-5" />
-                        </button>
-                    </div>
+                    </button>
                 </div>
             </header>
 
             {/* Main Split Content */}
-            <div className="flex-1 overflow-hidden relative flex flex-row">
+            <div className="flex-1 overflow-hidden relative flex flex-row group/layout">
 
                 {/* MODE: SPLIT VIEW (Default) */}
                 {mode === 'split' && (
@@ -92,35 +128,47 @@ export const MasterLayout: React.FC<MasterLayoutProps> = ({
                         className="flex h-full flex-1"
                         sizes={[25, 75]}
                         minSize={[0, 400]}
-                        gutterSize={6}
+                        gutterSize={12} // Wider gutter for the handle
                         snapOffset={30}
                         dragInterval={1}
                         direction="horizontal"
                         cursor="col-resize"
+                        gutter={(index, direction) => {
+                            const gutter = document.createElement('div')
+                            gutter.className = `gutter gutter-${direction} relative flex items-center justify-center bg-gray-50/50 hover:bg-sage-50 transition-colors border-l border-r border-gray-200`
+                            // We will inject the handle logic via React, but for raw DOM we need to be careful.
+                            // Actually, react-split controls the DOM. Best way is to just style the gutter via CSS or
+                            // overlay a button. Let's overlay a button in the main React tree absolute positioned over the gutter area.
+                            return gutter
+                        }}
                     >
                         {/* LEFT PANE: Data/List */}
-                        <div className="h-full overflow-hidden bg-white border-r border-gray-200 flex flex-col relative group">
-                            <div className="absolute right-2 top-2 z-50 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                        <div className="h-full overflow-hidden bg-white flex flex-col relative min-w-0 group/pane">
+                            {/* Controls Container */}
+                            <div className="absolute right-2 top-2 z-50 flex gap-1 opacity-0 group-hover/pane:opacity-100 transition-opacity duration-200">
+                                {/* Maximize Button - Restore Full Screen Table */}
                                 <button
                                     onClick={() => setMode('table')}
-                                    className="p-1 bg-white border border-gray-200 shadow-sm rounded-md text-gray-400 hover:text-gray-600 hover:bg-gray-50"
-                                    title="Maximize Table"
+                                    className="p-1.5 bg-white border border-gray-200 shadow-sm rounded-md text-gray-400 hover:text-sage-600 hover:border-sage-300 hover:bg-sage-50 transition-all"
+                                    title="Maximize List"
                                 >
-                                    <Maximize2 className="w-4 h-4" />
+                                    <Maximize2 className="w-3.5 h-3.5" />
                                 </button>
+
+                                {/* Collapse Button */}
                                 <button
                                     onClick={() => setMode('details')}
-                                    className="p-1 bg-white border border-gray-200 shadow-sm rounded-md text-gray-400 hover:text-gray-600 hover:bg-gray-50"
-                                    title="Collapse Table"
+                                    className="p-1.5 bg-white border border-gray-200 shadow-sm rounded-md text-gray-400 hover:text-sage-600 hover:border-sage-300 hover:bg-sage-50 transition-all"
+                                    title="Collapse Sidebar"
                                 >
-                                    <ChevronLeft className="w-4 h-4" />
+                                    <ChevronLeft className="w-3.5 h-3.5" />
                                 </button>
                             </div>
                             {leftContent}
                         </div>
 
                         {/* MIDDLE PANE: Details */}
-                        <div className="h-full overflow-y-auto bg-slate-50 flex flex-col">
+                        <div className="h-full overflow-y-auto overflow-x-hidden bg-slate-50 flex flex-col relative min-w-0">
                             {mainContent}
                         </div>
                     </Split>
@@ -129,13 +177,14 @@ export const MasterLayout: React.FC<MasterLayoutProps> = ({
                 {/* MODE: FULL TABLE (Maximized Left) */}
                 {mode === 'table' && (
                     <div className="flex h-full flex-1">
-                        <div className="flex-1 h-full overflow-hidden bg-white relative group">
+                        <div className="flex-1 h-full overflow-hidden bg-white relative">
                             <button
                                 onClick={() => setMode('split')}
-                                className="absolute right-2 top-2 z-50 p-1 bg-white border border-gray-200 shadow-sm rounded-md text-gray-400 hover:text-gray-600 hover:bg-gray-50 opacity-0 group-hover:opacity-100 transition-opacity"
+                                className="absolute right-4 top-3 z-50 flex items-center gap-2 px-3 py-1.5 bg-white border border-gray-200 shadow-sm rounded-md text-sm font-medium text-gray-600 hover:text-sage-600 hover:border-sage-300 hover:bg-sage-50 transition-all"
                                 title="Restore Split View"
                             >
                                 <Minimize2 className="w-4 h-4" />
+                                <span>Split View</span>
                             </button>
                             {leftContent}
                         </div>
@@ -145,14 +194,21 @@ export const MasterLayout: React.FC<MasterLayoutProps> = ({
                 {/* MODE: FULL DETAILS (Collapsed Left) */}
                 {mode === 'details' && (
                     <div className="flex h-full flex-1">
-                        {/* Collapsed Strip */}
+                        {/* Collapsed Strip - Sage Style */}
                         <div
-                            className="w-5 bg-gray-50 border-r border-gray-200 flex flex-col items-center py-2 hover:bg-gray-100 cursor-pointer transition-colors group"
+                            className="w-8 bg-[#2c3e50] border-r border-gray-700 flex flex-col items-center py-4 cursor-pointer hover:bg-[#34495e] transition-colors relative"
                             onClick={() => setMode('split')}
                             title="Expand Sidebar"
                         >
-                            <div className="w-1 h-8 bg-gray-300 group-hover:bg-[#00b06b] rounded-full transition-colors mb-2"></div>
-                            <ChevronRight className="w-4 h-4 text-gray-400 group-hover:text-gray-600 mt-1" />
+                            <div className="absolute top-6 -right-3 z-50 w-6 h-6 bg-white border border-gray-200 shadow-md rounded-full flex items-center justify-center text-gray-500 hover:text-sage-600 hover:border-sage-300 transition-all">
+                                <ChevronRight className="w-3 h-3" />
+                            </div>
+
+                            {/* Vertical Text or Icon Placeholder */}
+                            <div className="mt-10 [writing-mode:vertical-lr] rotate-180 text-xs font-medium text-gray-400 tracking-widest uppercase flex items-center gap-2">
+                                <span className="w-8 h-px bg-gray-600 mb-2"></span>
+                                LISTE
+                            </div>
                         </div>
 
                         {/* Expanded Main Content */}
@@ -163,7 +219,9 @@ export const MasterLayout: React.FC<MasterLayoutProps> = ({
                 )}
 
                 {/* RIGHT BAR: Fixed Actions (Always visible) */}
-                {rightContent}
+                <div className="shrink-0 z-30 h-full bg-white shadow-xl border-l border-gray-200">
+                    {rightContent}
+                </div>
             </div>
         </div>
     );

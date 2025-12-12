@@ -160,9 +160,9 @@ export const EntityRecordExample: React.FC<EntityRecordExampleProps> = ({ data }
     };
 
     return (
-        <div className="flex flex-col h-full bg-slate-50">
+        <div className="flex flex-col h-full bg-slate-50 overflow-hidden">
             {/* Top Tabs Area */}
-            <div className="shrink-0 bg-white z-10">
+            <div className="shrink-0 bg-white z-10 min-w-0">
                 <SageTabs
                     tabs={tabs}
                     activeTabId={activeTab}

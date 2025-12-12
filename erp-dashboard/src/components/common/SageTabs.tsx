@@ -61,7 +61,7 @@ export const SageTabs: React.FC<SageTabsProps> = ({
     }, [tabs]);
 
     return (
-        <div className={cn("relative flex items-end justify-between border-b border-gray-300 bg-[#f5f6f7] pt-2 px-2", className)}>
+        <div className={cn("relative flex items-end justify-between border-b border-gray-300 bg-[#f5f6f7] pt-2 px-2 min-w-0", className)}>
             {/* Scroll Container with Shadows */}
             <div className="relative flex-1 overflow-hidden">
                 {/* Left Shadow */}
