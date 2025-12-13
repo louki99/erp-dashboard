@@ -22,6 +22,8 @@ import { useAdvPartners, useAdvPartnerDetail } from '@/hooks/adv/useAdvPartners'
 import { useValidatePartner, useRejectPartner } from '@/hooks/adv/useAdvActions';
 import type { Partner, PaymentTerm } from '@/types/adv.types';
 import { cn } from '@/lib/utils';
+import { PERMISSIONS } from '@/lib/rbac/permissions';
+import { Can } from '@/components/rbac';
 
 // Register AG Grid modules
 ModuleRegistry.registerModules([ClientSideRowModelModule, ValidationModule]);
@@ -88,20 +90,24 @@ const PartnerActionPanel = ({ onValidate, onReject, hasSelection }: PartnerActio
                 <div className="w-full flex justify-center mb-1">
                     <div className="w-6 h-0.5 bg-sage-500 rounded-full opacity-50"></div>
                 </div>
-                <ActionItem 
-                    icon={CheckCircle} 
-                    label="Valider Partenaire" 
-                    variant="sage" 
-                    onClick={onValidate}
-                    disabled={!hasSelection}
-                />
-                <ActionItem 
-                    icon={XCircle} 
-                    label="Rejeter Partenaire" 
-                    variant="danger" 
-                    onClick={onReject}
-                    disabled={!hasSelection}
-                />
+                <Can permission={PERMISSIONS.ADV.PARTNERS_VALIDATE}>
+                    <ActionItem 
+                        icon={CheckCircle} 
+                        label="Valider Partenaire" 
+                        variant="sage" 
+                        onClick={onValidate}
+                        disabled={!hasSelection}
+                    />
+                </Can>
+                <Can permission={PERMISSIONS.ADV.PARTNERS_REJECT}>
+                    <ActionItem 
+                        icon={XCircle} 
+                        label="Rejeter Partenaire" 
+                        variant="danger" 
+                        onClick={onReject}
+                        disabled={!hasSelection}
+                    />
+                </Can>
             </ActionGroup>
         </div>
     );

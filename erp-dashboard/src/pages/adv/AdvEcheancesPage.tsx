@@ -6,7 +6,6 @@ import { ModuleRegistry, ClientSideRowModelModule, ValidationModule } from 'ag-g
 import { MasterLayout } from '@/components/layout/MasterLayout';
 import { StatsCard } from '@/components/adv/StatsCard';
 import { useAdvEcheances } from '@/hooks/adv/useAdvEcheances';
-import type { Echeance } from '@/types/adv.types';
 
 // Register AG Grid modules
 ModuleRegistry.registerModules([ClientSideRowModelModule, ValidationModule]);

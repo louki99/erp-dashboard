@@ -1,6 +1,9 @@
 import { useState, useEffect, useMemo, useRef } from 'react';
 import apiClient from '@/services/api/client';
 import toast from 'react-hot-toast';
+import { usePermissions } from '@/hooks/usePermissions';
+import { PERMISSIONS } from '@/lib/rbac/permissions';
+import { Can } from '@/components/rbac';
 import {
     Search,
     Calendar,
@@ -236,38 +239,48 @@ interface AdvActionPanelProps {
 }
 
 const AdvActionPanel = ({ onApprove, onReject, onHold, hasSelection }: AdvActionPanelProps) => {
+    const { has } = usePermissions();
+    
     return (
         <div className="flex flex-col h-full bg-white dark:bg-black border-l border-gray-200 dark:border-gray-800 w-11 shrink-0 shadow-[0_0_15px_rgba(0,0,0,0.05)] z-40 transition-all duration-300">
             <ActionGroup>
                 <div className="w-full flex justify-center mb-1">
                     <div className="w-6 h-0.5 bg-sage-500 rounded-full opacity-50"></div>
                 </div>
-                <ActionItem
-                    icon={CheckCircle}
-                    label="Valider BC"
-                    variant="sage"
-                    onClick={onApprove}
-                    disabled={!hasSelection}
-                />
-                <ActionItem
-                    icon={XCircle}
-                    label="Rejeter"
-                    variant="danger"
-                    onClick={onReject}
-                    disabled={!hasSelection}
-                />
-                <ActionItem
-                    icon={Clock}
-                    label="Mettre en attente"
-                    variant="warning"
-                    onClick={onHold}
-                    disabled={!hasSelection}
-                />
+                <Can permission={PERMISSIONS.ADV.BC_APPROVE}>
+                    <ActionItem
+                        icon={CheckCircle}
+                        label="Valider BC"
+                        variant="sage"
+                        onClick={onApprove}
+                        disabled={!hasSelection}
+                    />
+                </Can>
+                <Can permission={PERMISSIONS.ADV.BC_REJECT}>
+                    <ActionItem
+                        icon={XCircle}
+                        label="Rejeter"
+                        variant="danger"
+                        onClick={onReject}
+                        disabled={!hasSelection}
+                    />
+                </Can>
+                <Can permission={PERMISSIONS.ADV.BC_HOLD}>
+                    <ActionItem
+                        icon={Clock}
+                        label="Mettre en attente"
+                        variant="warning"
+                        onClick={onHold}
+                        disabled={!hasSelection}
+                    />
+                </Can>
             </ActionGroup>
 
             <ActionGroup>
                 <ActionItem icon={Printer} label="Imprimer" variant="default" disabled={!hasSelection} />
-                <ActionItem icon={Download} label="Exporter PDF" variant="default" disabled={!hasSelection} />
+                <Can permission={PERMISSIONS.ADV.BC_EXPORT}>
+                    <ActionItem icon={Download} label="Exporter PDF" variant="default" disabled={!hasSelection} />
+                </Can>
                 <ActionItem icon={Share2} label="Partager" variant="primary" disabled={!hasSelection} />
             </ActionGroup>
 
@@ -843,6 +856,7 @@ const BcDetailView = ({ bc }: { bc: BC }) => {
 };
 
 export const AdvValidationPage = () => {
+    const { has } = usePermissions();
     const [bcs, setBcs] = useState<BC[]>([]);
     const [selectedBcId, setSelectedBcId] = useState<number | null>(null);
     const [selectedBcDetails, setSelectedBcDetails] = useState<BC | null>(null);
@@ -888,6 +902,18 @@ export const AdvValidationPage = () => {
 
     const handleAction = (action: 'approve' | 'reject' | 'hold') => {
         if (!selectedBcId) return;
+
+        // Check permissions
+        const permissionMap = {
+            approve: PERMISSIONS.ADV.BC_APPROVE,
+            reject: PERMISSIONS.ADV.BC_REJECT,
+            hold: PERMISSIONS.ADV.BC_HOLD
+        };
+
+        if (!has(permissionMap[action])) {
+            toast.error('Vous n\'avez pas la permission pour cette action');
+            return;
+        }
 
         // Reset form state
         setApprovalMode('standard');

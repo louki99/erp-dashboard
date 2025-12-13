@@ -9,6 +9,9 @@ import { useAdvDerogations } from '@/hooks/adv/useAdvDerogations';
 import { useApproveDerogation, useRejectDerogation } from '@/hooks/adv/useAdvActions';
 import type { CreditDerogation, DerogationStatus } from '@/types/adv.types';
 import { cn } from '@/lib/utils';
+import { usePermissions } from '@/hooks/usePermissions';
+import { PERMISSIONS } from '@/lib/rbac/permissions';
+import { Can } from '@/components/rbac';
 
 // Register AG Grid modules
 ModuleRegistry.registerModules([ClientSideRowModelModule, ValidationModule]);

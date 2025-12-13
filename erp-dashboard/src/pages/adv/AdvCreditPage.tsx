@@ -17,6 +17,9 @@ import { useAdvCredit } from '@/hooks/adv/useAdvCredit';
 import { useUpdateCreditLimit, useBlockPartner, useUnblockPartner } from '@/hooks/adv/useAdvActions';
 import type { Partner } from '@/types/adv.types';
 import { cn } from '@/lib/utils';
+import { usePermissions } from '@/hooks/usePermissions';
+import { PERMISSIONS } from '@/lib/rbac/permissions';
+import { Can } from '@/components/rbac';
 
 // Register AG Grid modules
 ModuleRegistry.registerModules([ClientSideRowModelModule, ValidationModule]);
@@ -77,29 +80,35 @@ const CreditActionPanel = ({ onUpdateLimit, onBlock, onUnblock, hasSelection, is
                 <div className="w-full flex justify-center mb-1">
                     <div className="w-6 h-0.5 bg-sage-500 rounded-full opacity-50"></div>
                 </div>
-                <ActionItem 
-                    icon={DollarSign} 
-                    label="Modifier Plafond" 
-                    variant="primary" 
-                    onClick={onUpdateLimit}
-                    disabled={!hasSelection}
-                />
+                <Can permission={PERMISSIONS.ADV.CREDIT_UPDATE_LIMIT}>
+                    <ActionItem 
+                        icon={DollarSign} 
+                        label="Modifier Plafond" 
+                        variant="primary" 
+                        onClick={onUpdateLimit}
+                        disabled={!hasSelection}
+                    />
+                </Can>
                 {isBlocked ? (
-                    <ActionItem 
-                        icon={Unlock} 
-                        label="Débloquer Partenaire" 
-                        variant="sage" 
-                        onClick={onUnblock}
-                        disabled={!hasSelection}
-                    />
+                    <Can permission={PERMISSIONS.ADV.PARTNERS_UNBLOCK}>
+                        <ActionItem 
+                            icon={Unlock} 
+                            label="Débloquer Partenaire" 
+                            variant="sage" 
+                            onClick={onUnblock}
+                            disabled={!hasSelection}
+                        />
+                    </Can>
                 ) : (
-                    <ActionItem 
-                        icon={Lock} 
-                        label="Bloquer Partenaire" 
-                        variant="danger" 
-                        onClick={onBlock}
-                        disabled={!hasSelection}
-                    />
+                    <Can permission={PERMISSIONS.ADV.PARTNERS_BLOCK}>
+                        <ActionItem 
+                            icon={Lock} 
+                            label="Bloquer Partenaire" 
+                            variant="danger" 
+                            onClick={onBlock}
+                            disabled={!hasSelection}
+                        />
+                    </Can>
                 )}
             </ActionGroup>
         </div>
@@ -336,14 +345,13 @@ const AdvCreditContent = () => {
             headerName: 'Statut',
             field: 'credit_hold',
             width: 100,
-            cellRenderer: (params: any) => {
-                const span = document.createElement('span');
-                span.className = params.value
+            cellRenderer: (params: any) => (
+                <span className={params.value
                     ? 'px-2 py-0.5 rounded text-xs font-medium bg-red-100 text-red-700'
-                    : 'px-2 py-0.5 rounded text-xs font-medium bg-emerald-100 text-emerald-700';
-                span.textContent = params.value ? 'Bloqué' : 'Actif';
-                return span;
-            },
+                    : 'px-2 py-0.5 rounded text-xs font-medium bg-emerald-100 text-emerald-700'}>
+                    {params.value ? 'Bloqué' : 'Actif'}
+                </span>
+            ),
         },
     ], []);
 

@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import apiClient from '@/services/api/client';
+import type { RoleDetails, UserPermissions, UserCapabilities, UserPreferences } from '@/types/rbac.types';
 
 interface User {
     id: number;
@@ -9,11 +10,29 @@ interface User {
     gender?: string;
     date_of_birth?: string;
     branch_code?: string;
-    roles: Array<{
+    geo_area_code?: string | null;
+    company_id?: string | null;
+    is_active: boolean;
+    created_at: string;
+    updated_at: string;
+    profile_image?: {
         id: number;
+        url: string;
+        thumbnail: string;
+        type: string;
+    } | null;
+    branch?: {
+        code: string;
         name: string;
-    }>;
-    permissions: any[];
+        address: string;
+        phone: string;
+    } | null;
+    geo_area?: any | null;
+    roles: RoleDetails;
+    permissions: UserPermissions;
+    permissions_grouped?: Record<string, Record<string, string[]>>;
+    can: UserCapabilities;
+    preferences?: UserPreferences;
     media?: {
         id: number;
         type: string;

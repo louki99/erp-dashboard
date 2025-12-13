@@ -1,7 +1,8 @@
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { Toaster } from 'react-hot-toast';
 import { AuthProvider } from '@/context/AuthContext';
-import { ProtectedRoute } from '@/components/auth/ProtectedRoute';
+import { ProtectedRoute } from '@/components/rbac';
+import { PERMISSIONS } from '@/lib/rbac/permissions';
 import { Login } from '@/pages/Login';
 import { PartnerPage } from '@/components/layout/PartnerPage';
 import { OrdersPage } from '@/pages/OrdersPage';
@@ -40,20 +41,73 @@ function AppRoutes() {
 
       {/* Protected Routes */}
       <Route path="/" element={<ProtectedRoute><Navigate to="/dashboard" replace /></ProtectedRoute>} />
-      <Route path="/dashboard" element={<ProtectedRoute><DashboardPage /></ProtectedRoute>} />
-      <Route path="/partners" element={<ProtectedRoute><PartnerPage /></ProtectedRoute>} />
-      <Route path="/partners" element={<ProtectedRoute><PartnerPage /></ProtectedRoute>} />
-      <Route path="/orders" element={<ProtectedRoute><OrdersPage /></ProtectedRoute>} />
-      <Route path="/profile" element={<ProtectedRoute><ProfilePage /></ProtectedRoute>} />
+      
+      <Route path="/dashboard" element={
+        <ProtectedRoute requiredPermission={PERMISSIONS.DASHBOARD.VIEW}>
+          <DashboardPage />
+        </ProtectedRoute>
+      } />
+      
+      <Route path="/partners" element={
+        <ProtectedRoute requiredPermission={PERMISSIONS.PARTNERS.INDEX}>
+          <PartnerPage />
+        </ProtectedRoute>
+      } />
+      
+      <Route path="/orders" element={
+        <ProtectedRoute requiredPermission={PERMISSIONS.BON_COMMANDES.INDEX}>
+          <OrdersPage />
+        </ProtectedRoute>
+      } />
+      
+      <Route path="/profile" element={
+        <ProtectedRoute>
+          <ProfilePage />
+        </ProtectedRoute>
+      } />
 
       {/* ADV Module Routes */}
-      <Route path="/adv" element={<ProtectedRoute><AdvDashboard /></ProtectedRoute>} />
-      <Route path="/adv/dashboard" element={<ProtectedRoute><AdvDashboard /></ProtectedRoute>} />
-      <Route path="/adv/validation" element={<ProtectedRoute><AdvValidationPage /></ProtectedRoute>} />
-      <Route path="/adv/partners" element={<ProtectedRoute><AdvPartnersPage /></ProtectedRoute>} />
-      <Route path="/adv/credit" element={<ProtectedRoute><AdvCreditPage /></ProtectedRoute>} />
-      <Route path="/adv/echeances" element={<ProtectedRoute><AdvEcheancesPage /></ProtectedRoute>} />
-      <Route path="/adv/derogations" element={<ProtectedRoute><AdvDerogationsPage /></ProtectedRoute>} />
+      <Route path="/adv" element={
+        <ProtectedRoute requiredPermission={PERMISSIONS.ADV.DASHBOARD}>
+          <AdvDashboard />
+        </ProtectedRoute>
+      } />
+      
+      <Route path="/adv/dashboard" element={
+        <ProtectedRoute requiredPermission={PERMISSIONS.ADV.DASHBOARD}>
+          <AdvDashboard />
+        </ProtectedRoute>
+      } />
+      
+      <Route path="/adv/validation" element={
+        <ProtectedRoute requiredPermission={[PERMISSIONS.ADV.BC_INDEX, PERMISSIONS.ADV.BC_PENDING]}>
+          <AdvValidationPage />
+        </ProtectedRoute>
+      } />
+      
+      <Route path="/adv/partners" element={
+        <ProtectedRoute requiredPermission={PERMISSIONS.ADV.PARTNERS_INDEX}>
+          <AdvPartnersPage />
+        </ProtectedRoute>
+      } />
+      
+      <Route path="/adv/credit" element={
+        <ProtectedRoute requiredPermission={PERMISSIONS.ADV.CREDIT_INDEX}>
+          <AdvCreditPage />
+        </ProtectedRoute>
+      } />
+      
+      <Route path="/adv/echeances" element={
+        <ProtectedRoute requiredPermission={PERMISSIONS.ADV.ECHEANCES_INDEX}>
+          <AdvEcheancesPage />
+        </ProtectedRoute>
+      } />
+      
+      <Route path="/adv/derogations" element={
+        <ProtectedRoute requiredPermission={PERMISSIONS.ADV.BC_INDEX}>
+          <AdvDerogationsPage />
+        </ProtectedRoute>
+      } />
 
 
       {/* Catch all */}
