@@ -89,6 +89,26 @@ export const PERMISSIONS = {
         WORKFLOW_REJECT: 'admin.adv.workflow.reject',
     },
 
+    // Dispatcher Module
+    DISPATCHER: {
+        DASHBOARD: 'admin.dispatcher.dashboard',
+        ORDERS_PENDING: 'admin.dispatcher.orders.pending',
+        ORDERS_SHOW: 'admin.dispatcher.orders.show',
+        ORDERS_CONVERT_TO_BL: 'admin.dispatcher.orders.convert-to-bl',
+
+        BON_LIVRAISONS_DRAFT: 'admin.dispatcher.bon-livraisons.draft',
+        BON_LIVRAISONS_INDEX: 'admin.dispatcher.bon-livraisons.index',
+        BON_LIVRAISONS_SHOW: 'admin.dispatcher.bon-livraisons.show',
+        BON_LIVRAISONS_EDIT: 'admin.dispatcher.bon-livraisons.edit',
+        BON_LIVRAISONS_UPDATE: 'admin.dispatcher.bon-livraisons.update',
+
+        BON_CHARGEMENTS_CREATE: 'admin.dispatcher.bon-chargements.create',
+        BON_CHARGEMENTS_INDEX: 'admin.dispatcher.bon-chargements.index',
+        BON_CHARGEMENTS_SHOW: 'admin.dispatcher.bon-chargements.show',
+        BON_CHARGEMENTS_VALIDATE: 'admin.dispatcher.bon-chargements.validate',
+        BON_CHARGEMENTS_BALANCE: 'admin.dispatcher.bon-chargements.balance',
+    },
+
     // Bon de Commandes
     BON_COMMANDES: {
         INDEX: 'admin.bon-commandes.index',
@@ -223,6 +243,15 @@ export const PAGE_PERMISSIONS: Record<string, string | string[]> = {
     '/adv/derogations': PERMISSIONS.ADV.BC_INDEX,
     '/adv/partners': PERMISSIONS.ADV.PARTNERS_INDEX,
     '/adv/echeances': PERMISSIONS.ADV.ECHEANCES_INDEX,
+
+    // Dispatcher Module
+    '/dispatcher': PERMISSIONS.DISPATCHER.DASHBOARD,
+    '/dispatcher/dashboard': PERMISSIONS.DISPATCHER.DASHBOARD,
+    '/dispatcher/orders': PERMISSIONS.DISPATCHER.ORDERS_PENDING,
+    '/dispatcher/bon-livraisons/draft': PERMISSIONS.DISPATCHER.BON_LIVRAISONS_DRAFT,
+    '/dispatcher/bon-livraisons': PERMISSIONS.DISPATCHER.BON_LIVRAISONS_INDEX,
+    '/dispatcher/bon-chargements/create': PERMISSIONS.DISPATCHER.BON_CHARGEMENTS_CREATE,
+    '/dispatcher/bon-chargements': PERMISSIONS.DISPATCHER.BON_CHARGEMENTS_INDEX,
     
     // Payments
     '/payments': PERMISSIONS.PAYMENTS.DASHBOARD,

@@ -1,5 +1,5 @@
 import { AgGridReact } from 'ag-grid-react';
-import { AllCommunityModule, ModuleRegistry, themeQuartz } from 'ag-grid-community';
+import { AllCommunityModule, ModuleRegistry } from 'ag-grid-community';
 import { useState } from 'react';
 
 // Register all Community features
@@ -9,10 +9,13 @@ interface DataGridProps {
     rowData: any[];
     columnDefs: any[];
     onRowSelected?: (data: any) => void;
+    onSelectionChanged?: (rows: any[]) => void;
+    onRowDoubleClicked?: (data: any) => void;
+    rowSelection?: 'single' | 'multiple';
     loading?: boolean;
 }
 
-export const DataGrid = ({ rowData, columnDefs, onRowSelected, loading }: DataGridProps) => {
+export const DataGrid = ({ rowData, columnDefs, onRowSelected, onSelectionChanged, onRowDoubleClicked, rowSelection = 'single', loading }: DataGridProps) => {
     const [gridApi, setGridApi] = useState<any>(null);
 
     const defaultColDef = {
@@ -55,11 +58,21 @@ export const DataGrid = ({ rowData, columnDefs, onRowSelected, loading }: DataGr
                     rowData={rowData}
                     columnDefs={columnDefs}
                     defaultColDef={defaultColDef}
-                    rowSelection={{ mode: "singleRow", checkboxes: false, enableClickSelection: true }}
+                    rowSelection={rowSelection === 'multiple' 
+                        ? { mode: "multiRow", checkboxes: true, enableClickSelection: false }
+                        : { mode: "singleRow", checkboxes: false, enableClickSelection: true }
+                    }
                     onSelectionChanged={(event) => {
                         const selectedRows = event.api.getSelectedRows();
-                        if (selectedRows.length > 0 && onRowSelected) {
+                        if (rowSelection === 'multiple' && onSelectionChanged) {
+                            onSelectionChanged(selectedRows);
+                        } else if (selectedRows.length > 0 && onRowSelected) {
                             onRowSelected(selectedRows[0]);
+                        }
+                    }}
+                    onRowDoubleClicked={(event) => {
+                        if (onRowDoubleClicked && event.data) {
+                            onRowDoubleClicked(event.data);
                         }
                     }}
                     onGridReady={onGridReady}

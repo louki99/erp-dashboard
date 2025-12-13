@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Search, X, LayoutGrid, Package, BarChart3, Settings, Database, ShoppingCart } from 'lucide-react';
+import { Search, Package, BarChart3, Settings, Database, ShoppingCart } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { motion, AnimatePresence } from 'framer-motion';
 
@@ -77,6 +77,30 @@ const MENU_DATA: ModuleData[] = [
         ]
     },
     {
+        id: 'dispatcher',
+        label: 'Dispatcher',
+        icon: Package,
+        description: 'Dispatcher - Conversion BC, gestion BL et bons de chargement',
+        categories: [
+            {
+                title: 'Tableau de Bord',
+                items: ['Tableau de bord Dispatcher']
+            },
+            {
+                title: 'Commandes',
+                items: ['Commandes en attente']
+            },
+            {
+                title: 'Bon de Livraison',
+                items: ['BL brouillons', 'BL (liste)']
+            },
+            {
+                title: 'Bon de Chargement',
+                items: ['Créer BCH', 'BCH (liste)']
+            }
+        ]
+    },
+    {
         id: 'base',
         label: 'Données de base',
         icon: Database,
@@ -131,6 +155,14 @@ export const MegaMenu: React.FC<MegaMenuProps> = ({ isOpen, onClose }) => {
         'Échéances': '/adv/echeances',
         'Validation BC': '/adv/validation',
         'Dérogations Crédit': '/adv/derogations',
+
+        // Dispatcher Module Routes
+        'Tableau de bord Dispatcher': '/dispatcher',
+        'Commandes en attente': '/dispatcher/orders',
+        'BL brouillons': '/dispatcher/bon-livraisons/draft',
+        'BL (liste)': '/dispatcher/bon-livraisons',
+        'Créer BCH': '/dispatcher/bon-chargements/create',
+        'BCH (liste)': '/dispatcher/bon-chargements',
 
         // Legacy ADV mappings (keep for compatibility)
         'Tableau de bord': '/adv',

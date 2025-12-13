@@ -1,4 +1,3 @@
-import { useState, useEffect } from 'react';
 import {
     Users,
     FileCheck,
@@ -9,57 +8,10 @@ import {
     Loader2 // Added for loading state
 } from 'lucide-react';
 import { MasterLayout } from '@/components/layout/MasterLayout';
-import apiClient from '@/services/api/client';
-
-interface AdvStats {
-    pending_partners: number;
-    pending_credit_approvals: number;
-    blocked_partners: number;
-    overdue_payments: number;
-    pending_bc: number;
-    total_credit_exposure: string;
-    available_credit: string;
-}
-
-interface CreditAlert {
-    id: number;
-    name: string;
-    credit_limit: string;
-    credit_used: string;
-    credit_hold: boolean;
-    created_at: string;
-    // Add other fields as needed from the payload
-}
-
-interface DashboardData {
-    stats: AdvStats;
-    recentPartners: any[]; // Assuming this is an array of any for now, as its structure wasn't detailed
-    creditAlerts: CreditAlert[];
-}
+import { useAdvDashboard } from '@/hooks/adv/useAdvDashboard';
 
 const AdvDashboardContent = () => {
-    const [data, setData] = useState<DashboardData | null>(null);
-    const [loading, setLoading] = useState(true);
-    const [error, setError] = useState<string | null>(null);
-
-    const fetchData = async () => {
-        setLoading(true);
-        setError(null);
-        try {
-            const response = await apiClient.get('/api/backend/adv/dashboard');
-            console.log("ADV Dashboard Data:", response.data);
-            setData(response.data);
-        } catch (err) {
-            console.error("Failed to fetch ADV dashboard data", err);
-            setError("Failed to load dashboard data.");
-        } finally {
-            setLoading(false);
-        }
-    };
-
-    useEffect(() => {
-        fetchData();
-    }, []);
+    const { data, loading, error, refetch } = useAdvDashboard();
 
     if (loading) {
         return (
@@ -75,7 +27,7 @@ const AdvDashboardContent = () => {
             <div className="p-8 text-center">
                 <p className="text-red-500 mb-4">{error || "No data available"}</p>
                 <button
-                    onClick={fetchData}
+                    onClick={refetch}
                     className="px-4 py-2 bg-sage-500 text-white rounded hover:bg-sage-600 transition-colors"
                 >
                     Retry
@@ -136,7 +88,7 @@ const AdvDashboardContent = () => {
                 </div>
                 <div className="flex gap-2">
                     <button
-                        onClick={fetchData}
+                        onClick={refetch}
                         className="px-4 py-2 bg-sage-600 text-white rounded-lg shadow-sm hover:bg-sage-700 transition-colors text-sm font-medium"
                     >
                         Rafraîchir

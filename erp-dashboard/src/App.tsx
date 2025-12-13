@@ -14,6 +14,11 @@ import { AdvPartnersPage } from '@/pages/adv/AdvPartnersPage';
 import { AdvCreditPage } from '@/pages/adv/AdvCreditPage';
 import { AdvEcheancesPage } from '@/pages/adv/AdvEcheancesPage';
 import { AdvDerogationsPage } from '@/pages/adv/AdvDerogationsPage';
+import { DispatcherDashboard } from '@/pages/dispatcher/DispatcherDashboard';
+import { DispatcherOrdersPage } from '@/pages/dispatcher/DispatcherOrdersPage';
+import { DispatcherBonLivraisonsPage } from '@/pages/dispatcher/DispatcherBonLivraisonsPage';
+import { DispatcherCreateBonChargementPage } from '@/pages/dispatcher/DispatcherCreateBonChargementPage';
+import { DispatcherBonChargementsPage } from '@/pages/dispatcher/DispatcherBonChargementsPage';
 import { MasterLayout } from '@/components/layout/MasterLayout';
 
 
@@ -106,6 +111,49 @@ function AppRoutes() {
       <Route path="/adv/derogations" element={
         <ProtectedRoute requiredPermission={PERMISSIONS.ADV.BC_INDEX}>
           <AdvDerogationsPage />
+        </ProtectedRoute>
+      } />
+
+      {/* Dispatcher Module Routes */}
+      <Route path="/dispatcher" element={
+        <ProtectedRoute requiredPermission={PERMISSIONS.DISPATCHER.DASHBOARD}>
+          <DispatcherDashboard />
+        </ProtectedRoute>
+      } />
+
+      <Route path="/dispatcher/dashboard" element={
+        <ProtectedRoute requiredPermission={PERMISSIONS.DISPATCHER.DASHBOARD}>
+          <DispatcherDashboard />
+        </ProtectedRoute>
+      } />
+
+      <Route path="/dispatcher/orders" element={
+        <ProtectedRoute requiredPermission={PERMISSIONS.DISPATCHER.ORDERS_PENDING}>
+          <DispatcherOrdersPage />
+        </ProtectedRoute>
+      } />
+
+      <Route path="/dispatcher/bon-livraisons/draft" element={
+        <ProtectedRoute requiredPermission={PERMISSIONS.DISPATCHER.BON_LIVRAISONS_DRAFT}>
+          <DispatcherBonLivraisonsPage />
+        </ProtectedRoute>
+      } />
+
+      <Route path="/dispatcher/bon-livraisons" element={
+        <ProtectedRoute requiredPermission={PERMISSIONS.DISPATCHER.BON_LIVRAISONS_INDEX}>
+          <DispatcherBonLivraisonsPage />
+        </ProtectedRoute>
+      } />
+
+      <Route path="/dispatcher/bon-chargements/create" element={
+        <ProtectedRoute requiredPermission={PERMISSIONS.DISPATCHER.BON_CHARGEMENTS_CREATE}>
+          <DispatcherCreateBonChargementPage />
+        </ProtectedRoute>
+      } />
+
+      <Route path="/dispatcher/bon-chargements" element={
+        <ProtectedRoute requiredPermission={PERMISSIONS.DISPATCHER.BON_CHARGEMENTS_INDEX}>
+          <DispatcherBonChargementsPage />
         </ProtectedRoute>
       } />
 
