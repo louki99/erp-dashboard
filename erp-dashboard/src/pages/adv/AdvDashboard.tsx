@@ -9,7 +9,7 @@ import {
     Loader2 // Added for loading state
 } from 'lucide-react';
 import { MasterLayout } from '@/components/layout/MasterLayout';
-import axios from 'axios';
+import apiClient from '@/services/api/client';
 
 interface AdvStats {
     pending_partners: number;
@@ -46,7 +46,7 @@ const AdvDashboardContent = () => {
         setLoading(true);
         setError(null);
         try {
-            const response = await axios.get('http://localhost:8000/api/backend/adv/dashboard');
+            const response = await apiClient.get('/api/backend/adv/dashboard');
             console.log("ADV Dashboard Data:", response.data);
             setData(response.data);
         } catch (err) {

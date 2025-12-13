@@ -56,10 +56,24 @@ const MENU_DATA: ModuleData[] = [
         id: 'adv',
         label: 'ADV',
         icon: Package,
-        description: 'adminstrateur de vente',
+        description: 'Administration des Ventes - Gestion partenaires, crédit et validations',
         categories: [
-            { title: 'Controles', items: ['Tableau de bord', 'Partner Validation', 'Credit Management', 'BC Approval', 'Écheances'] },
-            { title: 'Encaissement', items: ['Encaissement', 'Lettrages', 'Encours clients'] }
+            {
+                title: 'Tableau de Bord',
+                items: ['Tableau de bord ADV']
+            },
+            {
+                title: 'Gestion Partenaires',
+                items: ['Validation Partenaires', 'Liste Partenaires']
+            },
+            {
+                title: 'Gestion Crédit',
+                items: ['Gestion Crédit', 'Échéances']
+            },
+            {
+                title: 'Validation BC',
+                items: ['Validation BC', 'Dérogations Crédit']
+            }
         ]
     },
     {
@@ -109,10 +123,20 @@ export const MegaMenu: React.FC<MegaMenuProps> = ({ isOpen, onClose }) => {
 
     // Route Mapping Configuration
     const ROUTE_MAPPING: Record<string, string> = {
-        // ADV Actions
-        'Tableau de bord': '/adv/dashboard',
-        'Partner Validation': '/adv/validation',
+        // ADV Module Routes
+        'Tableau de bord ADV': '/adv',
+        'Validation Partenaires': '/adv/partners',
+        'Liste Partenaires': '/adv/partners',
+        'Gestion Crédit': '/adv/credit',
+        'Échéances': '/adv/echeances',
+        'Validation BC': '/adv/validation',
+        'Dérogations Crédit': '/adv/derogations',
+
+        // Legacy ADV mappings (keep for compatibility)
+        'Tableau de bord': '/adv',
+        'Partner Validation': '/adv/partners',
         'Credit Management': '/adv/credit',
+        'BC Approval': '/adv/validation',
 
         // Orders
         'Commandes': '/orders',
@@ -127,6 +151,7 @@ export const MegaMenu: React.FC<MegaMenuProps> = ({ isOpen, onClose }) => {
         // General Fallbacks
         'default': '/dashboard'
     };
+
 
     const handleNavigation = (itemLabel: string) => {
         onClose();

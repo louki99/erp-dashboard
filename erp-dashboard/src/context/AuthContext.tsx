@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
-import axios from 'axios';
+import apiClient from '@/services/api/client';
 
 interface User {
     id: number;
@@ -38,7 +38,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     useEffect(() => {
         // Check for persisted user session
         const storedUser = localStorage.getItem('erp_user');
-        const storedToken = localStorage.getItem('erp_token');
 
         if (storedUser) {
             try {
@@ -49,16 +48,15 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             }
         }
 
-        if (storedToken) {
-            axios.defaults.headers.common['Authorization'] = `Bearer ${storedToken}`;
-        }
+        // Token is automatically added by apiClient interceptor from localStorage
+        // No need to set it manually here
 
         setLoading(false);
     }, []);
 
     const login = async (email: string, password: string) => {
         try {
-            const response = await axios.post('http://localhost:8000/api/backend/login', {
+            const response = await apiClient.post('/api/backend/login', {
                 email,
                 password
             });
@@ -72,7 +70,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
                 if (token) {
                     localStorage.setItem('erp_token', token);
-                    axios.defaults.headers.common['Authorization'] = `Bearer ${token}`; // Set global header
+                    // Token is automatically added by apiClient interceptor on next request
                 }
 
                 return { success: true };
@@ -92,7 +90,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         setUser(null);
         localStorage.removeItem('erp_user');
         localStorage.removeItem('erp_token');
-        delete axios.defaults.headers.common['Authorization'];
+        // Token removal is handled by apiClient interceptor on next request
         // Optional: Call API to invalidate token if backend requires it
     };
 

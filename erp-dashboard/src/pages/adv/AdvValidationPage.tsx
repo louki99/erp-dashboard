@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo, useRef } from 'react';
-import axios from 'axios';
+import apiClient from '@/services/api/client';
 import toast from 'react-hot-toast';
 import {
     Search,
@@ -18,6 +18,7 @@ import {
     Printer,
     Download,
     Share2,
+    MapPin,
     MoreVertical
 } from 'lucide-react';
 import { AgGridReact } from 'ag-grid-react';
@@ -51,6 +52,13 @@ interface Product {
     code: string;
     stock?: number;
     quantity: number;
+    thumbnail?: string;
+    stocks?: {
+        branch_code: string;
+        quantity: string;
+        reserved_quantity: string;
+        available_quantity: string;
+    }[];
 }
 
 interface OrderProduct {
@@ -79,17 +87,105 @@ interface BC {
 }
 
 interface ApiResponse {
-    bcs: {
+    bcs?: {
         data: BC[];
         current_page: number;
         total: number;
     };
-    stats: {
+    bc?: BC;
+    stats?: {
         pending_review: number;
     };
 }
 
 // --- Action Panel Component ---
+
+interface User {
+    id: number;
+    name: string;
+    email: string;
+}
+
+interface DerogationModalProps {
+    isOpen: boolean;
+    onClose: () => void;
+    onSubmit: (responsableId: number, message: string) => void;
+    responsables: User[];
+    isLoading: boolean;
+}
+
+const DerogationModal = ({ isOpen, onClose, onSubmit, responsables, isLoading }: DerogationModalProps) => {
+    const [selectedResponsable, setSelectedResponsable] = useState<string>('');
+    const [message, setMessage] = useState('');
+
+    if (!isOpen) return null;
+
+    return (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
+            <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl w-full max-w-md overflow-hidden border border-gray-200 dark:border-gray-700">
+                <div className="p-6">
+                    <div className="flex items-center gap-3 mb-4 text-amber-600">
+                        <AlertTriangle className="w-6 h-6" />
+                        <h3 className="text-lg font-semibold">Demande de Dérogation</h3>
+                    </div>
+
+                    <p className="text-sm text-gray-600 dark:text-gray-300 mb-6">
+                        Le plafond de crédit est dépassé. Veuillez sélectionner un responsable pour demander une dérogation.
+                    </p>
+
+                    <div className="space-y-4">
+                        <div>
+                            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                                Responsable
+                            </label>
+                            <select
+                                value={selectedResponsable}
+                                onChange={(e) => setSelectedResponsable(e.target.value)}
+                                className="w-full rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-sage-500"
+                            >
+                                <option value="">Sélectionner un responsable</option>
+                                {responsables.map(user => (
+                                    <option key={user.id} value={user.id}>{user.name}</option>
+                                ))}
+                            </select>
+                        </div>
+
+                        <div>
+                            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                                Message
+                            </label>
+                            <textarea
+                                value={message}
+                                onChange={(e) => setMessage(e.target.value)}
+                                rows={3}
+                                className="w-full rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-sage-500"
+                                placeholder="Motif de la dérogation..."
+                            />
+                        </div>
+                    </div>
+
+                    <div className="mt-6 flex justify-end gap-3">
+                        <button
+                            onClick={onClose}
+                            disabled={isLoading}
+                            className="px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors disabled:opacity-50"
+                        >
+                            Annuler
+                        </button>
+                        <button
+                            onClick={() => onSubmit(parseInt(selectedResponsable), message)}
+                            disabled={!selectedResponsable || !message || isLoading}
+                            className="px-4 py-2 text-sm font-medium text-white bg-amber-600 hover:bg-amber-700 rounded-lg shadow-sm focus:ring-2 focus:ring-amber-500 transition-colors disabled:opacity-50 flex items-center gap-2"
+                        >
+                            {isLoading && <Loader2 className="w-4 h-4 animate-spin" />}
+                            Envoyer Demande
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    );
+};
 
 const ActionGroup = ({ children }: { children: React.ReactNode }) => (
     <div className="flex flex-col gap-2 py-3 border-b border-gray-100 dark:border-gray-800 last:border-0 relative">
@@ -102,9 +198,10 @@ interface ActionItemProps {
     label: string;
     onClick?: () => void;
     variant?: 'default' | 'danger' | 'primary' | 'sage' | 'warning';
+    disabled?: boolean;
 }
 
-const ActionItem = ({ icon: Icon, label, onClick, variant = 'default' }: ActionItemProps) => {
+const ActionItem = ({ icon: Icon, label, onClick, variant = 'default', disabled = false }: ActionItemProps) => {
     const variants = {
         default: "text-gray-400 hover:text-gray-700 dark:text-gray-500 dark:hover:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800",
         danger: "text-gray-400 hover:text-red-600 dark:hover:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/10",
@@ -116,9 +213,10 @@ const ActionItem = ({ icon: Icon, label, onClick, variant = 'default' }: ActionI
     return (
         <button
             onClick={onClick}
+            disabled={disabled}
             className={cn(
                 "group relative w-8 h-8 flex items-center justify-center rounded-lg transition-all duration-200 mx-auto",
-                variants[variant]
+                disabled ? "opacity-30 cursor-not-allowed" : variants[variant]
             )}
         >
             <Icon className="w-4 h-4 transition-transform group-hover:scale-110" />
@@ -148,26 +246,29 @@ const AdvActionPanel = ({ onApprove, onReject, onHold, hasSelection }: AdvAction
                     icon={CheckCircle}
                     label="Valider BC"
                     variant="sage"
-                    onClick={hasSelection ? onApprove : undefined}
+                    onClick={onApprove}
+                    disabled={!hasSelection}
                 />
                 <ActionItem
                     icon={XCircle}
                     label="Rejeter"
                     variant="danger"
-                    onClick={hasSelection ? onReject : undefined}
+                    onClick={onReject}
+                    disabled={!hasSelection}
                 />
                 <ActionItem
                     icon={Clock}
                     label="Mettre en attente"
                     variant="warning"
-                    onClick={hasSelection ? onHold : undefined}
+                    onClick={onHold}
+                    disabled={!hasSelection}
                 />
             </ActionGroup>
 
             <ActionGroup>
-                <ActionItem icon={Printer} label="Imprimer" variant="default" />
-                <ActionItem icon={Download} label="Exporter PDF" variant="default" />
-                <ActionItem icon={Share2} label="Partager" variant="primary" />
+                <ActionItem icon={Printer} label="Imprimer" variant="default" disabled={!hasSelection} />
+                <ActionItem icon={Download} label="Exporter PDF" variant="default" disabled={!hasSelection} />
+                <ActionItem icon={Share2} label="Partager" variant="primary" disabled={!hasSelection} />
             </ActionGroup>
 
             <div className="mt-auto pb-4">
@@ -184,12 +285,33 @@ const AdvActionPanel = ({ onApprove, onReject, onHold, hasSelection }: AdvAction
 const OrderLinesContent = ({ lines }: { lines: OrderProduct[] }) => {
     const columnDefs: ColDef[] = [
         {
+            headerName: 'Image',
+            field: 'product.thumbnail',
+            width: 70,
+            cellRenderer: (params: any) => (
+                <div className="flex items-center justify-center h-full py-1">
+                    {params.value ? (
+                        <img
+                            src={params.value}
+                            alt={params.data.product.name}
+                            className="h-8 w-8 object-cover rounded border border-gray-200 dark:border-gray-700"
+                            onError={(e) => { (e.target as HTMLImageElement).src = 'https://placehold.co/40x40?text=No+Img'; }}
+                        />
+                    ) : (
+                        <div className="h-8 w-8 bg-gray-100 dark:bg-gray-800 rounded flex items-center justify-center text-[10px] text-gray-400">
+                            No Img
+                        </div>
+                    )}
+                </div>
+            )
+        },
+        {
             headerName: 'Code',
             field: 'product.code',
-            width: 130,
+            width: 120,
             cellRenderer: (params: any) => (
                 <div className="flex items-center h-full">
-                    <span className="font-medium text-gray-500">{params.value}</span>
+                    <span className="font-medium text-gray-500 text-xs">{params.value}</span>
                 </div>
             )
         },
@@ -197,52 +319,81 @@ const OrderLinesContent = ({ lines }: { lines: OrderProduct[] }) => {
             headerName: 'Article',
             field: 'product.name',
             flex: 2,
+            minWidth: 200,
             cellRenderer: (params: any) => (
-                <div className="flex items-center h-full">
-                    <span className="font-medium text-gray-900 dark:text-gray-100">{params.value}</span>
+                <div className="flex items-center h-full min-w-0 pr-2">
+                    <span className="font-medium text-gray-900 dark:text-gray-100 text-sm truncate" title={params.value}>{params.value}</span>
                 </div>
             )
         },
         {
             headerName: 'Qté',
             field: 'quantity',
-            width: 100,
-            cellClass: 'text-right',
+            width: 90,
+            cellClass: 'text-right font-medium',
             valueFormatter: (params: any) => `${params.value} ${params.data.unit}`
         },
         {
-            headerName: 'Prix (Dh)',
-            field: 'price',
-            width: 120,
-            cellClass: 'text-right',
-            valueFormatter: (params: any) => parseFloat(params.value).toLocaleString()
-        },
-        {
-            headerName: 'Total (Dh)',
-            field: 'total_price',
-            width: 120,
-            cellClass: 'text-right',
-            valueFormatter: (params: any) => {
-                const val = params.value || (params.data.quantity * parseFloat(params.data.price)).toString();
-                return parseFloat(val).toLocaleString();
+            headerName: 'Stock',
+            width: 140,
+            cellRenderer: (params: any) => {
+                const stock = params.data.product.stocks?.[0];
+                const available = stock ? parseFloat(stock.available_quantity) : (params.data.product.quantity || 0);
+                const reserved = stock ? parseFloat(stock.reserved_quantity) : 0;
+
+                return (
+                    <div className="flex flex-col justify-center h-full text-xs leading-tight">
+                        <div className="flex justify-between gap-2">
+                            <span className="text-gray-500">Dispo:</span>
+                            <span className={`font-medium ${available < params.data.quantity ? 'text-red-600' : 'text-emerald-600'}`}>
+                                {available}
+                            </span>
+                        </div>
+                        <div className="flex justify-between gap-2">
+                            <span className="text-gray-400">Réservé:</span>
+                            <span className="text-gray-600 dark:text-gray-400">{reserved}</span>
+                        </div>
+                    </div>
+                );
             }
         },
         {
-            headerName: 'Dispo',
+            headerName: 'Prix',
+            field: 'price',
+            width: 100,
+            cellClass: 'text-right',
+            valueFormatter: (params: any) => parseFloat(params.value).toLocaleString('fr-MA', { style: 'currency', currency: 'MAD' })
+        },
+        {
+            headerName: 'Total',
+            field: 'total_price',
+            width: 110,
+            cellClass: 'text-right font-bold text-sage-600',
+            valueFormatter: (params: any) => {
+                const val = params.value || (params.data.quantity * parseFloat(params.data.price)).toString();
+                return parseFloat(val).toLocaleString('fr-MA', { style: 'currency', currency: 'MAD' });
+            }
+        },
+        {
+            headerName: 'Statut',
             width: 100,
             cellRenderer: (params: any) => {
                 const item = params.data;
-                const isAvailable = (item.product.quantity || 0) > item.quantity;
+                const stock = item.product.stocks?.[0];
+                const available = stock ? parseFloat(stock.available_quantity) : (item.product.quantity || 0);
+                const isAvailable = available >= item.quantity;
+
                 return (
-                    <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${isAvailable
-                        ? 'bg-emerald-100 text-emerald-700'
-                        : 'bg-red-100 text-red-700'
-                        }`}>
-                        {isAvailable ? 'OK' : 'Manquant'}
-                    </span>
+                    <div className="flex items-center justify-center h-full">
+                        <span className={`inline-flex items-center px-2 py-0.5 rounded text-[10px] font-medium border ${isAvailable
+                            ? 'bg-emerald-50 text-emerald-700 border-emerald-100'
+                            : 'bg-red-50 text-red-700 border-red-100'
+                            }`}>
+                            {isAvailable ? 'Disponible' : 'Rupture'}
+                        </span>
+                    </div>
                 );
-            },
-            cellStyle: { display: 'flex', justifyContent: 'center', alignItems: 'center' }
+            }
         }
     ];
 
@@ -265,72 +416,162 @@ const OrderLinesContent = ({ lines }: { lines: OrderProduct[] }) => {
     );
 };
 
-const ClientInfoContent = ({ partner }: { partner: Partner }) => {
+const ClientInfoContent = ({ partner, bcAmount }: { partner: Partner; bcAmount: string }) => {
     const creditLimit = parseFloat(partner.credit_limit || '0');
     const creditUsed = parseFloat(partner.credit_used || '0');
     const creditAvailable = parseFloat(partner.credit_available || '0');
     const creditUtilization = creditLimit > 0 ? (creditUsed / creditLimit) * 100 : 0;
 
+    // Credit impact calculation
+    const orderAmount = parseFloat(bcAmount || '0');
+    const newBalance = creditUsed + orderAmount;
+    const newUtilization = creditLimit > 0 ? (newBalance / creditLimit) * 100 : 0;
+    const willExceedLimit = newBalance > creditLimit;
+
     return (
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 p-4">
-            <div className="space-y-4">
-                <div className="bg-white dark:bg-gray-800 p-4 rounded-lg border border-gray-200 dark:border-gray-700">
-                    <h3 className="text-sm font-semibold text-gray-500 uppercase tracking-wider mb-3">Informations Générales</h3>
-                    <div className="space-y-2">
-                        <div className="flex justify-between">
-                            <span className="text-gray-500">Code Client</span>
-                            <span className="font-medium">{partner.code}</span>
+        <div className="grid grid-cols-1 gap-6 p-6">
+            {/* Credit Impact Warning */}
+            {willExceedLimit && (
+                <div className="bg-red-50 dark:bg-red-900/20 border-2 border-red-200 dark:border-red-800 rounded-xl p-5 shadow-sm">
+                    <div className="flex items-start gap-3 mb-4">
+                        <div className="p-2 bg-red-100 dark:bg-red-900/50 rounded-lg mt-0.5">
+                            <AlertTriangle className="w-5 h-5 text-red-600 dark:text-red-400" />
                         </div>
-                        <div className="flex justify-between">
-                            <span className="text-gray-500">Raison Sociale</span>
-                            <span className="font-medium">{partner.name}</span>
+                        <div className="flex-1">
+                            <h4 className="text-base font-bold text-red-800 dark:text-red-300 mb-1">⚠️ Dépassement du Plafond Crédit</h4>
+                            <p className="text-sm text-red-700 dark:text-red-400">
+                                L'approbation de ce bon de commande dépassera la limite de crédit autorisée.
+                            </p>
                         </div>
-                        <div className="flex justify-between">
-                            <span className="text-gray-500">ICE</span>
-                            <span className="font-medium">{partner.tax_number_ice || '-'}</span>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-4 mt-4">
+                        <div className="bg-white/50 dark:bg-gray-800/50 p-3 rounded-lg border border-red-100 dark:border-red-900">
+                            <div className="text-xs font-medium text-red-600 dark:text-red-400 uppercase tracking-wide mb-1">Crédit Actuel</div>
+                            <div className="text-lg font-bold text-red-900 dark:text-red-300">{creditUsed.toLocaleString()} Dh</div>
                         </div>
-                        <div className="flex justify-between">
-                            <span className="text-gray-500">Ville</span>
-                            <span className="font-medium">{partner.city || '-'}</span>
+                        <div className="bg-white/50 dark:bg-gray-800/50 p-3 rounded-lg border border-red-100 dark:border-red-900">
+                            <div className="text-xs font-medium text-red-600 dark:text-red-400 uppercase tracking-wide mb-1">Montant BC</div>
+                            <div className="text-lg font-bold text-red-900 dark:text-red-300">+ {orderAmount.toLocaleString()} Dh</div>
+                        </div>
+                        <div className="bg-white/50 dark:bg-gray-800/50 p-3 rounded-lg border border-red-100 dark:border-red-900">
+                            <div className="text-xs font-medium text-red-600 dark:text-red-400 uppercase tracking-wide mb-1">Nouveau Solde</div>
+                            <div className="text-xl font-black text-red-700 dark:text-red-300">{newBalance.toLocaleString()} Dh</div>
+                        </div>
+                        <div className="bg-white/50 dark:bg-gray-800/50 p-3 rounded-lg border border-red-100 dark:border-red-900">
+                            <div className="text-xs font-medium text-red-600 dark:text-red-400 uppercase tracking-wide mb-1">Plafond</div>
+                            <div className="text-xl font-black text-red-700 dark:text-red-300">{creditLimit.toLocaleString()} Dh</div>
+                        </div>
+                    </div>
+
+                    <div className="mt-4 pt-4 border-t border-red-200 dark:border-red-800">
+                        <div className="flex justify-between items-center text-sm">
+                            <span className="font-medium text-red-700 dark:text-red-400">Dépassement</span>
+                            <span className="font-bold text-red-800 dark:text-red-300 text-lg">
+                                + {(newBalance - creditLimit).toLocaleString()} Dh
+                            </span>
+                        </div>
+                        <div className="text-xs text-red-600 dark:text-red-400 mt-2">
+                            Une dérogation sera nécessaire pour valider cette commande.
                         </div>
                     </div>
                 </div>
-            </div>
+            )}
 
-            <div className="space-y-4">
-                <div className="bg-white dark:bg-gray-800 p-4 rounded-lg border border-gray-200 dark:border-gray-700">
-                    <h3 className="text-sm font-semibold text-gray-500 uppercase tracking-wider mb-3">Situation Financière</h3>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div className="space-y-4">
+                    <div className="bg-white dark:bg-gray-800 p-6 rounded-xl border border-gray-200 dark:border-gray-700 shadow-sm h-full">
+                        <div className="flex items-center gap-3 mb-6 pb-4 border-b border-gray-100 dark:border-gray-700">
+                            <div className="p-2 bg-blue-50 dark:bg-blue-900/20 rounded-lg">
+                                <User className="w-5 h-5 text-blue-600 dark:text-blue-400" />
+                            </div>
+                            <h3 className="text-base font-semibold text-gray-900 dark:text-gray-100">Informations Client</h3>
+                        </div>
 
-                    <div className="mb-4">
-                        <div className="flex justify-between text-sm mb-1">
-                            <span>Utilisation Crédit</span>
-                            <span>{creditUtilization.toFixed(1)}%</span>
-                        </div>
-                        <div className="w-full bg-gray-100 dark:bg-gray-700 rounded-full h-2.5 overflow-hidden">
-                            <div
-                                className={`h-full ${creditUtilization > 100 ? 'bg-red-500' : creditUtilization > 80 ? 'bg-amber-500' : 'bg-emerald-500'}`}
-                                style={{ width: `${Math.min(creditUtilization, 100)}%` }}
-                            />
-                        </div>
-                        <div className="flex justify-between text-xs font-medium mt-1">
-                            <span className={creditUtilization > 100 ? 'text-red-600' : 'text-emerald-600'}>
-                                {creditUsed.toLocaleString()} Dh Utilisés
-                            </span>
-                            <span className="text-gray-400">
-                                Plafond: {creditLimit.toLocaleString()} Dh
-                            </span>
+                        <div className="grid grid-cols-1 gap-5">
+                            <div className="flex items-start gap-4">
+                                <div className="p-2 bg-gray-50 dark:bg-gray-700/50 rounded-lg mt-0.5">
+                                    <FileText className="w-4 h-4 text-gray-500 dark:text-gray-400" />
+                                </div>
+                                <div>
+                                    <p className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-1">Code Client</p>
+                                    <p className="text-sm font-bold text-gray-900 dark:text-gray-100 font-mono tracking-tight">{partner.code}</p>
+                                </div>
+                            </div>
+
+                            <div className="flex items-start gap-4">
+                                <div className="p-2 bg-gray-50 dark:bg-gray-700/50 rounded-lg mt-0.5">
+                                    <Building className="w-4 h-4 text-gray-500 dark:text-gray-400" />
+                                </div>
+                                <div>
+                                    <p className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-1">Raison Sociale</p>
+                                    <p className="text-sm font-bold text-gray-900 dark:text-gray-100">{partner.name}</p>
+                                </div>
+                            </div>
+
+                            <div className="flex items-start gap-4">
+                                <div className="p-2 bg-gray-50 dark:bg-gray-700/50 rounded-lg mt-0.5">
+                                    <FileText className="w-4 h-4 text-gray-500 dark:text-gray-400" />
+                                </div>
+                                <div>
+                                    <p className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-1">ICE</p>
+                                    <p className="text-sm font-bold text-gray-900 dark:text-gray-100 font-mono tracking-tight">{partner.tax_number_ice || '-'}</p>
+                                </div>
+                            </div>
+
+                            <div className="flex items-start gap-4">
+                                <div className="p-2 bg-gray-50 dark:bg-gray-700/50 rounded-lg mt-0.5">
+                                    <MapPin className="w-4 h-4 text-gray-500 dark:text-gray-400" />
+                                </div>
+                                <div>
+                                    <p className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-1">Ville</p>
+                                    <p className="text-sm font-bold text-gray-900 dark:text-gray-100">{partner.city || '-'}</p>
+                                </div>
+                            </div>
                         </div>
                     </div>
+                </div>
 
-                    <div className="grid grid-cols-2 gap-4">
-                        <div className="p-3 bg-gray-50 dark:bg-gray-900 rounded border border-gray-100 dark:border-gray-800">
-                            <div className="text-xs text-gray-500 mb-1">Crédit Disponible</div>
-                            <div className="text-lg font-bold text-emerald-600">{creditAvailable.toLocaleString()} Dh</div>
+                <div className="space-y-4">
+                    <div className="bg-white dark:bg-gray-800 p-6 rounded-xl border border-gray-200 dark:border-gray-700 shadow-sm h-full">
+                        <div className="flex items-center gap-3 mb-6 pb-4 border-b border-gray-100 dark:border-gray-700">
+                            <div className="p-2 bg-emerald-50 dark:bg-emerald-900/20 rounded-lg">
+                                <CreditCard className="w-5 h-5 text-emerald-600 dark:text-emerald-400" />
+                            </div>
+                            <h3 className="text-base font-semibold text-gray-900 dark:text-gray-100">Situation Financière</h3>
                         </div>
-                        <div className="p-3 bg-gray-50 dark:bg-gray-900 rounded border border-gray-100 dark:border-gray-800">
-                            <div className="text-xs text-gray-500 mb-1">Statut</div>
-                            <div className={`text-lg font-bold ${partner.credit_hold ? 'text-red-600' : 'text-emerald-600'}`}>
-                                {partner.credit_hold ? 'Bloqué' : 'Normal'}
+
+                        <div className="mb-8">
+                            <div className="flex justify-between text-sm mb-2">
+                                <span className="font-medium text-gray-700 dark:text-gray-300">Utilisation Crédit</span>
+                                <span className="font-bold text-gray-900 dark:text-gray-100">{creditUtilization.toFixed(1)}%</span>
+                            </div>
+                            <div className="w-full bg-gray-100 dark:bg-gray-700 rounded-full h-3 overflow-hidden mb-2">
+                                <div
+                                    className={`h-full transition-all duration-500 ${creditUtilization > 100 ? 'bg-red-500' : creditUtilization > 80 ? 'bg-amber-500' : 'bg-emerald-500'}`}
+                                    style={{ width: `${Math.min(creditUtilization, 100)}%` }}
+                                />
+                            </div>
+                            <div className="flex justify-between text-xs font-medium">
+                                <span className={creditUtilization > 100 ? 'text-red-600' : 'text-emerald-600'}>
+                                    {creditUsed.toLocaleString()} Dh Utilisés
+                                </span>
+                                <span className="text-gray-400">
+                                    Plafond: {creditLimit.toLocaleString()} Dh
+                                </span>
+                            </div>
+                        </div>
+
+                        <div className="grid grid-cols-2 gap-4">
+                            <div className="p-4 bg-gray-50 dark:bg-gray-900 rounded-lg border border-gray-100 dark:border-gray-800">
+                                <div className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-1">Crédit Disponible</div>
+                                <div className="text-xl font-bold text-emerald-600 dark:text-emerald-400">{creditAvailable.toLocaleString()} Dh</div>
+                            </div>
+                            <div className="p-4 bg-gray-50 dark:bg-gray-900 rounded-lg border border-gray-100 dark:border-gray-800">
+                                <div className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-1">Statut</div>
+                                <div className={`text-xl font-bold ${partner.credit_hold ? 'text-red-600' : 'text-emerald-600 dark:text-emerald-400'}`}>
+                                    {partner.credit_hold ? 'Bloqué' : 'Normal'}
+                                </div>
                             </div>
                         </div>
                     </div>
@@ -341,10 +582,18 @@ const ClientInfoContent = ({ partner }: { partner: Partner }) => {
 };
 
 const StockAnalysisContent = ({ bc }: { bc: BC }) => {
+    // Helper to get available stock
+    const getStock = (p: Product) => {
+        return p.stocks?.[0] ? parseFloat(p.stocks[0].available_quantity) : (p.quantity || 0);
+    };
+
     // Calculate stock statistics
     const totalItems = bc.order_products.length;
-    const availableItems = bc.order_products.filter(p => (p.product.quantity || 0) >= p.quantity).length;
-    const partialItems = bc.order_products.filter(p => (p.product.quantity || 0) > 0 && (p.product.quantity || 0) < p.quantity).length;
+    const availableItems = bc.order_products.filter(p => getStock(p.product) >= p.quantity).length;
+    const partialItems = bc.order_products.filter(p => {
+        const stock = getStock(p.product);
+        return stock > 0 && stock < p.quantity;
+    }).length;
     const outOfStockItems = totalItems - availableItems - partialItems;
 
     return (
@@ -396,7 +645,7 @@ const StockAnalysisContent = ({ bc }: { bc: BC }) => {
                     </div>
                 ) : (
                     <div className="space-y-2">
-                        {bc.order_products.filter(p => (p.product.quantity || 0) < p.quantity).map(item => (
+                        {bc.order_products.filter(p => getStock(p.product) < p.quantity).map(item => (
                             <div key={item.product_id} className="flex items-center justify-between p-3 bg-gray-50 dark:bg-gray-900 rounded border border-gray-100 dark:border-gray-800">
                                 <div className="flex items-center gap-3">
                                     <div className="w-8 h-8 bg-gray-200 dark:bg-gray-700 rounded flex items-center justify-center text-xs font-bold">
@@ -409,7 +658,7 @@ const StockAnalysisContent = ({ bc }: { bc: BC }) => {
                                 </div>
                                 <div className="text-right">
                                     <div className="text-sm font-bold text-red-600">
-                                        {(item.product.quantity || 0)} / {item.quantity}
+                                        {getStock(item.product)} / {item.quantity}
                                     </div>
                                     <div className="text-xs text-gray-400">En stock / Demandé</div>
                                 </div>
@@ -575,7 +824,7 @@ const BcDetailView = ({ bc }: { bc: BC }) => {
                         isOpen={openSections['client']}
                         onOpenChange={(open) => toggleSection('client', open)}
                     >
-                        <ClientInfoContent partner={bc.partner} />
+                        <ClientInfoContent partner={bc.partner} bcAmount={bc.total_amount} />
                     </SageCollapsible>
                 </div>
 
@@ -595,7 +844,7 @@ const BcDetailView = ({ bc }: { bc: BC }) => {
 
 export const AdvValidationPage = () => {
     const [bcs, setBcs] = useState<BC[]>([]);
-    const [selectedBcId, setSelectedBcId] = useState<string | null>(null);
+    const [selectedBcId, setSelectedBcId] = useState<number | null>(null);
     const [selectedBcDetails, setSelectedBcDetails] = useState<BC | null>(null);
     const [loading, setLoading] = useState<boolean>(true);
     const [detailLoading, setDetailLoading] = useState<boolean>(false);
@@ -622,6 +871,20 @@ export const AdvValidationPage = () => {
     const [comment, setComment] = useState('');
     const [reason, setReason] = useState('');
     const [quantities, setQuantities] = useState<Record<number, number>>({});
+
+    // Derogation State
+    const [showDerogationModal, setShowDerogationModal] = useState(false);
+    const [responsables, setResponsables] = useState<User[]>([]);
+    const [isActionLoading, setIsActionLoading] = useState(false);
+
+    const fetchResponsables = async () => {
+        // Mock data for now
+        setResponsables([
+            { id: 1, name: 'Ahmed Manager', email: 'ahmed@example.com' },
+            { id: 2, name: 'Sarah Director', email: 'sarah@example.com' },
+            { id: 3, name: 'Karim Responsable ADV', email: 'karim@example.com' }
+        ]);
+    };
 
     const handleAction = (action: 'approve' | 'reject' | 'hold') => {
         if (!selectedBcId) return;
@@ -669,6 +932,7 @@ export const AdvValidationPage = () => {
 
     const confirmAction = async () => {
         if (!selectedBcId || !modalConfig.type) return;
+        setIsActionLoading(true);
 
         try {
             let payload: any = {};
@@ -689,6 +953,7 @@ export const AdvValidationPage = () => {
                 endpoint = `reject`;
                 if (!reason) {
                     toast.error("Le motif est obligatoire pour le rejet.");
+                    setIsActionLoading(false);
                     return;
                 }
                 payload = { reason };
@@ -696,29 +961,62 @@ export const AdvValidationPage = () => {
                 endpoint = `hold`;
                 if (!reason) {
                     toast.error("Le motif est obligatoire pour la mise en attente.");
+                    setIsActionLoading(false);
                     return;
                 }
                 payload = { reason };
             }
 
-            await axios.post(`http://localhost:8000/api/backend/adv/bc/${selectedBcId}/${endpoint}`, payload);
+            await apiClient.post(`/api/backend/adv/bc/${selectedBcId}/${endpoint}`, payload);
 
             // Refresh data
             fetchData();
-            if (selectedBcId) fetchBcDetails(selectedBcId);
+            if (selectedBcId) fetchBcDetails(String(selectedBcId));
             setModalConfig(prev => ({ ...prev, isOpen: false }));
             toast.success(`Commande ${modalConfig.type === 'approve' ? 'validée' : modalConfig.type === 'reject' ? 'rejetée' : 'mise en attente'} avec succès`);
 
-        } catch (error) {
+        } catch (error: any) {
             console.error(`Failed to ${modalConfig.type} BC`, error);
-            toast.error(`Erreur lors de l'action: ${modalConfig.type}`);
+            const errorMessage = error.response?.data?.message || "Erreur inconnue";
+
+            if (modalConfig.type === 'approve' && errorMessage.includes("Credit limit exceeded")) {
+                setModalConfig(prev => ({ ...prev, isOpen: false }));
+                setShowDerogationModal(true);
+                fetchResponsables();
+                toast.error("Plafond de crédit dépassé. Veuillez demander une dérogation.");
+            } else {
+                toast.error(`Erreur: ${errorMessage}`);
+            }
+        } finally {
+            setIsActionLoading(false);
+        }
+    };
+
+    const handleDerogationSubmit = async (responsableId: number, message: string) => {
+        if (!selectedBcId) return;
+        setIsActionLoading(true);
+        try {
+            await apiClient.post(`/api/backend/adv/bc/${selectedBcId}/approve`, {
+                approval_mode: 'derogation',
+                responsable_id: responsableId,
+                comment: message
+            });
+            setShowDerogationModal(false);
+            fetchData();
+            if (selectedBcId) fetchBcDetails(String(selectedBcId));
+            toast.success("Demande de dérogation envoyée avec succès");
+        } catch (error: any) {
+            console.error("Failed to submit derogation", error);
+            toast.error(error.response?.data?.message || "Erreur lors de l'envoi de la dérogation");
+        } finally {
+            setIsActionLoading(false);
         }
     };
 
     const fetchBcDetails = async (id: string) => {
         setDetailLoading(true);
         try {
-            const response = await axios.get<ApiResponse>(`http://localhost:8000/api/backend/adv/bc/${id}`);
+            const response = await apiClient.get<ApiResponse>(`/api/backend/adv/bc/${id}`);
             if (response.data?.bc) {
                 setSelectedBcDetails(response.data.bc);
             }
@@ -733,14 +1031,14 @@ export const AdvValidationPage = () => {
     const fetchData = async () => {
         setLoading(true);
         try {
-            const response = await axios.get<ApiResponse>('http://localhost:8000/api/backend/adv/bc');
+            const response = await apiClient.get<ApiResponse>('/api/backend/adv/bc');
             if (response.data?.bcs?.data) {
                 setBcs(response.data.bcs.data);
                 // Optionally select the first one if none selected, but we need to fetch details for it
                 if (response.data.bcs.data.length > 0 && !selectedBcId) {
                     const firstId = response.data.bcs.data[0].id;
                     setSelectedBcId(firstId);
-                    fetchBcDetails(firstId);
+                    fetchBcDetails(String(firstId));
                 }
             }
         } catch (error) {
@@ -812,7 +1110,7 @@ export const AdvValidationPage = () => {
                     loading={loading}
                     onRowSelected={(data) => {
                         setSelectedBcId(data.id);
-                        fetchBcDetails(data.id);
+                        fetchBcDetails(String(data.id));
                     }}
                 />
             </div>
@@ -854,6 +1152,7 @@ export const AdvValidationPage = () => {
                 description={modalConfig.description}
                 variant={modalConfig.variant}
                 confirmText={modalConfig.type === 'approve' ? 'Valider' : modalConfig.type === 'reject' ? 'Rejeter' : 'Confirmer'}
+                isLoading={isActionLoading}
             >
                 {modalConfig.type === 'approve' && (
                     <div className="space-y-4">
@@ -937,6 +1236,14 @@ export const AdvValidationPage = () => {
                     </div>
                 )}
             </ConfirmationModal>
+
+            <DerogationModal
+                isOpen={showDerogationModal}
+                onClose={() => setShowDerogationModal(false)}
+                onSubmit={handleDerogationSubmit}
+                responsables={responsables}
+                isLoading={isActionLoading}
+            />
         </>
     );
 };

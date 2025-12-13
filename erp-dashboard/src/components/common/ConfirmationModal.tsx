@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useRef } from 'react';
 import { motion, AnimatePresence, useDragControls } from 'framer-motion';
-import { AlertTriangle, X, GripHorizontal } from 'lucide-react';
+import { AlertTriangle, X, GripHorizontal, Loader2 } from 'lucide-react';
 
 interface ConfirmationModalProps {
     isOpen: boolean;
@@ -12,6 +12,7 @@ interface ConfirmationModalProps {
     cancelText?: string;
     variant?: 'danger' | 'warning' | 'info' | 'sage';
     children?: React.ReactNode;
+    isLoading?: boolean;
 }
 
 export const ConfirmationModal: React.FC<ConfirmationModalProps> = ({
@@ -23,7 +24,8 @@ export const ConfirmationModal: React.FC<ConfirmationModalProps> = ({
     confirmText = 'Confirm',
     cancelText = 'Cancel',
     variant = 'danger',
-    children
+    children,
+    isLoading = false
 }) => {
     const dragControls = useDragControls();
     const [size, setSize] = useState({ width: 448, height: 'auto' }); // 448px is max-w-md
@@ -149,7 +151,8 @@ export const ConfirmationModal: React.FC<ConfirmationModalProps> = ({
                             <div className="bg-gray-50 dark:bg-gray-900/50 px-6 py-4 flex items-center justify-end gap-3 border-t border-gray-100 dark:border-gray-700 shrink-0 relative">
                                 <button
                                     onClick={onClose}
-                                    className="px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 focus:ring-2 focus:ring-gray-200 transition-all"
+                                    disabled={isLoading}
+                                    className="px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 focus:ring-2 focus:ring-gray-200 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
                                 >
                                     {cancelText}
                                 </button>
@@ -158,12 +161,14 @@ export const ConfirmationModal: React.FC<ConfirmationModalProps> = ({
                                         onConfirm();
                                         // onClose(); // Let parent handle closing
                                     }}
-                                    className={`px-4 py-2 text-sm font-medium text-white rounded-lg shadow-sm focus:ring-2 focus:ring-offset-2 transition-all ${variant === 'danger' ? 'bg-red-600 hover:bg-red-700 focus:ring-red-500' :
+                                    disabled={isLoading}
+                                    className={`px-4 py-2 text-sm font-medium text-white rounded-lg shadow-sm focus:ring-2 focus:ring-offset-2 transition-all flex items-center gap-2 ${variant === 'danger' ? 'bg-red-600 hover:bg-red-700 focus:ring-red-500' :
                                         variant === 'warning' ? 'bg-amber-600 hover:bg-amber-700 focus:ring-amber-500' :
                                             variant === 'sage' ? 'bg-emerald-600 hover:bg-emerald-700 focus:ring-emerald-500' :
                                                 'bg-blue-600 hover:bg-blue-700 focus:ring-blue-500'
-                                        }`}
+                                        } ${isLoading ? 'opacity-70 cursor-not-allowed' : ''}`}
                                 >
+                                    {isLoading && <Loader2 className="w-4 h-4 animate-spin" />}
                                     {confirmText}
                                 </button>
 

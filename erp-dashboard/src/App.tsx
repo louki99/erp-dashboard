@@ -9,7 +9,12 @@ import { Dashboard } from '@/pages/Dashboard';
 import { ProfilePage } from '@/pages/ProfilePage';
 import { AdvDashboard } from '@/pages/adv/AdvDashboard';
 import { AdvValidationPage } from '@/pages/adv/AdvValidationPage';
+import { AdvPartnersPage } from '@/pages/adv/AdvPartnersPage';
+import { AdvCreditPage } from '@/pages/adv/AdvCreditPage';
+import { AdvEcheancesPage } from '@/pages/adv/AdvEcheancesPage';
+import { AdvDerogationsPage } from '@/pages/adv/AdvDerogationsPage';
 import { MasterLayout } from '@/components/layout/MasterLayout';
+
 
 // Simple Navigation Wrapper to show active route in DevSwitcher style (optional, but let's stick to MegaMenu for now)
 // Actually, let's remove the floating dev switcher and rely on the Mega Menu or URL.
@@ -40,8 +45,16 @@ function AppRoutes() {
       <Route path="/partners" element={<ProtectedRoute><PartnerPage /></ProtectedRoute>} />
       <Route path="/orders" element={<ProtectedRoute><OrdersPage /></ProtectedRoute>} />
       <Route path="/profile" element={<ProtectedRoute><ProfilePage /></ProtectedRoute>} />
+
+      {/* ADV Module Routes */}
+      <Route path="/adv" element={<ProtectedRoute><AdvDashboard /></ProtectedRoute>} />
       <Route path="/adv/dashboard" element={<ProtectedRoute><AdvDashboard /></ProtectedRoute>} />
       <Route path="/adv/validation" element={<ProtectedRoute><AdvValidationPage /></ProtectedRoute>} />
+      <Route path="/adv/partners" element={<ProtectedRoute><AdvPartnersPage /></ProtectedRoute>} />
+      <Route path="/adv/credit" element={<ProtectedRoute><AdvCreditPage /></ProtectedRoute>} />
+      <Route path="/adv/echeances" element={<ProtectedRoute><AdvEcheancesPage /></ProtectedRoute>} />
+      <Route path="/adv/derogations" element={<ProtectedRoute><AdvDerogationsPage /></ProtectedRoute>} />
+
 
       {/* Catch all */}
       <Route path="*" element={<Navigate to="/dashboard" replace />} />
