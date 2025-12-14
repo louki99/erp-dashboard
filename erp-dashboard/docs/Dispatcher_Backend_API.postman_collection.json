@@ -1,0 +1,487 @@
+{
+  "info": {
+    "_postman_id": "b5b1c2a6-8b5d-4f0a-9d27-1d8d8d8b2a11",
+    "name": "B2B ERP - Dispatcher (Backend API)",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    { "key": "BASE_URL", "value": "http://localhost:8000" },
+    { "key": "TOKEN", "value": "" },
+    { "key": "ORDER_ID", "value": "" },
+    { "key": "BL_ID", "value": "" },
+    { "key": "BCH_ID", "value": "" },
+    { "key": "DECHARGE_ID", "value": "" },
+    { "key": "LIVREUR_ID", "value": "" }
+  ],
+  "item": [
+    {
+      "name": "Auth (Backend)",
+      "item": [
+        {
+          "name": "Login (get token)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Accept", "value": "application/json" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "url": {
+              "raw": "{{BASE_URL}}/api/backend/login",
+              "host": ["{{BASE_URL}}"],
+              "path": ["api", "backend", "login"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"admin@demo.com\",\n  \"password\": \"password\"\n}"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Dispatcher",
+      "item": [
+        {
+          "name": "Dashboard",
+          "request": {
+            "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{TOKEN}}", "type": "string" }] },
+            "method": "GET",
+            "header": [
+              { "key": "Accept", "value": "application/json" }
+            ],
+            "url": {
+              "raw": "{{BASE_URL}}/api/backend/dispatcher/dashboard",
+              "host": ["{{BASE_URL}}"],
+              "path": ["api", "backend", "dispatcher", "dashboard"]
+            }
+          }
+        },
+        {
+          "name": "Orders - Pending",
+          "request": {
+            "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{TOKEN}}", "type": "string" }] },
+            "method": "GET",
+            "header": [
+              { "key": "Accept", "value": "application/json" }
+            ],
+            "url": {
+              "raw": "{{BASE_URL}}/api/backend/dispatcher/orders/pending?search=&date_from=&date_to=",
+              "host": ["{{BASE_URL}}"],
+              "path": ["api", "backend", "dispatcher", "orders", "pending"],
+              "query": [
+                { "key": "search", "value": "" },
+                { "key": "date_from", "value": "" },
+                { "key": "date_to", "value": "" }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Orders - Show",
+          "request": {
+            "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{TOKEN}}", "type": "string" }] },
+            "method": "GET",
+            "header": [
+              { "key": "Accept", "value": "application/json" }
+            ],
+            "url": {
+              "raw": "{{BASE_URL}}/api/backend/dispatcher/orders/{{ORDER_ID}}",
+              "host": ["{{BASE_URL}}"],
+              "path": ["api", "backend", "dispatcher", "orders", "{{ORDER_ID}}"]
+            }
+          }
+        },
+        {
+          "name": "Orders - Convert to BL",
+          "request": {
+            "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{TOKEN}}", "type": "string" }] },
+            "method": "POST",
+            "header": [
+              { "key": "Accept", "value": "application/json" }
+            ],
+            "url": {
+              "raw": "{{BASE_URL}}/api/backend/dispatcher/orders/{{ORDER_ID}}/convert-to-bl",
+              "host": ["{{BASE_URL}}"],
+              "path": ["api", "backend", "dispatcher", "orders", "{{ORDER_ID}}", "convert-to-bl"]
+            }
+          }
+        },
+        {
+          "name": "Orders - Convert multiple to BL",
+          "request": {
+            "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{TOKEN}}", "type": "string" }] },
+            "method": "POST",
+            "header": [
+              { "key": "Accept", "value": "application/json" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "url": {
+              "raw": "{{BASE_URL}}/api/backend/dispatcher/orders/convert-multiple-to-bl",
+              "host": ["{{BASE_URL}}"],
+              "path": ["api", "backend", "dispatcher", "orders", "convert-multiple-to-bl"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"order_ids\": [1, 2, 3]\n}"
+            }
+          }
+        },
+        {
+          "name": "BL - Draft list (with livreurs)",
+          "request": {
+            "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{TOKEN}}", "type": "string" }] },
+            "method": "GET",
+            "header": [
+              { "key": "Accept", "value": "application/json" }
+            ],
+            "url": {
+              "raw": "{{BASE_URL}}/api/backend/dispatcher/bon-livraisons/draft",
+              "host": ["{{BASE_URL}}"],
+              "path": ["api", "backend", "dispatcher", "bon-livraisons", "draft"]
+            }
+          }
+        },
+        {
+          "name": "BL - Index",
+          "request": {
+            "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{TOKEN}}", "type": "string" }] },
+            "method": "GET",
+            "header": [
+              { "key": "Accept", "value": "application/json" }
+            ],
+            "url": {
+              "raw": "{{BASE_URL}}/api/backend/dispatcher/bon-livraisons?status=&livreur_id=&search=",
+              "host": ["{{BASE_URL}}"],
+              "path": ["api", "backend", "dispatcher", "bon-livraisons"],
+              "query": [
+                { "key": "status", "value": "" },
+                { "key": "livreur_id", "value": "" },
+                { "key": "search", "value": "" }
+              ]
+            }
+          }
+        },
+        {
+          "name": "BL - Show",
+          "request": {
+            "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{TOKEN}}", "type": "string" }] },
+            "method": "GET",
+            "header": [
+              { "key": "Accept", "value": "application/json" }
+            ],
+            "url": {
+              "raw": "{{BASE_URL}}/api/backend/dispatcher/bon-livraisons/{{BL_ID}}",
+              "host": ["{{BASE_URL}}"],
+              "path": ["api", "backend", "dispatcher", "bon-livraisons", "{{BL_ID}}"]
+            }
+          }
+        },
+        {
+          "name": "BL - Edit (get livreurs)",
+          "request": {
+            "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{TOKEN}}", "type": "string" }] },
+            "method": "GET",
+            "header": [
+              { "key": "Accept", "value": "application/json" }
+            ],
+            "url": {
+              "raw": "{{BASE_URL}}/api/backend/dispatcher/bon-livraisons/{{BL_ID}}/edit",
+              "host": ["{{BASE_URL}}"],
+              "path": ["api", "backend", "dispatcher", "bon-livraisons", "{{BL_ID}}", "edit"]
+            }
+          }
+        },
+        {
+          "name": "BL - Update",
+          "request": {
+            "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{TOKEN}}", "type": "string" }] },
+            "method": "PUT",
+            "header": [
+              { "key": "Accept", "value": "application/json" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "url": {
+              "raw": "{{BASE_URL}}/api/backend/dispatcher/bon-livraisons/{{BL_ID}}",
+              "host": ["{{BASE_URL}}"],
+              "path": ["api", "backend", "dispatcher", "bon-livraisons", "{{BL_ID}}"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"delivery_date\": \"2025-12-14\",\n  \"livreur_id\": {{LIVREUR_ID}},\n  \"notes\": \"Call partner before arrival\",\n  \"items\": [\n    {\n      \"id\": 0,\n      \"allocated_quantity\": 1,\n      \"unit_price\": 0\n    }\n  ]\n}"
+            }
+          }
+        },
+        {
+          "name": "BCH - Create",
+          "request": {
+            "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{TOKEN}}", "type": "string" }] },
+            "method": "POST",
+            "header": [
+              { "key": "Accept", "value": "application/json" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "url": {
+              "raw": "{{BASE_URL}}/api/backend/dispatcher/bon-chargements",
+              "host": ["{{BASE_URL}}"],
+              "path": ["api", "backend", "dispatcher", "bon-chargements"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"bl_ids\": \"12,13\",\n  \"livreur_id\": {{LIVREUR_ID}},\n  \"notes\": \"Morning route\"\n}"
+            }
+          }
+        },
+        {
+          "name": "BCH - Index",
+          "request": {
+            "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{TOKEN}}", "type": "string" }] },
+            "method": "GET",
+            "header": [
+              { "key": "Accept", "value": "application/json" }
+            ],
+            "url": {
+              "raw": "{{BASE_URL}}/api/backend/dispatcher/bon-chargements?status=&livreur_id=&search=",
+              "host": ["{{BASE_URL}}"],
+              "path": ["api", "backend", "dispatcher", "bon-chargements"],
+              "query": [
+                { "key": "status", "value": "" },
+                { "key": "livreur_id", "value": "" },
+                { "key": "search", "value": "" }
+              ]
+            }
+          }
+        },
+        {
+          "name": "BCH - Show",
+          "request": {
+            "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{TOKEN}}", "type": "string" }] },
+            "method": "GET",
+            "header": [
+              { "key": "Accept", "value": "application/json" }
+            ],
+            "url": {
+              "raw": "{{BASE_URL}}/api/backend/dispatcher/bon-chargements/{{BCH_ID}}",
+              "host": ["{{BASE_URL}}"],
+              "path": ["api", "backend", "dispatcher", "bon-chargements", "{{BCH_ID}}"]
+            }
+          }
+        },
+        {
+          "name": "BCH - Edit",
+          "request": {
+            "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{TOKEN}}", "type": "string" }] },
+            "method": "GET",
+            "header": [
+              { "key": "Accept", "value": "application/json" }
+            ],
+            "url": {
+              "raw": "{{BASE_URL}}/api/backend/dispatcher/bon-chargements/{{BCH_ID}}/edit",
+              "host": ["{{BASE_URL}}"],
+              "path": ["api", "backend", "dispatcher", "bon-chargements", "{{BCH_ID}}", "edit"]
+            }
+          }
+        },
+        {
+          "name": "BCH - Update",
+          "request": {
+            "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{TOKEN}}", "type": "string" }] },
+            "method": "PUT",
+            "header": [
+              { "key": "Accept", "value": "application/json" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "url": {
+              "raw": "{{BASE_URL}}/api/backend/dispatcher/bon-chargements/{{BCH_ID}}",
+              "host": ["{{BASE_URL}}"],
+              "path": ["api", "backend", "dispatcher", "bon-chargements", "{{BCH_ID}}"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"livreur_id\": {{LIVREUR_ID}},\n  \"notes\": \"Updated notes\"\n}"
+            }
+          }
+        },
+        {
+          "name": "BCH - Validate (smart)",
+          "request": {
+            "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{TOKEN}}", "type": "string" }] },
+            "method": "POST",
+            "header": [
+              { "key": "Accept", "value": "application/json" }
+            ],
+            "url": {
+              "raw": "{{BASE_URL}}/api/backend/dispatcher/bon-chargements/{{BCH_ID}}/validate",
+              "host": ["{{BASE_URL}}"],
+              "path": ["api", "backend", "dispatcher", "bon-chargements", "{{BCH_ID}}", "validate"]
+            }
+          }
+        },
+        {
+          "name": "BCH - Submit to magasinier (alias)",
+          "request": {
+            "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{TOKEN}}", "type": "string" }] },
+            "method": "POST",
+            "header": [
+              { "key": "Accept", "value": "application/json" }
+            ],
+            "url": {
+              "raw": "{{BASE_URL}}/api/backend/dispatcher/bon-chargements/{{BCH_ID}}/submit",
+              "host": ["{{BASE_URL}}"],
+              "path": ["api", "backend", "dispatcher", "bon-chargements", "{{BCH_ID}}", "submit"]
+            }
+          }
+        },
+        {
+          "name": "BCH - Resubmit to magasinier",
+          "request": {
+            "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{TOKEN}}", "type": "string" }] },
+            "method": "POST",
+            "header": [
+              { "key": "Accept", "value": "application/json" }
+            ],
+            "url": {
+              "raw": "{{BASE_URL}}/api/backend/dispatcher/bon-chargements/{{BCH_ID}}/resubmit",
+              "host": ["{{BASE_URL}}"],
+              "path": ["api", "backend", "dispatcher", "bon-chargements", "{{BCH_ID}}", "resubmit"]
+            }
+          }
+        },
+        {
+          "name": "BCH - Cancel (release reservations)",
+          "request": {
+            "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{TOKEN}}", "type": "string" }] },
+            "method": "POST",
+            "header": [
+              { "key": "Accept", "value": "application/json" }
+            ],
+            "url": {
+              "raw": "{{BASE_URL}}/api/backend/dispatcher/bon-chargements/{{BCH_ID}}/cancel",
+              "host": ["{{BASE_URL}}"],
+              "path": ["api", "backend", "dispatcher", "bon-chargements", "{{BCH_ID}}", "cancel"]
+            }
+          }
+        },
+        {
+          "name": "BCH - Balance (analysis)",
+          "request": {
+            "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{TOKEN}}", "type": "string" }] },
+            "method": "GET",
+            "header": [
+              { "key": "Accept", "value": "application/json" }
+            ],
+            "url": {
+              "raw": "{{BASE_URL}}/api/backend/dispatcher/bon-chargements/{{BCH_ID}}/balance",
+              "host": ["{{BASE_URL}}"],
+              "path": ["api", "backend", "dispatcher", "bon-chargements", "{{BCH_ID}}", "balance"]
+            }
+          }
+        },
+        {
+          "name": "BCH - Save balance",
+          "request": {
+            "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{TOKEN}}", "type": "string" }] },
+            "method": "PUT",
+            "header": [
+              { "key": "Accept", "value": "application/json" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "url": {
+              "raw": "{{BASE_URL}}/api/backend/dispatcher/bon-chargements/{{BCH_ID}}/balance",
+              "host": ["{{BASE_URL}}"],
+              "path": ["api", "backend", "dispatcher", "bon-chargements", "{{BCH_ID}}", "balance"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"allocations\": {\n    \"12\": {\n      \"5\": 2.5\n    }\n  }\n}"
+            }
+          }
+        },
+        {
+          "name": "BCH - Print payload",
+          "request": {
+            "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{TOKEN}}", "type": "string" }] },
+            "method": "GET",
+            "header": [
+              { "key": "Accept", "value": "application/json" }
+            ],
+            "url": {
+              "raw": "{{BASE_URL}}/api/backend/dispatcher/bon-chargements/{{BCH_ID}}/print",
+              "host": ["{{BASE_URL}}"],
+              "path": ["api", "backend", "dispatcher", "bon-chargements", "{{BCH_ID}}", "print"]
+            }
+          }
+        },
+        {
+          "name": "Decharges - Index",
+          "request": {
+            "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{TOKEN}}", "type": "string" }] },
+            "method": "GET",
+            "header": [
+              { "key": "Accept", "value": "application/json" }
+            ],
+            "url": {
+              "raw": "{{BASE_URL}}/api/backend/dispatcher/decharges?type=&status=&search=",
+              "host": ["{{BASE_URL}}"],
+              "path": ["api", "backend", "dispatcher", "decharges"],
+              "query": [
+                { "key": "type", "value": "" },
+                { "key": "status", "value": "" },
+                { "key": "search", "value": "" }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Decharges - Show",
+          "request": {
+            "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{TOKEN}}", "type": "string" }] },
+            "method": "GET",
+            "header": [
+              { "key": "Accept", "value": "application/json" }
+            ],
+            "url": {
+              "raw": "{{BASE_URL}}/api/backend/dispatcher/decharges/{{DECHARGE_ID}}",
+              "host": ["{{BASE_URL}}"],
+              "path": ["api", "backend", "dispatcher", "decharges", "{{DECHARGE_ID}}"]
+            }
+          }
+        },
+        {
+          "name": "Decharges - Approve return",
+          "request": {
+            "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{TOKEN}}", "type": "string" }] },
+            "method": "POST",
+            "header": [
+              { "key": "Accept", "value": "application/json" }
+            ],
+            "url": {
+              "raw": "{{BASE_URL}}/api/backend/dispatcher/decharges/{{DECHARGE_ID}}/approve-return",
+              "host": ["{{BASE_URL}}"],
+              "path": ["api", "backend", "dispatcher", "decharges", "{{DECHARGE_ID}}", "approve-return"]
+            }
+          }
+        },
+        {
+          "name": "Decharges - Reject",
+          "request": {
+            "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{TOKEN}}", "type": "string" }] },
+            "method": "POST",
+            "header": [
+              { "key": "Accept", "value": "application/json" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "url": {
+              "raw": "{{BASE_URL}}/api/backend/dispatcher/decharges/{{DECHARGE_ID}}/reject",
+              "host": ["{{BASE_URL}}"],
+              "path": ["api", "backend", "dispatcher", "decharges", "{{DECHARGE_ID}}", "reject"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"reason\": \"Not acceptable\"\n}"
+            }
+          }
+        }
+      ]
+    }
+  ]
+}

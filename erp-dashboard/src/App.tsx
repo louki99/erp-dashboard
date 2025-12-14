@@ -19,6 +19,7 @@ import { DispatcherOrdersPage } from '@/pages/dispatcher/DispatcherOrdersPage';
 import { DispatcherBonLivraisonsPage } from '@/pages/dispatcher/DispatcherBonLivraisonsPage';
 import { DispatcherCreateBonChargementPage } from '@/pages/dispatcher/DispatcherCreateBonChargementPage';
 import { DispatcherBonChargementsPage } from '@/pages/dispatcher/DispatcherBonChargementsPage';
+import { DispatcherDechargesPage } from '@/pages/dispatcher/DispatcherDechargesPage';
 import { MasterLayout } from '@/components/layout/MasterLayout';
 
 
@@ -157,6 +158,11 @@ function AppRoutes() {
         </ProtectedRoute>
       } />
 
+      <Route path="/dispatcher/decharges" element={
+        <ProtectedRoute requiredPermission={PERMISSIONS.DISPATCHER.DECHARGES_INDEX}>
+          <DispatcherDechargesPage />
+        </ProtectedRoute>
+      } />
 
       {/* Catch all */}
       <Route path="*" element={<Navigate to="/dashboard" replace />} />

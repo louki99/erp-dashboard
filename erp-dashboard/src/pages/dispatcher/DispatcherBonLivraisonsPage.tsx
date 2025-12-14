@@ -14,7 +14,9 @@ import {
     useDispatcherUpdateBonLivraison,
 } from '@/hooks/dispatcher/useDispatcherBonLivraisons';
 import { useDispatcherCreateBch } from '@/hooks/dispatcher/useDispatcherBonChargements';
-import type { BonLivraison, Livreur } from '@/types/dispatcher.types';
+import { useRiders } from '@/hooks/useRiders';
+import type { BonLivraison } from '@/types/dispatcher.types';
+import type { Rider } from '@/services/api/ridersApi';
 
 export const DispatcherBonLivraisonsPage = () => {
     const [selected, setSelected] = useState<BonLivraison | null>(null);
@@ -38,7 +40,9 @@ export const DispatcherBonLivraisonsPage = () => {
 
     const { data, loading, error, refetch } = useDispatcherDraftBonLivraisons();
     const draftBls = data?.draftBls || [];
-    const livreurs = data?.livreurs || [];
+    
+    // Fetch riders/livreurs from dedicated API
+    const { riders: livreurs, loading: livreursLoading } = useRiders();
 
     // Summary stats
     const stats = useMemo(() => {
@@ -229,15 +233,20 @@ export const DispatcherBonLivraisonsPage = () => {
 
     const bulkAssignLivreur = async () => {
         if (selectedBls.length === 0) {
-            toast.error('Sélectionne au moins un BL');
+            toast.error('Sélectionnez au moins un BL');
             return;
         }
         if (bulkLivreurId === '') {
-            toast.error('Sélectionne un livreur');
+            toast.error('Sélectionnez un livreur');
             return;
         }
 
+        const selectedRider = livreurs.find(l => l.id === Number(bulkLivreurId));
+        const riderName = selectedRider?.name || 'livreur';
+
         try {
+            toast.loading(`Affectation de ${selectedBls.length} BL(s) à ${riderName}...`);
+            
             const promises = selectedBls.map(bl => 
                 update(bl.id, {
                     livreur_id: Number(bulkLivreurId),
@@ -246,11 +255,14 @@ export const DispatcherBonLivraisonsPage = () => {
             );
             
             await Promise.all(promises);
-            toast.success(`${selectedBls.length} BL(s) affecté(s) au livreur`);
+            toast.dismiss();
+            toast.success(`✓ ${selectedBls.length} BL(s) affecté(s) à ${riderName}`);
             await refetch();
             setSelectedBls([]);
         } catch (e) {
-            toast.error(e instanceof Error ? e.message : 'Échec affectation');
+            toast.dismiss();
+            console.error('Bulk assign error:', e);
+            toast.error(e instanceof Error ? e.message : 'Échec de l\'affectation');
         }
     };
 
@@ -276,15 +288,20 @@ export const DispatcherBonLivraisonsPage = () => {
 
     const createBchFromMultiple = async () => {
         if (selectedBls.length === 0) {
-            toast.error('Sélectionne au moins un BL');
+            toast.error('Sélectionnez au moins un BL');
             return;
         }
         if (bulkLivreurId === '') {
-            toast.error('Sélectionne un livreur pour le BCH');
+            toast.error('Sélectionnez un livreur pour le BCH');
             return;
         }
 
+        const selectedRider = livreurs.find(l => l.id === Number(bulkLivreurId));
+        const riderName = selectedRider?.name || 'livreur';
+
         try {
+            toast.loading(`Création du BCH pour ${riderName} avec ${selectedBls.length} BL(s)...`);
+            
             const blIds = selectedBls.map(bl => bl.id).join(',');
             const res = await createBch({
                 bl_ids: blIds,
@@ -292,15 +309,20 @@ export const DispatcherBonLivraisonsPage = () => {
                 notes: notes || undefined,
             });
 
+            toast.dismiss();
+            
             if (res.success) {
-                toast.success(`BCH créé avec ${selectedBls.length} BL(s)`);
+                toast.success(`✓ BCH créé avec ${selectedBls.length} BL(s) pour ${riderName}`);
                 await refetch();
                 setSelectedBls([]);
+                setBulkLivreurId('');
             } else {
-                toast.error(res.message || 'Échec création BCH');
+                toast.error(res.message || 'Échec de la création du BCH');
             }
         } catch (e) {
-            toast.error(e instanceof Error ? e.message : 'Échec création BCH');
+            toast.dismiss();
+            console.error('Create BCH error:', e);
+            toast.error(e instanceof Error ? e.message : 'Échec de la création du BCH');
         }
     };
 
@@ -445,11 +467,9 @@ export const DispatcherBonLivraisonsPage = () => {
                                                     onChange={(e) => setSelectedLivreurId(e.target.value === '' ? '' : Number(e.target.value))}
                                                     className="mt-1 w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm"
                                                 >
-                                                    <option value="">-- Sélectionner --</option>
-                                                    {livreurs.map((l: Livreur) => (
-                                                        <option key={l.id} value={l.id}>
-                                                            {l.name}
-                                                        </option>
+                                                    <option value="">-- Non affecté --</option>
+                                                    {livreurs.map((l: Rider) => (
+                                                        <option key={l.id} value={l.id}>{l.name}</option>
                                                     ))}
                                                 </select>
                                             </div>
@@ -611,120 +631,122 @@ export const DispatcherBonLivraisonsPage = () => {
                         <div className={`${showDetailPanel ? 'w-96' : 'flex-1'} bg-white border-l border-gray-200 flex flex-col`}>
                             {/* Drawer Header */}
                             <div className="p-4 border-b border-gray-200 bg-sage-50 shrink-0">
-                                <div className="flex items-center justify-between mb-2">
+                                <div className="flex items-center justify-between mb-3">
                                     <div className="flex items-center gap-2">
-                                        <CheckSquare className="w-5 h-5 text-sage-600" />
-                                        <h2 className="text-sm font-bold text-gray-900">
-                                            Sélection ({selectedBls.length} BL{selectedBls.length > 1 ? 's' : ''})
-                                        </h2>
+                                        <Truck className="w-5 h-5 text-sage-600" />
+                                        <h2 className="text-sm font-bold text-gray-900">Dispatcher</h2>
                                     </div>
                                     <button
                                         onClick={() => setSelectedBls([])}
                                         className="text-xs text-red-600 hover:text-red-800 flex items-center gap-1 font-medium"
                                     >
-                                        <X className="w-4 h-4" /> Tout effacer
+                                        <X className="w-4 h-4" /> Effacer
                                     </button>
                                 </div>
-                                <div className="text-xs text-gray-600">
-                                    Total: {selectedBls.reduce((sum, bl) => sum + parseFloat(bl.total_amount || '0'), 0).toLocaleString()} Dh
-                                </div>
-                            </div>
-
-                            {/* Bulk Actions */}
-                            <div className="p-3 border-b border-gray-200 bg-white space-y-2">
-                                <div className="text-xs font-semibold text-gray-700 mb-2">Actions groupées</div>
-                                <div>
+                                
+                                {/* Livreur Selection - Primary Action */}
+                                <div className="space-y-2">
+                                    <label className="block text-xs font-semibold text-gray-700">
+                                        <User className="w-3 h-3 inline mr-1" />Sélectionner le livreur
+                                    </label>
                                     <select
                                         value={bulkLivreurId}
                                         onChange={(e) => setBulkLivreurId(e.target.value === '' ? '' : Number(e.target.value))}
-                                        className="w-full text-xs rounded border border-gray-300 px-2 py-1.5 focus:ring-1 focus:ring-sage-500"
+                                        className="w-full text-sm rounded-md border-2 border-sage-300 px-3 py-2 focus:ring-2 focus:ring-sage-500 focus:border-sage-500 font-medium"
+                                        disabled={livreursLoading}
                                     >
-                                        <option value="">-- Livreur pour tous --</option>
-                                        {livreurs.map((l: Livreur) => (
-                                            <option key={l.id} value={l.id}>{l.name}</option>
+                                        <option value="">{livreursLoading ? 'Chargement...' : '-- Choisir un livreur --'}</option>
+                                        {livreurs.map((l: Rider) => (
+                                            <option key={l.id} value={l.id}>
+                                                {l.name} {l.branch ? `(${l.branch.name})` : ''}
+                                            </option>
                                         ))}
                                     </select>
+                                    <div className="text-xs text-gray-500 italic">
+                                        Sélectionnez d'abord le livreur, puis cochez les BLs à affecter
+                                    </div>
                                 </div>
-                                <div className="flex gap-2">
+                            </div>
+
+                            {/* Selection Summary */}
+                            <div className="p-3 border-b border-gray-200 bg-white shrink-0">
+                                <div className="flex items-center justify-between mb-2">
+                                    <div className="flex items-center gap-2">
+                                        <CheckSquare className="w-4 h-4 text-sage-600" />
+                                        <span className="text-xs font-semibold text-gray-700">
+                                            {selectedBls.length} BL{selectedBls.length > 1 ? 's' : ''} sélectionné{selectedBls.length > 1 ? 's' : ''}
+                                        </span>
+                                    </div>
+                                    <span className="text-xs font-bold text-sage-600">
+                                        {selectedBls.reduce((sum, bl) => sum + parseFloat(bl.total_amount || '0'), 0).toLocaleString()} Dh
+                                    </span>
+                                </div>
+                                
+                                {/* Action Buttons */}
+                                <div className="flex gap-2 mt-2">
                                     <button
                                         onClick={bulkAssignLivreur}
                                         disabled={saving || bulkLivreurId === ''}
-                                        className="flex-1 text-xs bg-sage-600 text-white px-2 py-1.5 rounded hover:bg-sage-700 disabled:opacity-50 flex items-center justify-center gap-1"
+                                        className="flex-1 text-sm bg-sage-600 text-white px-3 py-2 rounded-md hover:bg-sage-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 font-medium transition-colors shadow-sm"
                                     >
-                                        {saving ? <Loader2 className="w-3 h-3 animate-spin" /> : <CheckSquare className="w-3 h-3" />}
-                                        Affecter
+                                        {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckSquare className="w-4 h-4" />}
+                                        Affecter livreur
                                     </button>
                                     <button
                                         onClick={createBchFromMultiple}
                                         disabled={creatingBch || bulkLivreurId === ''}
-                                        className="flex-1 text-xs bg-blue-600 text-white px-2 py-1.5 rounded hover:bg-blue-700 disabled:opacity-50 flex items-center justify-center gap-1"
+                                        className="flex-1 text-sm bg-blue-600 text-white px-3 py-2 rounded-md hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 font-medium transition-colors shadow-sm"
                                     >
-                                        {creatingBch ? <Loader2 className="w-3 h-3 animate-spin" /> : <PackagePlus className="w-3 h-3" />}
-                                        BCH
+                                        {creatingBch ? <Loader2 className="w-4 h-4 animate-spin" /> : <PackagePlus className="w-4 h-4" />}
+                                        Créer BCH
                                     </button>
                                 </div>
                             </div>
 
                             {/* Selected BLs List */}
                             <div className="flex-1 overflow-y-auto p-3 space-y-2">
-                                {selectedBls.map((bl) => (
-                                    <div key={bl.id} className="bg-white border border-gray-200 rounded-lg p-3 hover:border-sage-300 transition-colors">
-                                        {/* BL Header */}
-                                        <div className="flex items-start justify-between mb-2">
-                                            <div className="flex-1">
-                                                <div className="text-sm font-bold text-gray-900">{bl.bl_number}</div>
-                                                <div className="text-xs text-gray-600 mt-0.5">{bl.partner?.name}</div>
-                                                <div className="text-xs font-semibold text-sage-600 mt-1">
-                                                    {parseFloat(bl.total_amount || '0').toLocaleString()} Dh
+                                {selectedBls.map((bl) => {
+                                    const currentLivreur = livreurs.find(l => l.id === bl.livreur_id);
+                                    return (
+                                        <div key={bl.id} className="bg-gray-50 border border-gray-200 rounded-lg p-3 hover:border-sage-300 transition-colors">
+                                            {/* BL Header */}
+                                            <div className="flex items-start justify-between">
+                                                <div className="flex-1">
+                                                    <div className="text-sm font-bold text-gray-900">{bl.bl_number}</div>
+                                                    <div className="text-xs text-gray-600 mt-0.5">{bl.partner?.name}</div>
+                                                    <div className="text-xs font-semibold text-sage-600 mt-1">
+                                                        {parseFloat(bl.total_amount || '0').toLocaleString()} Dh
+                                                    </div>
+                                                    {currentLivreur && (
+                                                        <div className="mt-2 inline-flex items-center gap-1 px-2 py-1 bg-sage-100 text-sage-700 rounded text-xs font-medium">
+                                                            <Truck className="w-3 h-3" />
+                                                            {currentLivreur.name}
+                                                        </div>
+                                                    )}
+                                                </div>
+                                                <div className="flex flex-col gap-1">
+                                                    <button
+                                                        onClick={() => {
+                                                            setSelected(bl);
+                                                            setShowDetailPanel(true);
+                                                        }}
+                                                        className="p-1.5 rounded hover:bg-gray-200 text-gray-600 hover:text-gray-800 transition-colors"
+                                                        title="Voir détails"
+                                                    >
+                                                        <FileText className="w-4 h-4" />
+                                                    </button>
+                                                    <button
+                                                        onClick={() => setSelectedBls(prev => prev.filter(b => b.id !== bl.id))}
+                                                        className="p-1.5 rounded hover:bg-red-50 text-red-600 hover:text-red-800 transition-colors"
+                                                        title="Retirer"
+                                                    >
+                                                        <X className="w-4 h-4" />
+                                                    </button>
                                                 </div>
                                             </div>
-                                            <button
-                                                onClick={() => setSelectedBls(prev => prev.filter(b => b.id !== bl.id))}
-                                                className="p-1 rounded hover:bg-red-50 text-red-600 hover:text-red-800 transition-colors"
-                                                title="Retirer de la sélection"
-                                            >
-                                                <X className="w-4 h-4" />
-                                            </button>
                                         </div>
-
-                                        {/* Livreur Assignment */}
-                                        <div className="space-y-1.5">
-                                            <label className="block text-xs font-medium text-gray-600">Livreur</label>
-                                            <select
-                                                value={bl.livreur_id || ''}
-                                                onChange={async (e) => {
-                                                    const livreurId = e.target.value === '' ? undefined : Number(e.target.value);
-                                                    try {
-                                                        await update(bl.id, { livreur_id: livreurId });
-                                                        toast.success('Livreur affecté');
-                                                        await refetch();
-                                                    } catch (err) {
-                                                        toast.error('Erreur affectation');
-                                                    }
-                                                }}
-                                                className="w-full text-xs rounded border border-gray-300 px-2 py-1 focus:ring-1 focus:ring-sage-500"
-                                            >
-                                                <option value="">-- Non affecté --</option>
-                                                {livreurs.map((l: Livreur) => (
-                                                    <option key={l.id} value={l.id}>{l.name}</option>
-                                                ))}
-                                            </select>
-                                        </div>
-
-                                        {/* Quick Actions */}
-                                        <div className="flex gap-1.5 mt-2">
-                                            <button
-                                                onClick={() => {
-                                                    setSelected(bl);
-                                                    setShowDetailPanel(true);
-                                                }}
-                                                className="flex-1 text-xs bg-gray-100 text-gray-700 px-2 py-1 rounded hover:bg-gray-200 transition-colors"
-                                            >
-                                                Détails
-                                            </button>
-                                        </div>
-                                    </div>
-                                ))}
+                                    );
+                                })}
                             </div>
                         </div>
                     )}

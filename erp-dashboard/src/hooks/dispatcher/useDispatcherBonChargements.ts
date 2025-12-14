@@ -139,3 +139,93 @@ export const useDispatcherUpdateBchBalance = () => {
 
     return { update, loading };
 };
+
+export const useDispatcherSubmitBch = () => {
+    const [loading, setLoading] = useState(false);
+
+    const submit = async (bchId: number): Promise<ApiSuccessResponse> => {
+        setLoading(true);
+        try {
+            return await dispatcherApi.bonChargements.submit(bchId);
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    return { submit, loading };
+};
+
+export const useDispatcherCancelBch = () => {
+    const [loading, setLoading] = useState(false);
+
+    const cancel = async (bchId: number): Promise<ApiSuccessResponse> => {
+        setLoading(true);
+        try {
+            return await dispatcherApi.bonChargements.cancel(bchId);
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    return { cancel, loading };
+};
+
+export const useDispatcherPrintBch = () => {
+    const [loading, setLoading] = useState(false);
+
+    const print = async (bchId: number): Promise<ApiSuccessResponse> => {
+        setLoading(true);
+        try {
+            return await dispatcherApi.bonChargements.print(bchId);
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    return { print, loading };
+};
+
+export const useDispatcherResubmitBch = () => {
+    const [loading, setLoading] = useState(false);
+
+    const resubmit = async (bchId: number): Promise<ApiSuccessResponse> => {
+        setLoading(true);
+        try {
+            return await dispatcherApi.bonChargements.resubmit(bchId);
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    return { resubmit, loading };
+};
+
+export const useDispatcherEditBch = () => {
+    const [loading, setLoading] = useState(false);
+
+    const edit = async (bchId: number): Promise<any> => {
+        setLoading(true);
+        try {
+            return await dispatcherApi.bonChargements.edit(bchId);
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    return { edit, loading };
+};
+
+export const useDispatcherUpdateBch = () => {
+    const [loading, setLoading] = useState(false);
+
+    const update = async (bchId: number, payload: any): Promise<ApiSuccessResponse> => {
+        setLoading(true);
+        try {
+            return await dispatcherApi.bonChargements.update(bchId, payload);
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    return { update, loading };
+};

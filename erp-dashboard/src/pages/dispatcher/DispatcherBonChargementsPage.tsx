@@ -1,36 +1,86 @@
-import { useMemo, useState } from 'react';
+import { useMemo, useState, useRef, useEffect } from 'react';
 import type { ColDef } from 'ag-grid-community';
-import { Loader2, RefreshCw, CheckCircle2 } from 'lucide-react';
+import { Loader2, RefreshCw, CheckCircle2, Send, XCircle, Printer, Package, TrendingUp, Clock, CheckCheck, FileText, Truck } from 'lucide-react';
 import toast from 'react-hot-toast';
 
 import { MasterLayout } from '@/components/layout/MasterLayout';
 import { DataGrid } from '@/components/common/DataGrid';
 import { ActionPanel } from '@/components/layout/ActionPanel';
+import { SageTabs, type TabItem } from '@/components/common/SageTabs';
+import { SageCollapsible } from '@/components/common/SageCollapsible';
 import {
     useDispatcherBonChargementsList,
     useDispatcherBonChargementDetail,
     useDispatcherValidateBch,
     useDispatcherBchBalance,
+    useDispatcherSubmitBch,
+    useDispatcherCancelBch,
+    useDispatcherPrintBch,
 } from '@/hooks/dispatcher/useDispatcherBonChargements';
 import type { BonChargement } from '@/types/dispatcher.types';
 
 export const DispatcherBonChargementsPage = () => {
     const [selected, setSelected] = useState<BonChargement | null>(null);
+    const [activeTab, setActiveTab] = useState<string>('info');
+    const [openSections, setOpenSections] = useState<Record<string, boolean>>({
+        info: true,
+        bls: true,
+        balance: false,
+    });
+
+    const sectionRefs = useRef<Record<string, HTMLDivElement | null>>({});
+    const containerRef = useRef<HTMLDivElement>(null);
+    const isScrollingRef = useRef(false);
 
     const { data, loading, error, refetch } = useDispatcherBonChargementsList();
-    const bchs = (data as any)?.bchs?.data || (data as any)?.data || [];
+    const bonChargements = (data as any)?.bonChargements?.data || [];
+    const stats = (data as any)?.stats || { total: 0, pending: 0, in_preparation: 0, prepared: 0, completed: 0 };
 
-    const { data: detailData, loading: detailLoading, error: detailError, refetch: refetchDetail } = useDispatcherBonChargementDetail(selected?.id ?? null);
+    const { data: detailData, loading: detailLoading, refetch: refetchDetail } = useDispatcherBonChargementDetail(selected?.id ?? null);
     const { data: balanceData, loading: balanceLoading, error: balanceError, refetch: refetchBalance } = useDispatcherBchBalance(selected?.id ?? null);
     const { validate, loading: validating } = useDispatcherValidateBch();
+    const { submit, loading: submitting } = useDispatcherSubmitBch();
+    const { cancel, loading: cancelling } = useDispatcherCancelBch();
+    const { print, loading: printing } = useDispatcherPrintBch();
 
     const columnDefs = useMemo<ColDef[]>(
         () => [
-            { field: 'id', headerName: 'ID', width: 90 },
-            { field: 'bch_number', headerName: 'BCH', width: 160 },
-            { field: 'status', headerName: 'Statut', width: 140 },
-            { field: 'livreur_id', headerName: 'Livreur', width: 120 },
-            { field: 'created_at', headerName: 'Date', width: 160 },
+            { field: 'id', headerName: 'ID', width: 70 },
+            { field: 'bch_number', headerName: 'BCH', width: 220 },
+            { field: 'status', headerName: 'Statut', width: 120 },
+            { field: 'livreur.name', headerName: 'Livreur', flex: 1, minWidth: 150 },
+            { 
+                field: 'bon_livraisons', 
+                headerName: 'BLs', 
+                width: 70,
+                valueGetter: (params: any) => params.data?.bon_livraisons?.length || 0
+            },
+            { 
+                field: 'created_at', 
+                headerName: 'Date', 
+                width: 100,
+                valueFormatter: (params: any) => params.value ? new Date(params.value).toLocaleDateString('fr-FR') : '-'
+            },
+        ],
+        []
+    );
+
+    const blsColumnDefs = useMemo<ColDef[]>(
+        () => [
+            { field: 'bl_number', headerName: 'BL', width: 200 },
+            { field: 'status', headerName: 'Statut', width: 120 },
+            { 
+                field: 'total_amount', 
+                headerName: 'Montant', 
+                width: 130,
+                valueFormatter: (params: any) => `${parseFloat(params.value || 0).toLocaleString()} Dh`
+            },
+            { 
+                field: 'created_at', 
+                headerName: 'Date', 
+                flex: 1,
+                valueFormatter: (params: any) => params.value ? new Date(params.value).toLocaleDateString('fr-FR') : '-'
+            },
         ],
         []
     );
@@ -39,79 +89,381 @@ export const DispatcherBonChargementsPage = () => {
         setSelected(row);
     };
 
+    const submitSelected = async () => {
+        if (!selected?.id) return;
+        try {
+            toast.loading('Soumission du BCH...');
+            const res = await submit(selected.id);
+            toast.dismiss();
+            if (res.success) {
+                toast.success(res.message || 'BCH soumis au magasinier');
+                await refetch();
+                await refetchDetail();
+            } else {
+                toast.error(res.message || 'Échec soumission');
+            }
+        } catch (e) {
+            toast.dismiss();
+            toast.error(e instanceof Error ? e.message : 'Échec soumission');
+        }
+    };
+
     const validateSelected = async () => {
         if (!selected?.id) return;
         try {
+            toast.loading('Validation du BCH...');
             const res = await validate(selected.id);
-            if (res.success) toast.success(res.message || 'BCH validé');
-            else toast.error(res.message || 'Échec validation');
-            await refetch();
-            await refetchDetail();
+            toast.dismiss();
+            if (res.success) {
+                toast.success(res.message || 'BCH validé');
+                await refetch();
+                await refetchDetail();
+            } else {
+                toast.error(res.message || 'Échec validation');
+            }
         } catch (e) {
+            toast.dismiss();
             toast.error(e instanceof Error ? e.message : 'Échec validation');
         }
     };
 
+    const cancelSelected = async () => {
+        if (!selected?.id) return;
+        if (!confirm('Êtes-vous sûr de vouloir annuler ce BCH ?')) return;
+        try {
+            toast.loading('Annulation du BCH...');
+            const res = await cancel(selected.id);
+            toast.dismiss();
+            if (res.success) {
+                toast.success(res.message || 'BCH annulé');
+                await refetch();
+                await refetchDetail();
+            } else {
+                toast.error(res.message || 'Échec annulation');
+            }
+        } catch (e) {
+            toast.dismiss();
+            toast.error(e instanceof Error ? e.message : 'Échec annulation');
+        }
+    };
+
+    const printSelected = async () => {
+        if (!selected?.id) return;
+        try {
+            toast.loading('Génération du PDF...');
+            const res = await print(selected.id);
+            toast.dismiss();
+            if (res.success) {
+                toast.success('PDF généré');
+            } else {
+                toast.error(res.message || 'Échec impression');
+            }
+        } catch (e) {
+            toast.dismiss();
+            toast.error(e instanceof Error ? e.message : 'Échec impression');
+        }
+    };
+
     const details = detailData?.bch || selected;
+    const bls = details?.bon_livraisons || [];
+
+    const tabs: TabItem[] = useMemo(
+        () => [
+            { id: 'info', label: 'Informations', icon: FileText },
+            { id: 'bls', label: `BLs (${bls.length})`, icon: Package },
+            { id: 'balance', label: 'Balance', icon: TrendingUp },
+        ],
+        [bls.length]
+    );
+
+    useEffect(() => {
+        const container = containerRef.current;
+        if (!container) return;
+
+        const handleScroll = () => {
+            if (isScrollingRef.current) return;
+
+            const containerTop = container.scrollTop;
+            for (const tab of tabs) {
+                const el = sectionRefs.current[tab.id];
+                if (!el || !openSections[tab.id]) continue;
+
+                const elTop = el.offsetTop;
+                const elBottom = elTop + el.clientHeight;
+
+                if (elTop <= containerTop + 100 && elBottom > containerTop + 50) {
+                    if (activeTab !== tab.id) {
+                        setActiveTab(tab.id);
+                    }
+                    break;
+                }
+            }
+        };
+
+        container.addEventListener('scroll', handleScroll);
+        return () => container.removeEventListener('scroll', handleScroll);
+    }, [openSections, tabs, activeTab]);
+
+    const handleTabChange = (id: string) => {
+        setActiveTab(id);
+        isScrollingRef.current = true;
+
+        if (!openSections[id]) {
+            setOpenSections(prev => ({ ...prev, [id]: true }));
+        }
+
+        setTimeout(() => {
+            const el = sectionRefs.current[id];
+            const container = containerRef.current;
+
+            if (el && container) {
+                const elementTop = el.offsetTop;
+                container.scrollTo({
+                    top: elementTop - container.offsetTop,
+                    behavior: 'smooth'
+                });
+            }
+            setTimeout(() => { isScrollingRef.current = false; }, 600);
+        }, 100);
+    };
+
+    const toggleSection = (id: string, isOpen: boolean) => {
+        setOpenSections(prev => ({ ...prev, [id]: isOpen }));
+    };
+
+    const handleExpandAll = () => {
+        const allOpen = tabs.reduce((acc, tab) => ({ ...acc, [tab.id]: true }), {});
+        setOpenSections(allOpen);
+    };
+
+    const handleCollapseAll = () => {
+        const allClosed = tabs.reduce((acc, tab) => ({ ...acc, [tab.id]: false }), {});
+        setOpenSections(allClosed);
+    };
+
+    const getStatusBadge = (status: string) => {
+        const badges: Record<string, { label: string; className: string; icon: any }> = {
+            pending: { label: 'En attente', className: 'bg-yellow-100 text-yellow-800 border-yellow-200', icon: Clock },
+            in_preparation: { label: 'En préparation', className: 'bg-blue-100 text-blue-800 border-blue-200', icon: Package },
+            prepared: { label: 'Préparé', className: 'bg-green-100 text-green-800 border-green-200', icon: CheckCheck },
+            completed: { label: 'Complété', className: 'bg-emerald-100 text-emerald-800 border-emerald-200', icon: CheckCircle2 },
+            cancelled: { label: 'Annulé', className: 'bg-red-100 text-red-800 border-red-200', icon: XCircle },
+        };
+        const badge = badges[status] || badges.pending;
+        const Icon = badge.icon;
+        return (
+            <span className={`inline-flex items-center gap-1 px-2 py-1 rounded-md text-xs font-medium border ${badge.className}`}>
+                <Icon className="w-3 h-3" />
+                {badge.label}
+            </span>
+        );
+    };
 
     return (
         <MasterLayout
             leftContent={
                 <div className="h-full bg-white border-r border-gray-100 flex flex-col">
-                    <div className="p-4 border-b border-gray-100">
-                        <h1 className="text-sm font-semibold text-gray-900">Bons de chargement (BCH)</h1>
-                        <p className="text-xs text-gray-500 mt-1">/api/backend/dispatcher/bon-chargements</p>
+                    <div className="p-3 border-b border-gray-100 shrink-0">
+                        <h1 className="text-sm font-semibold text-gray-900 mb-2">Bons de chargement (BCH)</h1>
+                        
+                        <div className="grid grid-cols-2 gap-2 mt-2">
+                            <div className="bg-slate-50 rounded p-2">
+                                <div className="text-xs text-gray-500">Total</div>
+                                <div className="text-lg font-bold text-slate-700">{stats.total}</div>
+                            </div>
+                            <div className="bg-yellow-50 rounded p-2">
+                                <div className="text-xs text-gray-500">En attente</div>
+                                <div className="text-lg font-bold text-yellow-700">{stats.pending}</div>
+                            </div>
+                            <div className="bg-green-50 rounded p-2">
+                                <div className="text-xs text-gray-500">Préparés</div>
+                                <div className="text-lg font-bold text-green-700">{stats.prepared}</div>
+                            </div>
+                            <div className="bg-emerald-50 rounded p-2">
+                                <div className="text-xs text-gray-500">Complétés</div>
+                                <div className="text-lg font-bold text-emerald-700">{stats.completed}</div>
+                            </div>
+                        </div>
                     </div>
 
-                    {error && <div className="px-4 pt-3 text-sm text-red-600">{error}</div>}
+                    {error && <div className="px-4 py-2 text-sm text-red-600 bg-red-50 border-b border-red-100">{error}</div>}
 
-                    <div className="flex-1 p-2">
-                        <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-2 h-full">
+                    <div className="flex-1 min-h-0 p-2">
+                        <div className="bg-white rounded-lg border border-gray-200 shadow-sm h-full">
                             {loading ? (
                                 <div className="h-full flex items-center justify-center text-gray-400">
                                     <Loader2 className="w-6 h-6 animate-spin mr-2" /> Chargement...
                                 </div>
                             ) : (
-                                <DataGrid rowData={bchs} columnDefs={columnDefs} loading={loading} onRowSelected={onSelect} />
+                                <DataGrid rowData={bonChargements} columnDefs={columnDefs} loading={loading} onRowSelected={onSelect} />
                             )}
                         </div>
                     </div>
                 </div>
             }
             mainContent={
-                <div className="h-full overflow-y-auto bg-slate-50 p-6 space-y-4">
-                    <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-4">
-                        <div className="text-sm font-semibold text-gray-900">Détails BCH</div>
-
-                        {!selected ? (
-                            <div className="mt-3 text-sm text-gray-500">Sélectionne un BCH dans la liste.</div>
-                        ) : (
-                            <>
-                                {(detailLoading || balanceLoading || validating) && (
-                                    <div className="mt-3 text-sm text-gray-500 flex items-center gap-2">
-                                        <Loader2 className="w-4 h-4 animate-spin" /> Traitement...
+                <div className="h-full flex flex-col bg-white overflow-hidden">
+                    {!selected ? (
+                        <div className="flex-1 flex items-center justify-center bg-slate-50">
+                            <div className="text-center">
+                                <Package className="w-16 h-16 text-gray-300 mb-4 mx-auto" />
+                                <h3 className="text-lg font-semibold text-gray-700 mb-2">Aucun BCH sélectionné</h3>
+                                <p className="text-sm text-gray-500">Sélectionnez un bon de chargement dans la liste pour voir les détails</p>
+                            </div>
+                        </div>
+                    ) : (
+                        <>
+                            <div className="bg-white border-b border-gray-200 p-4 shrink-0">
+                                <div className="flex justify-between items-start">
+                                    <div>
+                                        <h1 className="text-xl font-bold text-gray-900">{details?.bch_number}</h1>
+                                        <div className="flex items-center gap-3 mt-2">
+                                            {getStatusBadge(details?.status || 'pending')}
+                                            <span className="text-sm text-gray-500">ID: {details?.id}</span>
+                                        </div>
                                     </div>
-                                )}
+                                    {(detailLoading || validating || submitting || cancelling || printing) && (
+                                        <div className="flex items-center gap-2 text-sm text-gray-500">
+                                            <Loader2 className="w-4 h-4 animate-spin" />
+                                            Traitement...
+                                        </div>
+                                    )}
+                                </div>
+                            </div>
 
-                                {detailError && <div className="mt-3 text-sm text-red-600">{detailError}</div>}
+                            <div className="shrink-0 bg-white border-b border-gray-200">
+                                <SageTabs
+                                    tabs={tabs}
+                                    activeTabId={activeTab}
+                                    onTabChange={handleTabChange}
+                                    onExpandAll={handleExpandAll}
+                                    onCollapseAll={handleCollapseAll}
+                                    className="px-4 shadow-none"
+                                />
+                            </div>
 
-                                <div className="mt-4">
-                                    <div className="text-xs font-semibold text-gray-600">BCH payload</div>
-                                    <pre className="mt-2 text-xs bg-gray-50 border border-gray-100 rounded p-3 overflow-auto">
-                                        {JSON.stringify(details, null, 2)}
-                                    </pre>
+                            <div ref={containerRef} className="flex-1 overflow-y-auto p-4 space-y-3 scroll-smooth bg-slate-50">
+                                <div ref={el => { sectionRefs.current['info'] = el; }}>
+                                    <SageCollapsible
+                                        title="Informations"
+                                        isOpen={openSections['info']}
+                                        onOpenChange={(open) => toggleSection('info', open)}
+                                    >
+                                        <div>
+                                            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                                                <div className="p-4 rounded-lg border border-gray-100 bg-gray-50">
+                                                    <div className="flex items-center gap-2 text-xs text-gray-500 mb-1">
+                                                        <Truck className="w-3 h-3" />
+                                                        Livreur
+                                                    </div>
+                                                    <div className="font-semibold text-gray-900">{details?.livreur?.name || '-'}</div>
+                                                    <div className="text-xs text-gray-500 mt-1">{details?.livreur?.email || '-'}</div>
+                                                </div>
+                                                <div className="p-4 rounded-lg border border-gray-100 bg-gray-50">
+                                                    <div className="flex items-center gap-2 text-xs text-gray-500 mb-1">
+                                                        <FileText className="w-3 h-3" />
+                                                        Bons de livraison
+                                                    </div>
+                                                    <div className="font-semibold text-gray-900">{bls.length} BL(s)</div>
+                                                </div>
+                                                <div className="p-4 rounded-lg border border-gray-100 bg-gray-50">
+                                                    <div className="flex items-center gap-2 text-xs text-gray-500 mb-1">
+                                                        <Clock className="w-3 h-3" />
+                                                        Date création
+                                                    </div>
+                                                    <div className="font-semibold text-gray-900">
+                                                        {details?.created_at ? new Date(details.created_at).toLocaleDateString('fr-FR') : '-'}
+                                                    </div>
+                                                    <div className="text-xs text-gray-500 mt-1">
+                                                        {details?.created_at ? new Date(details.created_at).toLocaleTimeString('fr-FR') : ''}
+                                                    </div>
+                                                </div>
+
+                                                {details?.submitted_at && (
+                                                    <div className="col-span-full mt-2 p-3 bg-blue-50 border border-blue-200 rounded-lg">
+                                                        <div className="text-xs font-semibold text-blue-900">Soumis le: {new Date(details.submitted_at).toLocaleString('fr-FR')}</div>
+                                                    </div>
+                                                )}
+
+                                                {details?.notes && (
+                                                    <div className="col-span-full mt-2">
+                                                        <div className="text-xs font-semibold text-gray-600 mb-2">Notes</div>
+                                                        <div className="p-3 bg-gray-50 border border-gray-100 rounded-lg text-sm text-gray-700">
+                                                            {details.notes}
+                                                        </div>
+                                                    </div>
+                                                )}
+                                            </div>
+                                        </div>
+                                    </SageCollapsible>
                                 </div>
 
-                                <div className="mt-4">
-                                    <div className="text-xs font-semibold text-gray-600">Balance</div>
-                                    {balanceError && <div className="mt-2 text-sm text-red-600">{balanceError}</div>}
-                                    <pre className="mt-2 text-xs bg-gray-50 border border-gray-100 rounded p-3 overflow-auto">
-                                        {JSON.stringify(balanceData, null, 2)}
-                                    </pre>
+                                <div ref={el => { sectionRefs.current['bls'] = el; }}>
+                                    <SageCollapsible
+                                        title={`Bons de livraison (${bls.length})`}
+                                        isOpen={openSections['bls']}
+                                        onOpenChange={(open) => toggleSection('bls', open)}
+                                    >
+                                        <div>
+                                            {bls.length === 0 ? (
+                                                <div className="text-sm text-gray-500 py-4">Aucun BL associé</div>
+                                            ) : (
+                                                <div className="h-64">
+                                                    <DataGrid 
+                                                        rowData={bls} 
+                                                        columnDefs={blsColumnDefs} 
+                                                        loading={false}
+                                                    />
+                                                </div>
+                                            )}
+                                        </div>
+                                    </SageCollapsible>
                                 </div>
-                            </>
-                        )}
-                    </div>
+
+                                <div ref={el => { sectionRefs.current['balance'] = el; }}>
+                                    <SageCollapsible
+                                        title="Balance BCH"
+                                        isOpen={openSections['balance']}
+                                        onOpenChange={(open) => {
+                                            toggleSection('balance', open);
+                                            if (open && selected) refetchBalance();
+                                        }}
+                                    >
+                                        <div>
+                                            {balanceLoading ? (
+                                                <div className="flex items-center justify-center py-8 text-gray-400">
+                                                    <Loader2 className="w-5 h-5 animate-spin mr-2" />
+                                                    Chargement de la balance...
+                                                </div>
+                                            ) : balanceError ? (
+                                                <div className="text-sm text-red-600">{balanceError}</div>
+                                            ) : balanceData ? (
+                                                <div className="space-y-3">
+                                                    {(balanceData as any).balance && (
+                                                        <div className="grid grid-cols-2 gap-3">
+                                                            <div className="p-3 rounded-lg border border-gray-100 bg-gray-50">
+                                                                <div className="text-xs text-gray-500 mb-1">Total alloué</div>
+                                                                <div className="font-semibold text-gray-900">{(balanceData as any).balance.total_allocated || 0}</div>
+                                                            </div>
+                                                            <div className="p-3 rounded-lg border border-gray-100 bg-gray-50">
+                                                                <div className="text-xs text-gray-500 mb-1">Total disponible</div>
+                                                                <div className="font-semibold text-gray-900">{(balanceData as any).balance.total_available || 0}</div>
+                                                            </div>
+                                                        </div>
+                                                    )}
+                                                    <div className="text-xs text-gray-500 mt-2">
+                                                        Dernière mise à jour: {new Date().toLocaleString('fr-FR')}
+                                                    </div>
+                                                </div>
+                                            ) : (
+                                                <div className="text-sm text-gray-500 py-4">Aucune donnée de balance disponible</div>
+                                            )}
+                                        </div>
+                                    </SageCollapsible>
+                                </div>
+                            </div>
+                        </>
+                    )}
                 </div>
             }
             rightContent={
@@ -125,16 +477,43 @@ export const DispatcherBonChargementsPage = () => {
                                     variant: 'sage',
                                     onClick: () => {
                                         refetch();
-                                        refetchDetail();
-                                        refetchBalance();
+                                        if (selected) {
+                                            refetchDetail();
+                                            if (openSections.balance) refetchBalance();
+                                        }
                                     },
+                                },
+                            ],
+                        },
+                        {
+                            items: [
+                                {
+                                    icon: Send,
+                                    label: 'Soumettre',
+                                    variant: 'primary',
+                                    onClick: submitSelected,
+                                    disabled: !selected || submitting || selected.status !== 'pending',
                                 },
                                 {
                                     icon: CheckCircle2,
-                                    label: 'Valider BCH',
-                                    variant: 'primary',
+                                    label: 'Valider',
+                                    variant: 'default',
                                     onClick: validateSelected,
-                                    disabled: !selected || validating,
+                                    disabled: !selected || validating || selected.status === 'completed',
+                                },
+                                {
+                                    icon: XCircle,
+                                    label: 'Annuler',
+                                    variant: 'default',
+                                    onClick: cancelSelected,
+                                    disabled: !selected || cancelling || selected.status === 'cancelled' || selected.status === 'completed',
+                                },
+                                {
+                                    icon: Printer,
+                                    label: 'Imprimer',
+                                    variant: 'default',
+                                    onClick: printSelected,
+                                    disabled: !selected || printing,
                                 },
                             ],
                         },

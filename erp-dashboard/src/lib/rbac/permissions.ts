@@ -107,6 +107,11 @@ export const PERMISSIONS = {
         BON_CHARGEMENTS_SHOW: 'admin.dispatcher.bon-chargements.show',
         BON_CHARGEMENTS_VALIDATE: 'admin.dispatcher.bon-chargements.validate',
         BON_CHARGEMENTS_BALANCE: 'admin.dispatcher.bon-chargements.balance',
+
+        DECHARGES_INDEX: 'admin.dispatcher.decharges.index',
+        DECHARGES_SHOW: 'admin.dispatcher.decharges.show',
+        DECHARGES_APPROVE_RETURN: 'admin.dispatcher.decharges.approve-return',
+        DECHARGES_REJECT: 'admin.dispatcher.decharges.reject',
     },
 
     // Bon de Commandes
@@ -252,6 +257,7 @@ export const PAGE_PERMISSIONS: Record<string, string | string[]> = {
     '/dispatcher/bon-livraisons': PERMISSIONS.DISPATCHER.BON_LIVRAISONS_INDEX,
     '/dispatcher/bon-chargements/create': PERMISSIONS.DISPATCHER.BON_CHARGEMENTS_CREATE,
     '/dispatcher/bon-chargements': PERMISSIONS.DISPATCHER.BON_CHARGEMENTS_INDEX,
+    '/dispatcher/decharges': PERMISSIONS.DISPATCHER.DECHARGES_INDEX,
     
     // Payments
     '/payments': PERMISSIONS.PAYMENTS.DASHBOARD,

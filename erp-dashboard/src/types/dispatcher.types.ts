@@ -43,6 +43,7 @@ export interface ConvertToBlResponse extends ApiSuccessResponse {
 export interface Livreur {
     id: number;
     name: string;
+    email: string;
 }
 
 export interface BonLivraisonItem {
@@ -105,8 +106,14 @@ export interface BonChargement {
     bch_number?: string;
     status?: string;
     livreur_id?: number;
+    livreur?: Livreur;
+    bon_livraisons?: BonLivraison[];
     notes?: string;
     created_at?: string;
+    submitted_at?: string;
+    validated_at?: string;
+    cancelled_at?: string;
+    completed_at?: string;
 }
 
 export interface BonChargementsResponse {
@@ -123,4 +130,35 @@ export interface BalanceResponse {
 
 export interface UpdateBalanceRequest {
     allocations: Record<string, Record<string, number>>;
+}
+
+// Decharges types
+export interface Decharge {
+    id: number;
+    decharge_number?: string;
+    type?: string; // 'delivery' | 'return'
+    status?: string;
+    bl_id?: number;
+    bl_number?: string;
+    livreur_id?: number;
+    livreur?: Livreur;
+    created_at?: string;
+    items?: DechargeItem[];
+}
+
+export interface DechargeItem {
+    id: number;
+    product_id?: number;
+    product_name?: string;
+    delivered_quantity?: number;
+    returned_quantity?: number;
+    return_reason?: string;
+}
+
+export interface DechargesResponse {
+    decharges: PaginatedResponse<Decharge>;
+}
+
+export interface DechargeDetailResponse {
+    decharge: Decharge;
 }
