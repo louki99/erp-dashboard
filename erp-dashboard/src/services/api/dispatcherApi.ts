@@ -145,6 +145,18 @@ export const dispatcherApi = {
             const response = await apiClient.get(`${DISPATCHER_BASE}/bon-chargements/${id}/print`);
             return response.data;
         },
+
+        addBl: async (id: number, blIds: number[]): Promise<ApiSuccessResponse> => {
+            const response = await apiClient.post<ApiSuccessResponse>(`${DISPATCHER_BASE}/bon-chargements/${id}/bls`, {
+                bl_ids: blIds,
+            });
+            return response.data;
+        },
+
+        removeBl: async (id: number, blId: number): Promise<ApiSuccessResponse> => {
+            const response = await apiClient.delete<ApiSuccessResponse>(`${DISPATCHER_BASE}/bon-chargements/${id}/bls/${blId}`);
+            return response.data;
+        },
     },
 
     decharges: {

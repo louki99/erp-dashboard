@@ -31,6 +31,8 @@ export {
     useDispatcherResubmitBch,
     useDispatcherEditBch,
     useDispatcherUpdateBch,
+    useDispatcherAddBlToBch,
+    useDispatcherRemoveBlFromBch,
 } from './useDispatcherBonChargements';
 
 // Decharges

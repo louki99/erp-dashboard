@@ -229,3 +229,33 @@ export const useDispatcherUpdateBch = () => {
 
     return { update, loading };
 };
+
+export const useDispatcherAddBlToBch = () => {
+    const [loading, setLoading] = useState(false);
+
+    const addBl = async (bchId: number, blIds: number[]): Promise<ApiSuccessResponse> => {
+        setLoading(true);
+        try {
+            return await dispatcherApi.bonChargements.addBl(bchId, blIds);
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    return { addBl, loading };
+};
+
+export const useDispatcherRemoveBlFromBch = () => {
+    const [loading, setLoading] = useState(false);
+
+    const removeBl = async (bchId: number, blId: number): Promise<ApiSuccessResponse> => {
+        setLoading(true);
+        try {
+            return await dispatcherApi.bonChargements.removeBl(bchId, blId);
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    return { removeBl, loading };
+};

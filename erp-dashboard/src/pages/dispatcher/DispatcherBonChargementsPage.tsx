@@ -1,6 +1,6 @@
 import { useMemo, useState, useRef, useEffect } from 'react';
 import type { ColDef } from 'ag-grid-community';
-import { Loader2, RefreshCw, CheckCircle2, Send, XCircle, Printer, Package, TrendingUp, Clock, CheckCheck, FileText, Truck } from 'lucide-react';
+import { Loader2, RefreshCw, CheckCircle2, Send, XCircle, Printer, Package, TrendingUp, Clock, CheckCheck, FileText, Truck, Plus } from 'lucide-react';
 import toast from 'react-hot-toast';
 
 import { MasterLayout } from '@/components/layout/MasterLayout';
@@ -8,6 +8,8 @@ import { DataGrid } from '@/components/common/DataGrid';
 import { ActionPanel } from '@/components/layout/ActionPanel';
 import { SageTabs, type TabItem } from '@/components/common/SageTabs';
 import { SageCollapsible } from '@/components/common/SageCollapsible';
+import { ConfirmModal } from '@/components/common/Modal';
+import { AddBlToBchModal } from '@/components/dispatcher/AddBlToBchModal';
 import {
     useDispatcherBonChargementsList,
     useDispatcherBonChargementDetail,
@@ -16,6 +18,8 @@ import {
     useDispatcherSubmitBch,
     useDispatcherCancelBch,
     useDispatcherPrintBch,
+    useDispatcherAddBlToBch,
+    useDispatcherRemoveBlFromBch,
 } from '@/hooks/dispatcher/useDispatcherBonChargements';
 import type { BonChargement } from '@/types/dispatcher.types';
 
@@ -27,6 +31,11 @@ export const DispatcherBonChargementsPage = () => {
         bls: true,
         balance: false,
     });
+    const [showAddBlModal, setShowAddBlModal] = useState(false);
+    const [blToRemove, setBlToRemove] = useState<{ id: number; bl_number: string } | null>(null);
+    const [showSubmitConfirm, setShowSubmitConfirm] = useState(false);
+    const [showValidateConfirm, setShowValidateConfirm] = useState(false);
+    const [showCancelConfirm, setShowCancelConfirm] = useState(false);
 
     const sectionRefs = useRef<Record<string, HTMLDivElement | null>>({});
     const containerRef = useRef<HTMLDivElement>(null);
@@ -42,6 +51,8 @@ export const DispatcherBonChargementsPage = () => {
     const { submit, loading: submitting } = useDispatcherSubmitBch();
     const { cancel, loading: cancelling } = useDispatcherCancelBch();
     const { print, loading: printing } = useDispatcherPrintBch();
+    const { addBl, loading: addingBl } = useDispatcherAddBlToBch();
+    const { removeBl, loading: removingBl } = useDispatcherRemoveBlFromBch();
 
     const columnDefs = useMemo<ColDef[]>(
         () => [
@@ -64,6 +75,8 @@ export const DispatcherBonChargementsPage = () => {
         ],
         []
     );
+
+    const [selectedBlForRemoval, setSelectedBlForRemoval] = useState<any>(null);
 
     const blsColumnDefs = useMemo<ColDef[]>(
         () => [
@@ -89,61 +102,132 @@ export const DispatcherBonChargementsPage = () => {
         setSelected(row);
     };
 
+    const handleSubmitClick = () => {
+        setShowSubmitConfirm(true);
+    };
+
     const submitSelected = async () => {
         if (!selected?.id) return;
+        setShowSubmitConfirm(false);
+        
+        const toastId = toast.loading(
+            <div className="flex items-center gap-2">
+                <Loader2 className="w-4 h-4 animate-spin" />
+                <span>Soumission du BCH en cours...</span>
+            </div>,
+            { duration: Infinity }
+        );
+        
         try {
-            toast.loading('Soumission du BCH...');
             const res = await submit(selected.id);
-            toast.dismiss();
+            toast.dismiss(toastId);
+            
             if (res.success) {
-                toast.success(res.message || 'BCH soumis au magasinier');
+                toast.success(
+                    <div className="flex items-center gap-2">
+                        <CheckCircle2 className="w-4 h-4" />
+                        <span>{res.message || 'BCH soumis au magasinier avec succès'}</span>
+                    </div>
+                );
                 await refetch();
                 await refetchDetail();
             } else {
-                toast.error(res.message || 'Échec soumission');
+                toast.error(res.message || 'Échec de la soumission');
             }
         } catch (e) {
-            toast.dismiss();
-            toast.error(e instanceof Error ? e.message : 'Échec soumission');
+            toast.dismiss(toastId);
+            toast.error(
+                <div className="flex items-center gap-2">
+                    <XCircle className="w-4 h-4" />
+                    <span>{e instanceof Error ? e.message : 'Échec de la soumission'}</span>
+                </div>
+            );
         }
+    };
+
+    const handleValidateClick = () => {
+        setShowValidateConfirm(true);
     };
 
     const validateSelected = async () => {
         if (!selected?.id) return;
+        setShowValidateConfirm(false);
+        
+        const toastId = toast.loading(
+            <div className="flex items-center gap-2">
+                <Loader2 className="w-4 h-4 animate-spin" />
+                <span>Validation du BCH en cours...</span>
+            </div>,
+            { duration: Infinity }
+        );
+        
         try {
-            toast.loading('Validation du BCH...');
             const res = await validate(selected.id);
-            toast.dismiss();
+            toast.dismiss(toastId);
+            
             if (res.success) {
-                toast.success(res.message || 'BCH validé');
+                toast.success(
+                    <div className="flex items-center gap-2">
+                        <CheckCircle2 className="w-4 h-4" />
+                        <span>{res.message || 'BCH validé avec succès'}</span>
+                    </div>
+                );
                 await refetch();
                 await refetchDetail();
             } else {
-                toast.error(res.message || 'Échec validation');
+                toast.error(res.message || 'Échec de la validation');
             }
         } catch (e) {
-            toast.dismiss();
-            toast.error(e instanceof Error ? e.message : 'Échec validation');
+            toast.dismiss(toastId);
+            toast.error(
+                <div className="flex items-center gap-2">
+                    <XCircle className="w-4 h-4" />
+                    <span>{e instanceof Error ? e.message : 'Échec de la validation'}</span>
+                </div>
+            );
         }
+    };
+
+    const handleCancelClick = () => {
+        setShowCancelConfirm(true);
     };
 
     const cancelSelected = async () => {
         if (!selected?.id) return;
-        if (!confirm('Êtes-vous sûr de vouloir annuler ce BCH ?')) return;
+        setShowCancelConfirm(false);
+        
+        const toastId = toast.loading(
+            <div className="flex items-center gap-2">
+                <Loader2 className="w-4 h-4 animate-spin" />
+                <span>Annulation du BCH en cours...</span>
+            </div>,
+            { duration: Infinity }
+        );
+        
         try {
-            toast.loading('Annulation du BCH...');
             const res = await cancel(selected.id);
-            toast.dismiss();
+            toast.dismiss(toastId);
+            
             if (res.success) {
-                toast.success(res.message || 'BCH annulé');
+                toast.success(
+                    <div className="flex items-center gap-2">
+                        <CheckCircle2 className="w-4 h-4" />
+                        <span>{res.message || 'BCH annulé avec succès'}</span>
+                    </div>
+                );
                 await refetch();
                 await refetchDetail();
             } else {
-                toast.error(res.message || 'Échec annulation');
+                toast.error(res.message || 'Échec de l\'annulation');
             }
         } catch (e) {
-            toast.dismiss();
-            toast.error(e instanceof Error ? e.message : 'Échec annulation');
+            toast.dismiss(toastId);
+            toast.error(
+                <div className="flex items-center gap-2">
+                    <XCircle className="w-4 h-4" />
+                    <span>{e instanceof Error ? e.message : 'Échec de l\'annulation'}</span>
+                </div>
+            );
         }
     };
 
@@ -161,6 +245,46 @@ export const DispatcherBonChargementsPage = () => {
         } catch (e) {
             toast.dismiss();
             toast.error(e instanceof Error ? e.message : 'Échec impression');
+        }
+    };
+
+    const handleAddBls = async (blIds: number[]) => {
+        if (!selected?.id) return;
+        try {
+            toast.loading('Ajout des BLs...');
+            const res = await addBl(selected.id, blIds);
+            toast.dismiss();
+            if (res.success) {
+                toast.success(res.message || `${blIds.length} BL(s) ajouté(s) avec succès`);
+                setShowAddBlModal(false);
+                await refetch();
+                await refetchDetail();
+            } else {
+                toast.error(res.message || 'Échec ajout BLs');
+            }
+        } catch (e) {
+            toast.dismiss();
+            toast.error(e instanceof Error ? e.message : 'Échec ajout BLs');
+        }
+    };
+
+    const handleRemoveBl = async () => {
+        if (!selected?.id || !blToRemove) return;
+        try {
+            toast.loading('Retrait du BL...');
+            const res = await removeBl(selected.id, blToRemove.id);
+            toast.dismiss();
+            if (res.success) {
+                toast.success(res.message || 'BL retiré avec succès');
+                setBlToRemove(null);
+                await refetch();
+                await refetchDetail();
+            } else {
+                toast.error(res.message || 'Échec retrait BL');
+            }
+        } catch (e) {
+            toast.dismiss();
+            toast.error(e instanceof Error ? e.message : 'Échec retrait BL');
         }
     };
 
@@ -201,7 +325,9 @@ export const DispatcherBonChargementsPage = () => {
         };
 
         container.addEventListener('scroll', handleScroll);
-        return () => container.removeEventListener('scroll', handleScroll);
+        return () => {
+            container.removeEventListener('scroll', handleScroll);
+        };
     }, [openSections, tabs, activeTab]);
 
     const handleTabChange = (id: string) => {
@@ -260,6 +386,7 @@ export const DispatcherBonChargementsPage = () => {
     };
 
     return (
+        <>
         <MasterLayout
             leftContent={
                 <div className="h-full bg-white border-r border-gray-100 flex flex-col">
@@ -404,7 +531,37 @@ export const DispatcherBonChargementsPage = () => {
                                         isOpen={openSections['bls']}
                                         onOpenChange={(open) => toggleSection('bls', open)}
                                     >
-                                        <div>
+                                        <div className="space-y-3">
+                                            {(selected?.status === 'pending' || selected?.status === 'draft') && (
+                                                <div className="flex justify-between items-center">
+                                                    <div>
+                                                        {selectedBlForRemoval && (
+                                                            <button
+                                                                onClick={() => {
+                                                                    setBlToRemove({ 
+                                                                        id: selectedBlForRemoval.id, 
+                                                                        bl_number: selectedBlForRemoval.bl_number 
+                                                                    });
+                                                                }}
+                                                                className="inline-flex items-center gap-2 px-3 py-2 text-sm font-medium text-white bg-red-600 rounded-md hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500"
+                                                            >
+                                                                <XCircle className="w-4 h-4" />
+                                                                Retirer le BL sélectionné
+                                                            </button>
+                                                        )}
+                                                    </div>
+                                                    <button
+                                                        onClick={() => {
+                                                            console.log('Add BL button clicked, opening modal');
+                                                            setShowAddBlModal(true);
+                                                        }}
+                                                        className="inline-flex items-center gap-2 px-3 py-2 text-sm font-medium text-white bg-blue-600 rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
+                                                    >
+                                                        <Plus className="w-4 h-4" />
+                                                        Ajouter des BLs
+                                                    </button>
+                                                </div>
+                                            )}
                                             {bls.length === 0 ? (
                                                 <div className="text-sm text-gray-500 py-4">Aucun BL associé</div>
                                             ) : (
@@ -413,6 +570,7 @@ export const DispatcherBonChargementsPage = () => {
                                                         rowData={bls} 
                                                         columnDefs={blsColumnDefs} 
                                                         loading={false}
+                                                        onRowSelected={(row) => setSelectedBlForRemoval(row)}
                                                     />
                                                 </div>
                                             )}
@@ -491,21 +649,21 @@ export const DispatcherBonChargementsPage = () => {
                                     icon: Send,
                                     label: 'Soumettre',
                                     variant: 'primary',
-                                    onClick: submitSelected,
+                                    onClick: handleSubmitClick,
                                     disabled: !selected || submitting || selected.status !== 'pending',
                                 },
                                 {
                                     icon: CheckCircle2,
                                     label: 'Valider',
                                     variant: 'default',
-                                    onClick: validateSelected,
+                                    onClick: handleValidateClick,
                                     disabled: !selected || validating || selected.status === 'completed',
                                 },
                                 {
                                     icon: XCircle,
                                     label: 'Annuler',
                                     variant: 'default',
-                                    onClick: cancelSelected,
+                                    onClick: handleCancelClick,
                                     disabled: !selected || cancelling || selected.status === 'cancelled' || selected.status === 'completed',
                                 },
                                 {
@@ -521,5 +679,62 @@ export const DispatcherBonChargementsPage = () => {
                 />
             }
         />
+
+        <AddBlToBchModal
+            isOpen={showAddBlModal}
+            onClose={() => setShowAddBlModal(false)}
+            onConfirm={handleAddBls}
+            loading={addingBl}
+            existingBlIds={bls.map((bl: any) => bl.id)}
+        />
+
+        <ConfirmModal
+            isOpen={!!blToRemove}
+            onClose={() => setBlToRemove(null)}
+            onConfirm={handleRemoveBl}
+            title="Retirer le BL du BCH"
+            message={`Êtes-vous sûr de vouloir retirer le BL "${blToRemove?.bl_number}" de ce bon de chargement ?`}
+            confirmText="Retirer"
+            cancelText="Annuler"
+            variant="danger"
+            loading={removingBl}
+        />
+
+        <ConfirmModal
+            isOpen={showSubmitConfirm}
+            onClose={() => setShowSubmitConfirm(false)}
+            onConfirm={submitSelected}
+            title="Soumettre le BCH au magasinier"
+            message={`Êtes-vous sûr de vouloir soumettre le BCH "${selected?.bch_number}" au magasinier ? Cette action ne peut pas être annulée facilement.`}
+            confirmText="Soumettre"
+            cancelText="Annuler"
+            variant="warning"
+            loading={submitting}
+        />
+
+        <ConfirmModal
+            isOpen={showValidateConfirm}
+            onClose={() => setShowValidateConfirm(false)}
+            onConfirm={validateSelected}
+            title="Valider le BCH"
+            message={`Êtes-vous sûr de vouloir valider le BCH "${selected?.bch_number}" ? Cette action confirmera que le BCH est prêt et correct.`}
+            confirmText="Valider"
+            cancelText="Annuler"
+            variant="info"
+            loading={validating}
+        />
+
+        <ConfirmModal
+            isOpen={showCancelConfirm}
+            onClose={() => setShowCancelConfirm(false)}
+            onConfirm={cancelSelected}
+            title="Annuler le BCH"
+            message={`Êtes-vous sûr de vouloir annuler le BCH "${selected?.bch_number}" ? Cette action est définitive et le BCH ne pourra plus être utilisé.`}
+            confirmText="Annuler le BCH"
+            cancelText="Retour"
+            variant="danger"
+            loading={cancelling}
+        />
+    </>
     );
 };
