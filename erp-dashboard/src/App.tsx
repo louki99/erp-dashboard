@@ -25,6 +25,7 @@ import { MagasinierPreparationsPage } from '@/pages/magasinier/MagasinierPrepara
 import { MagasinierOrdersPage } from '@/pages/magasinier/MagasinierOrdersPage';
 import { MagasinierStockPage } from '@/pages/magasinier/MagasinierStockPage';
 import { MagasinierBatchPickingPage } from '@/pages/magasinier/MagasinierBatchPickingPage';
+import { ProductsPage } from '@/pages/products/ProductsPage';
 import { MasterLayout } from '@/components/layout/MasterLayout';
 
 
@@ -203,6 +204,13 @@ function AppRoutes() {
       <Route path="/magasinier/batch-picking" element={
         <ProtectedRoute requiredPermission={PERMISSIONS.MAGASINIER.PREPARATIONS_PENDING}>
           <MagasinierBatchPickingPage />
+        </ProtectedRoute>
+      } />
+
+      {/* Products Module Routes */}
+      <Route path="/products" element={
+        <ProtectedRoute>
+          <ProductsPage />
         </ProtectedRoute>
       } />
 

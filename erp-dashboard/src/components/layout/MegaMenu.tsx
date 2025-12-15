@@ -134,7 +134,7 @@ const MENU_DATA: ModuleData[] = [
         icon: Database,
         description: 'Master data for products, partners, and sites',
         categories: [
-            { title: 'Articles', items: ['Articles', 'Articles-site', 'Unités'] },
+            { title: 'Articles', items: ['Gestion Produits', 'Articles', 'Articles-site', 'Unités'] },
             { title: 'Tiers', items: ['Clients', 'Fournisseurs', 'Transporteurs'] }
         ]
     },
@@ -200,6 +200,10 @@ export const MegaMenu: React.FC<MegaMenuProps> = ({ isOpen, onClose }) => {
         'Gestion stock': '/magasinier/stock',
         'Mouvements stock': '/magasinier/stock',
         'Préparation groupée': '/magasinier/batch-picking',
+
+        // Products Module Routes
+        'Gestion Produits': '/products',
+        'Articles': '/products',
 
         // Legacy ADV mappings (keep for compatibility)
         'Tableau de bord': '/adv',

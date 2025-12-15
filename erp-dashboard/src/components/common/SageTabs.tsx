@@ -60,6 +60,20 @@ export const SageTabs: React.FC<SageTabsProps> = ({
         };
     }, [tabs]);
 
+    // Auto-scroll to active tab
+    React.useEffect(() => {
+        const container = scrollContainerRef.current;
+        if (!container) return;
+        const activeButton = container.querySelector(`button[data-tab-id="${activeTabId}"]`);
+        if (activeButton) {
+            activeButton.scrollIntoView({
+                behavior: 'smooth',
+                block: 'nearest',
+                inline: 'center'
+            });
+        }
+    }, [activeTabId]);
+
     return (
         <div className={cn("relative flex items-end justify-between border-b border-gray-300 bg-[#f5f6f7] pt-2 px-2 min-w-0", className)}>
             {/* Scroll Container with Shadows */}
@@ -77,6 +91,7 @@ export const SageTabs: React.FC<SageTabsProps> = ({
                 >
                     {/* Home Tab */}
                     <button
+                        data-tab-id="home"
                         onClick={() => onTabChange('home')}
                         className={cn(
                             "flex items-center justify-center p-2 sm:p-2.5 rounded-t-[4px] border-t border-r border-l border-transparent mb-[-1px] relative mr-1 min-w-[40px] sm:min-w-[44px] shrink-0 snap-start transition-all duration-200",
@@ -92,6 +107,7 @@ export const SageTabs: React.FC<SageTabsProps> = ({
                     {tabs.map((tab) => (
                         <button
                             key={tab.id}
+                            data-tab-id={tab.id}
                             onClick={() => onTabChange(tab.id)}
                             className={cn(
                                 "px-3 sm:px-4 py-2 sm:py-2.5 text-xs sm:text-sm font-semibold rounded-t-[4px] border-t border-r border-l border-transparent mb-[-1px] relative whitespace-nowrap transition-all duration-200 snap-start",
