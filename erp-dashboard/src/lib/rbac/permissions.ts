@@ -114,6 +114,21 @@ export const PERMISSIONS = {
         DECHARGES_REJECT: 'admin.dispatcher.decharges.reject',
     },
 
+    // Magasinier Module
+    MAGASINIER: {
+        DASHBOARD: 'admin.magasinier.dashboard',
+        
+        PREPARATIONS_PENDING: 'admin.magasinier.preparations.pending',
+        PREPARATIONS_SHOW: 'admin.magasinier.preparations.show',
+        PREPARATIONS_PREPARE: 'admin.magasinier.preparations.prepare',
+        
+        STOCK_INDEX: 'admin.magasinier.stock.index',
+        STOCK_SHOW: 'admin.magasinier.stock.show',
+        STOCK_LOW_STOCK: 'admin.magasinier.stock.low-stock',
+        STOCK_MOVEMENTS: 'admin.magasinier.stock.movements',
+        STOCK_ADJUST: 'admin.magasinier.stock.adjust',
+    },
+
     // Bon de Commandes
     BON_COMMANDES: {
         INDEX: 'admin.bon-commandes.index',
@@ -258,6 +273,14 @@ export const PAGE_PERMISSIONS: Record<string, string | string[]> = {
     '/dispatcher/bon-chargements/create': PERMISSIONS.DISPATCHER.BON_CHARGEMENTS_CREATE,
     '/dispatcher/bon-chargements': PERMISSIONS.DISPATCHER.BON_CHARGEMENTS_INDEX,
     '/dispatcher/decharges': PERMISSIONS.DISPATCHER.DECHARGES_INDEX,
+    
+    // Magasinier Module
+    '/magasinier': PERMISSIONS.MAGASINIER.DASHBOARD,
+    '/magasinier/dashboard': PERMISSIONS.MAGASINIER.DASHBOARD,
+    '/magasinier/preparations': PERMISSIONS.MAGASINIER.PREPARATIONS_PENDING,
+    '/magasinier/orders': PERMISSIONS.MAGASINIER.PREPARATIONS_PENDING,
+    '/magasinier/stock': PERMISSIONS.MAGASINIER.STOCK_INDEX,
+    '/magasinier/batch-picking': PERMISSIONS.MAGASINIER.PREPARATIONS_PENDING,
     
     // Payments
     '/payments': PERMISSIONS.PAYMENTS.DASHBOARD,

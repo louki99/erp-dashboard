@@ -1,0 +1,313 @@
+{
+  "info": {
+    "_postman_id": "a31f55c8-9c7d-4a6b-a1d2-9d8f9c3f4d10",
+    "name": "B2B ERP - Magasinier (Backend API)",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    { "key": "BASE_URL", "value": "http://localhost:8000" },
+    { "key": "TOKEN", "value": "" },
+    { "key": "BP_ID", "value": "" },
+    { "key": "ORDER_ID", "value": "" },
+    { "key": "PRODUCT_ID", "value": "" },
+    { "key": "BATCH_ID", "value": "" },
+    { "key": "BL_ID", "value": "" }
+  ],
+  "item": [
+    {
+      "name": "Auth (Backend)",
+      "item": [
+        {
+          "name": "Login (get token)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Accept", "value": "application/json" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "url": {
+              "raw": "{{BASE_URL}}/api/backend/login",
+              "host": ["{{BASE_URL}}"],
+              "path": ["api", "backend", "login"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"admin@demo.com\",\n  \"password\": \"password\"\n}"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Magasinier",
+      "item": [
+        {
+          "name": "Dashboard",
+          "request": {
+            "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{TOKEN}}", "type": "string" }] },
+            "method": "GET",
+            "header": [{ "key": "Accept", "value": "application/json" }],
+            "url": {
+              "raw": "{{BASE_URL}}/api/backend/magasinier/dashboard",
+              "host": ["{{BASE_URL}}"],
+              "path": ["api", "backend", "magasinier", "dashboard"]
+            }
+          }
+        },
+        {
+          "name": "Preparations - Pending",
+          "request": {
+            "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{TOKEN}}", "type": "string" }] },
+            "method": "GET",
+            "header": [{ "key": "Accept", "value": "application/json" }],
+            "url": {
+              "raw": "{{BASE_URL}}/api/backend/magasinier/preparations/pending?status=&search=",
+              "host": ["{{BASE_URL}}"],
+              "path": ["api", "backend", "magasinier", "preparations", "pending"],
+              "query": [
+                { "key": "status", "value": "" },
+                { "key": "search", "value": "" }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Preparation - Show",
+          "request": {
+            "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{TOKEN}}", "type": "string" }] },
+            "method": "GET",
+            "header": [{ "key": "Accept", "value": "application/json" }],
+            "url": {
+              "raw": "{{BASE_URL}}/api/backend/magasinier/preparations/{{BP_ID}}",
+              "host": ["{{BASE_URL}}"],
+              "path": ["api", "backend", "magasinier", "preparations", "{{BP_ID}}"]
+            }
+          }
+        },
+        {
+          "name": "Preparation - Prepare (start / refresh stock)",
+          "request": {
+            "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{TOKEN}}", "type": "string" }] },
+            "method": "GET",
+            "header": [{ "key": "Accept", "value": "application/json" }],
+            "url": {
+              "raw": "{{BASE_URL}}/api/backend/magasinier/preparations/{{BP_ID}}/prepare",
+              "host": ["{{BASE_URL}}"],
+              "path": ["api", "backend", "magasinier", "preparations", "{{BP_ID}}", "prepare"]
+            }
+          }
+        },
+        {
+          "name": "Preparation - Save (complete)",
+          "request": {
+            "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{TOKEN}}", "type": "string" }] },
+            "method": "PUT",
+            "header": [
+              { "key": "Accept", "value": "application/json" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "url": {
+              "raw": "{{BASE_URL}}/api/backend/magasinier/preparations/{{BP_ID}}/save",
+              "host": ["{{BASE_URL}}"],
+              "path": ["api", "backend", "magasinier", "preparations", "{{BP_ID}}", "save"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"prepared_quantities\": {\n    \"12\": 5\n  },\n  \"notes\": \"Prepared by team\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Preparation - Reject",
+          "request": {
+            "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{TOKEN}}", "type": "string" }] },
+            "method": "POST",
+            "header": [
+              { "key": "Accept", "value": "application/json" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "url": {
+              "raw": "{{BASE_URL}}/api/backend/magasinier/preparations/{{BP_ID}}/reject",
+              "host": ["{{BASE_URL}}"],
+              "path": ["api", "backend", "magasinier", "preparations", "{{BP_ID}}", "reject"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"rejection_reason\": \"Stock mismatch. Need review.\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Orders - Approved (ready for BP)",
+          "request": {
+            "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{TOKEN}}", "type": "string" }] },
+            "method": "GET",
+            "header": [{ "key": "Accept", "value": "application/json" }],
+            "url": {
+              "raw": "{{BASE_URL}}/api/backend/magasinier/orders/approved?search=",
+              "host": ["{{BASE_URL}}"],
+              "path": ["api", "backend", "magasinier", "orders", "approved"],
+              "query": [{ "key": "search", "value": "" }]
+            }
+          }
+        },
+        {
+          "name": "BP - Create from Orders",
+          "request": {
+            "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{TOKEN}}", "type": "string" }] },
+            "method": "POST",
+            "header": [
+              { "key": "Accept", "value": "application/json" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "url": {
+              "raw": "{{BASE_URL}}/api/backend/magasinier/preparations/from-orders",
+              "host": ["{{BASE_URL}}"],
+              "path": ["api", "backend", "magasinier", "preparations", "from-orders"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"order_ids\": [1, 2]\n}"
+            }
+          }
+        },
+        {
+          "name": "Stock - Index",
+          "request": {
+            "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{TOKEN}}", "type": "string" }] },
+            "method": "GET",
+            "header": [{ "key": "Accept", "value": "application/json" }],
+            "url": {
+              "raw": "{{BASE_URL}}/api/backend/magasinier/stock?search=&low_stock=&out_of_stock=",
+              "host": ["{{BASE_URL}}"],
+              "path": ["api", "backend", "magasinier", "stock"],
+              "query": [
+                { "key": "search", "value": "" },
+                { "key": "low_stock", "value": "" },
+                { "key": "out_of_stock", "value": "" }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Stock - Low stock",
+          "request": {
+            "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{TOKEN}}", "type": "string" }] },
+            "method": "GET",
+            "header": [{ "key": "Accept", "value": "application/json" }],
+            "url": {
+              "raw": "{{BASE_URL}}/api/backend/magasinier/stock/low-stock",
+              "host": ["{{BASE_URL}}"],
+              "path": ["api", "backend", "magasinier", "stock", "low-stock"]
+            }
+          }
+        },
+        {
+          "name": "Stock - Movements",
+          "request": {
+            "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{TOKEN}}", "type": "string" }] },
+            "method": "GET",
+            "header": [{ "key": "Accept", "value": "application/json" }],
+            "url": {
+              "raw": "{{BASE_URL}}/api/backend/magasinier/stock/movements?type=&product_id=&date_from=&date_to=",
+              "host": ["{{BASE_URL}}"],
+              "path": ["api", "backend", "magasinier", "stock", "movements"],
+              "query": [
+                { "key": "type", "value": "" },
+                { "key": "product_id", "value": "" },
+                { "key": "date_from", "value": "" },
+                { "key": "date_to", "value": "" }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Stock - Adjust",
+          "request": {
+            "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{TOKEN}}", "type": "string" }] },
+            "method": "POST",
+            "header": [
+              { "key": "Accept", "value": "application/json" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "url": {
+              "raw": "{{BASE_URL}}/api/backend/magasinier/stock/adjust",
+              "host": ["{{BASE_URL}}"],
+              "path": ["api", "backend", "magasinier", "stock", "adjust"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"product_id\": {{PRODUCT_ID}},\n  \"adjustment_type\": \"add\",\n  \"quantity\": 1,\n  \"notes\": \"Inventory correction\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Batch picking - Index",
+          "request": {
+            "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{TOKEN}}", "type": "string" }] },
+            "method": "GET",
+            "header": [{ "key": "Accept", "value": "application/json" }],
+            "url": {
+              "raw": "{{BASE_URL}}/api/backend/magasinier/batch-picking",
+              "host": ["{{BASE_URL}}"],
+              "path": ["api", "backend", "magasinier", "batch-picking"]
+            }
+          }
+        },
+        {
+          "name": "Batch picking - Generate",
+          "request": {
+            "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{TOKEN}}", "type": "string" }] },
+            "method": "POST",
+            "header": [
+              { "key": "Accept", "value": "application/json" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "url": {
+              "raw": "{{BASE_URL}}/api/backend/magasinier/batch-picking/generate",
+              "host": ["{{BASE_URL}}"],
+              "path": ["api", "backend", "magasinier", "batch-picking", "generate"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"bl_ids\": [12, 13]\n}"
+            }
+          }
+        },
+        {
+          "name": "Batch picking - Distribute",
+          "request": {
+            "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{TOKEN}}", "type": "string" }] },
+            "method": "GET",
+            "header": [{ "key": "Accept", "value": "application/json" }],
+            "url": {
+              "raw": "{{BASE_URL}}/api/backend/magasinier/batch-picking/{{BATCH_ID}}/distribute",
+              "host": ["{{BASE_URL}}"],
+              "path": ["api", "backend", "magasinier", "batch-picking", "{{BATCH_ID}}", "distribute"]
+            }
+          }
+        },
+        {
+          "name": "Batch picking - Save",
+          "request": {
+            "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{TOKEN}}", "type": "string" }] },
+            "method": "POST",
+            "header": [
+              { "key": "Accept", "value": "application/json" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "url": {
+              "raw": "{{BASE_URL}}/api/backend/magasinier/batch-picking/{{BATCH_ID}}/save",
+              "host": ["{{BASE_URL}}"],
+              "path": ["api", "backend", "magasinier", "batch-picking", "{{BATCH_ID}}", "save"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"prepared\": {\n    \"12\": {\n      \"5\": 2\n    }\n  }\n}"
+            }
+          }
+        }
+      ]
+    }
+  ]
+}

@@ -6,6 +6,8 @@ import type {
     BonLivraisonDetailResponse,
     UpdateBonLivraisonRequest,
     ApiSuccessResponse,
+    SplitBlRequest,
+    SplitBlResponse,
 } from '@/types/dispatcher.types';
 
 export const useDispatcherDraftBonLivraisons = () => {
@@ -109,4 +111,24 @@ export const useDispatcherUpdateBonLivraison = () => {
     };
 
     return { update, loading, error };
+};
+
+export const useDispatcherSplitBonLivraison = () => {
+    const [loading, setLoading] = useState(false);
+    const [error, setError] = useState<string | null>(null);
+
+    const split = async (blId: number, payload: SplitBlRequest): Promise<SplitBlResponse> => {
+        setLoading(true);
+        setError(null);
+        try {
+            return await dispatcherApi.bonLivraisons.split(blId, payload);
+        } catch (err) {
+            setError(err instanceof Error ? err.message : 'Failed to split BL');
+            throw err;
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    return { split, loading, error };
 };

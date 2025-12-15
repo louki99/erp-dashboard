@@ -97,6 +97,34 @@ const MENU_DATA: ModuleData[] = [
             {
                 title: 'Bon de Chargement',
                 items: ['Créer BCH', 'BCH (liste)']
+            },
+            {
+                title: 'Décharges',
+                items: ['Décharges (liste)']
+            }
+        ]
+    },
+    {
+        id: 'magasinier',
+        label: 'Magasinier',
+        icon: Package,
+        description: 'Magasinier - Préparations, stock et batch picking',
+        categories: [
+            {
+                title: 'Tableau de Bord',
+                items: ['Tableau de bord Magasinier']
+            },
+            {
+                title: 'Préparations',
+                items: ['Bons de préparation', 'Commandes approuvées']
+            },
+            {
+                title: 'Stock',
+                items: ['Gestion stock', 'Mouvements stock']
+            },
+            {
+                title: 'Batch Picking',
+                items: ['Préparation groupée']
             }
         ]
     },
@@ -163,6 +191,15 @@ export const MegaMenu: React.FC<MegaMenuProps> = ({ isOpen, onClose }) => {
         'BL (liste)': '/dispatcher/bon-livraisons',
         'Créer BCH': '/dispatcher/bon-chargements/create',
         'BCH (liste)': '/dispatcher/bon-chargements',
+        'Décharges (liste)': '/dispatcher/decharges',
+
+        // Magasinier Module Routes
+        'Tableau de bord Magasinier': '/magasinier',
+        'Bons de préparation': '/magasinier/preparations',
+        'Commandes approuvées': '/magasinier/orders',
+        'Gestion stock': '/magasinier/stock',
+        'Mouvements stock': '/magasinier/stock',
+        'Préparation groupée': '/magasinier/batch-picking',
 
         // Legacy ADV mappings (keep for compatibility)
         'Tableau de bord': '/adv',

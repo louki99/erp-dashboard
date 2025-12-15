@@ -1,6 +1,6 @@
 import { useMemo, useState, useRef, useEffect } from 'react';
 import type { ColDef } from 'ag-grid-community';
-import { FileText, Loader2, Package, PackagePlus, RefreshCw, Save, Truck, User, X, CheckSquare, Users } from 'lucide-react';
+import { FileText, Loader2, Package, PackagePlus, RefreshCw, Save, Truck, User, X, CheckSquare, Users, Scissors } from 'lucide-react';
 import toast from 'react-hot-toast';
 
 import { MasterLayout } from '@/components/layout/MasterLayout';
@@ -12,7 +12,9 @@ import {
     useDispatcherDraftBonLivraisons,
     useDispatcherBonLivraisonEdit,
     useDispatcherUpdateBonLivraison,
+    useDispatcherSplitBonLivraison,
 } from '@/hooks/dispatcher/useDispatcherBonLivraisons';
+import { SplitBlModal } from '@/components/dispatcher/SplitBlModal';
 import { useDispatcherCreateBch } from '@/hooks/dispatcher/useDispatcherBonChargements';
 import { useRiders } from '@/hooks/useRiders';
 import type { BonLivraison } from '@/types/dispatcher.types';
@@ -27,6 +29,7 @@ export const DispatcherBonLivraisonsPage = () => {
     const [notes, setNotes] = useState<string>('');
     const [activeTab, setActiveTab] = useState<string>('bl');
     const [showDetailPanel, setShowDetailPanel] = useState<boolean>(false);
+    const [showSplitModal, setShowSplitModal] = useState(false);
     const [openSections, setOpenSections] = useState<Record<string, boolean>>({
         bl: true,
         commande: true,
@@ -63,18 +66,29 @@ export const DispatcherBonLivraisonsPage = () => {
 
     const { data: editData, loading: editLoading, error: editError, refetch: refetchEdit } = useDispatcherBonLivraisonEdit(selected?.id ?? null);
     const { update, loading: saving } = useDispatcherUpdateBonLivraison();
+    const { split, loading: splitting } = useDispatcherSplitBonLivraison();
     const { create: createBch, loading: creatingBch } = useDispatcherCreateBch();
 
     const columnDefs = useMemo<ColDef[]>(
         () => [
             { 
-                field: 'id', 
-                headerName: '', 
-                width: 50,
-                checkboxSelection: true,
-                headerCheckboxSelection: true,
+                field: 'bl_number', 
+                headerName: 'BL', 
+                width: 190,
+                cellRenderer: (params: any) => {
+                    const bl = params.data;
+                    if (!bl) return params.value;
+                    
+                    let badgeText = '';
+                    if (bl.parent_bl_id) {
+                        badgeText = ' [Enfant]';
+                    } else if (bl.status === 'split') {
+                        badgeText = ' [Divisé]';
+                    }
+                    
+                    return (params.value || '') + badgeText;
+                }
             },
-            { field: 'bl_number', headerName: 'BL', width: 190 },
             { field: 'bon_commande.bc_number', headerName: 'BC', width: 150 },
             { field: 'partner.name', headerName: 'Client', flex: 1, minWidth: 200 },
             { 
@@ -95,6 +109,16 @@ export const DispatcherBonLivraisonsPage = () => {
     );
 
     const detailsBl = editData?.bl || selected;
+    
+    // Debug: Log button state
+    console.log('Button state check:', {
+        selected: !!selected,
+        editLoading,
+        status: detailsBl?.status,
+        itemsLength: detailsBl?.items?.length,
+        diviserDisabled: !selected || editLoading || detailsBl?.status !== 'draft' || (detailsBl?.items?.length ?? 0) < 2,
+        creerBchDisabled: !selected || editLoading || creatingBch
+    });
     const tabs: TabItem[] = useMemo(
         () => [
             { id: 'bl', label: 'BL', icon: FileText },
@@ -231,6 +255,32 @@ export const DispatcherBonLivraisonsPage = () => {
         }
     };
 
+    const handleSplitBl = async (splits: Array<{ items: number[]; notes?: string }>) => {
+        if (!selected?.id) return;
+
+        const toastId = toast.loading('Division du BL en cours...');
+
+        try {
+            const res = await split(selected.id, { splits });
+            toast.dismiss(toastId);
+
+            if (res.success && res.data) {
+                toast.success(
+                    `BL divisé avec succès en ${res.data.child_bls.length} BLs`,
+                    { duration: 4000 }
+                );
+                setShowSplitModal(false);
+                setSelected(null);
+                await refetch();
+            } else {
+                toast.error(res.message || 'Échec de la division');
+            }
+        } catch (e) {
+            toast.dismiss(toastId);
+            toast.error(e instanceof Error ? e.message : 'Échec de la division');
+        }
+    };
+
     const bulkAssignLivreur = async () => {
         if (selectedBls.length === 0) {
             toast.error('Sélectionnez au moins un BL');
@@ -327,6 +377,7 @@ export const DispatcherBonLivraisonsPage = () => {
     };
 
     return (
+        <>
         <MasterLayout
             leftContent={
                 <div className="h-full bg-white border-r border-gray-100 flex flex-col">
@@ -393,13 +444,32 @@ export const DispatcherBonLivraisonsPage = () => {
                                             <X className="w-5 h-5 text-gray-600" />
                                         </button>
                                         <div>
-                                            <h1 className="text-xl font-bold text-gray-900">
-                                                {detailsBl?.bl_number || `BL #${selected?.id}`}
-                                            </h1>
+                                            <div className="flex items-center gap-2">
+                                                <h1 className="text-xl font-bold text-gray-900">
+                                                    {detailsBl?.bl_number || `BL #${selected?.id}`}
+                                                </h1>
+                                                {detailsBl?.parent_bl_id && (
+                                                    <span className="px-2 py-1 text-xs font-medium bg-purple-100 text-purple-700 rounded">
+                                                        BL Enfant
+                                                    </span>
+                                                )}
+                                                {detailsBl?.status === 'split' && (
+                                                    <span className="px-2 py-1 text-xs font-medium bg-gray-100 text-gray-700 rounded">
+                                                        BL Divisé
+                                                    </span>
+                                                )}
+                                            </div>
                                             <div className="flex items-center gap-3 text-xs text-gray-500 mt-0.5">
                                                 <span className="font-medium">Statut: {detailsBl?.status || '-'}</span>
                                                 {detailsBl?.partner && <span>{detailsBl.partner.name}</span>}
                                             </div>
+                                            {detailsBl?.parent_bl_id && detailsBl?.parent_bl && (
+                                                <div className="mt-2 p-2 bg-purple-50 border border-purple-200 rounded text-xs">
+                                                    <span className="text-purple-700">
+                                                        <strong>BL Parent:</strong> {detailsBl.parent_bl.bl_number}
+                                                    </span>
+                                                </div>
+                                            )}
                                         </div>
                                     </div>
                                     <div className="text-right">
@@ -786,11 +856,18 @@ export const DispatcherBonLivraisonsPage = () => {
                                     disabled: !selected || saving,
                                 },
                                 {
+                                    icon: Scissors,
+                                    label: 'Diviser BL',
+                                    variant: 'default',
+                                    onClick: () => setShowSplitModal(true),
+                                    disabled: !selected || editLoading || detailsBl?.status !== 'draft' || (detailsBl?.items?.length ?? 0) < 2,
+                                },
+                                {
                                     icon: PackagePlus,
                                     label: 'Créer BCH',
                                     variant: 'default',
                                     onClick: createBchFromSelected,
-                                    disabled: !selected || creatingBch,
+                                    disabled: !selected || editLoading || creatingBch,
                                 },
                             ],
                         },
@@ -798,5 +875,14 @@ export const DispatcherBonLivraisonsPage = () => {
                 />
             }
         />
+
+        <SplitBlModal
+            isOpen={showSplitModal}
+            onClose={() => setShowSplitModal(false)}
+            onConfirm={handleSplitBl}
+            items={editData?.bl?.items || []}
+            loading={splitting}
+        />
+        </>
     );
 };

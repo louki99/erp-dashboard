@@ -14,6 +14,8 @@ import type {
     BonChargementDetailResponse,
     BalanceResponse,
     UpdateBalanceRequest,
+    SplitBlRequest,
+    SplitBlResponse,
     DechargesResponse,
     DechargeDetailResponse,
 } from '@/types/dispatcher.types';
@@ -79,6 +81,11 @@ export const dispatcherApi = {
 
         update: async (id: number, data: UpdateBonLivraisonRequest): Promise<ApiSuccessResponse> => {
             const response = await apiClient.put<ApiSuccessResponse>(`${DISPATCHER_BASE}/bon-livraisons/${id}`, data);
+            return response.data;
+        },
+
+        split: async (id: number, data: SplitBlRequest): Promise<SplitBlResponse> => {
+            const response = await apiClient.post<SplitBlResponse>(`${DISPATCHER_BASE}/bon-livraisons/${id}/split`, data);
             return response.data;
         },
     },

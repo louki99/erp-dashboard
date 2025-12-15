@@ -52,6 +52,11 @@ export interface BonLivraisonItem {
     product_name?: string;
     allocated_quantity?: number;
     unit_price?: number;
+    product?: {
+        id: number;
+        name: string;
+        code?: string;
+    };
 }
 
 export interface BonLivraison {
@@ -68,6 +73,9 @@ export interface BonLivraison {
     total_amount?: string;
     bon_commande_id?: number;
     partner_id?: number;
+    parent_bl_id?: number;
+    parent_bl?: BonLivraison;
+    child_bls?: BonLivraison[];
 }
 
 export interface DraftBonLivraisonsResponse {
@@ -130,6 +138,20 @@ export interface BalanceResponse {
 
 export interface UpdateBalanceRequest {
     allocations: Record<string, Record<string, number>>;
+}
+
+export interface SplitBlRequest {
+    splits: Array<{
+        items: number[];
+        notes?: string;
+    }>;
+}
+
+export interface SplitBlResponse extends ApiSuccessResponse {
+    data?: {
+        parent_bl: BonLivraison;
+        child_bls: BonLivraison[];
+    };
 }
 
 // Decharges types

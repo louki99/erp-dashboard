@@ -77,8 +77,8 @@ export const MasterLayout: React.FC<MasterLayoutProps> = ({
                     <div className="flex items-center gap-3 select-none">
                         <div className="flex flex-col">
                             <span className="font-bold text-xl leading-none tracking-tight">
-                                <span className="text-sage-500">Sage</span>
-                                <span className="text-white ml-1">X3</span>
+                                <span className="text-sage-500">Food</span>
+                                <span className="text-white ml-1">Solutions</span>
                             </span>
                             <span className="text-[10px] text-gray-400 uppercase tracking-widest font-medium">Enterprise</span>
                         </div>

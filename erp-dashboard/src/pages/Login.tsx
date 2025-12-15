@@ -38,7 +38,7 @@ export const Login = () => {
                         <div className="flex items-center gap-1">
                             <div className="w-8 h-8 bg-sage-600 rounded-sm flex items-center justify-center text-white font-bold text-lg">S</div>
                             <span className="text-2xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-sage-700 to-gray-800">
-                                Sage X3
+                                FoodSolutions
                             </span>
                         </div>
                         <span className="text-xs text-gray-400 mt-1 uppercase tracking-widest font-semibold">Web Interface</span>

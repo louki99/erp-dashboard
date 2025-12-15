@@ -1,6 +1,6 @@
 import { useMemo, useState, useRef, useEffect } from 'react';
 import type { ColDef } from 'ag-grid-community';
-import { Loader2, RefreshCw, CheckCircle2, Send, XCircle, Printer, Package, TrendingUp, Clock, CheckCheck, FileText, Truck, Plus } from 'lucide-react';
+import { Loader2, RefreshCw, CheckCircle2, Send, XCircle, Printer, Package, TrendingUp, Clock, CheckCheck, FileText, Truck, Plus, AlertCircle } from 'lucide-react';
 import toast from 'react-hot-toast';
 
 import { MasterLayout } from '@/components/layout/MasterLayout';
@@ -10,11 +10,13 @@ import { SageTabs, type TabItem } from '@/components/common/SageTabs';
 import { SageCollapsible } from '@/components/common/SageCollapsible';
 import { ConfirmModal } from '@/components/common/Modal';
 import { AddBlToBchModal } from '@/components/dispatcher/AddBlToBchModal';
+import { BalanceModal } from '@/components/dispatcher/BalanceModal';
 import {
     useDispatcherBonChargementsList,
     useDispatcherBonChargementDetail,
     useDispatcherValidateBch,
     useDispatcherBchBalance,
+    useDispatcherUpdateBchBalance,
     useDispatcherSubmitBch,
     useDispatcherCancelBch,
     useDispatcherPrintBch,
@@ -36,6 +38,7 @@ export const DispatcherBonChargementsPage = () => {
     const [showSubmitConfirm, setShowSubmitConfirm] = useState(false);
     const [showValidateConfirm, setShowValidateConfirm] = useState(false);
     const [showCancelConfirm, setShowCancelConfirm] = useState(false);
+    const [showBalanceModal, setShowBalanceModal] = useState(false);
 
     const sectionRefs = useRef<Record<string, HTMLDivElement | null>>({});
     const containerRef = useRef<HTMLDivElement>(null);
@@ -48,6 +51,7 @@ export const DispatcherBonChargementsPage = () => {
     const { data: detailData, loading: detailLoading, refetch: refetchDetail } = useDispatcherBonChargementDetail(selected?.id ?? null);
     const { data: balanceData, loading: balanceLoading, error: balanceError, refetch: refetchBalance } = useDispatcherBchBalance(selected?.id ?? null);
     const { validate, loading: validating } = useDispatcherValidateBch();
+    const { update: updateBalance, loading: updatingBalance } = useDispatcherUpdateBchBalance();
     const { submit, loading: submitting } = useDispatcherSubmitBch();
     const { cancel, loading: cancelling } = useDispatcherCancelBch();
     const { print, loading: printing } = useDispatcherPrintBch();
@@ -285,6 +289,42 @@ export const DispatcherBonChargementsPage = () => {
         } catch (e) {
             toast.dismiss();
             toast.error(e instanceof Error ? e.message : 'Échec retrait BL');
+        }
+    };
+
+    const handleSaveBalance = async (allocations: Record<number, Record<number, number>>) => {
+        if (!selected?.id) return;
+        
+        const toastId = toast.loading(
+            <div className="flex items-center gap-2">
+                <Loader2 className="w-4 h-4 animate-spin" />
+                <span>Enregistrement de la balance...</span>
+            </div>,
+            { duration: Infinity }
+        );
+        
+        try {
+            const res = await updateBalance(selected.id, { allocations });
+            toast.dismiss(toastId);
+            
+            if (res.success) {
+                toast.success(
+                    <div className="flex items-center gap-2">
+                        <CheckCircle2 className="w-4 h-4" />
+                        <span>{res.message || 'Balance enregistrée avec succès'}</span>
+                    </div>
+                );
+                setShowBalanceModal(false);
+                await Promise.all([refetch(), refetchDetail(), refetchBalance()]);
+            }
+        } catch (e) {
+            toast.dismiss(toastId);
+            toast.error(
+                <div className="flex items-center gap-2">
+                    <XCircle className="w-4 h-4" />
+                    <span>{e instanceof Error ? e.message : 'Échec de l\'enregistrement'}</span>
+                </div>
+            );
         }
     };
 
@@ -595,21 +635,117 @@ export const DispatcherBonChargementsPage = () => {
                                                 </div>
                                             ) : balanceError ? (
                                                 <div className="text-sm text-red-600">{balanceError}</div>
-                                            ) : balanceData ? (
-                                                <div className="space-y-3">
-                                                    {(balanceData as any).balance && (
-                                                        <div className="grid grid-cols-2 gap-3">
-                                                            <div className="p-3 rounded-lg border border-gray-100 bg-gray-50">
-                                                                <div className="text-xs text-gray-500 mb-1">Total alloué</div>
-                                                                <div className="font-semibold text-gray-900">{(balanceData as any).balance.total_allocated || 0}</div>
+                                            ) : balanceData && (balanceData as any).data?.shortageAnalysis ? (
+                                                <div className="space-y-4">
+                                                    {(balanceData as any).data.shortageAnalysis.length === 0 ? (
+                                                        <div className="p-4 bg-green-50 border border-green-200 rounded-lg">
+                                                            <div className="flex items-center gap-2 text-green-800">
+                                                                <CheckCircle2 className="w-5 h-5" />
+                                                                <span className="font-medium">Aucune rupture détectée</span>
                                                             </div>
-                                                            <div className="p-3 rounded-lg border border-gray-100 bg-gray-50">
-                                                                <div className="text-xs text-gray-500 mb-1">Total disponible</div>
-                                                                <div className="font-semibold text-gray-900">{(balanceData as any).balance.total_available || 0}</div>
-                                                            </div>
+                                                            <p className="text-sm text-green-700 mt-1">Tous les produits sont disponibles en quantité suffisante.</p>
                                                         </div>
+                                                    ) : (
+                                                        <>
+                                                            {details?.status === 'in_transit' || details?.status === 'completed' || details?.status === 'cancelled' ? (
+                                                                <div className="p-3 bg-gray-50 border border-gray-200 rounded-lg">
+                                                                    <div className="flex items-start gap-3">
+                                                                        <AlertCircle className="w-5 h-5 text-gray-500 mt-0.5" />
+                                                                        <div>
+                                                                            <div className="flex items-center gap-2 text-gray-800 mb-1">
+                                                                                <span className="font-semibold">Ruptures détectées</span>
+                                                                            </div>
+                                                                            <p className="text-sm text-gray-700 mb-2">{(balanceData as any).data.shortageAnalysis.length} produit(s) en rupture</p>
+                                                                            <div className="p-2 bg-yellow-50 border border-yellow-200 rounded text-sm text-yellow-800">
+                                                                                <strong>BCH verrouillé:</strong> Le livreur a accepté ce BCH. Les modifications ne sont plus possibles. 
+                                                                                Pour toute modification, le livreur doit créer une décharge.
+                                                                            </div>
+                                                                        </div>
+                                                                    </div>
+                                                                </div>
+                                                            ) : (
+                                                                <div className="p-3 bg-red-50 border border-red-200 rounded-lg">
+                                                                    <div className="flex items-center justify-between">
+                                                                        <div>
+                                                                            <div className="flex items-center gap-2 text-red-800 mb-1">
+                                                                                <XCircle className="w-5 h-5" />
+                                                                                <span className="font-semibold">Ruptures détectées</span>
+                                                                            </div>
+                                                                            <p className="text-sm text-red-700">{(balanceData as any).data.shortageAnalysis.length} produit(s) en rupture</p>
+                                                                        </div>
+                                                                        <button
+                                                                            onClick={() => setShowBalanceModal(true)}
+                                                                            className="px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
+                                                                        >
+                                                                            <div className="flex items-center gap-2">
+                                                                                <TrendingUp className="w-4 h-4" />
+                                                                                Équilibrer
+                                                                            </div>
+                                                                        </button>
+                                                                    </div>
+                                                                </div>
+                                                            )}
+                                                            
+                                                            <div className="space-y-3">
+                                                                {(balanceData as any).data.shortageAnalysis.map((item: any, idx: number) => (
+                                                                    <div key={idx} className="border border-gray-200 rounded-lg overflow-hidden">
+                                                                        <div className="bg-gray-50 px-3 py-2 border-b border-gray-200">
+                                                                            <div className="flex items-start justify-between">
+                                                                                <div className="flex-1">
+                                                                                    <div className="font-semibold text-gray-900 text-sm">{item.product_name}</div>
+                                                                                    <div className="text-xs text-gray-500 mt-0.5">ID: {item.product_id}</div>
+                                                                                </div>
+                                                                                <div className="ml-3 text-right">
+                                                                                    <div className="text-xs text-gray-500">Manque</div>
+                                                                                    <div className="text-lg font-bold text-red-600">{item.shortfall}</div>
+                                                                                </div>
+                                                                            </div>
+                                                                            <div className="grid grid-cols-2 gap-2 mt-2">
+                                                                                <div className="bg-white px-2 py-1 rounded border border-gray-200">
+                                                                                    <div className="text-xs text-gray-500">Demandé</div>
+                                                                                    <div className="font-semibold text-gray-900">{item.total_requested}</div>
+                                                                                </div>
+                                                                                <div className="bg-white px-2 py-1 rounded border border-gray-200">
+                                                                                    <div className="text-xs text-gray-500">Préparé</div>
+                                                                                    <div className="font-semibold text-gray-900">{item.total_prepared}</div>
+                                                                                </div>
+                                                                            </div>
+                                                                        </div>
+                                                                        
+                                                                        {item.requesting_bls && item.requesting_bls.length > 0 && (
+                                                                            <div className="p-3 bg-white">
+                                                                                <div className="text-xs font-semibold text-gray-700 mb-2">BLs concernés ({item.requesting_bls.length})</div>
+                                                                                <div className="space-y-2">
+                                                                                    {item.requesting_bls.map((bl: any, blIdx: number) => (
+                                                                                        <div key={blIdx} className="flex items-center justify-between p-2 bg-gray-50 rounded border border-gray-200">
+                                                                                            <div className="flex-1 min-w-0">
+                                                                                                <div className="text-sm font-medium text-gray-900 truncate">{bl.bl_number}</div>
+                                                                                                <div className="text-xs text-gray-600 truncate">{bl.partner_name} ({bl.partner_code})</div>
+                                                                                            </div>
+                                                                                            <div className="ml-3 flex items-center gap-3 text-xs">
+                                                                                                <div className="text-right">
+                                                                                                    <div className="text-gray-500">Demandé</div>
+                                                                                                    <div className="font-semibold text-gray-900">{bl.requested_qty}</div>
+                                                                                                </div>
+                                                                                                <div className="text-right">
+                                                                                                    <div className="text-gray-500">Suggéré</div>
+                                                                                                    <div className={`font-semibold ${bl.suggested_qty < parseFloat(bl.requested_qty) ? 'text-red-600' : 'text-green-600'}`}>
+                                                                                                        {bl.suggested_qty}
+                                                                                                    </div>
+                                                                                                </div>
+                                                                                            </div>
+                                                                                        </div>
+                                                                                    ))}
+                                                                                </div>
+                                                                            </div>
+                                                                        )}
+                                                                    </div>
+                                                                ))}
+                                                            </div>
+                                                        </>
                                                     )}
-                                                    <div className="text-xs text-gray-500 mt-2">
+                                                    
+                                                    <div className="text-xs text-gray-500 pt-2 border-t border-gray-200">
                                                         Dernière mise à jour: {new Date().toLocaleString('fr-FR')}
                                                     </div>
                                                 </div>
@@ -657,14 +793,14 @@ export const DispatcherBonChargementsPage = () => {
                                     label: 'Valider',
                                     variant: 'default',
                                     onClick: handleValidateClick,
-                                    disabled: !selected || validating || selected.status === 'completed',
+                                    disabled: !selected || validating || selected.status === 'completed' || selected.status === 'in_transit' || selected.status === 'cancelled',
                                 },
                                 {
                                     icon: XCircle,
                                     label: 'Annuler',
                                     variant: 'default',
                                     onClick: handleCancelClick,
-                                    disabled: !selected || cancelling || selected.status === 'cancelled' || selected.status === 'completed',
+                                    disabled: !selected || cancelling || selected.status === 'cancelled' || selected.status === 'completed' || selected.status === 'in_transit',
                                 },
                                 {
                                     icon: Printer,
@@ -734,6 +870,14 @@ export const DispatcherBonChargementsPage = () => {
             cancelText="Retour"
             variant="danger"
             loading={cancelling}
+        />
+
+        <BalanceModal
+            isOpen={showBalanceModal}
+            onClose={() => setShowBalanceModal(false)}
+            onSave={handleSaveBalance}
+            shortageAnalysis={(balanceData as any)?.data?.shortageAnalysis || []}
+            loading={updatingBalance}
         />
     </>
     );

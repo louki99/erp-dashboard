@@ -20,6 +20,11 @@ import { DispatcherBonLivraisonsPage } from '@/pages/dispatcher/DispatcherBonLiv
 import { DispatcherCreateBonChargementPage } from '@/pages/dispatcher/DispatcherCreateBonChargementPage';
 import { DispatcherBonChargementsPage } from '@/pages/dispatcher/DispatcherBonChargementsPage';
 import { DispatcherDechargesPage } from '@/pages/dispatcher/DispatcherDechargesPage';
+import { MagasinierDashboard } from '@/pages/magasinier/MagasinierDashboard';
+import { MagasinierPreparationsPage } from '@/pages/magasinier/MagasinierPreparationsPage';
+import { MagasinierOrdersPage } from '@/pages/magasinier/MagasinierOrdersPage';
+import { MagasinierStockPage } from '@/pages/magasinier/MagasinierStockPage';
+import { MagasinierBatchPickingPage } from '@/pages/magasinier/MagasinierBatchPickingPage';
 import { MasterLayout } from '@/components/layout/MasterLayout';
 
 
@@ -161,6 +166,43 @@ function AppRoutes() {
       <Route path="/dispatcher/decharges" element={
         <ProtectedRoute requiredPermission={PERMISSIONS.DISPATCHER.DECHARGES_INDEX}>
           <DispatcherDechargesPage />
+        </ProtectedRoute>
+      } />
+
+      {/* Magasinier Module Routes */}
+      <Route path="/magasinier" element={
+        <ProtectedRoute requiredPermission={PERMISSIONS.MAGASINIER.DASHBOARD}>
+          <MagasinierDashboard />
+        </ProtectedRoute>
+      } />
+
+      <Route path="/magasinier/dashboard" element={
+        <ProtectedRoute requiredPermission={PERMISSIONS.MAGASINIER.DASHBOARD}>
+          <MagasinierDashboard />
+        </ProtectedRoute>
+      } />
+
+      <Route path="/magasinier/preparations" element={
+        <ProtectedRoute requiredPermission={PERMISSIONS.MAGASINIER.PREPARATIONS_PENDING}>
+          <MagasinierPreparationsPage />
+        </ProtectedRoute>
+      } />
+
+      <Route path="/magasinier/orders" element={
+        <ProtectedRoute requiredPermission={PERMISSIONS.MAGASINIER.PREPARATIONS_PENDING}>
+          <MagasinierOrdersPage />
+        </ProtectedRoute>
+      } />
+
+      <Route path="/magasinier/stock" element={
+        <ProtectedRoute requiredPermission={PERMISSIONS.MAGASINIER.STOCK_INDEX}>
+          <MagasinierStockPage />
+        </ProtectedRoute>
+      } />
+
+      <Route path="/magasinier/batch-picking" element={
+        <ProtectedRoute requiredPermission={PERMISSIONS.MAGASINIER.PREPARATIONS_PENDING}>
+          <MagasinierBatchPickingPage />
         </ProtectedRoute>
       } />
 
