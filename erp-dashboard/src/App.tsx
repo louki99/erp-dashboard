@@ -1,6 +1,7 @@
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { Toaster } from 'react-hot-toast';
 import { AuthProvider } from '@/context/AuthContext';
+import { ThemeProvider } from '@/context/ThemeContext';
 import { ProtectedRoute } from '@/components/rbac';
 import { PERMISSIONS } from '@/lib/rbac/permissions';
 import { Login } from '@/pages/Login';
@@ -232,8 +233,10 @@ function App() {
   return (
     <BrowserRouter>
       <AuthProvider>
-        <AppRoutes />
-        <Toaster position="top-right" />
+        <ThemeProvider>
+          <AppRoutes />
+          <Toaster position="top-right" />
+        </ThemeProvider>
       </AuthProvider>
     </BrowserRouter>
   );

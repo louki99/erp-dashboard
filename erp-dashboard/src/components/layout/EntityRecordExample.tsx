@@ -240,11 +240,13 @@ export const EntityRecordExample: React.FC<EntityRecordExampleProps> = ({ data }
                         <div className="grid grid-cols-3 gap-4">
                             <div>
                                 <label className="block text-xs text-gray-500">Représentant</label>
-                                <input className="w-full border-b border-gray-300 focus:border-[#00b06b] outline-none py-1 text-sm" value={partner.rep} />
+                                <input className="w-full border-b border-gray-300 focus:border-primary outline-none py-1 text-sm" value={partner.rep} />
                             </div>
+                        </div>
+                        <div className="grid grid-cols-2 gap-4">
                             <div>
-                                <label className="block text-xs text-gray-500">Secteur</label>
-                                <input className="w-full border-b border-gray-300 focus:border-[#00b06b] outline-none py-1 text-sm" value={partner.sector} />
+                                <label className="text-xs text-gray-500 block">Secteur</label>
+                                <input className="w-full border-b border-gray-300 focus:border-primary outline-none py-1 text-sm" value={partner.sector} />
                             </div>
                         </div>
                     </SageCollapsible>

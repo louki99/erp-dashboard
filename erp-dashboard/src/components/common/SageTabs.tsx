@@ -96,7 +96,7 @@ export const SageTabs: React.FC<SageTabsProps> = ({
                         className={cn(
                             "flex items-center justify-center p-2 sm:p-2.5 rounded-t-[4px] border-t border-r border-l border-transparent mb-[-1px] relative mr-1 min-w-[40px] sm:min-w-[44px] shrink-0 snap-start transition-all duration-200",
                             activeTabId === 'home'
-                                ? "bg-white border-gray-300 text-[#00b06b] after:content-[''] after:absolute after:bottom-0 after:left-0 after:w-full after:h-[3px] after:bg-[#00b06b] z-10 shadow-sm"
+                                ? "bg-white border-gray-300 text-primary after:content-[''] after:absolute after:bottom-0 after:left-0 after:w-full after:h-[3px] after:bg-primary z-10 shadow-sm"
                                 : "text-gray-500 hover:bg-gray-200 hover:text-gray-700"
                         )}
                     >
@@ -112,7 +112,7 @@ export const SageTabs: React.FC<SageTabsProps> = ({
                             className={cn(
                                 "px-3 sm:px-4 py-2 sm:py-2.5 text-xs sm:text-sm font-semibold rounded-t-[4px] border-t border-r border-l border-transparent mb-[-1px] relative whitespace-nowrap transition-all duration-200 snap-start",
                                 activeTabId === tab.id
-                                    ? "bg-white border-gray-300 text-gray-900 after:content-[''] after:absolute after:bottom-0 after:left-0 after:w-full after:h-[3px] after:bg-[#00b06b] z-10 shadow-sm"
+                                    ? "bg-white border-gray-300 text-gray-900 after:content-[''] after:absolute after:bottom-0 after:left-0 after:w-full after:h-[3px] after:bg-primary z-10 shadow-sm"
                                     : "text-gray-600 hover:bg-gray-200 hover:text-gray-800"
                             )}
                         >
@@ -134,7 +134,7 @@ export const SageTabs: React.FC<SageTabsProps> = ({
                     {onExpandAll && (
                         <button
                             onClick={onExpandAll}
-                            className="p-1.5 sm:p-2 text-gray-500 hover:text-[#00b06b] hover:bg-white rounded-md transition-colors touch-manipulation"
+                            className="p-1.5 sm:p-2 text-gray-500 hover:text-primary hover:bg-white rounded-md transition-colors touch-manipulation"
                             title="Tout développer"
                         >
                             <ChevronsDown className="w-4 h-4" />
@@ -143,7 +143,7 @@ export const SageTabs: React.FC<SageTabsProps> = ({
                     {onCollapseAll && (
                         <button
                             onClick={onCollapseAll}
-                            className="p-1.5 sm:p-2 text-gray-500 hover:text-[#00b06b] hover:bg-white rounded-md transition-colors touch-manipulation"
+                            className="p-1.5 sm:p-2 text-gray-500 hover:text-primary hover:bg-white rounded-md transition-colors touch-manipulation"
                             title="Tout réduire"
                         >
                             <ChevronsUp className="w-4 h-4" />

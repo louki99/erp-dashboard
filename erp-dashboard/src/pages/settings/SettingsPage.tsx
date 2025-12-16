@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import { useState } from 'react';
 import { MasterLayout } from '@/components/layout/MasterLayout';
 import { SageTabs } from '@/components/common/SageTabs';
 import { Settings, Palette, Briefcase, Wallet, Sparkles, Monitor } from 'lucide-react';

@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { toast } from 'react-hot-toast';
 import { settingsApi } from '@/services/api/settingsApi';
+import { useTheme } from '@/context/ThemeContext';
 import { Loader2, Save } from 'lucide-react';
 
 interface ThemeSettingsForm {
@@ -38,11 +39,14 @@ export const ThemeSettingsTab = () => {
         }
     };
 
+    const { refreshTheme } = useTheme();
+
     const onSubmit = async (data: ThemeSettingsForm) => {
         setSaving(true);
         try {
             await settingsApi.updateThemeSettings(data);
             toast.success('Theme settings updated');
+            await refreshTheme();
         } catch (error) {
             toast.error('Failed to update theme settings');
         } finally {
