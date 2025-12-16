@@ -110,11 +110,11 @@ export const GeneralSettingsTab = () => {
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                     <div className="space-y-2">
                         <label className="text-sm font-medium text-slate-700">App Name</label>
-                        <input {...register('name')} className="w-full p-2 border rounded focus:ring-sage-500 focus:border-sage-500" />
+                        <input {...register('name')} className="w-full p-2 border rounded focus:ring-ring focus:border-primary outline-none transition-all" />
                     </div>
                     <div className="space-y-2">
                         <label className="text-sm font-medium text-slate-700">App Title</label>
-                        <input {...register('title')} className="w-full p-2 border rounded focus:ring-sage-500 focus:border-sage-500" />
+                        <input {...register('title')} className="w-full p-2 border rounded focus:ring-ring focus:border-primary outline-none transition-all" />
                     </div>
                 </div>
 
@@ -131,7 +131,7 @@ export const GeneralSettingsTab = () => {
                                     </div>
                                 )}
                             </div>
-                            <label className="cursor-pointer text-xs bg-sage-50 text-sage-700 px-3 py-1 rounded hover:bg-sage-100 transition">
+                            <label className="cursor-pointer text-xs bg-secondary text-secondary-foreground px-3 py-1 rounded hover:opacity-80 transition">
                                 Change
                                 <input type="file" className="hidden" accept="image/*" onChange={(e) => handleFileChange(e, key)} />
                             </label>
@@ -146,15 +146,15 @@ export const GeneralSettingsTab = () => {
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                     <div className="space-y-2">
                         <label className="text-sm font-medium text-slate-700">Email</label>
-                        <input {...register('email')} type="email" className="w-full p-2 border rounded focus:ring-sage-500 focus:border-sage-500" />
+                        <input {...register('email')} type="email" className="w-full p-2 border rounded focus:ring-ring focus:border-primary outline-none transition-all" />
                     </div>
                     <div className="space-y-2">
                         <label className="text-sm font-medium text-slate-700">Phone</label>
-                        <input {...register('mobile')} className="w-full p-2 border rounded focus:ring-sage-500 focus:border-sage-500" />
+                        <input {...register('mobile')} className="w-full p-2 border rounded focus:ring-ring focus:border-primary outline-none transition-all" />
                     </div>
                     <div className="space-y-2">
                         <label className="text-sm font-medium text-slate-700">Address</label>
-                        <input {...register('address')} className="w-full p-2 border rounded focus:ring-sage-500 focus:border-sage-500" />
+                        <input {...register('address')} className="w-full p-2 border rounded focus:ring-ring focus:border-primary outline-none transition-all" />
                     </div>
                 </div>
             </div>
@@ -164,17 +164,17 @@ export const GeneralSettingsTab = () => {
                 <h3 className="text-lg font-semibold text-slate-800 mb-4 border-b pb-2">Footer Settings</h3>
                 <div className="space-y-4">
                     <div className="flex items-center gap-2">
-                        <input type="checkbox" {...register('show_footer')} id="show_footer" className="rounded text-sage-600 focus:ring-sage-500" />
+                        <input type="checkbox" {...register('show_footer')} id="show_footer" className="rounded text-primary focus:ring-ring" />
                         <label htmlFor="show_footer" className="text-sm font-medium text-slate-700">Show Footer</label>
                     </div>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                         <div className="space-y-2">
                             <label className="text-sm font-medium text-slate-700">Footer Text</label>
-                            <input {...register('footer_text')} className="w-full p-2 border rounded focus:ring-sage-500 focus:border-sage-500" />
+                            <input {...register('footer_text')} className="w-full p-2 border rounded focus:ring-ring focus:border-primary outline-none transition-all" />
                         </div>
                         <div className="space-y-2">
                             <label className="text-sm font-medium text-slate-700">Footer Description</label>
-                            <textarea {...register('footer_description')} rows={3} className="w-full p-2 border rounded focus:ring-sage-500 focus:border-sage-500" />
+                            <textarea {...register('footer_description')} rows={3} className="w-full p-2 border rounded focus:ring-ring focus:border-primary outline-none transition-all" />
                         </div>
                     </div>
                 </div>
@@ -184,7 +184,7 @@ export const GeneralSettingsTab = () => {
                 <button
                     type="submit"
                     disabled={saving}
-                    className="flex items-center gap-2 bg-sage-600 text-white px-6 py-2 rounded-lg hover:bg-sage-700 transition disabled:opacity-50"
+                    className="flex items-center gap-2 bg-primary text-primary-foreground px-6 py-2 rounded-lg hover:opacity-90 transition disabled:opacity-50"
                 >
                     {saving ? <Loader2 className="animate-spin w-4 h-4" /> : <Save className="w-4 h-4" />}
                     Save Changes
