@@ -28,6 +28,8 @@ import { MagasinierStockPage } from '@/pages/magasinier/MagasinierStockPage';
 import { MagasinierBatchPickingPage } from '@/pages/magasinier/MagasinierBatchPickingPage';
 import { ProductsPage } from '@/pages/products/ProductsPage';
 import { SettingsPage } from '@/pages/settings/SettingsPage';
+import { PromotionsPage } from '@/pages/promotions/PromotionsPage';
+import { PromotionForm } from '@/pages/promotions/components/PromotionForm';
 import { MasterLayout } from '@/components/layout/MasterLayout';
 
 
@@ -220,6 +222,23 @@ function AppRoutes() {
       <Route path="/settings" element={
         <ProtectedRoute requiredPermission={PERMISSIONS.SETTINGS.GENERAL}>
           <SettingsPage />
+        </ProtectedRoute>
+      } />
+
+      {/* Promotion Routes */}
+      <Route path="/promotions" element={
+        <ProtectedRoute>
+          <PromotionsPage />
+        </ProtectedRoute>
+      } />
+      <Route path="/promotions/new" element={
+        <ProtectedRoute>
+          <PromotionForm />
+        </ProtectedRoute>
+      } />
+      <Route path="/promotions/:id" element={
+        <ProtectedRoute>
+          <PromotionForm isEdit />
         </ProtectedRoute>
       } />
 

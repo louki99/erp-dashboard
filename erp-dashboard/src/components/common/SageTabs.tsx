@@ -91,6 +91,7 @@ export const SageTabs: React.FC<SageTabsProps> = ({
                 >
                     {/* Home Tab */}
                     <button
+                        type="button"
                         data-tab-id="home"
                         onClick={() => onTabChange('home')}
                         className={cn(
@@ -106,6 +107,7 @@ export const SageTabs: React.FC<SageTabsProps> = ({
                     {/* Regular Tabs */}
                     {tabs.map((tab) => (
                         <button
+                            type="button"
                             key={tab.id}
                             data-tab-id={tab.id}
                             onClick={() => onTabChange(tab.id)}
@@ -133,6 +135,7 @@ export const SageTabs: React.FC<SageTabsProps> = ({
                 <div className="flex items-center gap-1 pl-2 pb-1.5 ml-2 shrink-0 border-l border-gray-300/50">
                     {onExpandAll && (
                         <button
+                            type="button"
                             onClick={onExpandAll}
                             className="p-1.5 sm:p-2 text-gray-500 hover:text-primary hover:bg-white rounded-md transition-colors touch-manipulation"
                             title="Tout développer"
@@ -142,6 +145,7 @@ export const SageTabs: React.FC<SageTabsProps> = ({
                     )}
                     {onCollapseAll && (
                         <button
+                            type="button"
                             onClick={onCollapseAll}
                             className="p-1.5 sm:p-2 text-gray-500 hover:text-primary hover:bg-white rounded-md transition-colors touch-manipulation"
                             title="Tout réduire"

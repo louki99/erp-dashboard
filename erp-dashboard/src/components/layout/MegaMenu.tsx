@@ -39,7 +39,8 @@ const MENU_DATA: ModuleData[] = [
         categories: [
             { title: 'Devis', items: ['Saisie devis', 'Liste devis'] },
             { title: 'Commandes', items: ['Saisie commandes', 'Liste commandes'] },
-            { title: 'Livraisons', items: ['Préparation', 'Validation'] }
+            { title: 'Livraisons', items: ['Préparation', 'Validation'] },
+            { title: 'Marketing', items: ['Promotions'] }
         ]
     },
     {
@@ -216,6 +217,9 @@ export const MegaMenu: React.FC<MegaMenuProps> = ({ isOpen, onClose }) => {
         'Commandes': '/orders',
         'Liste commandes': '/orders',
         'Saisie commandes': '/orders/new',
+
+        // Promotions
+        'Promotions': '/promotions',
 
         // Partners
         'Clients': '/partners',
