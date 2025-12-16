@@ -14,15 +14,18 @@ import {
     Box,
     Tag,
     DollarSign,
-    X
+    X,
+    ZoomIn,
+    Maximize2
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 
 import { MasterLayout } from '@/components/layout/MasterLayout';
 import { DataGrid } from '@/components/common/DataGrid';
-import { ActionPanel } from '@/components/layout/ActionPanel';
 import { SageTabs, type TabItem } from '@/components/common/SageTabs';
 import { SageCollapsible } from '@/components/common/SageCollapsible';
+import { FileUpload } from '@/components/common/FileUpload';
+import { RichTextEditor } from '@/components/common/RichTextEditor';
 import {
     useProductsList,
     useProductDetail,
@@ -35,6 +38,7 @@ import {
     useUpdateProduct,
 } from '@/hooks/products/useProducts';
 import type { Product, ProductFilters } from '@/types/product.types';
+import { ActionPanel } from '@/components/layout/ActionPanel';
 
 export const ProductsPage = () => {
     const [selected, setSelected] = useState<Product | null>(null);
@@ -45,10 +49,14 @@ export const ProductsPage = () => {
     const [isEditMode, setIsEditMode] = useState(false);
     const [isCreateMode, setIsCreateMode] = useState(false);
     const [formData, setFormData] = useState<any>({});
+    const [selectedImage, setSelectedImage] = useState<string | null>(null);
+    const [showLightbox, setShowLightbox] = useState(false);
     const [openSections, setOpenSections] = useState<Record<string, boolean>>({
         info: true,
         pricing: true,
+        price_lists: true,
         stock: true,
+        suppliers: true,
         media: true,
         custom_fields: true,
         flags: false,
@@ -149,7 +157,9 @@ export const ProductsPage = () => {
         () => [
             { id: 'info', label: 'Informations', icon: Package },
             { id: 'pricing', label: 'Prix', icon: DollarSign },
+            { id: 'price_lists', label: 'Listes de prix', icon: DollarSign },
             { id: 'stock', label: 'Stock', icon: Box },
+            { id: 'suppliers', label: 'Fournisseurs', icon: Package },
             { id: 'media', label: 'Médias', icon: ImageIcon },
             { id: 'custom_fields', label: 'Champs personnalisés', icon: Tag },
             { id: 'flags', label: 'Options & Marketing', icon: CheckCircle2 },
@@ -211,25 +221,80 @@ export const ProductsPage = () => {
         if (!selected) return;
         setIsEditMode(true);
         setIsCreateMode(false);
-        setFormData({
+        
+        // Build complete form data matching API requirements
+        const editFormData: any = {
+            // Basic Information
             name: details?.name || '',
             code: details?.code || '',
-            price: details?.price || 0,
-            discount_price: details?.discount_price || 0,
-            quantity: details?.quantity || 0,
-            min_order_quantity: details?.min_order_quantity || 1,
-            brand: details?.brand_id,
-            unit: details?.unit_id,
             short_description: details?.short_description || '',
             description: details?.description || '',
+            
+            // Pricing & Inventory
+            price: details?.price || 0,
+            discount_price: details?.discount_price || 0,
             buy_price: details?.buy_price || 0,
+            quantity: details?.quantity || 0,
+            min_order_quantity: details?.min_order_quantity || 1,
+            has_colisage: details?.has_colisage || false,
+            
+            // Relationships
+            brand: details?.brand_id,
+            unit: details?.unit_id,
             categories: details?.categories?.map((c: any) => c.id) || [],
             vat_taxes: details?.vatTaxes?.map((v: any) => v.id) || [],
-            is_active: details?.is_active ?? true,
-            is_salable: details?.flags?.is_salable ?? true,
-            is_returnable: details?.flags?.is_returnable ?? true,
+            units_multi: details?.units?.map((u: any) => u.id) || [],
+            suppliers: details?.suppliers?.map((s: any) => s.id) || [],
+            
+            // Product Flags (Inventory Management)
+            decimal_quantity_allowed: details?.flags?.decimal_quantity_allowed ?? false,
+            decimal_precision: details?.flags?.decimal_precision ?? 0,
+            is_backorder_allowed: details?.flags?.is_backorder_allowed ?? true,
+            is_batch_managed: details?.flags?.is_batch_managed ?? false,
             is_discountable: details?.flags?.is_discountable ?? true,
-        });
+            is_expirable: details?.flags?.is_expirable ?? false,
+            is_returnable: details?.flags?.is_returnable ?? true,
+            is_salable: details?.flags?.is_salable ?? true,
+            is_serialized: details?.flags?.is_serialized ?? false,
+            is_weight_managed: details?.flags?.is_weight_managed ?? true,
+            
+            // Marketing Flags
+            is_featured: details?.marketing?.is_featured ?? false,
+            is_free_good: details?.marketing?.is_free_good ?? false,
+            is_quotation_required: details?.marketing?.is_quotation_required ?? false,
+            is_visible_individually: details?.marketing?.is_visible_individually ?? true,
+            requires_login_to_view: details?.marketing?.requires_login_to_view ?? false,
+            
+            // SEO Meta Data
+            meta_title: details?.meta_title || '',
+            meta_description: details?.meta_description || '',
+            meta_keywords: details?.meta_keywords || '',
+            
+            // Status
+            is_active: details?.is_active ?? true,
+        };
+        
+        // Add supplier pivot data if suppliers exist
+        if (details?.suppliers && Array.isArray(details.suppliers)) {
+            details.suppliers.forEach((supplier: any) => {
+                const supplierId = supplier.id;
+                editFormData[`supplier_cost_${supplierId}`] = supplier.pivot?.cost_price || 0;
+                editFormData[`supplier_min_qty_${supplierId}`] = supplier.pivot?.min_order_qty || 0;
+                editFormData[`supplier_lead_time_${supplierId}`] = supplier.pivot?.lead_time_days || 0;
+                editFormData[`supplier_preferred_${supplierId}`] = supplier.pivot?.preferred || false;
+            });
+        }
+        
+        // Add custom fields if they exist
+        if (details?.customFieldValues && Array.isArray(details.customFieldValues)) {
+            const customFieldsObj: any = {};
+            details.customFieldValues.forEach((cfv: any) => {
+                customFieldsObj[cfv.custom_field_id] = cfv.value;
+            });
+            editFormData.custom_fields = customFieldsObj;
+        }
+        
+        setFormData(editFormData);
     };
 
     const handleCancelEdit = () => {
@@ -243,25 +308,48 @@ export const ProductsPage = () => {
     };
 
     const handleSave = async () => {
-        if (!formData.name || !formData.code || !formData.price) {
-            toast.error('Veuillez remplir tous les champs obligatoires');
+        // Validation
+        if (!formData.name || !formData.code) {
+            toast.error('Le nom et le code du produit sont obligatoires');
+            return;
+        }
+        
+        if (!formData.price || formData.price <= 0) {
+            toast.error('Le prix doit être supérieur à 0');
+            return;
+        }
+        
+        if (formData.discount_price && formData.discount_price >= formData.price) {
+            toast.error('Le prix promotionnel doit être inférieur au prix normal');
             return;
         }
 
         const toastId = toast.loading(isCreateMode ? 'Création en cours...' : 'Mise à jour en cours...');
 
         try {
+            // Prepare data for API
+            const apiData = { ...formData };
+            
+            // Convert boolean values to proper format
+            Object.keys(apiData).forEach(key => {
+                if (typeof apiData[key] === 'boolean') {
+                    apiData[key] = apiData[key] ? 1 : 0;
+                }
+            });
+            
             let res;
             if (isCreateMode) {
-                res = await create(formData);
+                res = await create(apiData);
             } else if (selected) {
-                res = await update(selected.id, formData);
+                res = await update(selected.id, apiData);
             }
 
             toast.dismiss(toastId);
 
             if (res?.success) {
-                toast.success(res.message || (isCreateMode ? 'Produit créé avec succès' : 'Produit mis à jour avec succès'));
+                toast.success(res.message || (isCreateMode ? 'Produit créé avec succès' : 'Produit mis à jour avec succès'), {
+                    duration: 4000
+                });
                 setIsEditMode(false);
                 setIsCreateMode(false);
                 await refetch();
@@ -271,11 +359,26 @@ export const ProductsPage = () => {
                     setShowDetailPanel(false);
                 }
             } else {
-                toast.error(res?.message || 'Une erreur est survenue');
+                // Handle validation errors
+                if (res?.errors) {
+                    const errorMessages = Object.values(res.errors).flat().join('\n');
+                    toast.error(errorMessages || 'Erreur de validation');
+                } else {
+                    toast.error(res?.message || 'Une erreur est survenue');
+                }
             }
         } catch (e: any) {
             toast.dismiss(toastId);
-            toast.error(e.message || 'Une erreur est survenue');
+            
+            // Handle different error types
+            if (e.response?.data?.errors) {
+                const errorMessages = Object.values(e.response.data.errors).flat().join('\n');
+                toast.error(errorMessages);
+            } else if (e.response?.data?.message) {
+                toast.error(e.response.data.message);
+            } else {
+                toast.error(e.message || 'Une erreur est survenue lors de la sauvegarde');
+            }
         }
     };
 
@@ -458,9 +561,9 @@ export const ProductsPage = () => {
                 </div>
             }
             mainContent={
-                <div className="h-full flex">
+                <div className="h-full flex overflow-hidden">
                     {showDetailPanel && (selected || isCreateMode) && (
-                        <div className="flex-1 flex flex-col bg-white border-r border-gray-200 min-w-0">
+                        <div className="flex-1 flex flex-col bg-white min-w-0 overflow-hidden">
                             <div className="p-3 sm:p-4 border-b border-gray-200 shrink-0">
                                 <div className="flex justify-between items-start gap-3">
                                     <div className="flex items-start gap-2 min-w-0 flex-1">
@@ -504,9 +607,9 @@ export const ProductsPage = () => {
                                         </div>
                                     </div>
                                     <div className="text-right shrink-0">
-                                        {!isCreateMode && details?.price && (
+                                        {!isCreateMode && (
                                             <div className="text-xl sm:text-2xl font-bold text-blue-600 whitespace-nowrap">
-                                                {parseFloat(details.price.toString()).toFixed(2)} <span className="text-xs font-normal text-gray-400">MAD</span>
+                                                {details?.price ? parseFloat(details.price.toString()).toFixed(2) : '0.00'} <span className="text-xs sm:text-sm font-normal text-gray-400">MAD</span>
                                             </div>
                                         )}
                                         {(detailLoading) && (
@@ -593,6 +696,15 @@ export const ProductsPage = () => {
                                                         placeholder="Brève description"
                                                     />
                                                 </div>
+                                                <div>
+                                                    <label className="block text-xs text-gray-500 mb-1">Description complète *</label>
+                                                    <RichTextEditor
+                                                        value={formData.description || ''}
+                                                        onChange={(value) => setFormData({...formData, description: value})}
+                                                        placeholder="Entrez la description détaillée du produit..."
+                                                        height={250}
+                                                    />
+                                                </div>
                                             </div>
                                         ) : (
                                             <>
@@ -642,6 +754,16 @@ export const ProductsPage = () => {
                                                     <div className="mt-3 p-3 rounded border border-gray-100 bg-gray-50">
                                                         <div className="text-xs text-gray-500 mb-1">Description courte</div>
                                                         <div className="text-sm text-gray-700">{details.short_description}</div>
+                                                    </div>
+                                                )}
+                                                {details?.description && (
+                                                    <div className="mt-3 p-3 rounded border border-gray-100 bg-gray-50">
+                                                        <div className="text-xs text-gray-500 mb-2">Description complète</div>
+                                                        <RichTextEditor
+                                                            value={details.description}
+                                                            onChange={() => {}}
+                                                            disabled={true}
+                                                        />
                                                     </div>
                                                 )}
                                             </>
@@ -730,6 +852,50 @@ export const ProductsPage = () => {
                                     </SageCollapsible>
                                 </div>
 
+                                {/* Price Lists Section */}
+                                {!isEditMode && detailData?.data?.price_lists && detailData.data.price_lists.length > 0 && (
+                                    <div ref={el => { sectionRefs.current['price_lists'] = el; }}>
+                                        <SageCollapsible
+                                            title="Listes de prix"
+                                            isOpen={openSections['price_lists']}
+                                            onOpenChange={(open) => toggleSection('price_lists', open)}
+                                        >
+                                            <div className="space-y-3">
+                                                {detailData.data.price_lists.map((priceList: any, index: number) => (
+                                                    <div key={index} className="border border-gray-200 rounded-lg p-3 bg-gray-50">
+                                                        <div className="flex items-center justify-between mb-2">
+                                                            <h4 className="font-semibold text-gray-900">{priceList.price_list.name}</h4>
+                                                            <span className="text-xs bg-blue-100 text-blue-700 px-2 py-1 rounded">
+                                                                {priceList.price_list.code}
+                                                            </span>
+                                                        </div>
+                                                        {priceList.pricing_details && priceList.pricing_details.length > 0 && (
+                                                            <div className="space-y-2">
+                                                                {priceList.pricing_details.map((detail: any, idx: number) => (
+                                                                    <div key={idx} className="grid grid-cols-3 gap-2 text-sm bg-white p-2 rounded border border-gray-100">
+                                                                        <div>
+                                                                            <div className="text-xs text-gray-500">Prix de vente</div>
+                                                                            <div className="font-semibold text-green-700">{parseFloat(detail.sales_price).toFixed(2)} MAD</div>
+                                                                        </div>
+                                                                        <div>
+                                                                            <div className="text-xs text-gray-500">Prix de retour</div>
+                                                                            <div className="font-semibold text-orange-700">{parseFloat(detail.return_price).toFixed(2)} MAD</div>
+                                                                        </div>
+                                                                        <div>
+                                                                            <div className="text-xs text-gray-500">Remise</div>
+                                                                            <div className="font-semibold text-blue-700">{parseFloat(detail.discount_rate).toFixed(2)}%</div>
+                                                                        </div>
+                                                                    </div>
+                                                                ))}
+                                                            </div>
+                                                        )}
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        </SageCollapsible>
+                                    </div>
+                                )}
+
                                 {/* Stock Section */}
                                 <div ref={el => { sectionRefs.current['stock'] = el; }}>
                                     <SageCollapsible
@@ -781,6 +947,52 @@ export const ProductsPage = () => {
                                     </SageCollapsible>
                                 </div>
 
+                                {/* Suppliers Section */}
+                                {!isEditMode && details?.suppliers && details.suppliers.length > 0 && (
+                                    <div ref={el => { sectionRefs.current['suppliers'] = el; }}>
+                                        <SageCollapsible
+                                            title="Fournisseurs"
+                                            isOpen={openSections['suppliers']}
+                                            onOpenChange={(open) => toggleSection('suppliers', open)}
+                                        >
+                                            <div className="space-y-2">
+                                                {details.suppliers.map((supplierData: any, index: number) => (
+                                                    <div key={index} className="p-3 rounded border border-gray-200 bg-gray-50">
+                                                        <div className="flex items-center justify-between mb-2">
+                                                            <h4 className="font-semibold text-gray-900">{supplierData.supplier?.name || 'Fournisseur'}</h4>
+                                                            {supplierData.is_preferred && (
+                                                                <span className="text-xs bg-green-100 text-green-700 px-2 py-1 rounded font-medium">
+                                                                    Préféré
+                                                                </span>
+                                                            )}
+                                                        </div>
+                                                        <div className="grid grid-cols-3 gap-2 text-sm">
+                                                            {supplierData.cost && (
+                                                                <div>
+                                                                    <div className="text-xs text-gray-500">Coût</div>
+                                                                    <div className="font-semibold text-gray-900">{parseFloat(supplierData.cost).toFixed(2)} MAD</div>
+                                                                </div>
+                                                            )}
+                                                            {supplierData.min_quantity && (
+                                                                <div>
+                                                                    <div className="text-xs text-gray-500">Qté min.</div>
+                                                                    <div className="font-semibold text-gray-900">{supplierData.min_quantity}</div>
+                                                                </div>
+                                                            )}
+                                                            {supplierData.lead_time_days && (
+                                                                <div>
+                                                                    <div className="text-xs text-gray-500">Délai (jours)</div>
+                                                                    <div className="font-semibold text-gray-900">{supplierData.lead_time_days}</div>
+                                                                </div>
+                                                            )}
+                                                        </div>
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        </SageCollapsible>
+                                    </div>
+                                )}
+
                                 {/* Media Section */}
                                 <div ref={el => { sectionRefs.current['media'] = el; }}>
                                     <SageCollapsible
@@ -788,40 +1000,103 @@ export const ProductsPage = () => {
                                         isOpen={openSections['media']}
                                         onOpenChange={(open) => toggleSection('media', open)}
                                     >
-                                        {details?.thumbnail || (detailData?.data?.thumbnails && detailData.data.thumbnails.length > 0) ? (
+                                        {isEditMode ? (
                                             <div className="space-y-4">
+                                                <FileUpload
+                                                    label="Image principale"
+                                                    value={formData.thumbnail || null}
+                                                    onChange={(file) => setFormData({...formData, thumbnail: file})}
+                                                    accept="image/*"
+                                                    multiple={false}
+                                                    maxSize={2}
+                                                    showPreview={true}
+                                                    currentImages={detailData?.data?.thumbnail ? [{
+                                                        id: detailData.data.thumbnail.id,
+                                                        url: detailData.data.thumbnail.url,
+                                                        name: 'Image principale'
+                                                    }] : []}
+                                                    helperText="PNG, JPG, JPEG ou WEBP (max 2MB)"
+                                                />
+                                                
+                                                <FileUpload
+                                                    label="Images supplémentaires"
+                                                    value={formData.additionThumbnail || null}
+                                                    onChange={(files) => setFormData({...formData, additionThumbnail: files})}
+                                                    accept="image/*"
+                                                    multiple={true}
+                                                    maxSize={2}
+                                                    maxFiles={10}
+                                                    showPreview={true}
+                                                    currentImages={detailData?.data?.additional_thumbnails?.map((thumb: any, idx: number) => ({
+                                                        id: thumb.id,
+                                                        url: thumb.url || thumb.thumbnail,
+                                                        name: `Image ${idx + 1}`
+                                                    })) || []}
+                                                    helperText="Vous pouvez télécharger jusqu'à 10 images supplémentaires"
+                                                />
+                                            </div>
+                                        ) : (detailData?.data?.thumbnail || detailData?.data?.thumbnails?.length > 0 || detailData?.data?.additional_thumbnails?.length > 0) ? (
+                                            <div className="space-y-6">
                                                 {/* Main Thumbnail */}
                                                 {details?.thumbnail && (
                                                     <div>
-                                                        <div className="text-xs font-semibold text-gray-700 mb-2">Image principale</div>
-                                                        <div className="relative w-full h-64 bg-gray-100 rounded-lg overflow-hidden border border-gray-200">
+                                                        <div className="flex items-center justify-between mb-3">
+                                                            <h4 className="text-sm font-semibold text-gray-900">Image principale</h4>
+                                                        </div>
+                                                        <div 
+                                                            className="relative w-full h-80 bg-gradient-to-br from-gray-50 to-gray-100 rounded-xl overflow-hidden border-2 border-gray-200 shadow-sm hover:shadow-md transition-all duration-200 cursor-pointer group"
+                                                            onClick={() => {
+                                                                setSelectedImage(details.thumbnail);
+                                                                setShowLightbox(true);
+                                                            }}
+                                                        >
                                                             <img 
                                                                 src={details.thumbnail} 
                                                                 alt={details.name}
-                                                                className="w-full h-full object-contain"
+                                                                className="w-full h-full object-contain p-4 transition-transform duration-200 group-hover:scale-105"
                                                                 onError={(e) => {
                                                                     (e.target as HTMLImageElement).src = 'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" width="200" height="200"%3E%3Crect fill="%23f0f0f0" width="200" height="200"/%3E%3Ctext fill="%23999" x="50%25" y="50%25" text-anchor="middle" dy=".3em"%3ENo Image%3C/text%3E%3C/svg%3E';
                                                                 }}
                                                             />
+                                                            <div className="absolute inset-0 bg-black/0 group-hover:bg-black/10 transition-colors duration-200 flex items-center justify-center">
+                                                                <div className="opacity-0 group-hover:opacity-100 transition-opacity duration-200 bg-white/90 backdrop-blur-sm rounded-full p-3 shadow-lg">
+                                                                    <ZoomIn className="w-6 h-6 text-gray-700" />
+                                                                </div>
+                                                            </div>
                                                         </div>
                                                     </div>
                                                 )}
                                                 
-                                                {/* Additional Thumbnails */}
+                                                {/* Gallery Thumbnails */}
                                                 {detailData?.data?.thumbnails && detailData.data.thumbnails.length > 0 && (
                                                     <div>
-                                                        <div className="text-xs font-semibold text-gray-700 mb-2">Galerie ({detailData.data.thumbnails.length})</div>
-                                                        <div className="grid grid-cols-4 gap-2">
+                                                        <div className="flex items-center justify-between mb-3">
+                                                            <h4 className="text-sm font-semibold text-gray-900">Galerie</h4>
+                                                            <span className="text-xs text-gray-500 bg-gray-100 px-2.5 py-1 rounded-full font-medium">{detailData.data.thumbnails.length} {detailData.data.thumbnails.length > 1 ? 'images' : 'image'}</span>
+                                                        </div>
+                                                        <div className="grid grid-cols-4 gap-3">
                                                             {detailData.data.thumbnails.map((thumb: any, index: number) => (
-                                                                <div key={thumb.id || index} className="relative aspect-square bg-gray-100 rounded border border-gray-200 overflow-hidden">
+                                                                <div 
+                                                                    key={thumb.id || index} 
+                                                                    className="relative aspect-square bg-gradient-to-br from-gray-50 to-gray-100 rounded-lg border-2 border-gray-200 overflow-hidden cursor-pointer group hover:border-blue-400 hover:shadow-lg transition-all duration-200"
+                                                                    onClick={() => {
+                                                                        setSelectedImage(thumb.thumbnail || thumb.url);
+                                                                        setShowLightbox(true);
+                                                                    }}
+                                                                >
                                                                     <img 
                                                                         src={thumb.thumbnail || thumb.url} 
                                                                         alt={`Image ${index + 1}`}
-                                                                        className="w-full h-full object-cover"
+                                                                        className="w-full h-full object-cover transition-transform duration-200 group-hover:scale-110"
                                                                         onError={(e) => {
                                                                             (e.target as HTMLImageElement).src = 'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" width="100" height="100"%3E%3Crect fill="%23f0f0f0" width="100" height="100"/%3E%3C/svg%3E';
                                                                         }}
                                                                     />
+                                                                    <div className="absolute inset-0 bg-black/0 group-hover:bg-black/20 transition-colors duration-200 flex items-center justify-center">
+                                                                        <div className="opacity-0 group-hover:opacity-100 transition-opacity duration-200">
+                                                                            <Maximize2 className="w-5 h-5 text-white drop-shadow-lg" />
+                                                                        </div>
+                                                                    </div>
                                                                 </div>
                                                             ))}
                                                         </div>
@@ -831,15 +1106,30 @@ export const ProductsPage = () => {
                                                 {/* Additional Images */}
                                                 {detailData?.data?.additional_thumbnails && detailData.data.additional_thumbnails.length > 0 && (
                                                     <div>
-                                                        <div className="text-xs font-semibold text-gray-700 mb-2">Images supplémentaires</div>
-                                                        <div className="grid grid-cols-4 gap-2">
+                                                        <div className="flex items-center justify-between mb-3">
+                                                            <h4 className="text-sm font-semibold text-gray-900">Images supplémentaires</h4>
+                                                            <span className="text-xs text-gray-500 bg-gray-100 px-2.5 py-1 rounded-full font-medium">{detailData.data.additional_thumbnails.length} {detailData.data.additional_thumbnails.length > 1 ? 'images' : 'image'}</span>
+                                                        </div>
+                                                        <div className="grid grid-cols-4 gap-3">
                                                             {detailData.data.additional_thumbnails.map((thumb: any, index: number) => (
-                                                                <div key={thumb.id || index} className="relative aspect-square bg-gray-100 rounded border border-gray-200 overflow-hidden">
+                                                                <div 
+                                                                    key={thumb.id || index} 
+                                                                    className="relative aspect-square bg-gradient-to-br from-gray-50 to-gray-100 rounded-lg border-2 border-gray-200 overflow-hidden cursor-pointer group hover:border-blue-400 hover:shadow-lg transition-all duration-200"
+                                                                    onClick={() => {
+                                                                        setSelectedImage(thumb.thumbnail || thumb.url);
+                                                                        setShowLightbox(true);
+                                                                    }}
+                                                                >
                                                                     <img 
                                                                         src={thumb.thumbnail || thumb.url} 
                                                                         alt={`Additional ${index + 1}`}
-                                                                        className="w-full h-full object-cover"
+                                                                        className="w-full h-full object-cover transition-transform duration-200 group-hover:scale-110"
                                                                     />
+                                                                    <div className="absolute inset-0 bg-black/0 group-hover:bg-black/20 transition-colors duration-200 flex items-center justify-center">
+                                                                        <div className="opacity-0 group-hover:opacity-100 transition-opacity duration-200">
+                                                                            <Maximize2 className="w-5 h-5 text-white drop-shadow-lg" />
+                                                                        </div>
+                                                                    </div>
                                                                 </div>
                                                             ))}
                                                         </div>
@@ -856,43 +1146,230 @@ export const ProductsPage = () => {
                                 </div>
 
                                 {/* Custom Fields Section */}
-                                {!isEditMode && (
-                                    <div ref={el => { sectionRefs.current['custom_fields'] = el; }}>
-                                        <SageCollapsible
-                                            title="Champs personnalisés"
-                                            isOpen={openSections['custom_fields'] ?? true}
-                                            onOpenChange={(open) => toggleSection('custom_fields', open)}
-                                        >
-                                            {Object.keys(customFields).length > 0 ? (
-                                                <div className="grid grid-cols-2 gap-3">
-                                                    {Object.entries(customFields).map(([key, field]: [string, any]) => (
-                                                        <div key={key} className="p-3 rounded border border-gray-100 bg-gray-50">
-                                                            <div className="text-xs text-gray-500">{field.label}</div>
-                                                            <div className="font-semibold text-gray-900">
-                                                                {field.type === 'checkbox' 
-                                                                    ? (field.value === '1' || field.value === true ? 'Oui' : 'Non')
-                                                                    : (field.formatted_value || field.value || '-')
-                                                                }
-                                                            </div>
+                                <div ref={el => { sectionRefs.current['custom_fields'] = el; }}>
+                                    <SageCollapsible
+                                        title="Champs personnalisés"
+                                        isOpen={openSections['custom_fields'] ?? true}
+                                        onOpenChange={(open) => toggleSection('custom_fields', open)}
+                                    >
+                                        {isEditMode && Object.keys(customFields).length > 0 ? (
+                                            <div className="grid grid-cols-2 gap-3">
+                                                {Object.entries(customFields).map(([key, field]: [string, any]) => (
+                                                    <div key={key}>
+                                                        <label className="block text-xs text-gray-500 mb-1">{field.label}</label>
+                                                        {field.type === 'checkbox' ? (
+                                                            <input
+                                                                type="checkbox"
+                                                                checked={formData.custom_fields?.[key] === true || formData.custom_fields?.[key] === '1'}
+                                                                onChange={(e) => setFormData({
+                                                                    ...formData,
+                                                                    custom_fields: {
+                                                                        ...formData.custom_fields,
+                                                                        [key]: e.target.checked
+                                                                    }
+                                                                })}
+                                                                className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                                                            />
+                                                        ) : field.type === 'select' && field.options ? (
+                                                            <select
+                                                                value={formData.custom_fields?.[key] || ''}
+                                                                onChange={(e) => setFormData({
+                                                                    ...formData,
+                                                                    custom_fields: {
+                                                                        ...formData.custom_fields,
+                                                                        [key]: e.target.value
+                                                                    }
+                                                                })}
+                                                                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                                            >
+                                                                <option value="">Sélectionner...</option>
+                                                                {field.options.map((opt: string) => (
+                                                                    <option key={opt} value={opt}>{opt}</option>
+                                                                ))}
+                                                            </select>
+                                                        ) : (
+                                                            <input
+                                                                type="text"
+                                                                value={formData.custom_fields?.[key] || ''}
+                                                                onChange={(e) => setFormData({
+                                                                    ...formData,
+                                                                    custom_fields: {
+                                                                        ...formData.custom_fields,
+                                                                        [key]: e.target.value
+                                                                    }
+                                                                })}
+                                                                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                                            />
+                                                        )}
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        ) : !isEditMode && Object.keys(customFields).length > 0 ? (
+                                            <div className="grid grid-cols-2 gap-3">
+                                                {Object.entries(customFields).map(([key, field]: [string, any]) => (
+                                                    <div key={key} className="p-3 rounded border border-gray-100 bg-gray-50">
+                                                        <div className="text-xs text-gray-500">{field.label}</div>
+                                                        <div className="font-semibold text-gray-900">
+                                                            {field.type === 'checkbox' 
+                                                                ? (field.value === '1' || field.value === true ? 'Oui' : 'Non')
+                                                                : (field.formatted_value || field.value || '-')
+                                                            }
                                                         </div>
-                                                    ))}
-                                                </div>
-                                            ) : (
-                                                <div className="text-center py-4 text-gray-500 text-sm">Aucun champ personnalisé disponible</div>
-                                            )}
-                                        </SageCollapsible>
-                                    </div>
-                                )}
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        ) : (
+                                            <div className="text-center py-4 text-gray-500 text-sm">Aucun champ personnalisé disponible</div>
+                                        )}
+                                    </SageCollapsible>
+                                </div>
 
                                 {/* Flags & Marketing Section */}
-                                {!isEditMode && (
-                                    <div ref={el => { sectionRefs.current['flags'] = el; }}>
-                                        <SageCollapsible
-                                            title="Options & Marketing"
-                                            isOpen={openSections['flags'] ?? false}
-                                            onOpenChange={(open) => toggleSection('flags', open)}
-                                        >
-                                            {(details?.flags || details?.marketing) ? (
+                                <div ref={el => { sectionRefs.current['flags'] = el; }}>
+                                    <SageCollapsible
+                                        title="Options & Marketing"
+                                        isOpen={openSections['flags'] ?? false}
+                                        onOpenChange={(open) => toggleSection('flags', open)}
+                                    >
+                                        {isEditMode ? (
+                                            <div className="space-y-4">
+                                                <div>
+                                                    <div className="text-xs font-semibold text-gray-700 mb-2">Options de gestion</div>
+                                                    <div className="grid grid-cols-2 gap-3">
+                                                        <label className="flex items-center gap-2 text-sm">
+                                                            <input
+                                                                type="checkbox"
+                                                                checked={formData.is_salable ?? true}
+                                                                onChange={(e) => setFormData({...formData, is_salable: e.target.checked})}
+                                                                className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                                                            />
+                                                            <span>Vendable</span>
+                                                        </label>
+                                                        <label className="flex items-center gap-2 text-sm">
+                                                            <input
+                                                                type="checkbox"
+                                                                checked={formData.is_returnable ?? true}
+                                                                onChange={(e) => setFormData({...formData, is_returnable: e.target.checked})}
+                                                                className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                                                            />
+                                                            <span>Retournable</span>
+                                                        </label>
+                                                        <label className="flex items-center gap-2 text-sm">
+                                                            <input
+                                                                type="checkbox"
+                                                                checked={formData.is_discountable ?? true}
+                                                                onChange={(e) => setFormData({...formData, is_discountable: e.target.checked})}
+                                                                className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                                                            />
+                                                            <span>Remisable</span>
+                                                        </label>
+                                                        <label className="flex items-center gap-2 text-sm">
+                                                            <input
+                                                                type="checkbox"
+                                                                checked={formData.is_expirable ?? false}
+                                                                onChange={(e) => setFormData({...formData, is_expirable: e.target.checked})}
+                                                                className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                                                            />
+                                                            <span>Périssable</span>
+                                                        </label>
+                                                        <label className="flex items-center gap-2 text-sm">
+                                                            <input
+                                                                type="checkbox"
+                                                                checked={formData.is_backorder_allowed ?? true}
+                                                                onChange={(e) => setFormData({...formData, is_backorder_allowed: e.target.checked})}
+                                                                className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                                                            />
+                                                            <span>Commande en rupture</span>
+                                                        </label>
+                                                        <label className="flex items-center gap-2 text-sm">
+                                                            <input
+                                                                type="checkbox"
+                                                                checked={formData.is_weight_managed ?? true}
+                                                                onChange={(e) => setFormData({...formData, is_weight_managed: e.target.checked})}
+                                                                className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                                                            />
+                                                            <span>Géré par poids</span>
+                                                        </label>
+                                                    </div>
+                                                </div>
+                                                <div>
+                                                    <div className="text-xs font-semibold text-gray-700 mb-2">Options marketing</div>
+                                                    <div className="grid grid-cols-2 gap-3">
+                                                        <label className="flex items-center gap-2 text-sm">
+                                                            <input
+                                                                type="checkbox"
+                                                                checked={formData.is_featured ?? false}
+                                                                onChange={(e) => setFormData({...formData, is_featured: e.target.checked})}
+                                                                className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                                                            />
+                                                            <span>Produit vedette</span>
+                                                        </label>
+                                                        <label className="flex items-center gap-2 text-sm">
+                                                            <input
+                                                                type="checkbox"
+                                                                checked={formData.is_quotation_required ?? false}
+                                                                onChange={(e) => setFormData({...formData, is_quotation_required: e.target.checked})}
+                                                                className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                                                            />
+                                                            <span>Devis requis</span>
+                                                        </label>
+                                                        <label className="flex items-center gap-2 text-sm">
+                                                            <input
+                                                                type="checkbox"
+                                                                checked={formData.is_visible_individually ?? true}
+                                                                onChange={(e) => setFormData({...formData, is_visible_individually: e.target.checked})}
+                                                                className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                                                            />
+                                                            <span>Visible individuellement</span>
+                                                        </label>
+                                                        <label className="flex items-center gap-2 text-sm">
+                                                            <input
+                                                                type="checkbox"
+                                                                checked={formData.requires_login_to_view ?? false}
+                                                                onChange={(e) => setFormData({...formData, requires_login_to_view: e.target.checked})}
+                                                                className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                                                            />
+                                                            <span>Connexion requise</span>
+                                                        </label>
+                                                    </div>
+                                                </div>
+                                                <div>
+                                                    <div className="text-xs font-semibold text-gray-700 mb-2">SEO & Métadonnées</div>
+                                                    <div className="space-y-3">
+                                                        <div>
+                                                            <label className="block text-xs text-gray-500 mb-1">Titre SEO</label>
+                                                            <input
+                                                                type="text"
+                                                                value={formData.meta_title || ''}
+                                                                onChange={(e) => setFormData({...formData, meta_title: e.target.value})}
+                                                                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                                                placeholder="Titre pour les moteurs de recherche"
+                                                            />
+                                                        </div>
+                                                        <div>
+                                                            <label className="block text-xs text-gray-500 mb-1">Description SEO</label>
+                                                            <textarea
+                                                                value={formData.meta_description || ''}
+                                                                onChange={(e) => setFormData({...formData, meta_description: e.target.value})}
+                                                                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                                                rows={2}
+                                                                placeholder="Description pour les moteurs de recherche"
+                                                            />
+                                                        </div>
+                                                        <div>
+                                                            <label className="block text-xs text-gray-500 mb-1">Mots-clés SEO</label>
+                                                            <input
+                                                                type="text"
+                                                                value={formData.meta_keywords || ''}
+                                                                onChange={(e) => setFormData({...formData, meta_keywords: e.target.value})}
+                                                                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                                                placeholder="mot1, mot2, mot3"
+                                                            />
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        ) : (details?.flags || details?.marketing) ? (
                                             <div className="space-y-4">
                                                 {details?.flags && (
                                                     <div>
@@ -981,12 +1458,11 @@ export const ProductsPage = () => {
                                                     </div>
                                                 )}
                                             </div>
-                                            ) : (
-                                                <div className="text-center py-4 text-gray-500 text-sm">Aucune information disponible</div>
-                                            )}
-                                        </SageCollapsible>
-                                    </div>
-                                )}
+                                        ) : (
+                                            <div className="text-center py-4 text-gray-500 text-sm">Aucune information disponible</div>
+                                        )}
+                                    </SageCollapsible>
+                                </div>
 
                                 {/* Categories Section */}
                                 <div ref={el => { sectionRefs.current['categories'] = el; }}>
@@ -1094,6 +1570,32 @@ export const ProductsPage = () => {
                 />
             }
         />
+
+        {/* Image Lightbox Modal */}
+        {showLightbox && selectedImage && (
+            <div 
+                className="fixed inset-0 z-[9999] bg-black/90 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in duration-200"
+                onClick={() => setShowLightbox(false)}
+            >
+                <button
+                    onClick={() => setShowLightbox(false)}
+                    className="absolute top-4 right-4 p-2 bg-white/10 hover:bg-white/20 rounded-full transition-colors duration-200 group"
+                    aria-label="Close"
+                >
+                    <X className="w-6 h-6 text-white" />
+                </button>
+                <div 
+                    className="relative max-w-7xl max-h-[90vh] w-full h-full flex items-center justify-center"
+                    onClick={(e) => e.stopPropagation()}
+                >
+                    <img 
+                        src={selectedImage} 
+                        alt="Preview"
+                        className="max-w-full max-h-full object-contain rounded-lg shadow-2xl"
+                    />
+                </div>
+            </div>
+        )}
         </>
     );
 };

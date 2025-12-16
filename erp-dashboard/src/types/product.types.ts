@@ -1,6 +1,7 @@
 export interface ApiSuccessResponse {
     success: boolean;
     message?: string;
+    errors?: Record<string, string[]>;
 }
 
 export interface PaginatedResponse<T> {
@@ -172,6 +173,9 @@ export interface Product {
     customFieldValues?: CustomFieldValue[];
     thumbnails?: ProductMedia[];
     additional_thumbnails?: ProductMedia[];
+    meta_title?: string;
+    meta_description?: string;
+    meta_keywords?: string[];
 }
 
 export interface ProductsListResponse {

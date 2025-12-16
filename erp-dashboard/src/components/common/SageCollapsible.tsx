@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { ChevronDown } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
@@ -40,11 +40,10 @@ export const SageCollapsible: React.FC<SageCollapsibleProps> = ({
                 data-open={currentIsOpen}
             >
                 <span className="font-bold text-gray-800 text-sm">{title}</span>
-                {currentIsOpen ? (
-                    <ChevronDown className="w-4 h-4 text-gray-500" />
-                ) : (
-                    <ChevronDown className="w-4 h-4 text-gray-500 -rotate-90" />
-                )}
+                <ChevronDown className={cn(
+                    "w-4 h-4 text-gray-500 transition-transform duration-200 shrink-0",
+                    !currentIsOpen && "-rotate-90"
+                )} />
             </button>
 
             {currentIsOpen && (

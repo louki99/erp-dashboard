@@ -240,7 +240,7 @@ interface AdvActionPanelProps {
 
 const AdvActionPanel = ({ onApprove, onReject, onHold, hasSelection }: AdvActionPanelProps) => {
     const { has } = usePermissions();
-    
+
     return (
         <div className="flex flex-col h-full bg-white dark:bg-black border-l border-gray-200 dark:border-gray-800 w-11 shrink-0 shadow-[0_0_15px_rgba(0,0,0,0.05)] z-40 transition-all duration-300">
             <ActionGroup>
@@ -807,7 +807,7 @@ const BcDetailView = ({ bc }: { bc: BC }) => {
             </div>
 
             {/* Tabs */}
-            <div className="shrink-0 bg-white dark:bg-gray-900 border-b border-gray-200 dark:border-gray-800 z-10">
+            <div className="shrink-0 bg-white dark:bg-gray-900 border-b border-gray-200 dark:border-gray-800 z-10 min-w-0">
                 <SageTabs
                     tabs={tabs}
                     activeTabId={activeTab}

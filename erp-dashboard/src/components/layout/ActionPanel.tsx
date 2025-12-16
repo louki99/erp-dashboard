@@ -82,7 +82,7 @@ export const ActionPanel = ({ groups }: ActionPanelProps) => {
     const resolvedGroups = groups && groups.length > 0 ? groups : DEFAULT_GROUPS;
 
     return (
-        <div className="flex flex-col h-full bg-white dark:bg-black border-l border-gray-200 dark:border-gray-800 w-11 shrink-0 shadow-[0_0_15px_rgba(0,0,0,0.05)] z-40 transition-all duration-300">
+        <div className="flex flex-col h-full bg-white dark:bg-black border-l border-gray-200 dark:border-gray-800 w-11 shrink-0 shadow-[0_0_15px_rgba(0,0,0,0.05)] z-50 transition-all duration-300">
             {resolvedGroups.map((group, idx) => (
                 <ActionGroup key={idx}>
                     {idx === 0 && (

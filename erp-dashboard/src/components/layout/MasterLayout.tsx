@@ -26,12 +26,36 @@ export const MasterLayout: React.FC<MasterLayoutProps> = ({
 }) => {
     const navigate = useNavigate();
     const { user, logout } = useAuth();
+    
+    // Responsive State
+    const [isMobile, setIsMobile] = useState(false);
 
     const [mode, setMode] = useState<LayoutMode>('split');
     const [isMegaMenuOpen, setIsMegaMenuOpen] = useState(false);
     const [showUserMenu, setShowUserMenu] = useState(false);
     const [isLogoutModalOpen, setIsLogoutModalOpen] = useState(false);
     const [isDark, setIsDark] = useState(false);
+
+    // Check Screen Size
+    useEffect(() => {
+        const checkMobile = () => {
+             const mobile = window.innerWidth < 1024; // lg breakpoint
+             setIsMobile(mobile);
+             // Auto-switch to table mode if resizing to mobile and currently in split
+             if (mobile) {
+                 setMode(prev => prev === 'split' ? 'table' : prev);
+             } else {
+                // Optional: Restore split if resizing to desktop? 
+                // Let's keep it manual or default to split if it was table?
+                // For now, let's just leave it, but ensure 'split' is valid only on desktop
+                setMode(prev => prev === 'table' ? 'split' : prev);
+             }
+        };
+        
+        checkMobile();
+        window.addEventListener('resize', checkMobile);
+        return () => window.removeEventListener('resize', checkMobile);
+    }, []);
 
     // Theme Toggle Logic
     useEffect(() => {
@@ -197,13 +221,13 @@ export const MasterLayout: React.FC<MasterLayoutProps> = ({
             {/* Main Split Content */}
             <div className="flex-1 overflow-hidden relative flex flex-row group/layout">
 
-                {/* MODE: SPLIT VIEW (Default) */}
-                {mode === 'split' && (
+                {/* MODE: SPLIT VIEW (Default - Desktop Only) */}
+                {mode === 'split' && !isMobile && (
                     <Split
-                        className="flex h-full flex-1"
+                        className="flex h-full flex-1 min-w-0" // Added min-w-0 to prevent overflow
                         sizes={[25, 75]}
                         minSize={[0, 400]}
-                        gutterSize={12} // Wider gutter for the handle
+                        gutterSize={12}
                         snapOffset={30}
                         dragInterval={1}
                         direction="horizontal"
@@ -211,9 +235,6 @@ export const MasterLayout: React.FC<MasterLayoutProps> = ({
                         gutter={(index, direction) => {
                             const gutter = document.createElement('div')
                             gutter.className = `gutter gutter-${direction} relative flex items-center justify-center bg-gray-50/50 hover:bg-sage-50 transition-colors border-l border-r border-gray-200`
-                            // We will inject the handle logic via React, but for raw DOM we need to be careful.
-                            // Actually, react-split controls the DOM. Best way is to just style the gutter via CSS or
-                            // overlay a button. Let's overlay a button in the main React tree absolute positioned over the gutter area.
                             return gutter
                         }}
                     >
@@ -221,7 +242,6 @@ export const MasterLayout: React.FC<MasterLayoutProps> = ({
                         <div className="h-full overflow-hidden bg-white flex flex-col relative min-w-0 group/pane">
                             {/* Controls Container */}
                             <div className="absolute right-2 top-2 z-50 flex gap-1 opacity-0 group-hover/pane:opacity-100 transition-opacity duration-200">
-                                {/* Maximize Button - Restore Full Screen Table */}
                                 <button
                                     onClick={() => setMode('table')}
                                     className="p-1.5 bg-white border border-gray-200 shadow-sm rounded-md text-gray-400 hover:text-sage-600 hover:border-sage-300 hover:bg-sage-50 transition-all"
@@ -229,8 +249,6 @@ export const MasterLayout: React.FC<MasterLayoutProps> = ({
                                 >
                                     <Maximize2 className="w-3.5 h-3.5" />
                                 </button>
-
-                                {/* Collapse Button */}
                                 <button
                                     onClick={() => setMode('details')}
                                     className="p-1.5 bg-white border border-gray-200 shadow-sm rounded-md text-gray-400 hover:text-sage-600 hover:border-sage-300 hover:bg-sage-50 transition-all"
@@ -249,18 +267,47 @@ export const MasterLayout: React.FC<MasterLayoutProps> = ({
                     </Split>
                 )}
 
-                {/* MODE: FULL TABLE (Maximized Left) */}
-                {mode === 'table' && (
-                    <div className="flex h-full flex-1">
+                {/* MODE: FULL TABLE (Maximized Left or Mobile Default) */}
+                {(mode === 'table' || (mode === 'split' && isMobile)) && (
+                    <div className="flex h-full flex-1 min-w-0">
                         <div className="flex-1 h-full overflow-hidden bg-white relative">
-                            <button
-                                onClick={() => setMode('split')}
-                                className="absolute right-4 top-3 z-50 flex items-center gap-2 px-3 py-1.5 bg-white border border-gray-200 shadow-sm rounded-md text-sm font-medium text-gray-600 hover:text-sage-600 hover:border-sage-300 hover:bg-sage-50 transition-all"
-                                title="Restore Split View"
-                            >
-                                <Minimize2 className="w-4 h-4" />
-                                <span>Split View</span>
-                            </button>
+                            {/* Only show "Split View" button on desktop */}
+                            {!isMobile && (
+                                <button
+                                    onClick={() => setMode('split')}
+                                    className="absolute right-4 top-3 z-50 flex items-center gap-2 px-3 py-1.5 bg-white border border-gray-200 shadow-sm rounded-md text-sm font-medium text-gray-600 hover:text-sage-600 hover:border-sage-300 hover:bg-sage-50 transition-all"
+                                    title="Restore Split View"
+                                >
+                                    <Minimize2 className="w-4 h-4" />
+                                    <span>Split View</span>
+                                </button>
+                            )}
+                            
+                            {/* On Mobile, provide a way to go to Details if something selected? 
+                                Actually, the user clicks a row in leftContent. 
+                                We need a way to detect selection or let the child component switch the mode.
+                                Since props don't allow callback injection easily here without changing interface, 
+                                we might need to rely on the user manually switching or the "Details" button below.
+                                
+                                BETTER IDEA: The List component usually handles selection. 
+                                Note: This MasterLayout is generic. 
+                                We might need to expose setMode to children? 
+                                Or simply Provide a context?
+                                
+                                For this scoped fix, let's add a "View Details" FAB or button if on mobile?
+                                Or just assume the user will use the explicit Buttons we add.
+                            */}
+                            
+                            {isMobile && (
+                                <button 
+                                    onClick={() => setMode('details')}
+                                    className="absolute bottom-4 right-4 z-50 h-12 w-12 bg-sage-600 text-white rounded-full shadow-lg flex items-center justify-center lg:hidden"
+                                    title="Voir Détails"
+                                >
+                                    <ChevronRight className="w-6 h-6" />
+                                </button>
+                            )}
+
                             {leftContent}
                         </div>
                     </div>
@@ -268,33 +315,52 @@ export const MasterLayout: React.FC<MasterLayoutProps> = ({
 
                 {/* MODE: FULL DETAILS (Collapsed Left) */}
                 {mode === 'details' && (
-                    <div className="flex h-full flex-1">
-                        {/* Collapsed Strip - Sage Style */}
-                        <div
-                            className="w-8 bg-[#2c3e50] border-r border-gray-700 flex flex-col items-center py-4 cursor-pointer hover:bg-[#34495e] transition-colors relative"
-                            onClick={() => setMode('split')}
-                            title="Expand Sidebar"
-                        >
-                            <div className="absolute top-6 -right-3 z-50 w-6 h-6 bg-white border border-gray-200 shadow-md rounded-full flex items-center justify-center text-gray-500 hover:text-sage-600 hover:border-sage-300 transition-all">
-                                <ChevronRight className="w-3 h-3" />
-                            </div>
+                    <div className="flex h-full flex-1 min-w-0">
+                        {/* Collapsed Strip - Sage Style (Desktop Only) */}
+                        {!isMobile && (
+                            <div
+                                className="w-8 shrink-0 bg-[#2c3e50] border-r border-gray-700 flex flex-col items-center py-4 cursor-pointer hover:bg-[#34495e] transition-colors relative"
+                                onClick={() => setMode('split')}
+                                title="Expand Sidebar"
+                            >
+                                <div className="absolute top-6 -right-3 z-50 w-6 h-6 bg-white border border-gray-200 shadow-md rounded-full flex items-center justify-center text-gray-500 hover:text-sage-600 hover:border-sage-300 transition-all">
+                                    <ChevronRight className="w-3 h-3" />
+                                </div>
 
-                            {/* Vertical Text or Icon Placeholder */}
-                            <div className="mt-10 [writing-mode:vertical-lr] rotate-180 text-xs font-medium text-gray-400 tracking-widest uppercase flex items-center gap-2">
-                                <span className="w-8 h-px bg-gray-600 mb-2"></span>
-                                LISTE
+                                <div className="mt-10 [writing-mode:vertical-lr] rotate-180 text-xs font-medium text-gray-400 tracking-widest uppercase flex items-center gap-2">
+                                    <span className="w-8 h-px bg-gray-600 mb-2"></span>
+                                    LISTE
+                                </div>
                             </div>
-                        </div>
+                        )}
+                        
+                        {/* Mobile Back Button */}
+                        {isMobile && (
+                             <div 
+                                className="w-0" // Hidden visually but logic needed? No, let's put back button in main content header? 
+                                // Actually, let's put a floating back button for mobile details view.
+                            ></div>
+                        )}
 
                         {/* Expanded Main Content */}
-                        <div className="flex-1 h-full overflow-y-auto bg-slate-50 flex flex-col">
+                        <div className="flex-1 h-full overflow-y-auto bg-slate-50 flex flex-col relative">
+                            {isMobile && (
+                                <button
+                                    onClick={() => setMode('table')}
+                                    className="absolute left-4 top-20 z-40 p-2 bg-white/80 backdrop-blur-md border border-gray-200 text-gray-600 rounded-full shadow-sm"
+                                    style={{top: '1rem', left: '1rem'}} // Override pos
+                                >
+                                    <ChevronLeft className="w-5 h-5" />
+                                </button>
+                            )}
                             {mainContent}
                         </div>
                     </div>
                 )}
 
                 {/* RIGHT BAR: Fixed Actions (Always visible) */}
-                <div className="shrink-0 z-30 h-full bg-white shadow-xl border-l border-gray-200">
+                {/* On Mobile: Fix it to bottom or right, ensure high Z-Index */}
+                <div className="shrink-0 z-[60] h-full bg-white shadow-xl border-l border-gray-200">
                     {rightContent}
                 </div>
             </div>
