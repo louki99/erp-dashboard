@@ -26,6 +26,7 @@ import { MagasinierOrdersPage } from '@/pages/magasinier/MagasinierOrdersPage';
 import { MagasinierStockPage } from '@/pages/magasinier/MagasinierStockPage';
 import { MagasinierBatchPickingPage } from '@/pages/magasinier/MagasinierBatchPickingPage';
 import { ProductsPage } from '@/pages/products/ProductsPage';
+import { SettingsPage } from '@/pages/settings/SettingsPage';
 import { MasterLayout } from '@/components/layout/MasterLayout';
 
 
@@ -53,25 +54,25 @@ function AppRoutes() {
 
       {/* Protected Routes */}
       <Route path="/" element={<ProtectedRoute><Navigate to="/dashboard" replace /></ProtectedRoute>} />
-      
+
       <Route path="/dashboard" element={
         <ProtectedRoute requiredPermission={PERMISSIONS.DASHBOARD.VIEW}>
           <DashboardPage />
         </ProtectedRoute>
       } />
-      
+
       <Route path="/partners" element={
         <ProtectedRoute requiredPermission={PERMISSIONS.PARTNERS.INDEX}>
           <PartnerPage />
         </ProtectedRoute>
       } />
-      
+
       <Route path="/orders" element={
         <ProtectedRoute requiredPermission={PERMISSIONS.BON_COMMANDES.INDEX}>
           <OrdersPage />
         </ProtectedRoute>
       } />
-      
+
       <Route path="/profile" element={
         <ProtectedRoute>
           <ProfilePage />
@@ -84,37 +85,37 @@ function AppRoutes() {
           <AdvDashboard />
         </ProtectedRoute>
       } />
-      
+
       <Route path="/adv/dashboard" element={
         <ProtectedRoute requiredPermission={PERMISSIONS.ADV.DASHBOARD}>
           <AdvDashboard />
         </ProtectedRoute>
       } />
-      
+
       <Route path="/adv/validation" element={
         <ProtectedRoute requiredPermission={[PERMISSIONS.ADV.BC_INDEX, PERMISSIONS.ADV.BC_PENDING]}>
           <AdvValidationPage />
         </ProtectedRoute>
       } />
-      
+
       <Route path="/adv/partners" element={
         <ProtectedRoute requiredPermission={PERMISSIONS.ADV.PARTNERS_INDEX}>
           <AdvPartnersPage />
         </ProtectedRoute>
       } />
-      
+
       <Route path="/adv/credit" element={
         <ProtectedRoute requiredPermission={PERMISSIONS.ADV.CREDIT_INDEX}>
           <AdvCreditPage />
         </ProtectedRoute>
       } />
-      
+
       <Route path="/adv/echeances" element={
         <ProtectedRoute requiredPermission={PERMISSIONS.ADV.ECHEANCES_INDEX}>
           <AdvEcheancesPage />
         </ProtectedRoute>
       } />
-      
+
       <Route path="/adv/derogations" element={
         <ProtectedRoute requiredPermission={PERMISSIONS.ADV.BC_INDEX}>
           <AdvDerogationsPage />
@@ -211,6 +212,13 @@ function AppRoutes() {
       <Route path="/products" element={
         <ProtectedRoute>
           <ProductsPage />
+        </ProtectedRoute>
+      } />
+
+      {/* Settings Routes */}
+      <Route path="/settings" element={
+        <ProtectedRoute requiredPermission={PERMISSIONS.SETTINGS.GENERAL}>
+          <SettingsPage />
         </ProtectedRoute>
       } />
 

@@ -145,7 +145,8 @@ const MENU_DATA: ModuleData[] = [
         description: 'User management, security, and global settings',
         categories: [
             { title: 'Utilisateurs', items: ['Utilisateurs', 'Rôles', 'Groupes'] },
-            { title: 'Sécurité', items: ['Gouvernance', 'Audit'] }
+            { title: 'Sécurité', items: ['Gouvernance', 'Audit'] },
+            { title: 'Application', items: ['Paramètres Généraux'] }
         ]
     }
 ];
@@ -222,6 +223,7 @@ export const MegaMenu: React.FC<MegaMenuProps> = ({ isOpen, onClose }) => {
         'Fournisseurs': '/partners/suppliers',
 
         // General Fallbacks
+        'Paramètres Généraux': '/settings',
         'default': '/dashboard'
     };
 

@@ -1,0 +1,622 @@
+{
+    "info": {
+        "name": "ERP - General Settings API",
+        "description": "Complete API collection for General Settings management",
+        "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+        "version": "1.0.0"
+    },
+    "auth": {
+        "type": "bearer",
+        "bearer": [
+            {
+                "key": "token",
+                "value": "{{TOKEN}}",
+                "type": "string"
+            }
+        ]
+    },
+    "variable": [
+        {
+            "key": "BASE_URL",
+            "value": "http://localhost",
+            "type": "string"
+        },
+        {
+            "key": "TOKEN",
+            "value": "",
+            "type": "string"
+        }
+    ],
+    "item": [
+        {
+            "name": "Public Endpoints",
+            "item": [
+                {
+                    "name": "Get Public Settings",
+                    "request": {
+                        "auth": {
+                            "type": "noauth"
+                        },
+                        "method": "GET",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{BASE_URL}}/backend/settings/public",
+                            "host": [
+                                "{{BASE_URL}}"
+                            ],
+                            "path": [
+                                "backend",
+                                "settings",
+                                "public"
+                            ]
+                        },
+                        "description": "Retrieve public-facing settings without authentication"
+                    },
+                    "response": []
+                }
+            ]
+        },
+        {
+            "name": "Main Settings",
+            "item": [
+                {
+                    "name": "Get All Settings",
+                    "request": {
+                        "method": "GET",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{BASE_URL}}/backend/generale-setting",
+                            "host": [
+                                "{{BASE_URL}}"
+                            ],
+                            "path": [
+                                "backend",
+                                "generale-setting"
+                            ]
+                        },
+                        "description": "Get complete general settings with media relationships"
+                    },
+                    "response": []
+                },
+                {
+                    "name": "Update General Settings",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            },
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n  \"name\": \"My ERP System\",\n  \"title\": \"ERP Management Platform\",\n  \"email\": \"contact@erp.com\",\n  \"mobile\": \"+1234567890\",\n  \"address\": \"123 Business Street\",\n  \"currency\": 1,\n  \"currency_position\": \"left\",\n  \"direction\": \"ltr\",\n  \"show_download_app\": true,\n  \"google_playstore_url\": \"https://play.google.com/store/apps/...\",\n  \"app_store_url\": \"https://apps.apple.com/app/...\",\n  \"show_footer\": true,\n  \"footer_phone\": \"+1234567890\",\n  \"footer_email\": \"footer@erp.com\",\n  \"footer_text\": \"© 2024 ERP System\",\n  \"footer_description\": \"Your trusted business partner\",\n  \"return_order_within_days\": 7\n}"
+                        },
+                        "url": {
+                            "raw": "{{BASE_URL}}/backend/generale-setting",
+                            "host": [
+                                "{{BASE_URL}}"
+                            ],
+                            "path": [
+                                "backend",
+                                "generale-setting"
+                            ]
+                        },
+                        "description": "Update main application settings"
+                    },
+                    "response": []
+                },
+                {
+                    "name": "Update Settings with File Upload",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            }
+                        ],
+                        "body": {
+                            "mode": "formdata",
+                            "formdata": [
+                                {
+                                    "key": "name",
+                                    "value": "My ERP System",
+                                    "type": "text"
+                                },
+                                {
+                                    "key": "email",
+                                    "value": "contact@erp.com",
+                                    "type": "text"
+                                },
+                                {
+                                    "key": "logo",
+                                    "type": "file",
+                                    "src": []
+                                },
+                                {
+                                    "key": "favicon",
+                                    "type": "file",
+                                    "src": []
+                                },
+                                {
+                                    "key": "app_logo",
+                                    "type": "file",
+                                    "src": []
+                                }
+                            ]
+                        },
+                        "url": {
+                            "raw": "{{BASE_URL}}/backend/generale-setting",
+                            "host": [
+                                "{{BASE_URL}}"
+                            ],
+                            "path": [
+                                "backend",
+                                "generale-setting"
+                            ]
+                        },
+                        "description": "Update settings with file uploads (logo, favicon, etc.)"
+                    },
+                    "response": []
+                }
+            ]
+        },
+        {
+            "name": "Theme Settings",
+            "item": [
+                {
+                    "name": "Get Theme Settings",
+                    "request": {
+                        "method": "GET",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{BASE_URL}}/backend/generale-setting/theme",
+                            "host": [
+                                "{{BASE_URL}}"
+                            ],
+                            "path": [
+                                "backend",
+                                "generale-setting",
+                                "theme"
+                            ]
+                        },
+                        "description": "Get theme colors and direction"
+                    },
+                    "response": []
+                },
+                {
+                    "name": "Update Theme Settings",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            },
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n  \"primary_color\": \"#8b5cf6\",\n  \"secondary_color\": \"#ede9fe\"\n}"
+                        },
+                        "url": {
+                            "raw": "{{BASE_URL}}/backend/generale-setting/theme",
+                            "host": [
+                                "{{BASE_URL}}"
+                            ],
+                            "path": [
+                                "backend",
+                                "generale-setting",
+                                "theme"
+                            ]
+                        },
+                        "description": "Update theme colors"
+                    },
+                    "response": []
+                }
+            ]
+        },
+        {
+            "name": "Business Settings",
+            "item": [
+                {
+                    "name": "Get Business Settings",
+                    "request": {
+                        "method": "GET",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{BASE_URL}}/backend/generale-setting/business",
+                            "host": [
+                                "{{BASE_URL}}"
+                            ],
+                            "path": [
+                                "backend",
+                                "generale-setting",
+                                "business"
+                            ]
+                        },
+                        "description": "Get business configuration"
+                    },
+                    "response": []
+                },
+                {
+                    "name": "Update Business Settings",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            },
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n  \"business_based_on\": \"commission\",\n  \"commission\": 10,\n  \"commission_type\": \"percentage\",\n  \"commission_charge\": \"per_order\",\n  \"shop_type\": \"multi\",\n  \"new_product_approval\": true,\n  \"update_product_approval\": false\n}"
+                        },
+                        "url": {
+                            "raw": "{{BASE_URL}}/backend/generale-setting/business",
+                            "host": [
+                                "{{BASE_URL}}"
+                            ],
+                            "path": [
+                                "backend",
+                                "generale-setting",
+                                "business"
+                            ]
+                        },
+                        "description": "Update business configuration"
+                    },
+                    "response": []
+                }
+            ]
+        },
+        {
+            "name": "Withdraw Settings",
+            "item": [
+                {
+                    "name": "Get Withdraw Settings",
+                    "request": {
+                        "method": "GET",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{BASE_URL}}/backend/generale-setting/withdraw",
+                            "host": [
+                                "{{BASE_URL}}"
+                            ],
+                            "path": [
+                                "backend",
+                                "generale-setting",
+                                "withdraw"
+                            ]
+                        },
+                        "description": "Get withdrawal configuration"
+                    },
+                    "response": []
+                },
+                {
+                    "name": "Update Withdraw Settings",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            },
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n  \"min_withdraw\": 50,\n  \"max_withdraw\": 5000,\n  \"withdraw_request\": 7\n}"
+                        },
+                        "url": {
+                            "raw": "{{BASE_URL}}/backend/generale-setting/withdraw",
+                            "host": [
+                                "{{BASE_URL}}"
+                            ],
+                            "path": [
+                                "backend",
+                                "generale-setting",
+                                "withdraw"
+                            ]
+                        },
+                        "description": "Update withdrawal limits"
+                    },
+                    "response": []
+                }
+            ]
+        },
+        {
+            "name": "AI Settings",
+            "item": [
+                {
+                    "name": "Get AI Prompts",
+                    "request": {
+                        "method": "GET",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{BASE_URL}}/backend/ai-prompts",
+                            "host": [
+                                "{{BASE_URL}}"
+                            ],
+                            "path": [
+                                "backend",
+                                "ai-prompts"
+                            ]
+                        },
+                        "description": "Get AI prompt templates"
+                    },
+                    "response": []
+                },
+                {
+                    "name": "Update AI Prompts",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            },
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n  \"product_description\": \"Generate a compelling product description with features and benefits...\",\n  \"page_description\": \"Create an engaging page description that highlights key points...\",\n  \"blog_description\": \"Write an informative blog post about the topic...\"\n}"
+                        },
+                        "url": {
+                            "raw": "{{BASE_URL}}/backend/ai-prompts/update",
+                            "host": [
+                                "{{BASE_URL}}"
+                            ],
+                            "path": [
+                                "backend",
+                                "ai-prompts",
+                                "update"
+                            ]
+                        },
+                        "description": "Update AI prompt templates"
+                    },
+                    "response": []
+                },
+                {
+                    "name": "Get AI Configuration Status",
+                    "request": {
+                        "method": "GET",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{BASE_URL}}/backend/ai-prompts/configure",
+                            "host": [
+                                "{{BASE_URL}}"
+                            ],
+                            "path": [
+                                "backend",
+                                "ai-prompts",
+                                "configure"
+                            ]
+                        },
+                        "description": "Check if OpenAI API keys are configured"
+                    },
+                    "response": []
+                },
+                {
+                    "name": "Update AI Configuration",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            },
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n  \"api_key\": \"sk-proj-xxxxxxxxxxxxxxxxxxxxxxxx\",\n  \"organization\": \"org-xxxxxxxxxxxxxxxx\"\n}"
+                        },
+                        "url": {
+                            "raw": "{{BASE_URL}}/backend/ai-prompts/configure",
+                            "host": [
+                                "{{BASE_URL}}"
+                            ],
+                            "path": [
+                                "backend",
+                                "ai-prompts",
+                                "configure"
+                            ]
+                        },
+                        "description": "Configure OpenAI API credentials (Admin only)"
+                    },
+                    "response": []
+                }
+            ]
+        },
+        {
+            "name": "System",
+            "item": [
+                {
+                    "name": "Run Update Command",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{BASE_URL}}/backend/generale-update-command",
+                            "host": [
+                                "{{BASE_URL}}"
+                            ],
+                            "path": [
+                                "backend",
+                                "generale-update-command"
+                            ]
+                        },
+                        "description": "Run latest update scripts"
+                    },
+                    "response": []
+                }
+            ]
+        },
+        {
+            "name": "Validation Tests",
+            "item": [
+                {
+                    "name": "Invalid Theme Colors",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            },
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n  \"primary_color\": \"invalid-color\",\n  \"secondary_color\": \"not-hex\"\n}"
+                        },
+                        "url": {
+                            "raw": "{{BASE_URL}}/backend/generale-setting/theme",
+                            "host": [
+                                "{{BASE_URL}}"
+                            ],
+                            "path": [
+                                "backend",
+                                "generale-setting",
+                                "theme"
+                            ]
+                        },
+                        "description": "Test validation - should return 422"
+                    },
+                    "response": []
+                },
+                {
+                    "name": "Invalid Commission",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            },
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n  \"commission\": 150,\n  \"commission_type\": \"invalid_type\"\n}"
+                        },
+                        "url": {
+                            "raw": "{{BASE_URL}}/backend/generale-setting/business",
+                            "host": [
+                                "{{BASE_URL}}"
+                            ],
+                            "path": [
+                                "backend",
+                                "generale-setting",
+                                "business"
+                            ]
+                        },
+                        "description": "Test validation - should return 422"
+                    },
+                    "response": []
+                },
+                {
+                    "name": "Invalid Withdraw Range",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            },
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n  \"min_withdraw\": 1000,\n  \"max_withdraw\": 500,\n  \"withdraw_request\": 7\n}"
+                        },
+                        "url": {
+                            "raw": "{{BASE_URL}}/backend/generale-setting/withdraw",
+                            "host": [
+                                "{{BASE_URL}}"
+                            ],
+                            "path": [
+                                "backend",
+                                "generale-setting",
+                                "withdraw"
+                            ]
+                        },
+                        "description": "Test validation - max must be >= min"
+                    },
+                    "response": []
+                }
+            ]
+        }
+    ]
+}

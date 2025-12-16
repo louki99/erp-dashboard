@@ -225,8 +225,8 @@ export const MasterLayout: React.FC<MasterLayoutProps> = ({
                 {mode === 'split' && !isMobile && (
                     <Split
                         className="flex h-full flex-1 min-w-0" // Added min-w-0 to prevent overflow
-                        sizes={[25, 75]}
-                        minSize={[0, 400]}
+                        sizes={[30, 70]}
+                        minSize={[280, 400]}
                         gutterSize={12}
                         snapOffset={30}
                         dragInterval={1}
