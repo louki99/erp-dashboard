@@ -26,7 +26,7 @@ export const MasterLayout: React.FC<MasterLayoutProps> = ({
 }) => {
     const navigate = useNavigate();
     const { user, logout } = useAuth();
-    
+
     // Responsive State
     const [isMobile, setIsMobile] = useState(false);
 
@@ -39,19 +39,19 @@ export const MasterLayout: React.FC<MasterLayoutProps> = ({
     // Check Screen Size
     useEffect(() => {
         const checkMobile = () => {
-             const mobile = window.innerWidth < 1024; // lg breakpoint
-             setIsMobile(mobile);
-             // Auto-switch to table mode if resizing to mobile and currently in split
-             if (mobile) {
-                 setMode(prev => prev === 'split' ? 'table' : prev);
-             } else {
+            const mobile = window.innerWidth < 1024; // lg breakpoint
+            setIsMobile(mobile);
+            // Auto-switch to table mode if resizing to mobile and currently in split
+            if (mobile) {
+                setMode(prev => prev === 'split' ? 'table' : prev);
+            } else {
                 // Optional: Restore split if resizing to desktop? 
                 // Let's keep it manual or default to split if it was table?
                 // For now, let's just leave it, but ensure 'split' is valid only on desktop
                 setMode(prev => prev === 'table' ? 'split' : prev);
-             }
+            }
         };
-        
+
         checkMobile();
         window.addEventListener('resize', checkMobile);
         return () => window.removeEventListener('resize', checkMobile);
@@ -162,7 +162,7 @@ export const MasterLayout: React.FC<MasterLayoutProps> = ({
                         >
                             <div className="text-right hidden md:block">
                                 <div className="text-xs font-bold text-white group-hover:text-sage-400 transition-colors uppercase">{user?.name || 'User'}</div>
-                                <div className="text-[10px] text-gray-400 capitalize">{user?.roles?.[0]?.name || 'Guest'}</div>
+                                <div className="text-[10px] text-gray-400 capitalize">{user?.roles?.details?.[0]?.name || 'Guest'}</div>
                             </div>
                             <div className="w-8 h-8 rounded-full bg-gradient-to-br from-sage-500 to-sage-700 flex items-center justify-center text-white font-bold text-xs shadow-lg ring-2 ring-transparent group-hover:ring-sage-500/50 transition-all">
                                 {user?.name?.charAt(0).toUpperCase() || 'U'}
@@ -282,7 +282,7 @@ export const MasterLayout: React.FC<MasterLayoutProps> = ({
                                     <span>Split View</span>
                                 </button>
                             )}
-                            
+
                             {/* On Mobile, provide a way to go to Details if something selected? 
                                 Actually, the user clicks a row in leftContent. 
                                 We need a way to detect selection or let the child component switch the mode.
@@ -297,9 +297,9 @@ export const MasterLayout: React.FC<MasterLayoutProps> = ({
                                 For this scoped fix, let's add a "View Details" FAB or button if on mobile?
                                 Or just assume the user will use the explicit Buttons we add.
                             */}
-                            
+
                             {isMobile && (
-                                <button 
+                                <button
                                     onClick={() => setMode('details')}
                                     className="absolute bottom-4 right-4 z-50 h-12 w-12 bg-sage-600 text-white rounded-full shadow-lg flex items-center justify-center lg:hidden"
                                     title="Voir Détails"
@@ -333,12 +333,12 @@ export const MasterLayout: React.FC<MasterLayoutProps> = ({
                                 </div>
                             </div>
                         )}
-                        
+
                         {/* Mobile Back Button */}
                         {isMobile && (
-                             <div 
+                            <div
                                 className="w-0" // Hidden visually but logic needed? No, let's put back button in main content header? 
-                                // Actually, let's put a floating back button for mobile details view.
+                            // Actually, let's put a floating back button for mobile details view.
                             ></div>
                         )}
 
@@ -348,7 +348,7 @@ export const MasterLayout: React.FC<MasterLayoutProps> = ({
                                 <button
                                     onClick={() => setMode('table')}
                                     className="absolute left-4 top-20 z-40 p-2 bg-white/80 backdrop-blur-md border border-gray-200 text-gray-600 rounded-full shadow-sm"
-                                    style={{top: '1rem', left: '1rem'}} // Override pos
+                                    style={{ top: '1rem', left: '1rem' }} // Override pos
                                 >
                                     <ChevronLeft className="w-5 h-5" />
                                 </button>
