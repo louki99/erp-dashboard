@@ -12,8 +12,8 @@ import {
 } from 'ag-grid-community';
 import { useFormContext, useFieldArray } from 'react-hook-form';
 import type { Promotion, PromotionLineDetail } from '@/types/promotion.types';
-import { PromotionType } from '@/types/promotion.types';
-import { Plus, Trash2 } from 'lucide-react';
+import { PromotionType, BreakpointType } from '@/types/promotion.types';
+import { Plus, Trash2, Box } from 'lucide-react';
 
 ModuleRegistry.registerModules([
     ClientSideRowModelModule,
@@ -28,7 +28,10 @@ interface PromotionLineDetailsGridProps {
 }
 
 export const PromotionLineDetailsGrid = ({ lineIndex }: PromotionLineDetailsGridProps) => {
-    const { control } = useFormContext<Promotion>();
+    const { control, watch } = useFormContext<Promotion>();
+    
+    // Watch breakpoint_type to adapt UI labels
+    const breakpointType = watch('breakpoint_type');
 
     // We conditionally call useFieldArray. 
     // Ideally useFieldArray should be called always, but the "name" depends on index.
@@ -37,82 +40,202 @@ export const PromotionLineDetailsGrid = ({ lineIndex }: PromotionLineDetailsGrid
     // A better approach is to pass the control and let this component manage the update via the specific path.
     // BUT, useFieldArray requires a static name usually. 
 
-    // Workaround: We will use a key on this component in the parent to force re-mounting 
-    // when lineIndex changes, OR we use the generic `lines.${index}.details` name.
-
-    const name = lineIndex !== null ? `lines.${lineIndex}.details` : 'lines.0.details'; // Fallback to avoid crash, but handled by early return UI
-
+    // Dynamic useFieldArray: We need to handle the case where lineIndex changes.
+    // React Hook Form requires stable field names, so we use a conditional approach.
     const { fields, append, remove, update } = useFieldArray({
         control,
-        name: name as any
+        name: lineIndex !== null ? (`lines.${lineIndex}.details` as any) : 'lines.0.details' as any,
+        keyName: 'id' // Use a key to help React track items
     });
 
     const rowData = useMemo(() => fields.map((f) => ({ ...f })), [fields]);
 
     const promoTypeOptions = Object.values(PromotionType).filter(v => typeof v === 'number');
     const promoTypeLabels = {
-        [PromotionType.PERCENTAGE_DISCOUNT]: 'Remise %',
+        [PromotionType.PERCENTAGE_DISCOUNT]: 'Remise en Pourcentage',
         [PromotionType.FIXED_AMOUNT_DISCOUNT]: 'Montant Fixe',
         [PromotionType.BEST_PRICE]: 'Meilleur Prix',
         [PromotionType.AMOUNT_PER_UNIT]: 'Montant par Unité',
-        [PromotionType.FREE_PROMO_UNIT]: 'Unité Gratuite',
+        [PromotionType.FREE_PROMO_UNIT]: 'Unité Promo Gratuite',
         [PromotionType.FLAT_AMOUNT_DISCOUNT]: 'Montant Forfaitaire',
         [PromotionType.REPLACE_PRICE]: 'Prix de Remplacement'
     };
 
+    const promoTypeDescriptions = {
+        [PromotionType.PERCENTAGE_DISCOUNT]: 'Appliquer une remise en pourcentage (ex: 10 = 10%)',
+        [PromotionType.FIXED_AMOUNT_DISCOUNT]: 'Soustraire un montant fixe en MAD',
+        [PromotionType.BEST_PRICE]: 'Définir le prix maximum par unité',
+        [PromotionType.AMOUNT_PER_UNIT]: 'Remise par unité achetée',
+        [PromotionType.FREE_PROMO_UNIT]: 'Unités gratuites d\'un produit différent',
+        [PromotionType.FLAT_AMOUNT_DISCOUNT]: 'Remise forfaitaire indépendante de la quantité',
+        [PromotionType.REPLACE_PRICE]: 'Remplacer le prix unitaire par un prix spécial'
+    };
+
+    // Get threshold label based on breakpoint type
+    const thresholdHeaderName = useMemo(() => {
+        if (breakpointType === BreakpointType.VALUE_BASED) return 'Seuil (MAD)';
+        if (breakpointType === BreakpointType.QUANTITY_BASED) return 'Seuil (Quantité)';
+        if (breakpointType === BreakpointType.PROMO_UNIT_BASED) return 'Seuil (Unités Promo)';
+        return 'Seuil';
+    }, [breakpointType]);
+
     const columnDefs = useMemo<ColDef[]>(() => [
         {
-            headerName: 'Ligne',
-            valueGetter: (params) => (params.node?.rowIndex ?? 0) * 10 + 10,
-            width: 80
+            headerName: 'Palier',
+            valueGetter: (params) => (params.node?.rowIndex ?? 0) + 1,
+            width: 70,
+            pinned: 'left',
+            headerClass: 'font-semibold'
         },
         {
             field: 'promo_type',
-            headerName: 'Type',
+            headerName: 'Type de Remise',
             editable: true,
             cellEditor: 'agSelectCellEditor',
             cellEditorParams: {
-                values: promoTypeOptions
+                values: promoTypeOptions.map(v => String(v))
             },
-            valueFormatter: (params) => promoTypeLabels[params.value as PromotionType] || params.value,
-            flex: 1
+            valueFormatter: (params) => {
+                const type = params.value as PromotionType;
+                return promoTypeLabels[type] || `Type ${type}`;
+            },
+            flex: 1,
+            minWidth: 180,
+            tooltipValueGetter: (params) => {
+                const type = params.value as PromotionType;
+                return promoTypeDescriptions[type] || '';
+            },
+            cellRenderer: (params: any) => {
+                const type = params.value as PromotionType;
+                const label = promoTypeLabels[type] || `Type ${type}`;
+                return (
+                    <div className="flex flex-col h-full justify-center py-1">
+                        <span className="font-medium text-sm">{label}</span>
+                        <span className="text-xs text-gray-400 truncate">{promoTypeDescriptions[type] || ''}</span>
+                    </div>
+                );
+            }
+        },
+        {
+            field: 'minimum_value',
+            headerName: thresholdHeaderName,
+            editable: true,
+            cellEditor: 'agNumberCellEditor',
+            width: 140,
+            cellEditorParams: {
+                min: 0,
+                precision: breakpointType === BreakpointType.VALUE_BASED ? 2 : 0
+            },
+            valueFormatter: (params: any) => {
+                if (breakpointType === BreakpointType.VALUE_BASED) {
+                    return params.value ? `${Number(params.value).toFixed(2)} MAD` : '';
+                }
+                if (breakpointType === BreakpointType.QUANTITY_BASED) {
+                    return params.value ? `${Number(params.value)} unités` : '';
+                }
+                if (breakpointType === BreakpointType.PROMO_UNIT_BASED) {
+                    return params.value ? `${Number(params.value)} unités promo` : '';
+                }
+                return params.value ?? '';
+            },
+            tooltipValueGetter: () => {
+                if (breakpointType === BreakpointType.VALUE_BASED) {
+                    return 'Montant minimum total en MAD requis pour déclencher ce palier de remise';
+                }
+                if (breakpointType === BreakpointType.QUANTITY_BASED) {
+                    return 'Quantité minimum d\'unités requise pour déclencher ce palier de remise';
+                }
+                if (breakpointType === BreakpointType.PROMO_UNIT_BASED) {
+                    return 'Nombre minimum d\'unités promo standardisées requises pour déclencher ce palier';
+                }
+                return 'Seuil minimum requis pour déclencher ce palier de remise';
+            }
+        },
+        {
+            field: 'amount',
+            headerName: 'Valeur Remise',
+            editable: true,
+            cellEditor: 'agNumberCellEditor',
+            width: 160,
+            cellEditorParams: {
+                min: 0,
+                precision: 2
+            },
+            valueFormatter: (params: any) => {
+                if (!params.data || params.value === null || params.value === undefined) return '';
+                const type = params.data.promo_type;
+                const value = Number(params.value);
+                
+                if (type === PromotionType.PERCENTAGE_DISCOUNT) {
+                    return `${value}%`;
+                }
+                if (type === PromotionType.BEST_PRICE || type === PromotionType.REPLACE_PRICE) {
+                    return `${value.toFixed(2)} MAD/unité`;
+                }
+                if (type === PromotionType.AMOUNT_PER_UNIT) {
+                    return `${value.toFixed(2)} MAD/unité`;
+                }
+                if (type === PromotionType.FIXED_AMOUNT_DISCOUNT || type === PromotionType.FLAT_AMOUNT_DISCOUNT) {
+                    return `${value.toFixed(2)} MAD`;
+                }
+                if (type === PromotionType.FREE_PROMO_UNIT) {
+                    return `${value} unité(s) gratuite(s)`;
+                }
+                return `${value}`;
+            },
+            tooltipValueGetter: (params: any) => {
+                if (!params.data) return '';
+                const type = params.data.promo_type;
+                const descriptions: Record<number, string> = {
+                    [PromotionType.PERCENTAGE_DISCOUNT]: 'Valeur en pourcentage (ex: 10 = 10% de remise)',
+                    [PromotionType.FIXED_AMOUNT_DISCOUNT]: 'Montant fixe de remise en MAD soustrait du total',
+                    [PromotionType.BEST_PRICE]: 'Prix maximum par unité en MAD (le produit ne coûtera pas plus cher)',
+                    [PromotionType.AMOUNT_PER_UNIT]: 'Montant de remise par unité achetée en MAD',
+                    [PromotionType.FREE_PROMO_UNIT]: 'Nombre d\'unités gratuites d\'un produit différent',
+                    [PromotionType.FLAT_AMOUNT_DISCOUNT]: 'Montant forfaitaire de remise en MAD (indépendant de la quantité)',
+                    [PromotionType.REPLACE_PRICE]: 'Nouveau prix par unité en MAD (remplace le prix original)'
+                };
+                return descriptions[type] || 'Valeur de la remise selon le type sélectionné';
+            },
         },
         {
             field: 'repeating',
             headerName: 'Répéter',
             editable: true,
-            cellRenderer: (params: any) => <input type="checkbox" checked={params.value} readOnly />,
-            width: 100
-        },
-        {
-            field: 'minimum_value',
-            headerName: 'Minimum',
-            editable: true,
-            cellEditor: 'agNumberCellEditor',
-            width: 120
-        },
-        {
-            field: 'amount',
-            headerName: 'Montant',
-            editable: true,
-            cellEditor: 'agNumberCellEditor',
-            width: 120
+            cellRenderer: (params: any) => (
+                <div className="flex items-center justify-center h-full">
+                    <input 
+                        type="checkbox" 
+                        checked={params.value || false} 
+                        readOnly 
+                        className="cursor-pointer"
+                    />
+                </div>
+            ),
+            width: 110,
+            tooltipValueGetter: () => 'Si activé, la remise s\'applique plusieurs fois selon le nombre de fois que le seuil est atteint'
         },
         {
             headerName: 'Actions',
             cellRenderer: (params: any) => (
                 <button
-                    onClick={() => remove(params.node.rowIndex)}
-                    className="text-red-500 hover:text-red-700 hover:bg-red-50 p-1 rounded"
+                    type="button"
+                    onClick={(e) => {
+                        e.stopPropagation();
+                        remove(params.node.rowIndex);
+                    }}
+                    className="text-red-500 hover:text-red-700 hover:bg-red-50 p-1 rounded transition-colors"
+                    title="Supprimer ce palier de remise"
                 >
                     <Trash2 className="w-4 h-4" />
                 </button>
             ),
-            width: 80,
+            width: 90,
             sortable: false,
-            filter: false
+            filter: false,
+            pinned: 'right'
         }
-    ], [promoTypeOptions, remove]);
+    ], [promoTypeOptions, promoTypeLabels, promoTypeDescriptions, remove, breakpointType, thresholdHeaderName]);
 
     const defaultColDef = useMemo<ColDef>(() => ({
         sortable: true,
@@ -129,8 +252,8 @@ export const PromotionLineDetailsGrid = ({ lineIndex }: PromotionLineDetailsGrid
 
     const addDetail = () => {
         append({
-            promo_type: PromotionType.REPLACE_PRICE,
-            minimum_value: 1,
+            promo_type: PromotionType.PERCENTAGE_DISCOUNT,
+            minimum_value: 0,
             amount: 0,
             repeating: false
         } as PromotionLineDetail);
@@ -138,22 +261,47 @@ export const PromotionLineDetailsGrid = ({ lineIndex }: PromotionLineDetailsGrid
 
     if (lineIndex === null) {
         return (
-            <div className="h-full flex items-center justify-center bg-gray-50 text-gray-400">
-                <p>Select a rule above to view details</p>
+            <div className="h-full flex flex-col items-center justify-center bg-gradient-to-br from-gray-50 to-white text-gray-400">
+                <div className="text-center p-6">
+                    <Box className="w-12 h-12 mx-auto mb-3 text-gray-300" />
+                    <p className="text-sm font-medium text-gray-500 mb-1">Aucune Règle Sélectionnée</p>
+                    <p className="text-xs text-gray-400">Sélectionnez une règle de promotion ci-dessus pour configurer les paliers de remise</p>
+                </div>
             </div>
         );
     }
 
     return (
         <div className="h-full flex flex-col">
-            <div className="flex justify-between items-center bg-gray-50 px-4 py-2 border-b border-gray-200">
-                <h3 className="text-sm font-semibold text-gray-700">Detail Promo</h3>
+            <div className="flex justify-between items-center bg-gradient-to-r from-blue-50 to-white px-4 py-3 border-b border-gray-200">
+                <div className="flex-1">
+                    <div className="flex items-center gap-2 mb-1">
+                        <h3 className="text-sm font-semibold text-gray-900">Paliers de Remise</h3>
+                        {breakpointType === BreakpointType.VALUE_BASED && (
+                            <span className="text-xs px-2 py-0.5 bg-blue-100 text-blue-700 rounded-full">Seuils basés sur valeur (MAD)</span>
+                        )}
+                        {breakpointType === BreakpointType.QUANTITY_BASED && (
+                            <span className="text-xs px-2 py-0.5 bg-green-100 text-green-700 rounded-full">Seuils basés sur quantité</span>
+                        )}
+                        {breakpointType === BreakpointType.PROMO_UNIT_BASED && (
+                            <span className="text-xs px-2 py-0.5 bg-purple-100 text-purple-700 rounded-full">Seuils basés sur unités promo</span>
+                        )}
+                    </div>
+                    <p className="text-xs text-gray-500">
+                        {breakpointType === BreakpointType.VALUE_BASED && 
+                            'Les seuils sont calculés sur le montant total d\'achat en MAD. La colonne "Seuil" affiche le montant minimum requis.'}
+                        {breakpointType === BreakpointType.QUANTITY_BASED && 
+                            'Les seuils sont calculés sur le nombre d\'unités achetées. La colonne "Seuil" affiche la quantité minimum requise.'}
+                        {breakpointType === BreakpointType.PROMO_UNIT_BASED && 
+                            'Les seuils sont calculés sur des unités promo standardisées. La colonne "Seuil" affiche le nombre d\'unités promo minimum requises.'}
+                    </p>
+                </div>
                 <button
                     type="button"
                     onClick={addDetail}
-                    className="text-xs flex items-center gap-1 px-3 py-1 bg-white border border-gray-300 rounded hover:bg-gray-50 text-gray-700"
+                    className="text-xs flex items-center gap-1 px-3 py-1.5 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors shadow-sm ml-4"
                 >
-                    <Plus className="w-3 h-3" /> Add Detail
+                    <Plus className="w-3 h-3" /> Ajouter un Palier
                 </button>
             </div>
             <div className="flex-1 ag-theme-balham" style={{ minHeight: '200px' }}>

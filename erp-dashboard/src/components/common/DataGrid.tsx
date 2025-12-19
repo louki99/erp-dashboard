@@ -1,6 +1,6 @@
 import { AgGridReact } from 'ag-grid-react';
 import { AllCommunityModule, ModuleRegistry } from 'ag-grid-community';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 
 // Register all Community features
 ModuleRegistry.registerModules([AllCommunityModule]);
@@ -13,9 +13,23 @@ interface DataGridProps {
     onRowDoubleClicked?: (data: any) => void;
     rowSelection?: 'single' | 'multiple';
     loading?: boolean;
+    getRowClass?: (params: any) => string;
+    isRowSelectable?: (params: any) => boolean;
+    defaultSelectedIds?: (row: any) => boolean; // Function to determine if a row should be selected by default
 }
 
-export const DataGrid = ({ rowData, columnDefs, onRowSelected, onSelectionChanged, onRowDoubleClicked, rowSelection = 'single', loading }: DataGridProps) => {
+export const DataGrid = ({ 
+    rowData, 
+    columnDefs, 
+    onRowSelected, 
+    onSelectionChanged, 
+    onRowDoubleClicked, 
+    rowSelection = 'single', 
+    loading,
+    getRowClass,
+    isRowSelectable,
+    defaultSelectedIds
+}: DataGridProps) => {
     const [gridApi, setGridApi] = useState<any>(null);
 
     const defaultColDef = {
@@ -33,6 +47,22 @@ export const DataGrid = ({ rowData, columnDefs, onRowSelected, onSelectionChange
         setGridApi(params.api);
         params.api.sizeColumnsToFit();
     };
+
+    // Handle default selection after grid is ready and data is loaded
+    useEffect(() => {
+        if (gridApi && defaultSelectedIds && rowSelection === 'multiple' && rowData && rowData.length > 0) {
+            rowData.forEach((row) => {
+                if (defaultSelectedIds(row)) {
+                    // Use forEachNode to find and select the matching row
+                    gridApi.forEachNode((node: any) => {
+                        if (node.data === row) {
+                            node.setSelected(true);
+                        }
+                    });
+                }
+            });
+        }
+    }, [gridApi, rowData, defaultSelectedIds, rowSelection]);
 
     return (
         <div className="h-full w-full mx-auto ag-theme-quartz-auto-dark">
@@ -62,6 +92,8 @@ export const DataGrid = ({ rowData, columnDefs, onRowSelected, onSelectionChange
                         ? { mode: "multiRow", checkboxes: true, enableClickSelection: false }
                         : { mode: "singleRow", checkboxes: false, enableClickSelection: true }
                     }
+                    getRowClass={getRowClass}
+                    isRowSelectable={isRowSelectable}
                     onSelectionChanged={(event) => {
                         const selectedRows = event.api.getSelectedRows();
                         if (rowSelection === 'multiple' && onSelectionChanged) {

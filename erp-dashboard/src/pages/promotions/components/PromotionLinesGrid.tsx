@@ -16,6 +16,7 @@ import type { Promotion, PromotionLine } from '@/types/promotion.types';
 import { AssortmentType } from '@/types/promotion.types';
 import { Plus, Search } from 'lucide-react';
 import { ProductSelectionModal } from './ProductSelectionModal';
+import { ProductFamilySelectionDrawer } from './ProductFamilySelectionDrawer';
 
 ModuleRegistry.registerModules([
     ClientSideRowModelModule,
@@ -32,6 +33,7 @@ interface PromotionLinesGridProps {
 
 export const PromotionLinesGrid = ({ onLineSelected }: PromotionLinesGridProps) => {
     const [isProductModalOpen, setIsProductModalOpen] = useState(false);
+    const [isFamilyDrawerOpen, setIsFamilyDrawerOpen] = useState(false);
     const [activeRowIndex, setActiveRowIndex] = useState<number | null>(null);
 
     const { control, register, setValue, watch, getValues } = useFormContext<Promotion>();
@@ -60,6 +62,21 @@ export const PromotionLinesGrid = ({ onLineSelected }: PromotionLinesGridProps) 
         }
     };
 
+    const handleFamilySelect = (code: string) => {
+        if (activeRowIndex !== null) {
+            const currentLine = fields[activeRowIndex];
+            // Update the form with the new family code AND switch type to family
+            const updatedLine: PromotionLine = {
+                ...currentLine,
+                paid_based_on_product: false,
+                paid_product_family_code: code,
+                paid_product_code: undefined // Clear product code
+            };
+            update(activeRowIndex, updatedLine);
+            setIsFamilyDrawerOpen(false);
+        }
+    };
+
     const handleCellDoubleClicked = (params: CellDoubleClickedEvent) => {
         if (params.colDef.field === 'paid_product_code') {
             setActiveRowIndex(params.node?.rowIndex ?? null);
@@ -83,7 +100,7 @@ export const PromotionLinesGrid = ({ onLineSelected }: PromotionLinesGridProps) 
             minWidth: 150
         },
         {
-            headerName: 'Basé sur Produit',
+            headerName: 'Cible de Remise',
             field: 'paid_based_on_product',
             editable: true,
             cellEditor: 'agSelectCellEditor',
@@ -93,49 +110,74 @@ export const PromotionLinesGrid = ({ onLineSelected }: PromotionLinesGridProps) 
             valueFormatter: (params) => {
                 const val = String(params.value);
                 if (val === 'true') return 'Produit Spécifique';
-                if (val === 'false') return 'Famille Produit';
+                if (val === 'false') return 'Famille de Produits';
                 return 'Panier Entier';
             },
             valueParser: (params) => {
                 if (params.newValue === 'Produit Spécifique' || params.newValue === 'true') return true;
-                if (params.newValue === 'Famille Produit' || params.newValue === 'false') return false;
+                if (params.newValue === 'Famille de Produits' || params.newValue === 'false') return false;
                 return null;
             },
-            width: 150
+            width: 160,
+            tooltipValueGetter: () => 'Où la remise s\'applique : Panier Entier, Famille de Produits, ou Produit Spécifique'
         },
         {
             headerName: 'Code Produit',
             field: 'paid_product_code',
-            // Disable direct editing to favor double-click modal opening
             editable: false,
             width: 150,
             cellRenderer: (params: any) => {
                 const isEditable = params.data.paid_based_on_product === true;
                 return (
                     <div className="flex items-center justify-between w-full h-full group">
-                        <span className="truncate">{params.value}</span>
+                        <span className="truncate font-mono text-xs">{params.value || '-'}</span>
                         {isEditable && (
                             <button
                                 type="button"
-                                className="opacity-0 group-hover:opacity-100 p-1 hover:bg-gray-100 rounded focus:opacity-100"
+                                className="opacity-0 group-hover:opacity-100 p-1 hover:bg-sage-50 rounded focus:opacity-100 transition-opacity"
                                 onClick={(e) => {
-                                    e.stopPropagation(); // Prevent grid row selection if needed
+                                    e.stopPropagation();
                                     setActiveRowIndex(params.node.rowIndex);
                                     setIsProductModalOpen(true);
                                 }}
+                                title="Sélectionner un Produit"
                             >
-                                <Search className="w-3 h-3 text-gray-500" />
+                                <Search className="w-3 h-3 text-sage-600" />
                             </button>
                         )}
                     </div>
                 );
-            }
+            },
+            tooltipValueGetter: () => 'Cliquez sur l\'icône de recherche pour sélectionner un produit (uniquement lorsque la cible est "Produit Spécifique")'
         },
         {
             headerName: 'Code Famille Produit',
             field: 'paid_product_family_code',
-            editable: (params) => params.data.paid_based_on_product === false,
-            width: 180
+            editable: false,
+            width: 180,
+            cellRenderer: (params: any) => {
+                const isEditable = params.data.paid_based_on_product === false;
+                return (
+                    <div className="flex items-center justify-between w-full h-full group">
+                        <span className="truncate font-mono text-xs">{params.value || '-'}</span>
+                        {isEditable && (
+                            <button
+                                type="button"
+                                className="opacity-0 group-hover:opacity-100 p-1 hover:bg-purple-50 rounded focus:opacity-100 transition-opacity"
+                                onClick={(e) => {
+                                    e.stopPropagation();
+                                    setActiveRowIndex(params.node.rowIndex);
+                                    setIsFamilyDrawerOpen(true);
+                                }}
+                                title="Sélectionner une Famille de Produits"
+                            >
+                                <Search className="w-3 h-3 text-purple-600" />
+                            </button>
+                        )}
+                    </div>
+                );
+            },
+            tooltipValueGetter: () => 'Cliquez sur l\'icône de recherche pour sélectionner une famille de produits (uniquement lorsque la cible est "Famille de Produits")'
         }
     ], [fields, update]); // Added dependencies for cellRenderer closure if needed, though mostly using params
 
@@ -170,16 +212,30 @@ export const PromotionLinesGrid = ({ onLineSelected }: PromotionLinesGridProps) 
         }
     };
 
-    const handleSelectionChanged = (event: RowSelectedEvent) => {
-        if (event.node.isSelected()) {
-            onLineSelected(event.node.rowIndex ?? null);
+    const handleSelectionChanged = (event: any) => {
+        const selectedRows = event.api.getSelectedRows();
+        if (selectedRows.length > 0) {
+            const selectedRow = selectedRows[0];
+            const index = rowData.findIndex(row => row.index === selectedRow.index);
+            onLineSelected(index >= 0 ? index : null);
+        } else {
+            onLineSelected(null);
+        }
+    };
+
+    const handleRowClicked = (event: any) => {
+        const index = event.node.rowIndex ?? null;
+        if (index !== null) {
+            // Select the row and notify parent
+            event.node.setSelected(true, true);
+            onLineSelected(index);
         }
     };
 
     const addNewLine = () => {
         append({
-            name: `Rule #${fields.length + 1}`,
-            paid_based_on_product: null,
+            name: `Règle #${fields.length + 1}`,
+            paid_based_on_product: false,
             assortment_type: AssortmentType.NONE,
             assortments: [],
             details: []
@@ -188,14 +244,17 @@ export const PromotionLinesGrid = ({ onLineSelected }: PromotionLinesGridProps) 
 
     return (
         <div className="h-full flex flex-col">
-            <div className="flex justify-between items-center bg-gray-50 px-4 py-2 border-b border-gray-200">
-                <h3 className="text-sm font-semibold text-gray-700">Promotion Rules</h3>
+            <div className="flex justify-between items-center bg-gradient-to-r from-sage-50 to-white px-4 py-3 border-b border-gray-200">
+                <div>
+                    <h3 className="text-sm font-semibold text-gray-900">Règles de Promotion</h3>
+                    <p className="text-xs text-gray-500 mt-0.5">Définissez les conditions et cibles de remise. Sélectionnez une règle pour configurer les paliers de remise ci-dessous.</p>
+                </div>
                 <button
                     type="button"
                     onClick={addNewLine}
-                    className="text-xs flex items-center gap-1 px-3 py-1 bg-white border border-gray-300 rounded hover:bg-gray-50 text-gray-700"
+                    className="text-xs flex items-center gap-1 px-3 py-1.5 bg-sage-600 text-white rounded-md hover:bg-sage-700 transition-colors shadow-sm"
                 >
-                    <Plus className="w-3 h-3" /> Add Line
+                    <Plus className="w-3 h-3" /> Ajouter une Règle
                 </button>
             </div>
             <div className="flex-1 ag-theme-balham" style={{ minHeight: '300px' }}>
@@ -203,10 +262,11 @@ export const PromotionLinesGrid = ({ onLineSelected }: PromotionLinesGridProps) 
                     rowData={rowData}
                     columnDefs={columnDefs}
                     defaultColDef={defaultColDef}
-                    rowSelection="single"
+                    rowSelection={{ mode: 'singleRow', enableClickSelection: true }}
                     onCellValueChanged={handleCellValueChanged}
                     onCellDoubleClicked={handleCellDoubleClicked}
-                    onRowSelected={handleSelectionChanged}
+                    onSelectionChanged={handleSelectionChanged}
+                    onRowClicked={handleRowClicked}
                     stopEditingWhenCellsLoseFocus={true}
                 />
             </div>
@@ -215,6 +275,12 @@ export const PromotionLinesGrid = ({ onLineSelected }: PromotionLinesGridProps) 
                 isOpen={isProductModalOpen}
                 onClose={() => setIsProductModalOpen(false)}
                 onSelect={handleProductSelect}
+            />
+            <ProductFamilySelectionDrawer
+                isOpen={isFamilyDrawerOpen}
+                onClose={() => setIsFamilyDrawerOpen(false)}
+                onSelect={handleFamilySelect}
+                currentCode={activeRowIndex !== null ? fields[activeRowIndex]?.paid_product_family_code : undefined}
             />
         </div>
     );

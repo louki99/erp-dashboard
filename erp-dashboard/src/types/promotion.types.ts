@@ -55,7 +55,7 @@ export interface PromotionLine {
     name: string;
 
     // Target
-    paid_based_on_product: boolean | null; // null = entire cart
+    paid_based_on_product: boolean; // false = family-based, true = product-based
     paid_product_code?: string;
     paid_product_family_code?: string;
 
@@ -110,4 +110,80 @@ export interface PromotionListResponse {
         last_page: number;
     };
     statistics: PromotionStats;
+}
+
+// Partner Family Types
+export interface PartnerFamily {
+    id?: number;
+    code: string;
+    name: string;
+    partner_condition?: string;
+    partners_count?: number;
+    partners?: Array<{
+        id: number;
+        code: string;
+        name: string;
+    }>;
+    promotions?: Promotion[];
+    boosts?: ProductFamilyBoost[];
+}
+
+export interface PartnerFamilyListResponse {
+    partnerFamilies: PartnerFamily[];
+}
+
+export interface PartnerFamilyDetailResponse {
+    partnerFamily: PartnerFamily;
+}
+
+// Product Family Types
+export interface ProductFamily {
+    id?: number;
+    code: string;
+    name: string;
+    description?: string;
+    sales_group_code?: string;
+    products_count?: number;
+    products?: Array<{
+        id: number;
+        code: string;
+        name: string;
+    }>;
+    boosts?: ProductFamilyBoost[];
+}
+
+export interface ProductFamilyListResponse {
+    productFamilies: ProductFamily[];
+}
+
+export interface ProductFamilyDetailResponse {
+    productFamily: ProductFamily;
+}
+
+// Boost Types
+export interface ProductFamilyBoost {
+    id?: number;
+    product_family_id: number;
+    partner_family_id: number;
+    rank: number;
+    boost_factor: number;
+    productFamily?: ProductFamily;
+    partnerFamily?: PartnerFamily;
+}
+
+export interface BoostListResponse {
+    boosts: ProductFamilyBoost[];
+}
+
+export interface BoostDetailResponse {
+    boost: ProductFamilyBoost;
+}
+
+export interface BulkSyncBoostRequest {
+    product_family_id: number;
+    boosts: Array<{
+        partner_family_id: number;
+        rank: number;
+        boost_factor: number;
+    }>;
 }

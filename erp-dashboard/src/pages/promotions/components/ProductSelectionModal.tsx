@@ -57,18 +57,18 @@ export const ProductSelectionModal = ({ isOpen, onClose, onSelect }: ProductSele
             filter: true,
             valueFormatter: (params: any) => params.value || 'N/A'
         },
-        { field: 'name', headerName: 'Name', flex: 1, filter: true },
+        { field: 'name', headerName: 'Nom', flex: 1, filter: true },
         {
             field: 'price',
-            headerName: 'Price',
+            headerName: 'Prix',
             width: 100,
-            valueFormatter: (params: any) => params.value ? `${Number(params.value).toFixed(2)}` : 'N/A'
+            valueFormatter: (params: any) => params.value ? `${Number(params.value).toFixed(2)} MAD` : 'N/A'
         },
         {
             field: 'quantity',
             headerName: 'Stock',
             width: 90,
-            valueFormatter: (params: any) => params.value ?? 'N/A'
+            valueFormatter: (params: any) => params.value !== null && params.value !== undefined ? `${params.value}` : 'N/A'
         }
     ];
 
@@ -78,7 +78,7 @@ export const ProductSelectionModal = ({ isOpen, onClose, onSelect }: ProductSele
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
             <div className="bg-white rounded-lg shadow-xl w-full max-w-4xl max-h-[80vh] flex flex-col">
                 <div className="flex justify-between items-center p-4 border-b">
-                    <h3 className="text-lg font-semibold text-gray-900">Select Product</h3>
+                    <h3 className="text-lg font-semibold text-gray-900">Sélectionner un Produit</h3>
                     <button onClick={onClose} className="p-1 hover:bg-gray-100 rounded-full text-gray-500">
                         <X className="w-5 h-5" />
                     </button>
@@ -89,7 +89,7 @@ export const ProductSelectionModal = ({ isOpen, onClose, onSelect }: ProductSele
                         <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
                         <input
                             type="text"
-                            placeholder="Search by code or name..."
+                            placeholder="Rechercher par code ou nom..."
                             className="w-full pl-9 pr-4 py-2 border rounded-md focus:ring-2 focus:ring-sage-500 outline-none"
                             value={search}
                             onChange={(e) => setSearch(e.target.value)}
@@ -103,7 +103,7 @@ export const ProductSelectionModal = ({ isOpen, onClose, onSelect }: ProductSele
                             <div className="flex items-center justify-center h-full text-gray-500">
                                 <div className="text-center">
                                     <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-sage-600 mx-auto"></div>
-                                    <p className="mt-2 text-sm">Loading products...</p>
+                                    <p className="mt-2 text-sm">Chargement des produits...</p>
                                 </div>
                             </div>
                         ) : (
@@ -128,7 +128,7 @@ export const ProductSelectionModal = ({ isOpen, onClose, onSelect }: ProductSele
                 </div>
 
                 <div className="p-4 border-t bg-gray-50 text-xs text-gray-500 flex justify-end">
-                    Double click a row to select
+                    Double-cliquez sur une ligne pour sélectionner
                 </div>
             </div>
         </div>
