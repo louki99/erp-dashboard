@@ -149,6 +149,26 @@ const MENU_DATA: ModuleData[] = [
             { title: 'Sécurité', items: ['Gouvernance', 'Audit'] },
             { title: 'Application', items: ['Paramètres Généraux'] }
         ]
+    },
+    {
+        id: 'import-export',
+        label: 'Import/Export',
+        icon: Database,
+        description: 'Gestion des imports et exports de données',
+        categories: [
+            {
+                title: 'Tableau de Bord',
+                items: ['Tableau de bord Import/Export']
+            },
+            {
+                title: 'Opérations',
+                items: ['Importer Données', 'Exporter Données']
+            },
+            {
+                title: 'Gestion',
+                items: ['Historique des Opérations', 'Gérer Templates']
+            }
+        ]
     }
 ];
 
@@ -177,6 +197,39 @@ export const MegaMenu: React.FC<MegaMenuProps> = ({ isOpen, onClose }) => {
 
     // Route Mapping Configuration
     const ROUTE_MAPPING: Record<string, string> = {
+        // Achats (Procurement) Module Routes - Placeholder routes
+        'Recherche tarifs': '/dashboard',
+        'Saisie des tarifs': '/dashboard',
+        'Planning global': '/dashboard',
+        'Plan de travail': '/dashboard',
+        'Plan de regroupement': '/dashboard',
+        'Demandes d\'achat': '/dashboard',
+        'Soldes demandes d\'achat': '/dashboard',
+        'Demandes': '/dashboard',
+        'Réponses': '/dashboard',
+        'Relances': '/dashboard',
+        'Commandes ouvertes': '/dashboard',
+        'Signatures': '/dashboard',
+        'Réceptions': '/dashboard',
+        'Retours': '/dashboard',
+        'Factures': '/dashboard',
+        'Avoirs': '/dashboard',
+
+        // Ventes (Sales) Module Routes
+        'Saisie devis': '/dashboard',
+        'Liste devis': '/dashboard',
+        'Saisie commandes': '/orders',
+        'Liste commandes': '/orders',
+        'Préparation': '/magasinier/preparations',
+        'Validation': '/adv/validation',
+        'Promotions': '/promotions',
+
+        // Stock Module Routes
+        'Entrées diverses': '/dashboard',
+        'Sorties diverses': '/dashboard',
+        'Changements emplacement': '/dashboard',
+        'Comptage': '/dashboard',
+
         // ADV Module Routes
         'Tableau de bord ADV': '/adv',
         'Validation Partenaires': '/adv/partners',
@@ -203,31 +256,39 @@ export const MegaMenu: React.FC<MegaMenuProps> = ({ isOpen, onClose }) => {
         'Mouvements stock': '/magasinier/stock',
         'Préparation groupée': '/magasinier/batch-picking',
 
-        // Products Module Routes
+        // Données de Base (Master Data) Module Routes
         'Gestion Produits': '/products',
         'Articles': '/products',
+        'Articles-site': '/products',
+        'Unités': '/dashboard',
+        'Clients': '/partners',
+        'Fournisseurs': '/dashboard',
+        'Transporteurs': '/dashboard',
+        'Tiers': '/partners',
 
-        // Legacy ADV mappings (keep for compatibility)
+        // Administration Module Routes
+        'Utilisateurs': '/dashboard',
+        'Rôles': '/dashboard',
+        'Groupes': '/dashboard',
+        'Gouvernance': '/dashboard',
+        'Audit': '/dashboard',
+        'Paramètres Généraux': '/settings',
+
+        // Import/Export Module Routes
+        'Tableau de bord Import/Export': '/import-export',
+        'Importer Données': '/import-export/import',
+        'Exporter Données': '/import-export/export',
+        'Historique des Opérations': '/import-export/batches',
+        'Gérer Templates': '/import-export/templates',
+
+        // Legacy/Compatibility Routes
+        'Commandes': '/orders',
         'Tableau de bord': '/adv',
         'Partner Validation': '/adv/partners',
         'Credit Management': '/adv/credit',
         'BC Approval': '/adv/validation',
 
-        // Orders
-        'Commandes': '/orders',
-        'Liste commandes': '/orders',
-        'Saisie commandes': '/orders/new',
-
-        // Promotions
-        'Promotions': '/promotions',
-
-        // Partners
-        'Clients': '/partners',
-        'Tiers': '/partners',
-        'Fournisseurs': '/partners/suppliers',
-
-        // General Fallbacks
-        'Paramètres Généraux': '/settings',
+        // Default Fallback
         'default': '/dashboard'
     };
 

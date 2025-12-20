@@ -31,6 +31,12 @@ import { SettingsPage } from '@/pages/settings/SettingsPage';
 import { PromotionsPage } from '@/pages/promotions/PromotionsPage';
 import { PromotionForm } from '@/pages/promotions/components/PromotionForm';
 import { MasterLayout } from '@/components/layout/MasterLayout';
+import { ImportExportPage } from '@/pages/import-export/ImportExportPage';
+import { ImportPage } from '@/pages/import-export/ImportPage';
+import { ExportPage } from '@/pages/import-export/ExportPage';
+import { BatchHistoryPage } from '@/pages/import-export/BatchHistoryPage';
+import { TemplatesPage } from '@/pages/import-export/TemplatesPage';
+import { TemplateDetailPage } from '@/pages/import-export/TemplateDetailPage';
 
 
 // Simple Navigation Wrapper to show active route in DevSwitcher style (optional, but let's stick to MegaMenu for now)
@@ -239,6 +245,38 @@ function AppRoutes() {
       <Route path="/promotions/:id" element={
         <ProtectedRoute>
           <PromotionForm isEdit />
+        </ProtectedRoute>
+      } />
+
+      {/* Import/Export Module Routes */}
+      <Route path="/import-export" element={
+        <ProtectedRoute>
+          <ImportExportPage />
+        </ProtectedRoute>
+      } />
+      <Route path="/import-export/import" element={
+        <ProtectedRoute>
+          <ImportPage />
+        </ProtectedRoute>
+      } />
+      <Route path="/import-export/export" element={
+        <ProtectedRoute>
+          <ExportPage />
+        </ProtectedRoute>
+      } />
+      <Route path="/import-export/batches" element={
+        <ProtectedRoute>
+          <BatchHistoryPage />
+        </ProtectedRoute>
+      } />
+      <Route path="/import-export/templates" element={
+        <ProtectedRoute>
+          <TemplatesPage />
+        </ProtectedRoute>
+      } />
+      <Route path="/import-export/templates/:id" element={
+        <ProtectedRoute>
+          <TemplateDetailPage />
         </ProtectedRoute>
       } />
 
