@@ -11,14 +11,18 @@ import {
     Trash2,
     Eye,
     AlertTriangle,
-    Loader2
+    Loader2,
+    RotateCcw
 } from 'lucide-react';
 import { importExportApi } from '@/services/api/importExportApi';
-import type { BatchOperation } from '@/types/importExport.types';
+import type { BatchOperation, BatchLogsResponse, BatchLogsFilters } from '@/types/importExport.types';
 import { useNavigate } from 'react-router-dom';
 import toast from 'react-hot-toast';
 import { DataGrid } from '@/components/common/DataGrid';
 import { SageTabs, type TabItem } from '@/components/common/SageTabs';
+import { SageCollapsible } from '@/components/common/SageCollapsible';
+import { ConfirmationModal } from '@/components/common/ConfirmationModal';
+import { BatchLogsModal } from './BatchLogsModal';
 import type { ColDef } from 'ag-grid-community';
 
 type TabType = 'data' | 'details' | 'actions';
@@ -30,6 +34,18 @@ export const BatchHistoryPage = () => {
     const [loading, setLoading] = useState(true);
     const [filterType, setFilterType] = useState<'all' | 'import' | 'export'>('all');
     const [filterStatus, setFilterStatus] = useState<string>('all');
+    const [showDeleteModal, setShowDeleteModal] = useState(false);
+    const [batchToDelete, setBatchToDelete] = useState<string | null>(null);
+    const [isDeleting, setIsDeleting] = useState(false);
+    const [showLogsModal, setShowLogsModal] = useState(false);
+    const [logsData, setLogsData] = useState<BatchLogsResponse | null>(null);
+    const [logsLoading, setLogsLoading] = useState(false);
+    const [logsFilters, setLogsFilters] = useState<BatchLogsFilters>({ per_page: 20, page: 1 });
+    const [showCancelModal, setShowCancelModal] = useState(false);
+    const [batchToCancel, setBatchToCancel] = useState<string | null>(null);
+    const [cancelReason, setCancelReason] = useState('');
+    const [isCanceling, setIsCanceling] = useState(false);
+    const [isRetrying, setIsRetrying] = useState(false);
 
     useEffect(() => {
         loadBatches();
@@ -51,19 +67,107 @@ export const BatchHistoryPage = () => {
         }
     };
 
-    const handleDelete = async (batchId: string) => {
-        if (!confirm('Êtes-vous sûr de vouloir supprimer cet enregistrement?')) return;
+    const handleDeleteClick = (batchId: string) => {
+        setBatchToDelete(batchId);
+        setShowDeleteModal(true);
+    };
+
+    const handleDeleteConfirm = async () => {
+        if (!batchToDelete) return;
         
         try {
-            await importExportApi.batches.deleteBatch(batchId);
+            setIsDeleting(true);
+            await importExportApi.batches.deleteBatch(batchToDelete);
             toast.success('Enregistrement supprimé');
             loadBatches();
-            if (selectedBatch?.batch_id === batchId) {
+            if (selectedBatch?.batch_id === batchToDelete) {
                 setSelectedBatch(null);
             }
+            setShowDeleteModal(false);
+            setBatchToDelete(null);
         } catch (error) {
             console.error('Failed to delete batch:', error);
             toast.error('Échec de la suppression');
+        } finally {
+            setIsDeleting(false);
+        }
+    };
+
+    const handleViewLogs = async (batchId: string) => {
+        try {
+            setLogsLoading(true);
+            setShowLogsModal(true);
+            const data = await importExportApi.batches.getBatchLogs(batchId, logsFilters);
+            setLogsData(data);
+        } catch (error) {
+            console.error('Failed to load logs:', error);
+            toast.error('Échec du chargement des logs');
+            setShowLogsModal(false);
+        } finally {
+            setLogsLoading(false);
+        }
+    };
+
+    const handleLogsFilterChange = async (filters: BatchLogsFilters) => {
+        if (!selectedBatch) return;
+        setLogsFilters(filters);
+        try {
+            setLogsLoading(true);
+            const data = await importExportApi.batches.getBatchLogs(selectedBatch.batch_id, filters);
+            setLogsData(data);
+        } catch (error) {
+            console.error('Failed to load logs:', error);
+            toast.error('Échec du chargement des logs');
+        } finally {
+            setLogsLoading(false);
+        }
+    };
+
+    const handleCancelClick = (batchId: string) => {
+        setBatchToCancel(batchId);
+        setCancelReason('');
+        setShowCancelModal(true);
+    };
+
+    const handleCancelConfirm = async () => {
+        if (!batchToCancel || !cancelReason.trim()) {
+            toast.error('Veuillez fournir une raison pour l\'annulation');
+            return;
+        }
+        
+        try {
+            setIsCanceling(true);
+            await importExportApi.batches.cancelBatch(batchToCancel, { reason: cancelReason });
+            toast.success('Opération annulée avec succès');
+            loadBatches();
+            if (selectedBatch?.batch_id === batchToCancel) {
+                const updatedBatch = await importExportApi.batches.getBatch(batchToCancel);
+                setSelectedBatch(updatedBatch.batch);
+            }
+            setShowCancelModal(false);
+            setBatchToCancel(null);
+            setCancelReason('');
+        } catch (error) {
+            console.error('Failed to cancel batch:', error);
+            toast.error('Échec de l\'annulation');
+        } finally {
+            setIsCanceling(false);
+        }
+    };
+
+    const handleRetry = async (batchId: string) => {
+        try {
+            setIsRetrying(true);
+            const response = await importExportApi.batches.retryBatch(batchId);
+            toast.success(`Nouvelle opération créée: ${response.new_batch_id}`);
+            loadBatches();
+            const newBatch = await importExportApi.batches.getBatch(response.new_batch_id);
+            setSelectedBatch(newBatch.batch);
+        } catch (error) {
+            console.error('Failed to retry batch:', error);
+            toast.error('Échec de la réessai');
+        } finally {
+            setIsRetrying(false);
         }
     };
 
@@ -156,7 +260,49 @@ export const BatchHistoryPage = () => {
             width: 80,
             cellClass: 'text-right'
         },
-    ], []);
+        {
+            headerName: 'Actions',
+            width: 100,
+            cellRenderer: (params: any) => {
+                const batch = params.data as BatchOperation;
+                const canCancel = batch.status === 'processing' || batch.status === 'pending';
+                const canRetry = batch.status === 'failed' || batch.status === 'cancelled';
+                
+                return (
+                    <div className="flex items-center justify-center gap-1 h-full">
+                        {canCancel && (
+                            <button
+                                onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleCancelClick(batch.batch_id);
+                                }}
+                                className="p-1.5 text-orange-600 hover:bg-orange-50 rounded transition-colors"
+                                title="Annuler"
+                                disabled={isCanceling}
+                            >
+                                <XCircle className="w-4 h-4" />
+                            </button>
+                        )}
+                        {canRetry && (
+                            <button
+                                onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleRetry(batch.batch_id);
+                                }}
+                                className="p-1.5 text-blue-600 hover:bg-blue-50 rounded transition-colors"
+                                title="Réessayer"
+                                disabled={isRetrying}
+                            >
+                                <RotateCcw className="w-4 h-4" />
+                            </button>
+                        )}
+                    </div>
+                );
+            },
+            sortable: false,
+            filter: false,
+        },
+    ], [isCanceling, isRetrying]);
 
     // Left Sidebar Content
     const SidebarContent = (
@@ -224,7 +370,16 @@ export const BatchHistoryPage = () => {
                                 <p>Chargement...</p>
                             </div>
                         ) : selectedBatch ? (
-                            <BatchDetailView batch={selectedBatch} getStatusBadge={getStatusBadge} navigate={navigate} handleDelete={handleDelete} />
+                            <BatchDetailView 
+                                batch={selectedBatch} 
+                                getStatusBadge={getStatusBadge} 
+                                navigate={navigate} 
+                                handleDelete={handleDeleteClick} 
+                                handleViewLogs={handleViewLogs}
+                                handleCancel={handleCancelClick}
+                                handleRetry={handleRetry}
+                                isRetrying={isRetrying}
+                            />
                         ) : (
                             <div className="h-full flex items-center justify-center text-gray-400">
                                 <div className="text-center">
@@ -239,12 +394,58 @@ export const BatchHistoryPage = () => {
                 rightContent={
                     <ActionPanel
                         onRefresh={loadBatches}
-                        onDelete={() => selectedBatch && handleDelete(selectedBatch.batch_id)}
+                        onDelete={() => selectedBatch && handleDeleteClick(selectedBatch.batch_id)}
                         hasSelection={!!selectedBatch}
                         navigate={navigate}
                     />
                 }
             />
+
+            <ConfirmationModal
+                isOpen={showDeleteModal}
+                onClose={() => setShowDeleteModal(false)}
+                onConfirm={handleDeleteConfirm}
+                title="Supprimer l'opération"
+                description="Êtes-vous sûr de vouloir supprimer définitivement cet enregistrement ? Cette action est irréversible."
+                confirmText="Supprimer"
+                cancelText="Annuler"
+                variant="danger"
+                isLoading={isDeleting}
+            />
+
+            <BatchLogsModal
+                isOpen={showLogsModal}
+                onClose={() => setShowLogsModal(false)}
+                logsData={logsData}
+                loading={logsLoading}
+                filters={logsFilters}
+                onFilterChange={handleLogsFilterChange}
+            />
+
+            <ConfirmationModal
+                isOpen={showCancelModal}
+                onClose={() => setShowCancelModal(false)}
+                onConfirm={handleCancelConfirm}
+                title="Annuler l'opération"
+                description="Êtes-vous sûr de vouloir annuler cette opération en cours ?"
+                confirmText="Annuler l'opération"
+                cancelText="Retour"
+                variant="warning"
+                isLoading={isCanceling}
+            >
+                <div className="mt-4">
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                        Raison de l'annulation *
+                    </label>
+                    <textarea
+                        value={cancelReason}
+                        onChange={(e) => setCancelReason(e.target.value)}
+                        placeholder="Ex: Job stuck for 30 minutes"
+                        rows={3}
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent"
+                    />
+                </div>
+            </ConfirmationModal>
         </>
     );
 };
@@ -335,7 +536,7 @@ const ActionPanel = ({ onRefresh, onDelete, hasSelection, navigate }: ActionPane
 };
 
 // Batch Detail View Component
-const BatchDetailView = ({ batch, getStatusBadge, navigate, handleDelete }: any) => {
+const BatchDetailView = ({ batch, getStatusBadge, navigate, handleDelete, handleViewLogs, handleCancel, handleRetry, isRetrying }: any) => {
     const tabs: TabItem[] = [
         { id: 'data', label: 'Données', icon: FileText },
         { id: 'details', label: 'Détails', icon: Settings },
@@ -343,6 +544,25 @@ const BatchDetailView = ({ batch, getStatusBadge, navigate, handleDelete }: any)
     ];
 
     const [activeTab, setActiveTab] = useState('data');
+    const [openSections, setOpenSections] = useState<Record<string, boolean>>({
+        general: true,
+        statistics: true,
+        status_dates: true,
+        errors: true,
+        actions: true,
+    });
+
+    const handleExpandAll = () => {
+        setOpenSections(Object.keys(openSections).reduce((acc, key) => ({ ...acc, [key]: true }), {}));
+    };
+
+    const handleCollapseAll = () => {
+        setOpenSections(Object.keys(openSections).reduce((acc, key) => ({ ...acc, [key]: false }), {}));
+    };
+
+    const toggleSection = (section: string) => {
+        setOpenSections(prev => ({ ...prev, [section]: !prev[section] }));
+    };
 
     return (
         <div className="flex flex-col h-full bg-slate-50 overflow-hidden">
@@ -368,160 +588,164 @@ const BatchDetailView = ({ batch, getStatusBadge, navigate, handleDelete }: any)
 
             {/* Tabs */}
             <div className="bg-white border-b border-gray-200">
-                <SageTabs tabs={tabs} activeTab={activeTab} onTabChange={setActiveTab} />
+                <SageTabs 
+                    tabs={tabs} 
+                    activeTabId={activeTab} 
+                    onTabChange={setActiveTab}
+                    onExpandAll={handleExpandAll}
+                    onCollapseAll={handleCollapseAll}
+                />
             </div>
 
             {/* Tab Content */}
             <div className="flex-1 overflow-auto p-6">
-                {activeTab === 'data' && <DataTab batch={batch} />}
-                {activeTab === 'details' && <DetailsTab batch={batch} getStatusBadge={getStatusBadge} />}
-                {activeTab === 'actions' && <ActionsTab batch={batch} navigate={navigate} handleDelete={handleDelete} />}
+                {activeTab === 'data' && <DataTab batch={batch} openSections={openSections} toggleSection={toggleSection} />}
+                {activeTab === 'details' && <DetailsTab batch={batch} getStatusBadge={getStatusBadge} openSections={openSections} toggleSection={toggleSection} />}
+                {activeTab === 'actions' && <ActionsTab batch={batch} navigate={navigate} handleDelete={handleDelete} handleViewLogs={handleViewLogs} handleCancel={handleCancel} handleRetry={handleRetry} isRetrying={isRetrying} openSections={openSections} toggleSection={toggleSection} />}
             </div>
         </div>
     );
 };
 
 // Data Tab - Statistics and Summary
-const DataTab = ({ batch }: { batch: BatchOperation }) => {
+const DataTab = ({ batch, openSections, toggleSection }: { batch: BatchOperation; openSections: Record<string, boolean>; toggleSection: (section: string) => void }) => {
     return (
-        <div className="space-y-6">
-            <div className="bg-white border border-gray-200 rounded-lg">
-                <div className="border-b border-gray-200 bg-gray-50 px-4 py-3">
-                    <h3 className="font-semibold text-gray-900">Informations Générales</h3>
-                </div>
-                <div className="p-6">
-                    <div className="grid grid-cols-2 gap-4">
-                        <div className="p-4 bg-gray-50 rounded-lg">
-                            <p className="text-xs text-gray-600 mb-1">ID Batch</p>
-                            <p className="font-medium text-gray-900">{batch.batch_id}</p>
-                        </div>
-                        <div className="p-4 bg-gray-50 rounded-lg">
-                            <p className="text-xs text-gray-600 mb-1">Type d'opération</p>
-                            <p className="font-medium text-gray-900 uppercase">{batch.operation_type}</p>
-                        </div>
-                        <div className="p-4 bg-gray-50 rounded-lg">
-                            <p className="text-xs text-gray-600 mb-1">Template</p>
-                            <p className="font-medium text-gray-900">{batch.template?.name || `#${batch.template_id}`}</p>
-                        </div>
-                        <div className="p-4 bg-gray-50 rounded-lg">
-                            <p className="text-xs text-gray-600 mb-1">Fichier</p>
-                            <p className="font-medium text-gray-900 truncate">{batch.filename}</p>
-                        </div>
+        <div className="space-y-3">
+            <SageCollapsible
+                title="Informations Générales"
+                isOpen={openSections.general}
+                onOpenChange={() => toggleSection('general')}
+            >
+                <div className="grid grid-cols-2 gap-4">
+                    <div className="p-4 bg-gray-50 rounded-lg">
+                        <p className="text-xs text-gray-600 mb-1">ID Batch</p>
+                        <p className="font-medium text-gray-900">{batch.batch_id}</p>
+                    </div>
+                    <div className="p-4 bg-gray-50 rounded-lg">
+                        <p className="text-xs text-gray-600 mb-1">Type d'opération</p>
+                        <p className="font-medium text-gray-900 uppercase">{batch.operation_type}</p>
+                    </div>
+                    <div className="p-4 bg-gray-50 rounded-lg">
+                        <p className="text-xs text-gray-600 mb-1">Template</p>
+                        <p className="font-medium text-gray-900">{batch.template?.name || `#${batch.template_id}`}</p>
+                    </div>
+                    <div className="p-4 bg-gray-50 rounded-lg">
+                        <p className="text-xs text-gray-600 mb-1">Fichier</p>
+                        <p className="font-medium text-gray-900 truncate">{batch.filename}</p>
                     </div>
                 </div>
-            </div>
+            </SageCollapsible>
 
-            <div className="bg-white border border-gray-200 rounded-lg">
-                <div className="border-b border-gray-200 bg-gray-50 px-4 py-3">
-                    <h3 className="font-semibold text-gray-900">Statistiques</h3>
-                </div>
-                <div className="p-6">
-                    <div className="grid grid-cols-4 gap-4">
-                        <div className="p-4 bg-gray-50 rounded-lg text-center">
-                            <p className="text-xs text-gray-600">Total</p>
-                            <p className="text-2xl font-bold text-gray-900 mt-1">{batch.total_records}</p>
-                        </div>
-                        <div className="p-4 bg-green-50 rounded-lg text-center">
-                            <p className="text-xs text-green-600">Réussis</p>
-                            <p className="text-2xl font-bold text-green-700 mt-1">{batch.successful_records}</p>
-                        </div>
-                        <div className="p-4 bg-red-50 rounded-lg text-center">
-                            <p className="text-xs text-red-600">Échoués</p>
-                            <p className="text-2xl font-bold text-red-700 mt-1">{batch.failed_records}</p>
-                        </div>
-                        <div className="p-4 bg-yellow-50 rounded-lg text-center">
-                            <p className="text-xs text-yellow-600">Ignorés</p>
-                            <p className="text-2xl font-bold text-yellow-700 mt-1">{batch.skipped_records}</p>
-                        </div>
+            <SageCollapsible
+                title="Statistiques"
+                isOpen={openSections.statistics}
+                onOpenChange={() => toggleSection('statistics')}
+            >
+                <div className="grid grid-cols-4 gap-4">
+                    <div className="p-4 bg-gray-50 rounded-lg text-center">
+                        <p className="text-xs text-gray-600">Total</p>
+                        <p className="text-2xl font-bold text-gray-900 mt-1">{batch.total_records}</p>
+                    </div>
+                    <div className="p-4 bg-green-50 rounded-lg text-center">
+                        <p className="text-xs text-green-600">Réussis</p>
+                        <p className="text-2xl font-bold text-green-700 mt-1">{batch.successful_records}</p>
+                    </div>
+                    <div className="p-4 bg-red-50 rounded-lg text-center">
+                        <p className="text-xs text-red-600">Échoués</p>
+                        <p className="text-2xl font-bold text-red-700 mt-1">{batch.failed_records}</p>
+                    </div>
+                    <div className="p-4 bg-yellow-50 rounded-lg text-center">
+                        <p className="text-xs text-yellow-600">Ignorés</p>
+                        <p className="text-2xl font-bold text-yellow-700 mt-1">{batch.skipped_records}</p>
                     </div>
                 </div>
-            </div>
+            </SageCollapsible>
         </div>
     );
 };
 
 // Details Tab - Detailed Information
-const DetailsTab = ({ batch, getStatusBadge }: any) => {
+const DetailsTab = ({ batch, getStatusBadge, openSections, toggleSection }: any) => {
     return (
-        <div className="space-y-6">
-            <div className="bg-white border border-gray-200 rounded-lg">
-                <div className="border-b border-gray-200 bg-gray-50 px-4 py-3">
-                    <h3 className="font-semibold text-gray-900">Statut et Dates</h3>
-                </div>
-                <div className="p-6">
-                    <div className="grid grid-cols-2 gap-4">
-                        <div className="p-4 bg-gray-50 rounded-lg">
-                            <p className="text-xs text-gray-600 mb-2">Statut</p>
-                            {getStatusBadge(batch.status)}
-                        </div>
-                        <div className="p-4 bg-gray-50 rounded-lg">
-                            <p className="text-xs text-gray-600 mb-1">Taux de réussite</p>
-                            <p className="font-medium text-gray-900">{batch.success_rate}%</p>
-                        </div>
-                        <div className="p-4 bg-gray-50 rounded-lg">
-                            <p className="text-xs text-gray-600 mb-1">Date de création</p>
-                            <p className="font-medium text-gray-900">
-                                {new Date(batch.created_at).toLocaleString('fr-FR')}
-                            </p>
-                        </div>
-                        <div className="p-4 bg-gray-50 rounded-lg">
-                            <p className="text-xs text-gray-600 mb-1">Dernière mise à jour</p>
-                            <p className="font-medium text-gray-900">
-                                {new Date(batch.updated_at).toLocaleString('fr-FR')}
-                            </p>
-                        </div>
-                        {batch.started_at && (
-                            <div className="p-4 bg-gray-50 rounded-lg">
-                                <p className="text-xs text-gray-600 mb-1">Démarré à</p>
-                                <p className="font-medium text-gray-900">
-                                    {new Date(batch.started_at).toLocaleString('fr-FR')}
-                                </p>
-                            </div>
-                        )}
-                        {batch.completed_at && (
-                            <div className="p-4 bg-gray-50 rounded-lg">
-                                <p className="text-xs text-gray-600 mb-1">Terminé à</p>
-                                <p className="font-medium text-gray-900">
-                                    {new Date(batch.completed_at).toLocaleString('fr-FR')}
-                                </p>
-                            </div>
-                        )}
-                        {batch.execution_time && (
-                            <div className="p-4 bg-gray-50 rounded-lg col-span-2">
-                                <p className="text-xs text-gray-600 mb-1">Temps d'exécution</p>
-                                <p className="font-medium text-gray-900">{batch.execution_time} secondes</p>
-                            </div>
-                        )}
+        <div className="space-y-3">
+            <SageCollapsible
+                title="Statut et Dates"
+                isOpen={openSections.status_dates}
+                onOpenChange={() => toggleSection('status_dates')}
+            >
+                <div className="grid grid-cols-2 gap-4">
+                    <div className="p-4 bg-gray-50 rounded-lg">
+                        <p className="text-xs text-gray-600 mb-2">Statut</p>
+                        {getStatusBadge(batch.status)}
                     </div>
+                    <div className="p-4 bg-gray-50 rounded-lg">
+                        <p className="text-xs text-gray-600 mb-1">Taux de réussite</p>
+                        <p className="font-medium text-gray-900">{batch.success_rate}%</p>
+                    </div>
+                    <div className="p-4 bg-gray-50 rounded-lg">
+                        <p className="text-xs text-gray-600 mb-1">Date de création</p>
+                        <p className="font-medium text-gray-900">
+                            {new Date(batch.created_at).toLocaleString('fr-FR')}
+                        </p>
+                    </div>
+                    <div className="p-4 bg-gray-50 rounded-lg">
+                        <p className="text-xs text-gray-600 mb-1">Dernière mise à jour</p>
+                        <p className="font-medium text-gray-900">
+                            {new Date(batch.updated_at).toLocaleString('fr-FR')}
+                        </p>
+                    </div>
+                    {batch.started_at && (
+                        <div className="p-4 bg-gray-50 rounded-lg">
+                            <p className="text-xs text-gray-600 mb-1">Démarré à</p>
+                            <p className="font-medium text-gray-900">
+                                {new Date(batch.started_at).toLocaleString('fr-FR')}
+                            </p>
+                        </div>
+                    )}
+                    {batch.completed_at && (
+                        <div className="p-4 bg-gray-50 rounded-lg">
+                            <p className="text-xs text-gray-600 mb-1">Terminé à</p>
+                            <p className="font-medium text-gray-900">
+                                {new Date(batch.completed_at).toLocaleString('fr-FR')}
+                            </p>
+                        </div>
+                    )}
+                    {batch.execution_time && (
+                        <div className="p-4 bg-gray-50 rounded-lg col-span-2">
+                            <p className="text-xs text-gray-600 mb-1">Temps d'exécution</p>
+                            <p className="font-medium text-gray-900">{batch.execution_time} secondes</p>
+                        </div>
+                    )}
                 </div>
-            </div>
+            </SageCollapsible>
 
             {batch.error_summary && (
-                <div className="bg-white border border-red-200 rounded-lg">
-                    <div className="border-b border-red-200 bg-red-50 px-4 py-3">
-                        <div className="flex items-center gap-2">
-                            <AlertTriangle className="w-4 h-4 text-red-600" />
-                            <h3 className="font-semibold text-red-900">Résumé des Erreurs</h3>
-                        </div>
-                    </div>
-                    <div className="p-6">
+                <SageCollapsible
+                    title="Résumé des Erreurs"
+                    isOpen={openSections.errors}
+                    onOpenChange={() => toggleSection('errors')}
+                    className="border-red-200"
+                >
+                    <div className="flex items-center gap-2 mb-3">
+                        <AlertTriangle className="w-4 h-4 text-red-600" />
                         <p className="text-sm text-red-800">{batch.error_summary}</p>
                     </div>
-                </div>
+                </SageCollapsible>
             )}
         </div>
     );
 };
 
 // Actions Tab - Available Actions
-const ActionsTab = ({ batch, navigate, handleDelete }: any) => {
+const ActionsTab = ({ batch, navigate, handleDelete, handleViewLogs, handleCancel, handleRetry, isRetrying, openSections, toggleSection }: any) => {
     return (
-        <div className="space-y-4">
-            <div className="bg-white border border-gray-200 rounded-lg">
-                <div className="border-b border-gray-200 bg-gray-50 px-4 py-3">
-                    <h3 className="font-semibold text-gray-900">Actions Disponibles</h3>
-                </div>
-                <div className="p-6 space-y-3">
+        <div className="space-y-3">
+            <SageCollapsible
+                title="Actions Disponibles"
+                isOpen={openSections.actions}
+                onOpenChange={() => toggleSection('actions')}
+            >
+                <div className="space-y-3">
                     {batch.operation_type === 'export' && batch.status === 'completed' && batch.download_url && (
                         <button className="w-full p-4 border-2 border-green-200 rounded-lg hover:border-green-500 hover:bg-green-50 transition text-left">
                             <div className="flex items-center gap-3">
@@ -560,7 +784,10 @@ const ActionsTab = ({ batch, navigate, handleDelete }: any) => {
                         </div>
                     </button>
 
-                    <button className="w-full p-4 border-2 border-gray-200 rounded-lg hover:border-purple-500 hover:bg-purple-50 transition text-left">
+                    <button 
+                        onClick={() => handleViewLogs(batch.batch_id)}
+                        className="w-full p-4 border-2 border-gray-200 rounded-lg hover:border-purple-500 hover:bg-purple-50 transition text-left"
+                    >
                         <div className="flex items-center gap-3">
                             <FileText className="w-5 h-5 text-blue-600" />
                             <div>
@@ -569,8 +796,43 @@ const ActionsTab = ({ batch, navigate, handleDelete }: any) => {
                             </div>
                         </div>
                     </button>
+
+                    {batch.status === 'processing' && (
+                        <button 
+                            onClick={() => handleCancel(batch.batch_id)}
+                            className="w-full p-4 border-2 border-orange-200 rounded-lg hover:border-orange-500 hover:bg-orange-50 transition text-left"
+                        >
+                            <div className="flex items-center gap-3">
+                                <XCircle className="w-5 h-5 text-orange-600" />
+                                <div>
+                                    <h4 className="font-medium text-gray-900">Annuler l'Opération</h4>
+                                    <p className="text-sm text-gray-600">Annuler l'opération en cours</p>
+                                </div>
+                            </div>
+                        </button>
+                    )}
+
+                    {batch.status === 'failed' && (
+                        <button 
+                            onClick={() => handleRetry(batch.batch_id)}
+                            disabled={isRetrying}
+                            className="w-full p-4 border-2 border-blue-200 rounded-lg hover:border-blue-500 hover:bg-blue-50 transition text-left disabled:opacity-50 disabled:cursor-not-allowed"
+                        >
+                            <div className="flex items-center gap-3">
+                                {isRetrying ? (
+                                    <Loader2 className="w-5 h-5 text-blue-600 animate-spin" />
+                                ) : (
+                                    <RefreshCw className="w-5 h-5 text-blue-600" />
+                                )}
+                                <div>
+                                    <h4 className="font-medium text-gray-900">Réessayer l'Opération</h4>
+                                    <p className="text-sm text-gray-600">Créer une nouvelle tentative avec les mêmes données</p>
+                                </div>
+                            </div>
+                        </button>
+                    )}
                 </div>
-            </div>
+            </SageCollapsible>
         </div>
     );
 };

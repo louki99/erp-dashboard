@@ -99,17 +99,55 @@ export interface BatchLog {
     batch_id: string;
     record_number: number;
     record_identifier: string | null;
-    status: 'success' | 'failed' | 'skipped' | 'warning';
-    action: 'created' | 'updated' | 'skipped' | null;
+    status: 'created' | 'updated' | 'success' | 'failed' | 'skipped' | 'warning';
+    action: 'create' | 'update' | 'created' | 'updated' | 'skipped' | null;
     product_id: number | null;
     record_data: Record<string, any>;
     processed_data: Record<string, any> | null;
-    errors: Record<string, string[]> | null;
+    errors: Record<string, string[]> | string | null;
     warnings: Record<string, string> | null;
     message: string | null;
     affected_tables: string[] | null;
     affected_records: number[] | null;
     created_at: string;
+}
+
+export interface BatchLogsResponse {
+    success: boolean;
+    batch: {
+        batch_id: string;
+        template: string;
+        operation_type: 'import' | 'export';
+        status: string;
+        filename: string;
+        user: string;
+        started_at: string | null;
+        completed_at: string | null;
+        execution_time: number | null;
+    };
+    stats: {
+        total: number;
+        success: number;
+        failed: number;
+        skipped: number;
+        warning: number;
+    };
+    logs: {
+        current_page: number;
+        data: BatchLog[];
+        per_page: number;
+        total: number;
+        last_page: number;
+    };
+}
+
+export interface BatchLogsFilters {
+    status?: 'created' | 'updated' | 'success' | 'failed' | 'skipped' | 'warning';
+    search?: string;
+    per_page?: number;
+    page?: number;
+    sort_by?: 'record_number' | 'status' | 'created_at';
+    sort_order?: 'asc' | 'desc';
 }
 
 export interface ImportOptions {
@@ -191,4 +229,34 @@ export interface StartExportResponse {
     message: string;
     batch_id: string;
     status: string;
+}
+
+export type BatchLogStatus = 'created' | 'updated' | 'success' | 'failed' | 'skipped' | 'warning';
+export type BatchLogAction = 'create' | 'update' | 'created' | 'updated' | 'skipped';
+
+export interface CancelBatchRequest {
+    reason: string;
+}
+
+export interface CancelBatchResponse {
+    success: boolean;
+    message: string;
+    batch: {
+        batch_id: string;
+        status: string;
+        error_summary: string;
+        execution_time: number;
+    };
+}
+
+export interface RetryBatchResponse {
+    success: boolean;
+    message: string;
+    original_batch_id: string;
+    new_batch_id: string;
+    new_batch: {
+        batch_id: string;
+        status: string;
+        template: string;
+    };
 }

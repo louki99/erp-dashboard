@@ -3,6 +3,11 @@ import type {
     Template,
     BatchOperation,
     BatchLog,
+    BatchLogsResponse,
+    BatchLogsFilters,
+    CancelBatchRequest,
+    CancelBatchResponse,
+    RetryBatchResponse,
     ImportOptions,
     ExportOptions,
     ExportFilters,
@@ -344,6 +349,17 @@ export const batchApi = {
     },
 
     /**
+     * Get single batch by ID
+     */
+    getBatch: async (batchId: string) => {
+        const response = await apiClient.get<{
+            success: boolean;
+            batch: BatchOperation;
+        }>(`${BASE_URL}/batches/${batchId}`);
+        return response.data;
+    },
+
+    /**
      * Delete batch
      */
     deleteBatch: async (batchId: string) => {
@@ -351,6 +367,38 @@ export const batchApi = {
             success: boolean;
             message: string;
         }>(`${BASE_URL}/batches/${batchId}`);
+        return response.data;
+    },
+
+    /**
+     * Get batch logs with filters and pagination
+     */
+    getBatchLogs: async (batchId: string, filters?: BatchLogsFilters) => {
+        const response = await apiClient.get<BatchLogsResponse>(
+            `${BASE_URL}/import/${batchId}/logs`,
+            { params: filters }
+        );
+        return response.data;
+    },
+
+    /**
+     * Cancel a batch operation
+     */
+    cancelBatch: async (batchId: string, request: CancelBatchRequest) => {
+        const response = await apiClient.post<CancelBatchResponse>(
+            `${BASE_URL}/batches/${batchId}/cancel`,
+            request
+        );
+        return response.data;
+    },
+
+    /**
+     * Retry a failed batch operation
+     */
+    retryBatch: async (batchId: string) => {
+        const response = await apiClient.post<RetryBatchResponse>(
+            `${BASE_URL}/batches/${batchId}/retry`
+        );
         return response.data;
     },
 };
