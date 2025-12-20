@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { MasterLayout } from '@/components/layout/MasterLayout';
 import { 
     CheckCircle,
@@ -7,7 +7,6 @@ import {
     Settings,
     Play,
     RefreshCw,
-    Download,
     XCircle,
     AlertTriangle,
     Eye,
@@ -523,6 +522,51 @@ const ImportWorkflowView = ({
     ];
 
     const [activeTab, setActiveTab] = useState('upload');
+    const containerRef = useRef<HTMLDivElement>(null);
+    const sectionRefs = useRef<Record<string, HTMLDivElement | null>>({});
+    const isScrollingRef = useRef(false);
+
+    const handleTabChange = (tabId: string) => {
+        setActiveTab(tabId);
+        const section = sectionRefs.current[tabId];
+        if (section && containerRef.current) {
+            isScrollingRef.current = true;
+            section.scrollIntoView({ behavior: 'smooth', block: 'start' });
+            setTimeout(() => {
+                isScrollingRef.current = false;
+            }, 1000);
+        }
+    };
+
+    useEffect(() => {
+        const container = containerRef.current;
+        if (!container) return;
+
+        const handleScroll = () => {
+            if (isScrollingRef.current) return;
+
+            const containerTop = container.scrollTop;
+            for (const tab of tabs) {
+                const el = sectionRefs.current[tab.id];
+                if (!el) continue;
+
+                const elTop = el.offsetTop;
+                const elBottom = elTop + el.clientHeight;
+
+                if (elTop <= containerTop + 100 && elBottom > containerTop + 50) {
+                    if (activeTab !== tab.id) {
+                        setActiveTab(tab.id);
+                    }
+                    break;
+                }
+            }
+        };
+
+        container.addEventListener('scroll', handleScroll);
+        return () => {
+            container.removeEventListener('scroll', handleScroll);
+        };
+    }, [tabs, activeTab]);
 
     return (
         <div className="flex flex-col h-full bg-slate-50 overflow-hidden">
@@ -553,19 +597,19 @@ const ImportWorkflowView = ({
 
             {/* Tabs */}
             <div className="bg-white border-b border-gray-200">
-                <SageTabs tabs={tabs} activeTab={activeTab} onTabChange={setActiveTab} />
+                <SageTabs tabs={tabs} activeTabId={activeTab} onTabChange={handleTabChange} />
             </div>
 
             {/* Tab Content */}
-            <div className="flex-1 overflow-auto p-6">
-                {activeTab === 'upload' && (
+            <div ref={containerRef} className="flex-1 overflow-auto p-6">
+                <div ref={el => { sectionRefs.current['upload'] = el; }} className="mb-8">
                     <UploadTab 
                         template={template}
                         uploadedFile={uploadedFile}
                         handleFileChange={handleFileChange}
                     />
-                )}
-                {activeTab === 'preview' && (
+                </div>
+                <div ref={el => { sectionRefs.current['preview'] = el; }} className="mb-8">
                     <PreviewTab 
                         template={template}
                         previewData={previewData}
@@ -574,20 +618,20 @@ const ImportWorkflowView = ({
                         validateData={validateData}
                         validationErrors={validationErrors}
                     />
-                )}
-                {activeTab === 'config' && (
+                </div>
+                <div ref={el => { sectionRefs.current['config'] = el; }} className="mb-8">
                     <ConfigTab 
                         options={options}
                         setOptions={setOptions}
                     />
-                )}
-                {activeTab === 'progress' && (
+                </div>
+                <div ref={el => { sectionRefs.current['progress'] = el; }} className="mb-8">
                     <ProgressTab 
                         batchStatus={batchStatus}
                         batchLogs={batchLogs}
                         importing={importing}
                     />
-                )}
+                </div>
             </div>
         </div>
     );
