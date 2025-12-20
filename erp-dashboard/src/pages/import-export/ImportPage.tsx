@@ -33,6 +33,9 @@ export const ImportPage = () => {
     const [batchLogs, setBatchLogs] = useState<BatchLog[]>([]);
     const [loading, setLoading] = useState(true);
     const [validationErrors, setValidationErrors] = useState<Record<number, any>>({});
+    const [pollingCount, setPollingCount] = useState(0);
+    const [startTime, setStartTime] = useState<number | null>(null);
+    const [estimatedTimeRemaining, setEstimatedTimeRemaining] = useState<number | null>(null);
     const [options, setOptions] = useState({
         update_existing: true,
         skip_errors: false,
@@ -50,13 +53,31 @@ export const ImportPage = () => {
         // Poll while processing, pending, or running
         if (batchId && status && ['processing', 'pending', 'running', 'queued'].includes(status)) {
             interval = setInterval(() => {
+                setPollingCount(prev => prev + 1);
                 checkBatchStatus();
             }, 2000);
+        } else {
+            setPollingCount(0);
         }
         return () => {
             if (interval) clearInterval(interval);
         };
     }, [batchId, batchStatus?.status]);
+
+    // Calculate estimated time remaining
+    useEffect(() => {
+        if (batchStatus && startTime) {
+            const progress = batchStatus.progress_percentage || 0;
+            if (progress > 0 && progress < 100) {
+                const elapsed = Date.now() - startTime;
+                const estimatedTotal = (elapsed / progress) * 100;
+                const remaining = estimatedTotal - elapsed;
+                setEstimatedTimeRemaining(Math.max(0, remaining));
+            } else if (progress >= 100) {
+                setEstimatedTimeRemaining(0);
+            }
+        }
+    }, [batchStatus?.progress_percentage, startTime]);
 
     const loadTemplates = async () => {
         try {
@@ -217,6 +238,8 @@ export const ImportPage = () => {
             console.log('Batch ID:', importData.batch_id);
 
             setBatchId(importData.batch_id);
+            setStartTime(Date.now());
+            setPollingCount(0);
             toast.success('Import démarré avec succès');
             
             // Step 3: Check status
@@ -1014,6 +1037,16 @@ const ConfigTab = ({ options, setOptions }: any) => {
 
 // Progress Tab
 const ProgressTab = ({ batchStatus, batchLogs, importing }: any) => {
+    const [currentTime, setCurrentTime] = useState(Date.now());
+
+    // Update current time every second for live duration display
+    useEffect(() => {
+        const interval = setInterval(() => {
+            setCurrentTime(Date.now());
+        }, 1000);
+        return () => clearInterval(interval);
+    }, []);
+
     if (!batchStatus) {
         return (
             <div className="bg-blue-50 border border-blue-200 rounded-lg p-8 text-center">
@@ -1030,32 +1063,118 @@ const ProgressTab = ({ batchStatus, batchLogs, importing }: any) => {
     const isCompleted = ['completed', 'done', 'success'].includes(status);
     const isFailed = ['failed', 'error'].includes(status);
     const isProcessing = ['processing', 'running', 'pending', 'queued'].includes(status);
+    const isQueued = ['queued', 'pending'].includes(status);
+
+    // Format time helper
+    const formatTime = (ms: number) => {
+        const seconds = Math.floor(ms / 1000);
+        const minutes = Math.floor(seconds / 60);
+        const hours = Math.floor(minutes / 60);
+        
+        if (hours > 0) {
+            return `${hours}h ${minutes % 60}m ${seconds % 60}s`;
+        } else if (minutes > 0) {
+            return `${minutes}m ${seconds % 60}s`;
+        } else {
+            return `${seconds}s`;
+        }
+    };
+
+    // Calculate elapsed time
+    const startedAt = batchStatus.started_at ? new Date(batchStatus.started_at).getTime() : null;
+    const elapsedTime = startedAt ? currentTime - startedAt : 0;
+
+    // Estimate remaining time based on progress
+    const progress = batchStatus.progress_percentage || 0;
+    const estimatedTotal = progress > 0 ? (elapsedTime / progress) * 100 : 0;
+    const estimatedRemaining = progress > 0 && progress < 100 ? Math.max(0, estimatedTotal - elapsedTime) : 0;
+
+    // Calculate processing speed
+    const processedRecords = (batchStatus.successful_records || 0) + (batchStatus.failed_records || 0) + (batchStatus.skipped_records || 0);
+    const recordsPerSecond = elapsedTime > 0 ? (processedRecords / (elapsedTime / 1000)).toFixed(1) : '0';
 
     return (
         <div className="space-y-6">
             <div className="bg-white border border-gray-200 rounded-lg">
                 <div className="border-b border-gray-200 bg-gray-50 px-4 py-3 flex items-center justify-between">
                     <h3 className="font-semibold text-gray-900">Progression</h3>
-                    {isProcessing && (
-                        <div className="flex items-center gap-2 text-sm text-blue-600">
-                            <Loader2 className="w-4 h-4 animate-spin" />
-                            <span>En cours...</span>
-                        </div>
-                    )}
+                    <div className="flex items-center gap-4">
+                        {isQueued && (
+                            <div className="flex items-center gap-2 px-3 py-1.5 bg-yellow-50 border border-yellow-200 rounded-lg">
+                                <div className="flex gap-1">
+                                    <div className="w-1.5 h-1.5 bg-yellow-500 rounded-full animate-bounce" style={{ animationDelay: '0ms' }}></div>
+                                    <div className="w-1.5 h-1.5 bg-yellow-500 rounded-full animate-bounce" style={{ animationDelay: '150ms' }}></div>
+                                    <div className="w-1.5 h-1.5 bg-yellow-500 rounded-full animate-bounce" style={{ animationDelay: '300ms' }}></div>
+                                </div>
+                                <span className="text-sm font-medium text-yellow-700">En file d'attente...</span>
+                            </div>
+                        )}
+                        {isProcessing && !isQueued && (
+                            <div className="flex items-center gap-2 px-3 py-1.5 bg-blue-50 border border-blue-200 rounded-lg">
+                                <Loader2 className="w-4 h-4 animate-spin text-blue-600" />
+                                <span className="text-sm font-medium text-blue-700">Traitement en cours...</span>
+                            </div>
+                        )}
+                        {isCompleted && (
+                            <div className="flex items-center gap-2 px-3 py-1.5 bg-green-50 border border-green-200 rounded-lg">
+                                <CheckCircle className="w-4 h-4 text-green-600" />
+                                <span className="text-sm font-medium text-green-700">Terminé</span>
+                            </div>
+                        )}
+                        {isFailed && (
+                            <div className="flex items-center gap-2 px-3 py-1.5 bg-red-50 border border-red-200 rounded-lg">
+                                <XCircle className="w-4 h-4 text-red-600" />
+                                <span className="text-sm font-medium text-red-700">Échoué</span>
+                            </div>
+                        )}
+                    </div>
                 </div>
                 <div className="p-6">
+                    {/* Time and Speed Stats */}
+                    {isProcessing && (
+                        <div className="mb-6 grid grid-cols-3 gap-4">
+                            <div className="bg-gradient-to-br from-blue-50 to-blue-100 border border-blue-200 rounded-lg p-4">
+                                <div className="flex items-center gap-2 mb-1">
+                                    <div className="w-2 h-2 bg-blue-500 rounded-full animate-pulse"></div>
+                                    <p className="text-xs font-medium text-blue-700">Temps écoulé</p>
+                                </div>
+                                <p className="text-2xl font-bold text-blue-900">{formatTime(elapsedTime)}</p>
+                            </div>
+                            {estimatedRemaining > 0 && (
+                                <div className="bg-gradient-to-br from-purple-50 to-purple-100 border border-purple-200 rounded-lg p-4">
+                                    <div className="flex items-center gap-2 mb-1">
+                                        <RefreshCw className="w-3 h-3 text-purple-600" />
+                                        <p className="text-xs font-medium text-purple-700">Temps restant estimé</p>
+                                    </div>
+                                    <p className="text-2xl font-bold text-purple-900">{formatTime(estimatedRemaining)}</p>
+                                </div>
+                            )}
+                            <div className="bg-gradient-to-br from-indigo-50 to-indigo-100 border border-indigo-200 rounded-lg p-4">
+                                <div className="flex items-center gap-2 mb-1">
+                                    <Play className="w-3 h-3 text-indigo-600" />
+                                    <p className="text-xs font-medium text-indigo-700">Vitesse</p>
+                                </div>
+                                <p className="text-2xl font-bold text-indigo-900">{recordsPerSecond} <span className="text-sm font-normal">rec/s</span></p>
+                            </div>
+                        </div>
+                    )}
+
                     <div className="mb-4">
                         <div className="flex items-center justify-between text-sm mb-2">
                             <span className="text-gray-600">Progression</span>
                             <span className="font-medium text-gray-900">{batchStatus.progress_percentage || 0}%</span>
                         </div>
-                        <div className="w-full bg-gray-200 rounded-full h-3">
+                        <div className="w-full bg-gray-200 rounded-full h-3 overflow-hidden">
                             <div
-                                className={`h-3 rounded-full transition-all duration-300 ${
-                                    isFailed ? 'bg-red-600' : isCompleted ? 'bg-green-600' : 'bg-blue-600'
+                                className={`h-3 rounded-full transition-all duration-500 relative ${
+                                    isFailed ? 'bg-red-600' : isCompleted ? 'bg-green-600' : 'bg-gradient-to-r from-blue-500 to-blue-600'
                                 }`}
                                 style={{ width: `${batchStatus.progress_percentage || 0}%` }}
-                            ></div>
+                            >
+                                {isProcessing && progress > 0 && progress < 100 && (
+                                    <div className="absolute inset-0 bg-white opacity-20 animate-pulse"></div>
+                                )}
+                            </div>
                         </div>
                     </div>
 
