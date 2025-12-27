@@ -92,12 +92,21 @@ export const PromotionLineDetailsGrid = ({ lineIndex }: PromotionLineDetailsGrid
             headerName: 'Type de Remise',
             editable: true,
             cellEditor: 'agSelectCellEditor',
-            cellEditorParams: {
-                values: promoTypeOptions.map(v => String(v))
+            cellEditorParams: (params: any) => {
+                return {
+                    values: promoTypeOptions,
+                    formatValue: (value: any) => {
+                        const type = Number(value) as PromotionType;
+                        return promoTypeLabels[type] || `Type ${type}`;
+                    }
+                };
             },
             valueFormatter: (params) => {
                 const type = params.value as PromotionType;
                 return promoTypeLabels[type] || `Type ${type}`;
+            },
+            valueParser: (params) => {
+                return Number(params.newValue);
             },
             flex: 1,
             minWidth: 180,
@@ -127,16 +136,22 @@ export const PromotionLineDetailsGrid = ({ lineIndex }: PromotionLineDetailsGrid
                 precision: breakpointType === BreakpointType.VALUE_BASED ? 2 : 0
             },
             valueFormatter: (params: any) => {
+                if (params.value === null || params.value === undefined || params.value === '') return '';
                 if (breakpointType === BreakpointType.VALUE_BASED) {
-                    return params.value ? `${Number(params.value).toFixed(2)} MAD` : '';
+                    return `${Number(params.value).toFixed(2)} MAD`;
                 }
                 if (breakpointType === BreakpointType.QUANTITY_BASED) {
-                    return params.value ? `${Number(params.value)} unités` : '';
+                    return `${Number(params.value)} unités`;
                 }
                 if (breakpointType === BreakpointType.PROMO_UNIT_BASED) {
-                    return params.value ? `${Number(params.value)} unités promo` : '';
+                    return `${Number(params.value)} unités promo`;
                 }
-                return params.value ?? '';
+                return String(params.value);
+            },
+            valueParser: (params) => {
+                const value = params.newValue;
+                if (value === null || value === undefined || value === '') return 0;
+                return Number(value);
             },
             tooltipValueGetter: () => {
                 if (breakpointType === BreakpointType.VALUE_BASED) {
@@ -162,7 +177,7 @@ export const PromotionLineDetailsGrid = ({ lineIndex }: PromotionLineDetailsGrid
                 precision: 2
             },
             valueFormatter: (params: any) => {
-                if (!params.data || params.value === null || params.value === undefined) return '';
+                if (!params.data || params.value === null || params.value === undefined || params.value === '') return '';
                 const type = params.data.promo_type;
                 const value = Number(params.value);
                 
@@ -182,6 +197,11 @@ export const PromotionLineDetailsGrid = ({ lineIndex }: PromotionLineDetailsGrid
                     return `${value} unité(s) gratuite(s)`;
                 }
                 return `${value}`;
+            },
+            valueParser: (params) => {
+                const value = params.newValue;
+                if (value === null || value === undefined || value === '') return 0;
+                return Number(value);
             },
             tooltipValueGetter: (params: any) => {
                 if (!params.data) return '';
@@ -247,7 +267,24 @@ export const PromotionLineDetailsGrid = ({ lineIndex }: PromotionLineDetailsGrid
     const handleCellValueChanged = (event: any) => {
         if (lineIndex === null) return;
         const { rowIndex, data } = event;
-        update(rowIndex, data);
+        
+        // Ensure numeric fields are properly converted
+        const updatedData = {
+            ...data,
+            promo_type: Number(data.promo_type),
+            minimum_value: Number(data.minimum_value) || 0,
+            amount: Number(data.amount) || 0,
+            repeating: Boolean(data.repeating)
+        };
+        
+        update(rowIndex, updatedData);
+        
+        // Force grid refresh to show updated values
+        if (event.api) {
+            setTimeout(() => {
+                event.api.refreshCells({ force: true });
+            }, 0);
+        }
     };
 
     const addDetail = () => {
@@ -311,6 +348,7 @@ export const PromotionLineDetailsGrid = ({ lineIndex }: PromotionLineDetailsGrid
                     defaultColDef={defaultColDef}
                     onCellValueChanged={handleCellValueChanged}
                     stopEditingWhenCellsLoseFocus={true}
+                    rowHeight={60}
                 />
             </div>
         </div>

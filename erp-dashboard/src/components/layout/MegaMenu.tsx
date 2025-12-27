@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Search, Package, BarChart3, Settings, Database, ShoppingCart } from 'lucide-react';
+import { Search, Package, BarChart3, Settings, Database, ShoppingCart, ListTodo } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { motion, AnimatePresence } from 'framer-motion';
 
@@ -65,7 +65,7 @@ const MENU_DATA: ModuleData[] = [
             },
             {
                 title: 'Gestion Partenaires',
-                items: ['Validation Partenaires', 'Liste Partenaires']
+                items: ['Validation Partenaires', 'Liste Partenaires', 'Soldes Partenaires']
             },
             {
                 title: 'Gestion Crédit',
@@ -147,7 +147,31 @@ const MENU_DATA: ModuleData[] = [
         categories: [
             { title: 'Utilisateurs', items: ['Utilisateurs', 'Rôles', 'Groupes'] },
             { title: 'Sécurité', items: ['Gouvernance', 'Audit'] },
-            { title: 'Application', items: ['Paramètres Généraux'] }
+            { title: 'Système', items: ['Monitoring', 'Paramètres Généraux'] }
+        ]
+    },
+    {
+        id: 'tasks',
+        label: 'Tâches & Workflows',
+        icon: ListTodo,
+        description: 'Gestion des tâches et workflows - Suivi et exécution des processus métier',
+        categories: [
+            {
+                title: 'Tableau de Bord',
+                items: ['Tableau de bord Tâches']
+            },
+            {
+                title: 'Mes Tâches',
+                items: ['Tâches prêtes', 'Tâches en cours', 'Tâches terminées']
+            },
+            {
+                title: 'Workflows',
+                items: ['Progression workflows', 'Statistiques workflows']
+            },
+            {
+                title: 'Administration',
+                items: ['Templates de workflow', 'Gestion des workflows', 'Gestion des tâches']
+            }
         ]
     },
     {
@@ -234,6 +258,7 @@ export const MegaMenu: React.FC<MegaMenuProps> = ({ isOpen, onClose }) => {
         'Tableau de bord ADV': '/adv',
         'Validation Partenaires': '/adv/partners',
         'Liste Partenaires': '/adv/partners',
+        'Soldes Partenaires': '/partners/balances',
         'Gestion Crédit': '/adv/credit',
         'Échéances': '/adv/echeances',
         'Validation BC': '/adv/validation',
@@ -267,12 +292,24 @@ export const MegaMenu: React.FC<MegaMenuProps> = ({ isOpen, onClose }) => {
         'Tiers': '/partners',
 
         // Administration Module Routes
-        'Utilisateurs': '/dashboard',
-        'Rôles': '/dashboard',
-        'Groupes': '/dashboard',
-        'Gouvernance': '/dashboard',
-        'Audit': '/dashboard',
+        'Utilisateurs': '/settings',
+        'Rôles': '/settings',
+        'Groupes': '/settings',
+        'Gouvernance': '/settings',
+        'Audit': '/settings',
+        'Monitoring': '/admin/monitoring',
         'Paramètres Généraux': '/settings',
+
+        // Tasks & Workflows Module Routes
+        'Tableau de bord Tâches': '/tasks',
+        'Tâches prêtes': '/tasks?status=ready',
+        'Tâches en cours': '/tasks?status=in_progress',
+        'Tâches terminées': '/tasks?status=completed',
+        'Progression workflows': '/admin/monitoring',
+        'Statistiques workflows': '/admin/monitoring',
+        'Templates de workflow': '/workflows',
+        'Gestion des workflows': '/workflows',
+        'Gestion des tâches': '/admin/monitoring',
 
         // Import/Export Module Routes
         'Tableau de bord Import/Export': '/import-export',

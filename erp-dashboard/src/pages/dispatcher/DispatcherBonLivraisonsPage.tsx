@@ -1,6 +1,6 @@
 import { useMemo, useState, useRef, useEffect } from 'react';
 import type { ColDef } from 'ag-grid-community';
-import { FileText, Loader2, Package, PackagePlus, RefreshCw, Save, Truck, User, X, CheckSquare, Users, Scissors } from 'lucide-react';
+import { FileText, Loader2, Package, PackagePlus, RefreshCw, Save, Truck, User, X, CheckSquare, Scissors, History } from 'lucide-react';
 import toast from 'react-hot-toast';
 
 import { MasterLayout } from '@/components/layout/MasterLayout';
@@ -17,8 +17,40 @@ import {
 import { SplitBlModal } from '@/components/dispatcher/SplitBlModal';
 import { useDispatcherCreateBch } from '@/hooks/dispatcher/useDispatcherBonChargements';
 import { useRiders } from '@/hooks/useRiders';
+import { useDispatcherBLWorkflow } from '@/hooks/dispatcher/useDispatcherWorkflow';
+import { WorkflowHistory } from '@/components/workflow/WorkflowHistory';
+import { BLWorkflowActions } from '@/components/dispatcher/BLWorkflowActions';
 import type { BonLivraison } from '@/types/dispatcher.types';
 import type { Rider } from '@/services/api/ridersApi';
+
+const BLHistorySection = ({ blId }: { blId?: number }) => {
+    const { workflowHistory, isLoadingHistory } = useDispatcherBLWorkflow(blId || 0);
+    const sectionRefs = useRef<Record<string, HTMLDivElement | null>>({});
+    const [openSections, setOpenSections] = useState<Record<string, boolean>>({ history: true });
+
+    const toggleSection = (id: string, isOpen: boolean) => {
+        setOpenSections(prev => ({ ...prev, [id]: isOpen }));
+    };
+
+    if (!blId) return null;
+
+    return (
+        <div ref={el => { sectionRefs.current['history'] = el; }}>
+            <SageCollapsible
+                title="Historique Workflow"
+                isOpen={openSections['history']}
+                onOpenChange={(open) => toggleSection('history', open)}
+            >
+                <div className="p-4">
+                    <WorkflowHistory 
+                        history={workflowHistory} 
+                        isLoading={isLoadingHistory}
+                    />
+                </div>
+            </SageCollapsible>
+        </div>
+    );
+};
 
 export const DispatcherBonLivraisonsPage = () => {
     const [selected, setSelected] = useState<BonLivraison | null>(null);
@@ -34,7 +66,8 @@ export const DispatcherBonLivraisonsPage = () => {
         bl: true,
         commande: true,
         client: true,
-        lignes: true
+        lignes: true,
+        history: true
     });
 
     const sectionRefs = useRef<Record<string, HTMLDivElement | null>>({});
@@ -125,6 +158,7 @@ export const DispatcherBonLivraisonsPage = () => {
             { id: 'commande', label: 'Bon de commande', icon: Package },
             { id: 'client', label: 'Client', icon: User },
             { id: 'lignes', label: `Lignes (${detailsBl?.items?.length || 0})`, icon: Truck },
+            { id: 'history', label: 'Historique Workflow', icon: History },
         ],
         [detailsBl?.items?.length]
     );
@@ -316,25 +350,6 @@ export const DispatcherBonLivraisonsPage = () => {
         }
     };
 
-    const bulkUnassignLivreur = async () => {
-        if (selectedBls.length === 0) {
-            toast.error('Sélectionne au moins un BL');
-            return;
-        }
-
-        try {
-            const promises = selectedBls.map(bl => 
-                update(bl.id, { livreur_id: undefined })
-            );
-            
-            await Promise.all(promises);
-            toast.success(`${selectedBls.length} BL(s) désaffecté(s)`);
-            await refetch();
-            setSelectedBls([]);
-        } catch (e) {
-            toast.error(e instanceof Error ? e.message : 'Échec désaffectation');
-        }
-    };
 
     const createBchFromMultiple = async () => {
         if (selectedBls.length === 0) {
@@ -352,22 +367,35 @@ export const DispatcherBonLivraisonsPage = () => {
         try {
             toast.loading(`Création du BCH pour ${riderName} avec ${selectedBls.length} BL(s)...`);
             
-            const blIds = selectedBls.map(bl => bl.id).join(',');
-            const res = await createBch({
-                bl_ids: blIds,
-                livreur_id: Number(bulkLivreurId),
-                notes: notes || undefined,
+            // Use workflow transition for the first BL to create BCH
+            const firstBlId = selectedBls[0].id;
+            const blIds = selectedBls.map(bl => bl.id.toString());
+            
+            // Import workflowStateApi to use transition
+            const { workflowStateApi } = await import('@/services/api/workflowStateApi');
+            
+            const transitionResult = await workflowStateApi.bonLivraison.transition(firstBlId, {
+                action: 'grouped',
+                comment: `BCH créé pour ${riderName} avec ${selectedBls.length} BL(s)`,
+                metadata: {
+                    bch_id: null,
+                    create_new_bch: true,
+                    bl_ids: blIds,
+                    livreur_id: Number(bulkLivreurId),
+                },
             });
 
             toast.dismiss();
             
-            if (res.success) {
-                toast.success(`✓ BCH créé avec ${selectedBls.length} BL(s) pour ${riderName}`);
+            if (transitionResult.success) {
+                const bchNumber = transitionResult.metadata?.bch_creation?.bch?.bch_number || 'BCH';
+                toast.success(`✓ ${bchNumber} créé avec ${selectedBls.length} BL(s) pour ${riderName}`);
                 await refetch();
                 setSelectedBls([]);
                 setBulkLivreurId('');
+                setNotes('');
             } else {
-                toast.error(res.message || 'Échec de la création du BCH');
+                toast.error(transitionResult.message || 'Échec de la création du BCH');
             }
         } catch (e) {
             toast.dismiss();
@@ -508,7 +536,18 @@ export const DispatcherBonLivraisonsPage = () => {
                                         isOpen={openSections['bl']}
                                         onOpenChange={(open) => toggleSection('bl', open)}
                                     >
-                                        <div>
+                                        <div className="p-4 space-y-4">
+                                        {/* Workflow Actions */}
+                                        <div className="mb-4 pb-4 border-b border-gray-200">
+                                            <BLWorkflowActions 
+                                                blId={selected?.id || 0} 
+                                                onSuccess={() => {
+                                                    refetch();
+                                                    refetchEdit();
+                                                }}
+                                            />
+                                        </div>
+
                                         <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                                             <div className="p-3 rounded border border-gray-100 bg-gray-50">
                                                 <div className="text-xs text-gray-500">BL</div>
@@ -692,6 +731,8 @@ export const DispatcherBonLivraisonsPage = () => {
                                         </div>
                                     </SageCollapsible>
                                 </div>
+
+                                <BLHistorySection blId={selected?.id} />
                             </div>
                         </div>
                     ) : null}
@@ -700,118 +741,164 @@ export const DispatcherBonLivraisonsPage = () => {
                     {selectedBls.length > 0 && (
                         <div className={`${showDetailPanel ? 'w-96' : 'flex-1'} bg-white border-l border-gray-200 flex flex-col`}>
                             {/* Drawer Header */}
-                            <div className="p-4 border-b border-gray-200 bg-sage-50 shrink-0">
+                            <div className="bg-gradient-to-br from-green-600 via-green-700 to-emerald-700 p-3 shrink-0 shadow-lg">
                                 <div className="flex items-center justify-between mb-3">
                                     <div className="flex items-center gap-2">
-                                        <Truck className="w-5 h-5 text-sage-600" />
-                                        <h2 className="text-sm font-bold text-gray-900">Dispatcher</h2>
+                                        <div className="p-1.5 bg-white/20 backdrop-blur-sm rounded-lg">
+                                            <Package className="w-5 h-5 text-white" />
+                                        </div>
+                                        <h2 className="text-base font-bold text-white">Dispatcher BCH</h2>
                                     </div>
                                     <button
                                         onClick={() => setSelectedBls([])}
-                                        className="text-xs text-red-600 hover:text-red-800 flex items-center gap-1 font-medium"
+                                        className="p-1.5 bg-white/10 hover:bg-white/20 rounded-lg transition-all text-white backdrop-blur-sm"
+                                        title="Effacer la sélection"
                                     >
-                                        <X className="w-4 h-4" /> Effacer
+                                        <X className="w-4 h-4" />
                                     </button>
                                 </div>
                                 
-                                {/* Livreur Selection - Primary Action */}
-                                <div className="space-y-2">
-                                    <label className="block text-xs font-semibold text-gray-700">
-                                        <User className="w-3 h-3 inline mr-1" />Sélectionner le livreur
+                                {/* Livreur Selection */}
+                                <div className="bg-white/10 backdrop-blur-sm rounded-lg p-2.5 border border-white/20">
+                                    <label className="flex items-center gap-1.5 text-xs font-semibold text-white mb-2">
+                                        <User className="w-4 h-4" />
+                                        Livreur assigné
                                     </label>
                                     <select
                                         value={bulkLivreurId}
                                         onChange={(e) => setBulkLivreurId(e.target.value === '' ? '' : Number(e.target.value))}
-                                        className="w-full text-sm rounded-md border-2 border-sage-300 px-3 py-2 focus:ring-2 focus:ring-sage-500 focus:border-sage-500 font-medium"
+                                        className="w-full text-sm rounded-lg border-0 bg-white px-3 py-2 font-medium shadow-lg focus:ring-2 focus:ring-white/50 transition-all"
                                         disabled={livreursLoading}
                                     >
-                                        <option value="">{livreursLoading ? 'Chargement...' : '-- Choisir un livreur --'}</option>
+                                        <option value="">{livreursLoading ? '⏳ Chargement...' : '👤 Sélectionner un livreur'}</option>
                                         {livreurs.map((l: Rider) => (
                                             <option key={l.id} value={l.id}>
-                                                {l.name} {l.branch ? `(${l.branch.name})` : ''}
+                                                🚚 {l.name} {l.branch ? `• ${l.branch.name}` : ''}
                                             </option>
                                         ))}
                                     </select>
-                                    <div className="text-xs text-gray-500 italic">
-                                        Sélectionnez d'abord le livreur, puis cochez les BLs à affecter
-                                    </div>
                                 </div>
                             </div>
 
                             {/* Selection Summary */}
-                            <div className="p-3 border-b border-gray-200 bg-white shrink-0">
-                                <div className="flex items-center justify-between mb-2">
-                                    <div className="flex items-center gap-2">
-                                        <CheckSquare className="w-4 h-4 text-sage-600" />
-                                        <span className="text-xs font-semibold text-gray-700">
-                                            {selectedBls.length} BL{selectedBls.length > 1 ? 's' : ''} sélectionné{selectedBls.length > 1 ? 's' : ''}
-                                        </span>
+                            <div className="p-3 bg-gradient-to-br from-gray-50 to-white shrink-0 border-b-2 border-gray-100">
+                                {/* Summary Card */}
+                                <div className="mb-3 p-3 bg-white rounded-xl shadow-lg border-2 border-green-200">
+                                    <div className="flex items-center justify-between">
+                                        <div className="flex items-center gap-2">
+                                            <div className="p-2 bg-green-100 rounded-lg">
+                                                <CheckSquare className="w-5 h-5 text-green-700" />
+                                            </div>
+                                            <div>
+                                                <div className="text-xl font-bold text-gray-900">
+                                                    {selectedBls.length}
+                                                </div>
+                                                <div className="text-xs font-medium text-gray-600">BL{selectedBls.length > 1 ? 's' : ''} sélectionné{selectedBls.length > 1 ? 's' : ''}</div>
+                                            </div>
+                                        </div>
+                                        <div className="text-right">
+                                            <div className="text-xl font-bold text-green-700">
+                                                {selectedBls.reduce((sum, bl) => sum + parseFloat(bl.total_amount || '0'), 0).toLocaleString()}
+                                            </div>
+                                            <div className="text-xs font-medium text-gray-600">Dh Total</div>
+                                        </div>
                                     </div>
-                                    <span className="text-xs font-bold text-sage-600">
-                                        {selectedBls.reduce((sum, bl) => sum + parseFloat(bl.total_amount || '0'), 0).toLocaleString()} Dh
-                                    </span>
+                                    {bulkLivreurId === '' && (
+                                        <div className="mt-2 p-2 bg-amber-50 border border-amber-200 rounded-lg flex items-start gap-2">
+                                            <span className="text-sm">⚠️</span>
+                                            <p className="text-xs text-amber-800 leading-relaxed">
+                                                <strong>Astuce:</strong> Sélectionnez le livreur pour activer les actions
+                                            </p>
+                                        </div>
+                                    )}
                                 </div>
                                 
-                                {/* Action Buttons */}
-                                <div className="flex gap-2 mt-2">
-                                    <button
-                                        onClick={bulkAssignLivreur}
-                                        disabled={saving || bulkLivreurId === ''}
-                                        className="flex-1 text-sm bg-sage-600 text-white px-3 py-2 rounded-md hover:bg-sage-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 font-medium transition-colors shadow-sm"
-                                    >
-                                        {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckSquare className="w-4 h-4" />}
-                                        Affecter livreur
-                                    </button>
+                                {/* Action Buttons - Inline */}
+                                <div className="flex gap-2">
                                     <button
                                         onClick={createBchFromMultiple}
                                         disabled={creatingBch || bulkLivreurId === ''}
-                                        className="flex-1 text-sm bg-blue-600 text-white px-3 py-2 rounded-md hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 font-medium transition-colors shadow-sm"
+                                        className="flex-1 text-sm bg-gradient-to-r from-blue-600 to-blue-700 text-white px-3 py-3 rounded-lg hover:from-blue-700 hover:to-blue-800 disabled:opacity-50 disabled:cursor-not-allowed disabled:grayscale flex items-center justify-center gap-2 font-bold transition-all shadow-lg hover:shadow-xl"
                                     >
-                                        {creatingBch ? <Loader2 className="w-4 h-4 animate-spin" /> : <PackagePlus className="w-4 h-4" />}
-                                        Créer BCH
+                                        {creatingBch ? (
+                                            <>
+                                                <Loader2 className="w-4 h-4 animate-spin" />
+                                                <span className="hidden sm:inline">Création...</span>
+                                            </>
+                                        ) : (
+                                            <>
+                                                <PackagePlus className="w-4 h-4" />
+                                                <span>Créer BCH</span>
+                                            </>
+                                        )}
+                                    </button>
+                                    <button
+                                        onClick={bulkAssignLivreur}
+                                        disabled={saving || bulkLivreurId === ''}
+                                        className="flex-1 text-sm bg-white text-green-700 border-2 border-green-600 px-3 py-3 rounded-lg hover:bg-green-50 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 font-semibold transition-all shadow-md hover:shadow-lg"
+                                    >
+                                        {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckSquare className="w-4 h-4" />}
+                                        <span>Affecter</span>
                                     </button>
                                 </div>
                             </div>
 
                             {/* Selected BLs List */}
-                            <div className="flex-1 overflow-y-auto p-3 space-y-2">
-                                {selectedBls.map((bl) => {
+                            <div className="flex-1 overflow-y-auto p-4 space-y-3 bg-gray-50">
+                                {selectedBls.map((bl, index) => {
                                     const currentLivreur = livreurs.find(l => l.id === bl.livreur_id);
                                     return (
-                                        <div key={bl.id} className="bg-gray-50 border border-gray-200 rounded-lg p-3 hover:border-sage-300 transition-colors">
-                                            {/* BL Header */}
-                                            <div className="flex items-start justify-between">
-                                                <div className="flex-1">
-                                                    <div className="text-sm font-bold text-gray-900">{bl.bl_number}</div>
-                                                    <div className="text-xs text-gray-600 mt-0.5">{bl.partner?.name}</div>
-                                                    <div className="text-xs font-semibold text-sage-600 mt-1">
-                                                        {parseFloat(bl.total_amount || '0').toLocaleString()} Dh
-                                                    </div>
-                                                    {currentLivreur && (
-                                                        <div className="mt-2 inline-flex items-center gap-1 px-2 py-1 bg-sage-100 text-sage-700 rounded text-xs font-medium">
-                                                            <Truck className="w-3 h-3" />
-                                                            {currentLivreur.name}
-                                                        </div>
-                                                    )}
+                                        <div key={bl.id} className="bg-white border-2 border-gray-200 rounded-2xl p-4 hover:border-green-400 hover:shadow-xl transition-all group">
+                                            <div className="flex items-start gap-3">
+                                                {/* Number Badge */}
+                                                <div className="flex items-center justify-center w-10 h-10 rounded-xl bg-gradient-to-br from-green-500 to-green-600 text-white text-base font-bold shrink-0 shadow-md group-hover:scale-110 transition-transform">
+                                                    {index + 1}
                                                 </div>
-                                                <div className="flex flex-col gap-1">
-                                                    <button
-                                                        onClick={() => {
-                                                            setSelected(bl);
-                                                            setShowDetailPanel(true);
-                                                        }}
-                                                        className="p-1.5 rounded hover:bg-gray-200 text-gray-600 hover:text-gray-800 transition-colors"
-                                                        title="Voir détails"
-                                                    >
-                                                        <FileText className="w-4 h-4" />
-                                                    </button>
-                                                    <button
-                                                        onClick={() => setSelectedBls(prev => prev.filter(b => b.id !== bl.id))}
-                                                        className="p-1.5 rounded hover:bg-red-50 text-red-600 hover:text-red-800 transition-colors"
-                                                        title="Retirer"
-                                                    >
-                                                        <X className="w-4 h-4" />
-                                                    </button>
+                                                
+                                                {/* BL Info */}
+                                                <div className="flex-1 min-w-0">
+                                                    <div className="flex items-start justify-between gap-2 mb-2">
+                                                        <div className="flex-1 min-w-0">
+                                                            <div className="text-sm font-bold text-gray-900 truncate">{bl.bl_number}</div>
+                                                            <div className="text-xs text-gray-600 mt-1 truncate flex items-center gap-1">
+                                                                <User className="w-3 h-3" />
+                                                                {bl.partner?.name}
+                                                            </div>
+                                                        </div>
+                                                        {/* Action Buttons */}
+                                                        <div className="flex gap-1 shrink-0">
+                                                            <button
+                                                                onClick={() => {
+                                                                    setSelected(bl);
+                                                                    setShowDetailPanel(true);
+                                                                }}
+                                                                className="p-2 rounded-lg bg-blue-50 hover:bg-blue-100 text-blue-600 hover:text-blue-800 transition-all hover:scale-110"
+                                                                title="Voir détails"
+                                                            >
+                                                                <FileText className="w-4 h-4" />
+                                                            </button>
+                                                            <button
+                                                                onClick={() => setSelectedBls(prev => prev.filter(b => b.id !== bl.id))}
+                                                                className="p-2 rounded-lg bg-red-50 hover:bg-red-100 text-red-600 hover:text-red-800 transition-all hover:scale-110"
+                                                                title="Retirer"
+                                                            >
+                                                                <X className="w-4 h-4" />
+                                                            </button>
+                                                        </div>
+                                                    </div>
+                                                    
+                                                    {/* Badges */}
+                                                    <div className="flex items-center gap-2 flex-wrap">
+                                                        <div className="px-3 py-1.5 bg-gradient-to-r from-emerald-50 to-green-50 border border-emerald-200 text-emerald-700 rounded-lg text-sm font-bold shadow-sm">
+                                                            💰 {parseFloat(bl.total_amount || '0').toLocaleString()} Dh
+                                                        </div>
+                                                        {currentLivreur && (
+                                                            <div className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-200 text-blue-700 rounded-lg text-xs font-semibold shadow-sm">
+                                                                <Truck className="w-3.5 h-3.5" />
+                                                                <span className="truncate max-w-[120px]">{currentLivreur.name}</span>
+                                                            </div>
+                                                        )}
+                                                    </div>
                                                 </div>
                                             </div>
                                         </div>

@@ -1,0 +1,1057 @@
+{
+	"info": {
+		"_postman_id": "bc-workflow-complete-2025",
+		"name": "BC Workflow - Complete Testing (State-Based)",
+		"description": "Complete API collection for testing BC (Bon de Commande) workflow from order creation to delivery using the new state-based workflow system with guards.",
+		"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+	},
+	"auth": {
+		"type": "bearer",
+		"bearer": [
+			{
+				"key": "token",
+				"value": "{{auth_token}}",
+				"type": "string"
+			}
+		]
+	},
+	"variable": [
+		{
+			"key": "base_url",
+			"value": "http://localhost:8000",
+			"type": "string"
+		},
+		{
+			"key": "auth_token",
+			"value": "",
+			"type": "string"
+		},
+		{
+			"key": "order_id",
+			"value": "",
+			"type": "string"
+		},
+		{
+			"key": "bl_id",
+			"value": "",
+			"type": "string"
+		},
+		{
+			"key": "bch_id",
+			"value": "",
+			"type": "string"
+		},
+		{
+			"key": "bp_id",
+			"value": "",
+			"type": "string"
+		},
+		{
+			"key": "product_id",
+			"value": "1",
+			"type": "string"
+		},
+		{
+			"key": "livreur_id",
+			"value": "",
+			"type": "string"
+		},
+		{
+			"key": "partner_id",
+			"value": "",
+			"type": "string"
+		}
+	],
+	"item": [
+		{
+			"name": "0. Authentication",
+			"item": [
+				{
+					"name": "Login as Partner",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test('Login successful', function() {",
+									"    pm.response.to.have.status(200);",
+									"});",
+									"",
+									"pm.test('Token received', function() {",
+									"    var jsonData = pm.response.json();",
+									"    pm.expect(jsonData).to.have.property('token');",
+									"    pm.expect(jsonData.token).to.not.be.empty;",
+									"    pm.collectionVariables.set('auth_token', jsonData.token);",
+									"});",
+									"",
+									"pm.test('User has partner role', function() {",
+									"    var jsonData = pm.response.json();",
+									"    pm.expect(jsonData.user.roles.all).to.include('partner');",
+									"    if (jsonData.user.id) {",
+									"        pm.collectionVariables.set('partner_id', jsonData.user.id);",
+									"    }",
+									"});"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"email\": \"partner@foodsolutions.ma\",\n    \"password\": \"password\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/backend/login",
+							"host": ["{{base_url}}"],
+							"path": ["backend", "login"]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Login as ADV",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test('Login successful', function() {",
+									"    pm.response.to.have.status(200);",
+									"});",
+									"",
+									"pm.test('Token received', function() {",
+									"    var jsonData = pm.response.json();",
+									"    pm.collectionVariables.set('auth_token', jsonData.token);",
+									"});",
+									"",
+									"pm.test('User has ADV role', function() {",
+									"    var jsonData = pm.response.json();",
+									"    pm.expect(jsonData.user.roles.all).to.include('adv');",
+									"});"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"email\": \"adv@foodsolutions.ma\",\n    \"password\": \"password\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/backend/login",
+							"host": ["{{base_url}}"],
+							"path": ["backend", "login"]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Login as Dispatcher",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"if (pm.response.code === 200) {",
+									"    var jsonData = pm.response.json();",
+									"    pm.collectionVariables.set('auth_token', jsonData.token);",
+									"    pm.collectionVariables.set('user_role', 'dispatcher');",
+									"}"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"email\": \"dispatcher@example.com\",\n    \"password\": \"password\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/api/login",
+							"host": ["{{base_url}}"],
+							"path": ["api", "login"]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Login as Magasinier",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"if (pm.response.code === 200) {",
+									"    var jsonData = pm.response.json();",
+									"    pm.collectionVariables.set('auth_token', jsonData.token);",
+									"    pm.collectionVariables.set('user_role', 'magasinier');",
+									"}"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"email\": \"magasinier@example.com\",\n    \"password\": \"password\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/api/login",
+							"host": ["{{base_url}}"],
+							"path": ["api", "login"]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Login as Driver",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"if (pm.response.code === 200) {",
+									"    var jsonData = pm.response.json();",
+									"    pm.collectionVariables.set('auth_token', jsonData.token);",
+									"    pm.collectionVariables.set('user_role', 'driver');",
+									"}"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"email\": \"driver@example.com\",\n    \"password\": \"password\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/api/login",
+							"host": ["{{base_url}}"],
+							"path": ["api", "login"]
+						}
+					},
+					"response": []
+				}
+			]
+		},
+		{
+			"name": "1. BC Creation (Partner)",
+			"item": [
+				{
+					"name": "Place Order (Create BC)",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"if (pm.response.code === 200 || pm.response.code === 201) {",
+									"    var jsonData = pm.response.json();",
+									"    if (jsonData.order && jsonData.order.id) {",
+									"        pm.collectionVariables.set('order_id', jsonData.order.id);",
+									"        console.log('Order ID saved: ' + jsonData.order.id);",
+									"    }",
+									"}"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"shop_ids\": [1],\n    \"payment_method\": \"cash_on_delivery\",\n    \"address_id\": 1,\n    \"payment_term_id\": 1,\n    \"delivery_date\": \"2025-12-30\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/api/place-order",
+							"host": ["{{base_url}}"],
+							"path": ["api", "place-order"]
+						},
+						"description": "Partner places an order. BC workflow is auto-initialized with state 'submitted'."
+					},
+					"response": []
+				},
+				{
+					"name": "Check BC Workflow Status",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/api/workflow/order/{{order_id}}/allowed-actions",
+							"host": ["{{base_url}}"],
+							"path": ["api", "workflow", "order", "{{order_id}}", "allowed-actions"]
+						},
+						"description": "Check current workflow state and available actions. Should show 'submitted' state with 'adv_review' action available."
+					},
+					"response": []
+				},
+				{
+					"name": "Validate Transition (Pre-check)",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"action\": \"adv_review\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/api/workflow/order/{{order_id}}/validate-transition",
+							"host": ["{{base_url}}"],
+							"path": ["api", "workflow", "order", "{{order_id}}", "validate-transition"]
+						},
+						"description": "Pre-validate if transition is possible without actually executing it. Useful for UI to show/hide buttons."
+					},
+					"response": []
+				}
+			]
+		},
+		{
+			"name": "2. BC Review & Approval (ADV)",
+			"item": [
+				{
+					"name": "Send BC to ADV Review",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"action\": \"adv_review\",\n    \"comment\": \"Sending order to ADV for review\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/api/workflow/order/{{order_id}}/transition",
+							"host": ["{{base_url}}"],
+							"path": ["api", "workflow", "order", "{{order_id}}", "transition"]
+						},
+						"description": "Transition from 'submitted' to 'adv_review'. ADV can now see this order in their queue."
+					},
+					"response": []
+				},
+				{
+					"name": "Check Available Actions (ADV)",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/api/workflow/order/{{order_id}}/allowed-actions",
+							"host": ["{{base_url}}"],
+							"path": ["api", "workflow", "order", "{{order_id}}", "allowed-actions"]
+						},
+						"description": "Should show 'adv_review' state with actions: adv_approved, adv_rejected, adv_on_hold"
+					},
+					"response": []
+				},
+				{
+					"name": "Approve BC (ADV)",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"action\": \"adv_approved\",\n    \"comment\": \"Order approved - stock and credit OK\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/api/workflow/order/{{order_id}}/transition",
+							"host": ["{{base_url}}"],
+							"path": ["api", "workflow", "order", "{{order_id}}", "transition"]
+						},
+						"description": "ADV approves the order. Guards will check: StockAvailabilityGuard, CreditLimitGuard. If guards fail, use force=true."
+					},
+					"response": []
+				},
+				{
+					"name": "Reject BC (ADV) [Alternative]",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"action\": \"adv_rejected\",\n    \"comment\": \"Insufficient stock or credit limit exceeded\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/api/workflow/order/{{order_id}}/transition",
+							"host": ["{{base_url}}"],
+							"path": ["api", "workflow", "order", "{{order_id}}", "transition"]
+						},
+						"description": "ADV rejects the order. Order goes back to 'adv_rejected' state."
+					},
+					"response": []
+				},
+				{
+					"name": "Put BC On Hold (ADV) [Alternative]",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"action\": \"adv_on_hold\",\n    \"comment\": \"Waiting for additional information from partner\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/api/workflow/order/{{order_id}}/transition",
+							"host": ["{{base_url}}"],
+							"path": ["api", "workflow", "order", "{{order_id}}", "transition"]
+						},
+						"description": "ADV puts order on hold. Can be resumed later."
+					},
+					"response": []
+				},
+				{
+					"name": "Force Approve (Admin Override)",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"action\": \"adv_approved\",\n    \"comment\": \"Force approved - will adjust stock manually\",\n    \"force\": true\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/api/workflow/order/{{order_id}}/transition",
+							"host": ["{{base_url}}"],
+							"path": ["api", "workflow", "order", "{{order_id}}", "transition"]
+						},
+						"description": "Admin can force approve even if guards fail. Requires admin/supervisor role."
+					},
+					"response": []
+				}
+			]
+		},
+		{
+			"name": "3. BC Confirmation",
+			"item": [
+				{
+					"name": "Confirm BC",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"action\": \"confirmed\",\n    \"comment\": \"Order confirmed and ready for conversion to BL\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/api/workflow/order/{{order_id}}/transition",
+							"host": ["{{base_url}}"],
+							"path": ["api", "workflow", "order", "{{order_id}}", "transition"]
+						},
+						"description": "Transition from 'adv_approved' to 'confirmed'. Order is now ready to be converted to BL."
+					},
+					"response": []
+				}
+			]
+		},
+		{
+			"name": "4. BL Creation & Grouping (Dispatcher)",
+			"item": [
+				{
+					"name": "Convert BC to BL",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"if (pm.response.code === 200 || pm.response.code === 201) {",
+									"    var jsonData = pm.response.json();",
+									"    if (jsonData.bl_id) {",
+									"        pm.collectionVariables.set('bl_id', jsonData.bl_id);",
+									"        console.log('BL ID saved: ' + jsonData.bl_id);",
+									"    }",
+									"}"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"action\": \"converted_to_bl\",\n    \"comment\": \"Converting to Bon de Livraison\",\n    \"metadata\": {\n        \"create_bl\": true,\n        \"bl_items\": \"all\"\n    }\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/api/workflow/order/{{order_id}}/transition",
+							"host": ["{{base_url}}"],
+							"path": ["api", "workflow", "order", "{{order_id}}", "transition"]
+						},
+						"description": "Convert BC to BL. This creates BonLivraison record(s) and initializes BL workflow."
+					},
+					"response": []
+				},
+				{
+					"name": "Check BL Workflow Status",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/api/workflow/bon-livraison/{{bl_id}}/allowed-actions",
+							"host": ["{{base_url}}"],
+							"path": ["api", "workflow", "bon-livraison", "{{bl_id}}", "allowed-actions"]
+						},
+						"description": "Check BL workflow state. Should be 'draft' initially."
+					},
+					"response": []
+				},
+				{
+					"name": "Submit BL (Dispatcher)",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"action\": \"submitted\",\n    \"comment\": \"BL ready for grouping\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/api/workflow/bon-livraison/{{bl_id}}/transition",
+							"host": ["{{base_url}}"],
+							"path": ["api", "workflow", "bon-livraison", "{{bl_id}}", "transition"]
+						},
+						"description": "Dispatcher submits BL from 'draft' to 'submitted'."
+					},
+					"response": []
+				},
+				{
+					"name": "Group BLs in BCH",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"if (pm.response.code === 200 || pm.response.code === 201) {",
+									"    var jsonData = pm.response.json();",
+									"    if (jsonData.bch_id) {",
+									"        pm.collectionVariables.set('bch_id', jsonData.bch_id);",
+									"        console.log('BCH ID saved: ' + jsonData.bch_id);",
+									"    }",
+									"}"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"action\": \"grouped\",\n    \"comment\": \"Grouped in BCH for warehouse\",\n    \"metadata\": {\n        \"bch_id\": null,\n        \"create_new_bch\": true,\n        \"bl_ids\": [\"{{bl_id}}\"]\n    }\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/api/workflow/bon-livraison/{{bl_id}}/transition",
+							"host": ["{{base_url}}"],
+							"path": ["api", "workflow", "bon-livraison", "{{bl_id}}", "transition"]
+						},
+						"description": "Group BL in BCH (Bon de Chargement). Creates BCH if needed."
+					},
+					"response": []
+				},
+				{
+					"name": "Split BL [Alternative]",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"bl_id\": \"{{bl_id}}\",\n    \"split_items\": [\n        {\n            \"product_id\": 1,\n            \"quantity\": 10\n        },\n        {\n            \"product_id\": 2,\n            \"quantity\": 5\n        }\n    ]\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/api/bon-livraison/{{bl_id}}/split",
+							"host": ["{{base_url}}"],
+							"path": ["api", "bon-livraison", "{{bl_id}}", "split"]
+						},
+						"description": "Dispatcher can split a BL into multiple BLs. Each new BL gets its own workflow instance."
+					},
+					"response": []
+				}
+			]
+		},
+		{
+			"name": "5. BCH Workflow",
+			"item": [
+				{
+					"name": "Check BCH Workflow Status",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/api/workflow/bon-chargement/{{bch_id}}/allowed-actions",
+							"host": ["{{base_url}}"],
+							"path": ["api", "workflow", "bon-chargement", "{{bch_id}}", "allowed-actions"]
+						},
+						"description": "Check BCH workflow state. Should be 'pending' initially."
+					},
+					"response": []
+				},
+				{
+					"name": "Send BCH to Warehouse",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"action\": \"in_preparation\",\n    \"comment\": \"BCH sent to warehouse for preparation\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/api/workflow/bon-chargement/{{bch_id}}/transition",
+							"host": ["{{base_url}}"],
+							"path": ["api", "workflow", "bon-chargement", "{{bch_id}}", "transition"]
+						},
+						"description": "Dispatcher sends BCH to warehouse. This creates BP (Bon de Préparation) for magasinier."
+					},
+					"response": []
+				}
+			]
+		},
+		{
+			"name": "6. BP Preparation (Magasinier)",
+			"item": [
+				{
+					"name": "Check BP Workflow Status",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/api/workflow/bon-preparation/{{bp_id}}/allowed-actions",
+							"host": ["{{base_url}}"],
+							"path": ["api", "workflow", "bon-preparation", "{{bp_id}}", "allowed-actions"]
+						},
+						"description": "Check BP workflow state. Should be 'pending' initially."
+					},
+					"response": []
+				},
+				{
+					"name": "Start BP Preparation",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"action\": \"in_progress\",\n    \"comment\": \"Starting preparation of items\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/api/workflow/bon-preparation/{{bp_id}}/transition",
+							"host": ["{{base_url}}"],
+							"path": ["api", "workflow", "bon-preparation", "{{bp_id}}", "transition"]
+						},
+						"description": "Magasinier starts preparing items."
+					},
+					"response": []
+				},
+				{
+					"name": "Complete BP Preparation",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"action\": \"completed\",\n    \"comment\": \"All items prepared and ready for loading\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/api/workflow/bon-preparation/{{bp_id}}/transition",
+							"host": ["{{base_url}}"],
+							"path": ["api", "workflow", "bon-preparation", "{{bp_id}}", "transition"]
+						},
+						"description": "Magasinier completes preparation. This triggers BL transition to 'prepared'."
+					},
+					"response": []
+				}
+			]
+		},
+		{
+			"name": "7. BL Loading & Transit",
+			"item": [
+				{
+					"name": "Mark BL as Prepared",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"action\": \"prepared\",\n    \"comment\": \"BL prepared and ready for loading\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/api/workflow/bon-livraison/{{bl_id}}/transition",
+							"host": ["{{base_url}}"],
+							"path": ["api", "workflow", "bon-livraison", "{{bl_id}}", "transition"]
+						},
+						"description": "Transition BL to 'prepared' state. Guard: PreparationCompleteGuard checks BP is completed."
+					},
+					"response": []
+				},
+				{
+					"name": "Load BL on Vehicle",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"action\": \"loaded\",\n    \"comment\": \"BL loaded on vehicle\",\n    \"metadata\": {\n        \"vehicle_id\": 1,\n        \"driver_id\": 1\n    }\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/api/workflow/bon-livraison/{{bl_id}}/transition",
+							"host": ["{{base_url}}"],
+							"path": ["api", "workflow", "bon-livraison", "{{bl_id}}", "transition"]
+						},
+						"description": "Load BL on vehicle and assign driver."
+					},
+					"response": []
+				},
+				{
+					"name": "Start Transit",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"action\": \"in_transit\",\n    \"comment\": \"Driver started delivery\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/api/workflow/bon-livraison/{{bl_id}}/transition",
+							"host": ["{{base_url}}"],
+							"path": ["api", "workflow", "bon-livraison", "{{bl_id}}", "transition"]
+						},
+						"description": "Driver starts transit. BL is now 'in_transit'."
+					},
+					"response": []
+				}
+			]
+		},
+		{
+			"name": "8. BL Delivery (Driver)",
+			"item": [
+				{
+					"name": "Mark BL as Delivered",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"action\": \"delivered\",\n    \"comment\": \"Successfully delivered to customer\",\n    \"metadata\": {\n        \"signature\": \"base64_signature_image\",\n        \"delivery_notes\": \"Customer satisfied\",\n        \"delivered_at\": \"2025-12-25T14:30:00Z\"\n    }\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/api/workflow/bon-livraison/{{bl_id}}/transition",
+							"host": ["{{base_url}}"],
+							"path": ["api", "workflow", "bon-livraison", "{{bl_id}}", "transition"]
+						},
+						"description": "Driver marks BL as delivered. This is a final state."
+					},
+					"response": []
+				},
+				{
+					"name": "Mark BL as Returned [Alternative]",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"action\": \"returned\",\n    \"comment\": \"Customer refused delivery\",\n    \"metadata\": {\n        \"return_reason\": \"Customer not available\",\n        \"returned_at\": \"2025-12-25T14:30:00Z\"\n    }\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/api/workflow/bon-livraison/{{bl_id}}/transition",
+							"host": ["{{base_url}}"],
+							"path": ["api", "workflow", "bon-livraison", "{{bl_id}}", "transition"]
+						},
+						"description": "Driver returns BL if delivery failed. This is a final state."
+					},
+					"response": []
+				}
+			]
+		},
+		{
+			"name": "9. Workflow History & Audit",
+			"item": [
+				{
+					"name": "Get BC Workflow History",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/api/workflow/order/{{order_id}}/history",
+							"host": ["{{base_url}}"],
+							"path": ["api", "workflow", "order", "{{order_id}}", "history"]
+						},
+						"description": "Get complete workflow transition history for BC. Shows all state changes with timestamps and users."
+					},
+					"response": []
+				},
+				{
+					"name": "Get BL Workflow History",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/api/workflow/bon-livraison/{{bl_id}}/history",
+							"host": ["{{base_url}}"],
+							"path": ["api", "workflow", "bon-livraison", "{{bl_id}}", "history"]
+						},
+						"description": "Get complete workflow transition history for BL."
+					},
+					"response": []
+				},
+				{
+					"name": "Get All Pending BCs (ADV Queue)",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/api/workflow/orders/pending-review",
+							"host": ["{{base_url}}"],
+							"path": ["api", "workflow", "orders", "pending-review"]
+						},
+						"description": "Get all orders in 'adv_review' state. Useful for ADV dashboard."
+					},
+					"response": []
+				},
+				{
+					"name": "Get All BLs In Transit (Driver Dashboard)",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/api/workflow/bon-livraisons/in-transit",
+							"host": ["{{base_url}}"],
+							"path": ["api", "workflow", "bon-livraisons", "in-transit"]
+						},
+						"description": "Get all BLs in 'in_transit' state. Useful for driver dashboard."
+					},
+					"response": []
+				}
+			]
+		},
+		{
+			"name": "10. Error Scenarios & Edge Cases",
+			"item": [
+				{
+					"name": "Try Invalid Transition",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"action\": \"delivered\",\n    \"comment\": \"Trying to skip steps\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/api/workflow/order/{{order_id}}/transition",
+							"host": ["{{base_url}}"],
+							"path": ["api", "workflow", "order", "{{order_id}}", "transition"]
+						},
+						"description": "Try to transition to a state that's not allowed. Should return error."
+					},
+					"response": []
+				},
+				{
+					"name": "Try Transition Without Permission",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"action\": \"adv_approved\",\n    \"comment\": \"Partner trying to approve their own order\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/api/workflow/order/{{order_id}}/transition",
+							"host": ["{{base_url}}"],
+							"path": ["api", "workflow", "order", "{{order_id}}", "transition"]
+						},
+						"description": "Partner tries to approve order without ADV role. Should return permission error."
+					},
+					"response": []
+				},
+				{
+					"name": "Approve BC with Insufficient Stock",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"action\": \"adv_approved\",\n    \"comment\": \"Trying to approve without stock\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/api/workflow/order/{{order_id}}/transition",
+							"host": ["{{base_url}}"],
+							"path": ["api", "workflow", "order", "{{order_id}}", "transition"]
+						},
+						"description": "Try to approve BC when StockAvailabilityGuard fails. Should return guard error with details."
+					},
+					"response": []
+				},
+				{
+					"name": "Approve BC with Credit Limit Exceeded",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"action\": \"adv_approved\",\n    \"comment\": \"Trying to approve with credit exceeded\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/api/workflow/order/{{order_id}}/transition",
+							"host": ["{{base_url}}"],
+							"path": ["api", "workflow", "order", "{{order_id}}", "transition"]
+						},
+						"description": "Try to approve BC when CreditLimitGuard fails. Should return guard error with credit details."
+					},
+					"response": []
+				}
+			]
+		}
+	]
+}

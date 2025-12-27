@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useEffect, useState } from 'react';
 import { settingsApi } from '@/services/api/settingsApi';
 import { generateSagePalette } from '@/lib/theme-utils';
+import { useAuth } from './AuthContext';
 
 interface ThemeContextType {
     refreshTheme: () => Promise<void>;
@@ -11,6 +12,7 @@ const ThemeContext = createContext<ThemeContextType | undefined>(undefined);
 
 export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
     const [loading, setLoading] = useState(true);
+    const { isAuthenticated } = useAuth();
 
     const applyTheme = (primaryColor: string) => {
         const palette = generateSagePalette(primaryColor);
@@ -22,6 +24,11 @@ export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     };
 
     const refreshTheme = async () => {
+        if (!isAuthenticated) {
+            setLoading(false);
+            return;
+        }
+        
         try {
             const response = await settingsApi.getThemeSettings();
             if (response.success && response.data.primary_color) {
@@ -39,8 +46,10 @@ export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     };
 
     useEffect(() => {
-        refreshTheme();
-    }, []);
+        if (isAuthenticated) {
+            refreshTheme();
+        }
+    }, [isAuthenticated]);
 
     return (
         <ThemeContext.Provider value={{ refreshTheme, loading }}>

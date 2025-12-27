@@ -4,8 +4,11 @@ import toast from 'react-hot-toast';
 import { usePermissions } from '@/hooks/usePermissions';
 import { PERMISSIONS } from '@/lib/rbac/permissions';
 import { Can } from '@/components/rbac';
+import { useSearchParams } from 'react-router-dom';
+import { BCWorkflowActions } from '@/components/adv/BCWorkflowActions';
+import { WorkflowHistory } from '@/components/workflow/WorkflowHistory';
+import { useAdvWorkflow } from '@/hooks/adv/useAdvWorkflow';
 import {
-    Search,
     Calendar,
     User,
     Building,
@@ -22,7 +25,8 @@ import {
     Download,
     Share2,
     MapPin,
-    MoreVertical
+    History,
+    Info
 } from 'lucide-react';
 import { AgGridReact } from 'ag-grid-react';
 import { type ColDef, ModuleRegistry, ClientSideRowModelModule, ValidationModule } from 'ag-grid-community';
@@ -30,7 +34,6 @@ import { MasterLayout } from '@/components/layout/MasterLayout';
 import { SageTabs, type TabItem } from '@/components/common/SageTabs';
 import { DataGrid } from '@/components/common/DataGrid';
 import { SageCollapsible } from '@/components/common/SageCollapsible';
-import { ConfirmationModal } from '@/components/common/ConfirmationModal';
 import { cn } from '@/lib/utils';
 
 // Register Ag-Grid Modules
@@ -47,6 +50,13 @@ interface Partner {
     credit_hold: boolean;
     tax_number_ice: string;
     city: string | null;
+    payment_term?: {
+        id: number;
+        name: string;
+        code?: string;
+        days_number: number;
+        description?: string;
+    };
 }
 
 interface Product {
@@ -82,6 +92,7 @@ interface BC {
     total_amount: string;
     payment_status: string;
     order_status: string;
+    bc_status: string;
     is_urgent: boolean;
     is_overdue: boolean;
     items_count: number;
@@ -296,6 +307,16 @@ const AdvActionPanel = ({ onApprove, onReject, onHold, hasSelection }: AdvAction
 // --- Detail Components ---
 
 const OrderLinesContent = ({ lines }: { lines: OrderProduct[] }) => {
+    // Calculate totals and stock status
+    const totalItems = lines.reduce((sum, line) => sum + line.quantity, 0);
+    const totalValue = lines.reduce((sum, line) => sum + (line.quantity * parseFloat(line.price)), 0);
+    const outOfStockItems = lines.filter(line => {
+        const stocks = line.product.stocks || [];
+        const stock = stocks[0];
+        const availableQty = stock ? parseFloat(stock.available_quantity) : 0;
+        return availableQty < line.quantity;
+    }).length;
+
     const columnDefs: ColDef[] = [
         {
             headerName: 'Image',
@@ -347,62 +368,52 @@ const OrderLinesContent = ({ lines }: { lines: OrderProduct[] }) => {
             valueFormatter: (params: any) => `${params.value} ${params.data.unit}`
         },
         {
-            headerName: 'Stock',
-            width: 140,
+            field: 'price',
+            headerName: 'Prix Unit.',
+            width: 110,
+            cellRenderer: (params: any) => (
+                <div className="flex items-center justify-end h-full">
+                    <span className="text-sm font-semibold text-gray-700 dark:text-gray-300">{parseFloat(params.value).toLocaleString()} DH</span>
+                </div>
+            )
+        },
+        {
+            field: 'total_price',
+            headerName: 'Total Ligne',
+            width: 130,
             cellRenderer: (params: any) => {
-                const stock = params.data.product.stocks?.[0];
-                const available = stock ? parseFloat(stock.available_quantity) : (params.data.product.quantity || 0);
-                const reserved = stock ? parseFloat(stock.reserved_quantity) : 0;
-
+                const qty = params.data.quantity;
+                const price = parseFloat(params.data.price);
+                const total = qty * price;
                 return (
-                    <div className="flex flex-col justify-center h-full text-xs leading-tight">
-                        <div className="flex justify-between gap-2">
-                            <span className="text-gray-500">Dispo:</span>
-                            <span className={`font-medium ${available < params.data.quantity ? 'text-red-600' : 'text-emerald-600'}`}>
-                                {available}
-                            </span>
-                        </div>
-                        <div className="flex justify-between gap-2">
-                            <span className="text-gray-400">Réservé:</span>
-                            <span className="text-gray-600 dark:text-gray-400">{reserved}</span>
-                        </div>
+                    <div className="flex items-center justify-end h-full">
+                        <span className="text-sm font-black text-sage-700 dark:text-sage-400">{total.toLocaleString()} DH</span>
                     </div>
                 );
             }
         },
         {
-            headerName: 'Prix',
-            field: 'price',
-            width: 100,
-            cellClass: 'text-right',
-            valueFormatter: (params: any) => parseFloat(params.value).toLocaleString('fr-MA', { style: 'currency', currency: 'MAD' })
-        },
-        {
-            headerName: 'Total',
-            field: 'total_price',
-            width: 110,
-            cellClass: 'text-right font-bold text-sage-600',
-            valueFormatter: (params: any) => {
-                const val = params.value || (params.data.quantity * parseFloat(params.data.price)).toString();
-                return parseFloat(val).toLocaleString('fr-MA', { style: 'currency', currency: 'MAD' });
-            }
-        },
-        {
-            headerName: 'Statut',
-            width: 100,
+            headerName: 'Disponibilité',
+            width: 120,
             cellRenderer: (params: any) => {
-                const item = params.data;
-                const stock = item.product.stocks?.[0];
-                const available = stock ? parseFloat(stock.available_quantity) : (item.product.quantity || 0);
-                const isAvailable = available >= item.quantity;
+                const stocks = params.data.product.stocks || [];
+                const stock = stocks[0];
+                const availableQty = stock ? parseFloat(stock.available_quantity) : 0;
+                const requestedQty = params.data.quantity;
+                const isAvailable = availableQty >= requestedQty;
 
                 return (
                     <div className="flex items-center justify-center h-full">
-                        <span className={`inline-flex items-center px-2 py-0.5 rounded text-[10px] font-medium border ${isAvailable
-                            ? 'bg-emerald-50 text-emerald-700 border-emerald-100'
-                            : 'bg-red-50 text-red-700 border-red-100'
-                            }`}>
-                            {isAvailable ? 'Disponible' : 'Rupture'}
+                        <span className={`inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-semibold ${
+                            isAvailable
+                                ? 'bg-emerald-100 text-emerald-700'
+                                : 'bg-red-100 text-red-700'
+                        }`}>
+                            {isAvailable ? (
+                                <><CheckCircle className="w-3 h-3" /> EN STOCK</>
+                            ) : (
+                                <><XCircle className="w-3 h-3" /> RUPTURE</>
+                            )}
                         </span>
                     </div>
                 );
@@ -411,20 +422,23 @@ const OrderLinesContent = ({ lines }: { lines: OrderProduct[] }) => {
     ];
 
     return (
-        <div className="h-96 bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 overflow-hidden shadow-sm ag-theme-alpine dark:ag-theme-alpine-dark">
-            <AgGridReact
-                rowData={lines}
-                columnDefs={columnDefs}
-                defaultColDef={{
-                    sortable: true,
-                    filter: true,
-                    resizable: true,
-                }}
-                pagination={true}
-                paginationPageSize={10}
-                headerHeight={40}
-                rowHeight={40}
-            />
+        <div className="space-y-4">
+            {/* Data Grid */}
+            <div className="h-96 bg-white dark:bg-gray-800 rounded-xl border-2 border-gray-200 dark:border-gray-700 overflow-hidden shadow-lg ag-theme-alpine dark:ag-theme-alpine-dark">
+                <AgGridReact
+                    rowData={lines}
+                    columnDefs={columnDefs}
+                    defaultColDef={{
+                        sortable: true,
+                        filter: true,
+                        resizable: true,
+                    }}
+                    pagination={true}
+                    paginationPageSize={10}
+                    headerHeight={44}
+                    rowHeight={50}
+                />
+            </div>
         </div>
     );
 };
@@ -684,18 +698,131 @@ const StockAnalysisContent = ({ bc }: { bc: BC }) => {
     );
 };
 
-const BcDetailView = ({ bc }: { bc: BC }) => {
+const PaymentTermContent = ({ partner }: { partner: Partner }) => {
+    const paymentTerm = partner.payment_term;
+
+    return (
+        <div className="p-6">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                {/* Payment Term Card */}
+                <div className="bg-white dark:bg-gray-800 p-6 rounded-xl border border-gray-200 dark:border-gray-700 shadow-sm">
+                    <div className="flex items-center gap-3 mb-6 pb-4 border-b border-gray-100 dark:border-gray-700">
+                        <div className="p-2 bg-purple-50 dark:bg-purple-900/20 rounded-lg">
+                            <Clock className="w-5 h-5 text-purple-600 dark:text-purple-400" />
+                        </div>
+                        <h3 className="text-base font-semibold text-gray-900 dark:text-gray-100">Conditions de Paiement</h3>
+                    </div>
+
+                    {paymentTerm ? (
+                        <div className="space-y-4">
+                            <div className="p-4 bg-purple-50 dark:bg-purple-900/20 rounded-lg border border-purple-100 dark:border-purple-900/30">
+                                <div className="text-xs font-medium text-purple-600 dark:text-purple-400 uppercase tracking-wide mb-2">Terme Actuel</div>
+                                <div className="text-2xl font-bold text-purple-700 dark:text-purple-300">{paymentTerm.name}</div>
+                                {paymentTerm.code && (
+                                    <div className="text-xs text-purple-600 dark:text-purple-500 mt-1 font-mono">{paymentTerm.code}</div>
+                                )}
+                            </div>
+
+                            <div className="grid grid-cols-2 gap-4">
+                                <div className="p-4 bg-gray-50 dark:bg-gray-900 rounded-lg border border-gray-100 dark:border-gray-800">
+                                    <div className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-1">Nombre de Jours</div>
+                                    <div className="text-xl font-bold text-gray-900 dark:text-gray-100">{paymentTerm.days_number} jours</div>
+                                </div>
+                                <div className="p-4 bg-gray-50 dark:bg-gray-900 rounded-lg border border-gray-100 dark:border-gray-800">
+                                    <div className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-1">Type</div>
+                                    <div className="text-xl font-bold text-gray-900 dark:text-gray-100">
+                                        {paymentTerm.days_number === 0 ? 'Comptant' : 'Crédit'}
+                                    </div>
+                                </div>
+                            </div>
+
+                            {paymentTerm.description && (
+                                <div className="p-4 bg-blue-50 dark:bg-blue-900/20 rounded-lg border border-blue-100 dark:border-blue-900/30">
+                                    <div className="text-xs font-medium text-blue-600 dark:text-blue-400 uppercase tracking-wide mb-2">Description</div>
+                                    <div className="text-sm text-blue-700 dark:text-blue-300">{paymentTerm.description}</div>
+                                </div>
+                            )}
+                        </div>
+                    ) : (
+                        <div className="text-center py-8 text-gray-400">
+                            <Clock className="w-8 h-8 mx-auto mb-2 text-gray-300" />
+                            <p>Aucune condition de paiement définie</p>
+                        </div>
+                    )}
+                </div>
+
+                {/* Payment Information Card */}
+                <div className="bg-white dark:bg-gray-800 p-6 rounded-xl border border-gray-200 dark:border-gray-700 shadow-sm">
+                    <div className="flex items-center gap-3 mb-6 pb-4 border-b border-gray-100 dark:border-gray-700">
+                        <div className="p-2 bg-blue-50 dark:bg-blue-900/20 rounded-lg">
+                            <CreditCard className="w-5 h-5 text-blue-600 dark:text-blue-400" />
+                        </div>
+                        <h3 className="text-base font-semibold text-gray-900 dark:text-gray-100">Informations Paiement</h3>
+                    </div>
+
+                    <div className="space-y-4">
+                        <div className="p-4 bg-gray-50 dark:bg-gray-900 rounded-lg border border-gray-100 dark:border-gray-800">
+                            <div className="flex items-center justify-between mb-2">
+                                <span className="text-xs font-medium text-gray-500 uppercase tracking-wide">Plafond de Crédit</span>
+                                <span className="text-lg font-bold text-gray-900 dark:text-gray-100">
+                                    {parseFloat(partner.credit_limit).toLocaleString()} DH
+                                </span>
+                            </div>
+                        </div>
+
+                        <div className="p-4 bg-gray-50 dark:bg-gray-900 rounded-lg border border-gray-100 dark:border-gray-800">
+                            <div className="flex items-center justify-between mb-2">
+                                <span className="text-xs font-medium text-gray-500 uppercase tracking-wide">Crédit Utilisé</span>
+                                <span className="text-lg font-bold text-amber-600 dark:text-amber-400">
+                                    {parseFloat(partner.credit_used).toLocaleString()} DH
+                                </span>
+                            </div>
+                        </div>
+
+                        <div className="p-4 bg-emerald-50 dark:bg-emerald-900/20 rounded-lg border border-emerald-100 dark:border-emerald-900/30">
+                            <div className="flex items-center justify-between mb-2">
+                                <span className="text-xs font-medium text-emerald-600 dark:text-emerald-400 uppercase tracking-wide">Crédit Disponible</span>
+                                <span className="text-lg font-bold text-emerald-700 dark:text-emerald-300">
+                                    {parseFloat(partner.credit_available).toLocaleString()} DH
+                                </span>
+                            </div>
+                        </div>
+
+                        {partner.credit_hold && (
+                            <div className="p-4 bg-red-50 dark:bg-red-900/20 rounded-lg border border-red-100 dark:border-red-900/30">
+                                <div className="flex items-center gap-2">
+                                    <AlertTriangle className="w-5 h-5 text-red-600 dark:text-red-400" />
+                                    <span className="text-sm font-semibold text-red-700 dark:text-red-300">Crédit Bloqué</span>
+                                </div>
+                            </div>
+                        )}
+                    </div>
+                </div>
+            </div>
+        </div>
+    );
+};
+
+const BcDetailView = ({ bc, onRefresh }: { bc: BC; onRefresh: () => void }) => {
+    const { workflowHistory, isLoadingHistory } = useAdvWorkflow(bc.id);
+    
     const tabs: TabItem[] = [
+        { id: 'info', label: 'Informations', icon: Info },
         { id: 'lines', label: 'Lignes de Commande', icon: FileText },
         { id: 'client', label: 'Info Client & Crédit', icon: User },
         { id: 'stock', label: 'Analyse Stock', icon: Package },
+        { id: 'payment', label: 'Conditions de Paiement', icon: CreditCard },
+        { id: 'history', label: 'Historique Workflow', icon: History },
     ];
 
-    const [activeTab, setActiveTab] = useState('lines');
+    const [activeTab, setActiveTab] = useState('info');
     const [openSections, setOpenSections] = useState<Record<string, boolean>>({
+        info: true,
         lines: true,
         client: true,
-        stock: true
+        stock: true,
+        payment: true,
+        history: true
     });
 
     const sectionRefs = useRef<Record<string, HTMLDivElement | null>>({});
@@ -772,35 +899,24 @@ const BcDetailView = ({ bc }: { bc: BC }) => {
 
     return (
         <div className="flex flex-col h-full bg-slate-50 dark:bg-black/20 overflow-hidden">
-            {/* Header Sticky */}
-            <div className="bg-white dark:bg-gray-900 border-b border-gray-200 dark:border-gray-800 p-6 sticky top-0 z-20">
-                <div className="flex justify-between items-start">
-                    <div>
-                        <h1 className="text-2xl font-bold text-gray-900 dark:text-white mb-1">
-                            {bc.bc_number} <span className="text-gray-400 font-normal text-lg">/ {bc.order_code}</span>
+            {/* Compact Header */}
+            <div className="bg-gradient-to-br from-white to-gray-50 dark:from-gray-900 dark:to-gray-800 border-b-2 border-sage-200 dark:border-sage-800 sticky top-0 z-20 shadow-sm">
+                <div className="px-6 py-3 flex justify-between items-center">
+                    <div className="flex items-center gap-3">
+                        <h1 className="text-2xl font-black text-gray-900 dark:text-white">
+                            {bc.bc_number}
                         </h1>
-                        <div className="flex items-center gap-4 text-sm text-gray-500">
-                            <span className="flex items-center gap-1"><Calendar className="w-4 h-4" /> {new Date(bc.created_at).toLocaleString()}</span>
-                            <span className="flex items-center gap-1"><Building className="w-4 h-4" /> {bc.partner.name}</span>
-                        </div>
+                        <span className="text-sm text-gray-400 font-medium">#{bc.order_code}</span>
+                        {bc.is_urgent && (
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-red-500 text-white text-xs font-bold rounded-full animate-pulse">
+                                <AlertTriangle className="w-3 h-3" /> URGENT
+                            </span>
+                        )}
                     </div>
                     <div className="text-right">
-                        <div className="text-3xl font-bold text-sage-600 dark:text-sage-400">
-                            {parseFloat(bc.total_amount).toLocaleString()} <span className="text-sm font-normal text-gray-400">Dh TTC</span>
-                        </div>
-                        <div className="mt-2 flex justify-end gap-2 items-center">
-                            {bc.is_urgent && <span className="text-xs font-bold text-red-600 bg-red-100 px-2 py-0.5 rounded">URGENT</span>}
-
-                            {/* Contrôles Rapides Badges */}
-                            {bc.partner.credit_hold ? (
-                                <span className="text-xs font-bold text-red-600 bg-red-100 px-2 py-0.5 rounded flex items-center gap-1">
-                                    <AlertTriangle className="w-3 h-3" /> CRÉDIT BLOQUÉ
-                                </span>
-                            ) : (
-                                <span className="text-xs font-bold text-emerald-600 bg-emerald-100 px-2 py-0.5 rounded flex items-center gap-1">
-                                    <CheckCircle className="w-3 h-3" /> CRÉDIT OK
-                                </span>
-                            )}
+                        <div className="text-3xl font-black text-sage-600 dark:text-sage-400">
+                            {parseFloat(bc.total_amount).toLocaleString()}
+                            <span className="text-sm font-normal text-gray-500 ml-1">DH</span>
                         </div>
                     </div>
                 </div>
@@ -820,6 +936,62 @@ const BcDetailView = ({ bc }: { bc: BC }) => {
 
             {/* Content Area */}
             <div ref={containerRef} className="flex-1 overflow-y-auto p-6 space-y-4 scroll-smooth">
+
+                <div ref={el => { sectionRefs.current['info'] = el; }}>
+                    <SageCollapsible
+                        title="Informations Commande"
+                        isOpen={openSections['info']}
+                        onOpenChange={(open) => toggleSection('info', open)}
+                    >
+                        <div className="p-6 space-y-6">
+                            {/* Order Details */}
+                            <div className="grid grid-cols-2 gap-6">
+                                <div className="space-y-4">
+                                    <div>
+                                        <label className="text-xs font-medium text-gray-500 uppercase tracking-wide">Date de Création</label>
+                                        <div className="flex items-center gap-2 mt-1">
+                                            <Calendar className="w-4 h-4 text-gray-400" />
+                                            <span className="text-sm font-medium text-gray-900 dark:text-white">
+                                                {new Date(bc.created_at).toLocaleDateString('fr-FR', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                                            </span>
+                                        </div>
+                                    </div>
+                                    <div>
+                                        <label className="text-xs font-medium text-gray-500 uppercase tracking-wide">Client</label>
+                                        <div className="flex items-center gap-2 mt-1">
+                                            <Building className="w-4 h-4 text-gray-400" />
+                                            <span className="text-sm font-semibold text-gray-900 dark:text-white">{bc.partner.name}</span>
+                                            <span className="text-xs bg-gray-200 dark:bg-gray-700 px-2 py-0.5 rounded font-mono">{bc.partner.code}</span>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div className="space-y-4">
+                                    <div>
+                                        <label className="text-xs font-medium text-gray-500 uppercase tracking-wide">Montant Total</label>
+                                        <div className="text-2xl font-black text-sage-600 dark:text-sage-400 mt-1">
+                                            {parseFloat(bc.total_amount).toLocaleString()} DH
+                                        </div>
+                                    </div>
+                                    <div>
+                                        <label className="text-xs font-medium text-gray-500 uppercase tracking-wide">Nombre d'Articles</label>
+                                        <div className="text-lg font-bold text-gray-900 dark:text-white mt-1">
+                                            {bc.items_count} articles
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            {/* Workflow Actions */}
+                            <div className="border-t border-gray-200 dark:border-gray-700 pt-6">
+                                <h3 className="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-4">Actions Workflow</h3>
+                                <BCWorkflowActions 
+                                    orderId={bc.id} 
+                                    onSuccess={onRefresh}
+                                />
+                            </div>
+                        </div>
+                    </SageCollapsible>
+                </div>
 
                 <div ref={el => { sectionRefs.current['lines'] = el; }}>
                     <SageCollapsible
@@ -850,6 +1022,31 @@ const BcDetailView = ({ bc }: { bc: BC }) => {
                         <StockAnalysisContent bc={bc} />
                     </SageCollapsible>
                 </div>
+
+                <div ref={el => { sectionRefs.current['payment'] = el; }}>
+                    <SageCollapsible
+                        title="Conditions de Paiement"
+                        isOpen={openSections['payment']}
+                        onOpenChange={(open) => toggleSection('payment', open)}
+                    >
+                        <PaymentTermContent partner={bc.partner} />
+                    </SageCollapsible>
+                </div>
+
+                <div ref={el => { sectionRefs.current['history'] = el; }}>
+                    <SageCollapsible
+                        title="Historique Workflow"
+                        isOpen={openSections['history']}
+                        onOpenChange={(open) => toggleSection('history', open)}
+                    >
+                        <div className="p-6">
+                            <WorkflowHistory 
+                                history={workflowHistory} 
+                                isLoading={isLoadingHistory}
+                            />
+                        </div>
+                    </SageCollapsible>
+                </div>
             </div>
         </div>
     );
@@ -857,6 +1054,7 @@ const BcDetailView = ({ bc }: { bc: BC }) => {
 
 export const AdvValidationPage = () => {
     const { has } = usePermissions();
+    const [searchParams] = useSearchParams();
     const [bcs, setBcs] = useState<BC[]>([]);
     const [selectedBcId, setSelectedBcId] = useState<number | null>(null);
     const [selectedBcDetails, setSelectedBcDetails] = useState<BC | null>(null);
@@ -1060,8 +1258,15 @@ export const AdvValidationPage = () => {
             const response = await apiClient.get<ApiResponse>('/api/backend/adv/bc');
             if (response.data?.bcs?.data) {
                 setBcs(response.data.bcs.data);
-                // Optionally select the first one if none selected, but we need to fetch details for it
-                if (response.data.bcs.data.length > 0 && !selectedBcId) {
+                
+                // Check if bcId is in URL query params
+                const bcIdParam = searchParams.get('bcId');
+                if (bcIdParam) {
+                    const bcId = parseInt(bcIdParam);
+                    setSelectedBcId(bcId);
+                    fetchBcDetails(String(bcId));
+                } else if (response.data.bcs.data.length > 0 && !selectedBcId) {
+                    // Optionally select the first one if none selected
                     const firstId = response.data.bcs.data[0].id;
                     setSelectedBcId(firstId);
                     fetchBcDetails(String(firstId));
@@ -1138,6 +1343,14 @@ export const AdvValidationPage = () => {
                         setSelectedBcId(data.id);
                         fetchBcDetails(String(data.id));
                     }}
+                    onRowDoubleClicked={(data) => {
+                        document.body.style.cursor = 'wait';
+                        setSelectedBcId(data.id);
+                        fetchBcDetails(String(data.id));
+                        setTimeout(() => {
+                            document.body.style.cursor = 'default';
+                        }, 500);
+                    }}
                 />
             </div>
         </div>
@@ -1155,120 +1368,37 @@ export const AdvValidationPage = () => {
                                 <p>Chargement du détail...</p>
                             </div>
                         ) : selectedBcDetails ? (
-                            <BcDetailView bc={selectedBcDetails} />
+                            <BcDetailView 
+                                bc={selectedBcDetails} 
+                                onRefresh={() => {
+                                    fetchData();
+                                    if (selectedBcId) fetchBcDetails(String(selectedBcId));
+                                }}
+                            />
                         ) : (
                             <div className="h-full flex items-center justify-center text-gray-400">Sélectionnez une commande à traiter</div>
                         )}
                     </div>
                 }
                 rightContent={
-                    <AdvActionPanel
-                        onApprove={() => handleAction('approve')}
-                        onReject={() => handleAction('reject')}
-                        onHold={() => handleAction('hold')}
-                        hasSelection={!!selectedBcId}
-                    />
+                    <div className="flex flex-col h-full bg-white dark:bg-black border-l border-gray-200 dark:border-gray-800 w-11 shrink-0 shadow-[0_0_15px_rgba(0,0,0,0.05)] z-40">
+                        <ActionGroup>
+                            <div className="w-full flex justify-center mb-1">
+                                <div className="w-6 h-0.5 bg-sage-500 rounded-full opacity-50"></div>
+                            </div>
+                            <ActionItem icon={Printer} label="Imprimer" variant="default" disabled={!selectedBcId} />
+                            <Can permission={PERMISSIONS.ADV.BC_EXPORT}>
+                                <ActionItem icon={Download} label="Exporter PDF" variant="default" disabled={!selectedBcId} />
+                            </Can>
+                            <ActionItem icon={Share2} label="Partager" variant="primary" disabled={!selectedBcId} />
+                        </ActionGroup>
+                        <div className="mt-auto pb-4">
+                            <ActionGroup>
+                                <ActionItem icon={Settings} label="Paramètres" variant="default" />
+                            </ActionGroup>
+                        </div>
+                    </div>
                 }
-            />
-            <ConfirmationModal
-                isOpen={modalConfig.isOpen}
-                onClose={() => setModalConfig(prev => ({ ...prev, isOpen: false }))}
-                onConfirm={confirmAction}
-                title={modalConfig.title}
-                description={modalConfig.description}
-                variant={modalConfig.variant}
-                confirmText={modalConfig.type === 'approve' ? 'Valider' : modalConfig.type === 'reject' ? 'Rejeter' : 'Confirmer'}
-                isLoading={isActionLoading}
-            >
-                {modalConfig.type === 'approve' && (
-                    <div className="space-y-4">
-                        <div>
-                            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Mode de Validation</label>
-                            <select
-                                value={approvalMode}
-                                onChange={(e) => setApprovalMode(e.target.value as any)}
-                                className="w-full rounded-md border-gray-300 shadow-sm focus:border-sage-500 focus:ring-sage-500 dark:bg-gray-700 dark:border-gray-600 sm:text-sm p-2"
-                            >
-                                <option value="standard">Standard (Auto-ajustement)</option>
-                                <option value="manual">Manuel (Quantités personnalisées)</option>
-                                <option value="forced">Forcé (Bloqué au magasin)</option>
-                            </select>
-                        </div>
-
-                        {approvalMode === 'standard' && (
-                            <div className="flex items-center">
-                                <input
-                                    id="auto-adjust"
-                                    type="checkbox"
-                                    checked={autoAdjustStock}
-                                    onChange={(e) => setAutoAdjustStock(e.target.checked)}
-                                    className="h-4 w-4 text-sage-600 focus:ring-sage-500 border-gray-300 rounded"
-                                />
-                                <label htmlFor="auto-adjust" className="ml-2 block text-sm text-gray-900 dark:text-gray-300">
-                                    Ajuster automatiquement les quantités au stock disponible
-                                </label>
-                            </div>
-                        )}
-
-                        {approvalMode === 'manual' && selectedBcDetails?.order_products && (
-                            <div className="max-h-60 overflow-y-auto border border-gray-200 rounded-md p-2">
-                                {selectedBcDetails.order_products.map(line => (
-                                    <div key={line.product_id} className="flex items-center justify-between py-2 border-b last:border-0">
-                                        <span className="text-sm truncate w-1/2" title={line.product.name}>{line.product.name}</span>
-                                        <input
-                                            type="number"
-                                            value={quantities[line.product_id] ?? line.quantity}
-                                            onChange={(e) => setQuantities(prev => ({ ...prev, [line.product_id]: parseFloat(e.target.value) }))}
-                                            className="w-20 rounded-md border-gray-300 shadow-sm focus:border-sage-500 focus:ring-sage-500 sm:text-sm p-1"
-                                        />
-                                    </div>
-                                ))}
-                            </div>
-                        )}
-
-                        {approvalMode === 'forced' && (
-                            <div className="p-3 bg-amber-50 text-amber-800 text-sm rounded-md border border-amber-200">
-                                <div className="flex gap-2">
-                                    <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
-                                    <span>Attention: Cette commande sera envoyée au dépôt mais bloquée pour vérification magasinier.</span>
-                                </div>
-                            </div>
-                        )}
-
-                        <div>
-                            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Commentaire (Optionnel)</label>
-                            <textarea
-                                value={comment}
-                                onChange={(e) => setComment(e.target.value)}
-                                rows={3}
-                                className="w-full rounded-md border-gray-300 shadow-sm focus:border-sage-500 focus:ring-sage-500 dark:bg-gray-700 dark:border-gray-600 sm:text-sm p-2"
-                            />
-                        </div>
-                    </div>
-                )}
-
-                {(modalConfig.type === 'reject' || modalConfig.type === 'hold') && (
-                    <div>
-                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                            Motif {modalConfig.type === 'reject' ? 'du rejet' : 'de la mise en attente'} <span className="text-red-500">*</span>
-                        </label>
-                        <textarea
-                            value={reason}
-                            onChange={(e) => setReason(e.target.value)}
-                            rows={3}
-                            className="w-full rounded-md border-gray-300 shadow-sm focus:border-sage-500 focus:ring-sage-500 dark:bg-gray-700 dark:border-gray-600 sm:text-sm p-2"
-                            placeholder="Veuillez indiquer la raison..."
-                        />
-                    </div>
-                )}
-            </ConfirmationModal>
-
-            <DerogationModal
-                isOpen={showDerogationModal}
-                onClose={() => setShowDerogationModal(false)}
-                onSubmit={handleDerogationSubmit}
-                responsables={responsables}
-                isLoading={isActionLoading}
             />
         </>
     );

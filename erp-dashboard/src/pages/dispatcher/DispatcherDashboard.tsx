@@ -1,6 +1,7 @@
 import { Loader2 } from 'lucide-react';
 import { MasterLayout } from '@/components/layout/MasterLayout';
 import { useDispatcherDashboard } from '@/hooks/dispatcher/useDispatcherDashboard';
+import { TaskWidget } from '@/components/tasks';
 
 const DispatcherDashboardContent = () => {
     const { data, loading, error, refetch } = useDispatcherDashboard();
@@ -41,6 +42,22 @@ const DispatcherDashboardContent = () => {
                 >
                     Rafraîchir
                 </button>
+            </div>
+
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                {/* Task Workflow Widgets */}
+                <TaskWidget
+                    workflowType="bc"
+                    title="Tâches BC → BL"
+                    maxTasks={4}
+                    showViewAll={true}
+                />
+                <TaskWidget
+                    workflowType="bch"
+                    title="Tâches BCH"
+                    maxTasks={4}
+                    showViewAll={true}
+                />
             </div>
 
             <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-6">

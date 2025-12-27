@@ -532,13 +532,29 @@ Content-Type: application/json
 
 #### 10. List Product Families
 ```http
-GET /api/backend/product-families
+GET /api/backend/promotions/product-families
 Authorization: Bearer {token}
+```
+
+**Response:**
+```json
+{
+  "success": true,
+  "data": [
+    {
+      "id": 1,
+      "code": "ELECTRONICS",
+      "name": "Electronics Products",
+      "description": "All electronic devices",
+      "products_count": 15
+    }
+  ]
+}
 ```
 
 #### 11. Create Product Family
 ```http
-POST /api/backend/product-families
+POST /api/backend/promotions/product-families
 Authorization: Bearer {token}
 Content-Type: application/json
 ```
@@ -553,15 +569,61 @@ Content-Type: application/json
 }
 ```
 
-#### 12. List Partner Families
+**Response:**
+```json
+{
+  "success": true,
+  "message": "Product family created successfully",
+  "data": {...}
+}
+```
+
+#### 12. Get Product Family Details
 ```http
-GET /api/backend/partner-families
+GET /api/backend/promotions/product-families/{id}
 Authorization: Bearer {token}
 ```
 
-#### 13. Create Partner Family
+#### 13. Update Product Family
 ```http
-POST /api/backend/partner-families
+PUT /api/backend/promotions/product-families/{id}
+Authorization: Bearer {token}
+Content-Type: application/json
+```
+
+#### 14. Delete Product Family
+```http
+DELETE /api/backend/promotions/product-families/{id}
+Authorization: Bearer {token}
+```
+
+---
+
+#### 15. List Partner Families
+```http
+GET /api/backend/promotions/partner-families
+Authorization: Bearer {token}
+```
+
+**Response:**
+```json
+{
+  "success": true,
+  "data": [
+    {
+      "id": 1,
+      "code": "PREMIUM",
+      "name": "Premium Customers",
+      "partner_condition": "credit_limit > 50000",
+      "partners_count": 25
+    }
+  ]
+}
+```
+
+#### 16. Create Partner Family
+```http
+POST /api/backend/promotions/partner-families
 Authorization: Bearer {token}
 Content-Type: application/json
 ```
@@ -574,6 +636,125 @@ Content-Type: application/json
   "partner_condition": "credit_limit > 50000",
   "partners": ["PARTNER001", "PARTNER002"]
 }
+```
+
+**Response:**
+```json
+{
+  "success": true,
+  "message": "Partner family created successfully",
+  "data": {...}
+}
+```
+
+#### 17. Get Partner Family Details
+```http
+GET /api/backend/promotions/partner-families/{id}
+Authorization: Bearer {token}
+```
+
+#### 18. Update Partner Family
+```http
+PUT /api/backend/promotions/partner-families/{id}
+Authorization: Bearer {token}
+Content-Type: application/json
+```
+
+#### 19. Delete Partner Family
+```http
+DELETE /api/backend/promotions/partner-families/{id}
+Authorization: Bearer {token}
+```
+
+---
+
+### Boosts Management (Product Family × Partner Family)
+
+#### 20. List Boosts
+```http
+GET /api/backend/promotions/boosts
+Authorization: Bearer {token}
+```
+
+**Description:** Manage promotional boosts that link product families with partner families for targeted promotions.
+
+**Response:**
+```json
+{
+  "success": true,
+  "data": [
+    {
+      "id": 1,
+      "product_family_code": "ELECTRONICS",
+      "partner_family_code": "PREMIUM",
+      "boost_percentage": 10,
+      "is_active": true
+    }
+  ]
+}
+```
+
+#### 21. Create Boost
+```http
+POST /api/backend/promotions/boosts
+Authorization: Bearer {token}
+Content-Type: application/json
+```
+
+**Request Body:**
+```json
+{
+  "product_family_code": "ELECTRONICS",
+  "partner_family_code": "PREMIUM",
+  "boost_percentage": 10,
+  "is_active": true
+}
+```
+
+#### 22. Bulk Sync Boosts
+```http
+POST /api/backend/promotions/boosts/bulk-sync
+Authorization: Bearer {token}
+Content-Type: application/json
+```
+
+**Description:** Synchronize multiple boosts at once.
+
+**Request Body:**
+```json
+{
+  "boosts": [
+    {
+      "product_family_code": "ELECTRONICS",
+      "partner_family_code": "PREMIUM",
+      "boost_percentage": 10
+    },
+    {
+      "product_family_code": "FOOD",
+      "partner_family_code": "WHOLESALE",
+      "boost_percentage": 5
+    }
+  ]
+}
+```
+
+#### 23. Get Boost Details
+```http
+GET /api/backend/promotions/boosts/{id}
+Authorization: Bearer {token}
+```
+
+#### 24. Update Boost
+```http
+PUT /api/backend/promotions/boosts/{id}
+Authorization: Bearer {token}
+Content-Type: application/json
+```
+
+#### 25. Delete Boost
+```http
+DELETE /api/backend/promotions/boosts/{id}
+Authorization: Bearer {token}
 ```
 
 ---

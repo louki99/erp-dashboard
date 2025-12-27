@@ -3,6 +3,7 @@ import { Package, Clock, CheckCircle2, AlertTriangle, TrendingUp, FileText } fro
 import { useNavigate } from 'react-router-dom';
 import { magasinierApi } from '@/services/api/magasinierApi';
 import type { DashboardStats } from '@/types/magasinier.types';
+import { TaskWidget } from '@/components/tasks';
 
 export const MagasinierDashboard = () => {
     const navigate = useNavigate();
@@ -106,6 +107,16 @@ export const MagasinierDashboard = () => {
                         </div>
                     );
                 })}
+            </div>
+
+            {/* Task Workflow Widget */}
+            <div className="mb-6">
+                <TaskWidget
+                    workflowType="bp"
+                    title="Mes tâches de préparation"
+                    maxTasks={5}
+                    showViewAll={true}
+                />
             </div>
 
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">

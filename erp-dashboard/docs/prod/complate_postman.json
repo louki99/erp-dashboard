@@ -1,0 +1,571 @@
+{
+	"additions": {
+		"description": "Add these endpoints to the existing BC_Workflow_Complete_Testing.postman_collection.json",
+		"new_folders": [
+			{
+				"folder_name": "1. BC Creation (Partner)",
+				"add_after": "Place Order (Create BC)",
+				"new_requests": [
+					{
+						"name": "Get Partner Products",
+						"event": [
+							{
+								"listen": "test",
+								"script": {
+									"exec": [
+										"pm.test('Products retrieved', function() {",
+										"    pm.response.to.have.status(200);",
+										"    var jsonData = pm.response.json();",
+										"    pm.expect(jsonData.data).to.be.an('array');",
+										"    if (jsonData.data.length > 0) {",
+										"        pm.collectionVariables.set('product_id', jsonData.data[0].id);",
+										"        console.log('Product ID saved: ' + jsonData.data[0].id);",
+										"    }",
+										"});"
+									],
+									"type": "text/javascript"
+								}
+							}
+						],
+						"request": {
+							"method": "GET",
+							"header": [],
+							"url": {
+								"raw": "{{base_url}}/backend/products?per_page=10",
+								"host": ["{{base_url}}"],
+								"path": ["backend", "products"],
+								"query": [
+									{
+										"key": "per_page",
+										"value": "10"
+									}
+								]
+							},
+							"description": "Get products list for creating orders"
+						}
+					},
+					{
+						"name": "Get BC Details",
+						"event": [
+							{
+								"listen": "test",
+								"script": {
+									"exec": [
+										"pm.test('BC details retrieved', function() {",
+										"    pm.response.to.have.status(200);",
+										"    var jsonData = pm.response.json();",
+										"    pm.expect(jsonData).to.have.property('id');",
+										"    pm.expect(jsonData).to.have.property('bc_number');",
+										"    pm.expect(jsonData.orderProducts).to.be.an('array');",
+										"});"
+									],
+									"type": "text/javascript"
+								}
+							}
+						],
+						"request": {
+							"method": "GET",
+							"header": [],
+							"url": {
+								"raw": "{{base_url}}/backend/orders/{{order_id}}",
+								"host": ["{{base_url}}"],
+								"path": ["backend", "orders", "{{order_id}}"]
+							},
+							"description": "Get BC details with products and partner info"
+						}
+					}
+				]
+			},
+			{
+				"folder_name": "2. BC Review & Approval (ADV)",
+				"add_after": "Send BC to ADV Review",
+				"new_requests": [
+					{
+						"name": "ADV Dashboard Stats",
+						"event": [
+							{
+								"listen": "test",
+								"script": {
+									"exec": [
+										"pm.test('Dashboard stats retrieved', function() {",
+										"    pm.response.to.have.status(200);",
+										"    var jsonData = pm.response.json();",
+										"    pm.expect(jsonData).to.have.property('pending_bc');",
+										"    pm.expect(jsonData).to.have.property('approved_today');",
+										"    console.log('Pending BCs: ' + jsonData.pending_bc);",
+										"});"
+									],
+									"type": "text/javascript"
+								}
+							}
+						],
+						"request": {
+							"method": "GET",
+							"header": [],
+							"url": {
+								"raw": "{{base_url}}/backend/adv/dashboard",
+								"host": ["{{base_url}}"],
+								"path": ["backend", "adv", "dashboard"]
+							},
+							"description": "Get ADV dashboard statistics"
+						}
+					},
+					{
+						"name": "Get Pending BCs for Review",
+						"event": [
+							{
+								"listen": "test",
+								"script": {
+									"exec": [
+										"pm.test('Pending BCs retrieved', function() {",
+										"    pm.response.to.have.status(200);",
+										"    var jsonData = pm.response.json();",
+										"    pm.expect(jsonData.success).to.be.true;",
+										"    pm.expect(jsonData.data).to.be.an('object');",
+										"});"
+									],
+									"type": "text/javascript"
+								}
+							}
+						],
+						"request": {
+							"method": "GET",
+							"header": [],
+							"url": {
+								"raw": "{{base_url}}/api/workflow/orders/pending-review",
+								"host": ["{{base_url}}"],
+								"path": ["api", "workflow", "orders", "pending-review"]
+							},
+							"description": "Get all orders in adv_review state"
+						}
+					}
+				]
+			},
+			{
+				"folder_name": "4. BL Creation & Grouping (Dispatcher)",
+				"add_after": "Convert BC to BL",
+				"new_requests": [
+					{
+						"name": "Dispatcher Dashboard",
+						"event": [
+							{
+								"listen": "test",
+								"script": {
+									"exec": [
+										"pm.test('Dashboard stats retrieved', function() {",
+										"    pm.response.to.have.status(200);",
+										"    var jsonData = pm.response.json();",
+										"    pm.expect(jsonData).to.have.property('pending_orders');",
+										"    console.log('Pending orders: ' + jsonData.pending_orders);",
+										"});"
+									],
+									"type": "text/javascript"
+								}
+							}
+						],
+						"request": {
+							"method": "GET",
+							"header": [],
+							"url": {
+								"raw": "{{base_url}}/backend/dispatcher/dashboard",
+								"host": ["{{base_url}}"],
+								"path": ["backend", "dispatcher", "dashboard"]
+							},
+							"description": "Get dispatcher dashboard statistics"
+						}
+					},
+					{
+						"name": "Get Draft BLs",
+						"event": [
+							{
+								"listen": "test",
+								"script": {
+									"exec": [
+										"pm.test('Draft BLs retrieved', function() {",
+										"    pm.response.to.have.status(200);",
+										"    var jsonData = pm.response.json();",
+										"    pm.expect(jsonData).to.be.an('object');",
+										"});"
+									],
+									"type": "text/javascript"
+								}
+							}
+						],
+						"request": {
+							"method": "GET",
+							"header": [],
+							"url": {
+								"raw": "{{base_url}}/backend/dispatcher/bon-livraisons/draft",
+								"host": ["{{base_url}}"],
+								"path": ["backend", "dispatcher", "bon-livraisons", "draft"]
+							},
+							"description": "Get all draft BLs for grouping"
+						}
+					},
+					{
+						"name": "Get BL Details",
+						"event": [
+							{
+								"listen": "test",
+								"script": {
+									"exec": [
+										"pm.test('BL details retrieved', function() {",
+										"    pm.response.to.have.status(200);",
+										"    var jsonData = pm.response.json();",
+										"    pm.expect(jsonData).to.have.property('bl_number');",
+										"    pm.expect(jsonData.items).to.be.an('array');",
+										"});"
+									],
+									"type": "text/javascript"
+								}
+							}
+						],
+						"request": {
+							"method": "GET",
+							"header": [],
+							"url": {
+								"raw": "{{base_url}}/backend/dispatcher/bon-livraisons/{{bl_id}}",
+								"host": ["{{base_url}}"],
+								"path": ["backend", "dispatcher", "bon-livraisons", "{{bl_id}}"]
+							},
+							"description": "Get BL details with items and partner"
+						}
+					}
+				]
+			},
+			{
+				"folder_name": "5. BCH Workflow",
+				"add_after": "Check BCH Workflow Status",
+				"new_requests": [
+					{
+						"name": "Get BCH Details",
+						"event": [
+							{
+								"listen": "test",
+								"script": {
+									"exec": [
+										"pm.test('BCH details retrieved', function() {",
+										"    pm.response.to.have.status(200);",
+										"    var jsonData = pm.response.json();",
+										"    pm.expect(jsonData).to.have.property('bch_number');",
+										"    pm.expect(jsonData.bonLivraisons).to.be.an('array');",
+										"});"
+									],
+									"type": "text/javascript"
+								}
+							}
+						],
+						"request": {
+							"method": "GET",
+							"header": [],
+							"url": {
+								"raw": "{{base_url}}/backend/dispatcher/bon-chargements/{{bch_id}}",
+								"host": ["{{base_url}}"],
+								"path": ["backend", "dispatcher", "bon-chargements", "{{bch_id}}"]
+							},
+							"description": "Get BCH details with BLs and BP"
+						}
+					}
+				]
+			},
+			{
+				"folder_name": "5. BCH Workflow",
+				"update_request": "Send BCH to Warehouse",
+				"add_test_script": {
+					"exec": [
+						"pm.test('BCH sent to warehouse', function() {",
+						"    pm.response.to.have.status(200);",
+						"    var jsonData = pm.response.json();",
+						"    pm.expect(jsonData.success).to.be.true;",
+						"    pm.expect(jsonData.current_state).to.equal('in_preparation');",
+						"});",
+						"",
+						"pm.test('BP info in metadata', function() {",
+						"    var jsonData = pm.response.json();",
+						"    if (jsonData.metadata && jsonData.metadata.bp_info) {",
+						"        pm.expect(jsonData.metadata.bp_info.exists).to.be.true;",
+						"        pm.expect(jsonData.metadata.bp_info.bp.id).to.be.a('number');",
+						"        pm.collectionVariables.set('bp_id', jsonData.metadata.bp_info.bp.id);",
+						"        console.log('BP ID saved: ' + jsonData.metadata.bp_info.bp.id);",
+						"    }",
+						"});"
+					]
+				}
+			},
+			{
+				"folder_name": "6. BP Preparation (Magasinier)",
+				"add_after": "Check BP Workflow Status",
+				"new_requests": [
+					{
+						"name": "Magasinier Dashboard",
+						"event": [
+							{
+								"listen": "test",
+								"script": {
+									"exec": [
+										"pm.test('Dashboard stats retrieved', function() {",
+										"    pm.response.to.have.status(200);",
+										"    var jsonData = pm.response.json();",
+										"    pm.expect(jsonData).to.have.property('pendingPreparations');",
+										"    console.log('Pending preparations: ' + jsonData.pendingPreparations);",
+										"});"
+									],
+									"type": "text/javascript"
+								}
+							}
+						],
+						"request": {
+							"method": "GET",
+							"header": [],
+							"url": {
+								"raw": "{{base_url}}/backend/magasinier/dashboard",
+								"host": ["{{base_url}}"],
+								"path": ["backend", "magasinier", "dashboard"]
+							},
+							"description": "Get magasinier dashboard statistics"
+						}
+					},
+					{
+						"name": "Get Pending Preparations",
+						"event": [
+							{
+								"listen": "test",
+								"script": {
+									"exec": [
+										"pm.test('Pending preparations retrieved', function() {",
+										"    pm.response.to.have.status(200);",
+										"    var jsonData = pm.response.json();",
+										"    pm.expect(jsonData).to.be.an('object');",
+										"});"
+									],
+									"type": "text/javascript"
+								}
+							}
+						],
+						"request": {
+							"method": "GET",
+							"header": [],
+							"url": {
+								"raw": "{{base_url}}/backend/magasinier/preparations/pending",
+								"host": ["{{base_url}}"],
+								"path": ["backend", "magasinier", "preparations", "pending"]
+							},
+							"description": "Get all pending preparations"
+						}
+					},
+					{
+						"name": "Get BP Details for Preparation",
+						"event": [
+							{
+								"listen": "test",
+								"script": {
+									"exec": [
+										"pm.test('BP details retrieved', function() {",
+										"    pm.response.to.have.status(200);",
+										"    var jsonData = pm.response.json();",
+										"    pm.expect(jsonData).to.have.property('bp_number');",
+										"    pm.expect(jsonData.items).to.be.an('array');",
+										"    console.log('BP has ' + jsonData.items.length + ' items');",
+										"});"
+									],
+									"type": "text/javascript"
+								}
+							}
+						],
+						"request": {
+							"method": "GET",
+							"header": [],
+							"url": {
+								"raw": "{{base_url}}/backend/magasinier/preparations/{{bp_id}}/prepare",
+								"host": ["{{base_url}}"],
+								"path": ["backend", "magasinier", "preparations", "{{bp_id}}", "prepare"]
+							},
+							"description": "Get BP details with items for preparation"
+						}
+					},
+					{
+						"name": "Update BP Item Quantities (NEW!)",
+						"event": [
+							{
+								"listen": "test",
+								"script": {
+									"exec": [
+										"pm.test('Items updated successfully', function() {",
+										"    pm.response.to.have.status(200);",
+										"    var jsonData = pm.response.json();",
+										"    pm.expect(jsonData.success).to.be.true;",
+										"});",
+										"",
+										"pm.test('Statistics returned', function() {",
+										"    var jsonData = pm.response.json();",
+										"    pm.expect(jsonData.data.statistics).to.be.an('object');",
+										"    pm.expect(jsonData.data.statistics.progress).to.be.a('number');",
+										"    console.log('Preparation progress: ' + jsonData.data.statistics.progress + '%');",
+										"});",
+										"",
+										"pm.test('Updated items returned', function() {",
+										"    var jsonData = pm.response.json();",
+										"    pm.expect(jsonData.data.updated_items).to.be.an('array');",
+										"});"
+									],
+									"type": "text/javascript"
+								}
+							}
+						],
+						"request": {
+							"method": "PUT",
+							"header": [
+								{
+									"key": "Content-Type",
+									"value": "application/json"
+								}
+							],
+							"body": {
+								"mode": "raw",
+								"raw": "{\n    \"items\": [\n        {\n            \"product_id\": {{product_id}},\n            \"prepared_quantity\": 50\n        }\n    ]\n}"
+							},
+							"url": {
+								"raw": "{{base_url}}/backend/magasinier/preparations/{{bp_id}}/items",
+								"host": ["{{base_url}}"],
+								"path": ["backend", "magasinier", "preparations", "{{bp_id}}", "items"]
+							},
+							"description": "Update prepared quantities incrementally during preparation. This is the NEW endpoint for real-time quantity updates!"
+						}
+					},
+					{
+						"name": "Get Stock Status",
+						"event": [
+							{
+								"listen": "test",
+								"script": {
+									"exec": [
+										"pm.test('Stock status retrieved', function() {",
+										"    pm.response.to.have.status(200);",
+										"    var jsonData = pm.response.json();",
+										"    pm.expect(jsonData).to.be.an('object');",
+										"});"
+									],
+									"type": "text/javascript"
+								}
+							}
+						],
+						"request": {
+							"method": "GET",
+							"header": [],
+							"url": {
+								"raw": "{{base_url}}/backend/magasinier/stock",
+								"host": ["{{base_url}}"],
+								"path": ["backend", "magasinier", "stock"]
+							},
+							"description": "Get current stock status for all products"
+						}
+					}
+				]
+			},
+			{
+				"folder_name": "7. BL Loading & Transit",
+				"add_after": "Start Transit",
+				"new_requests": [
+					{
+						"name": "Get BLs In Transit",
+						"event": [
+							{
+								"listen": "test",
+								"script": {
+									"exec": [
+										"pm.test('In-transit BLs retrieved', function() {",
+										"    pm.response.to.have.status(200);",
+										"    var jsonData = pm.response.json();",
+										"    pm.expect(jsonData.success).to.be.true;",
+										"    pm.expect(jsonData.data).to.be.an('object');",
+										"});"
+									],
+									"type": "text/javascript"
+								}
+							}
+						],
+						"request": {
+							"method": "GET",
+							"header": [],
+							"url": {
+								"raw": "{{base_url}}/api/workflow/bon-livraisons/in-transit",
+								"host": ["{{base_url}}"],
+								"path": ["api", "workflow", "bon-livraisons", "in-transit"]
+							},
+							"description": "Get all BLs currently in transit"
+						}
+					}
+				]
+			}
+		],
+		"update_existing_requests": [
+			{
+				"folder": "0. Authentication",
+				"request": "Login as Dispatcher",
+				"update_email": "dispatcher@foodsolutions.ma",
+				"update_url": "{{base_url}}/backend/login",
+				"add_test_for_livreur_id": true
+			},
+			{
+				"folder": "0. Authentication",
+				"request": "Login as Magasinier",
+				"update_email": "magasinier@foodsolutions.ma",
+				"update_url": "{{base_url}}/backend/login"
+			},
+			{
+				"folder": "0. Authentication",
+				"request": "Login as Driver",
+				"update_email": "driver@foodsolutions.ma",
+				"update_url": "{{base_url}}/backend/login",
+				"add_test_for_livreur_id": true
+			},
+			{
+				"folder": "4. BL Creation & Grouping (Dispatcher)",
+				"request": "Convert BC to BL",
+				"add_test_script": {
+					"exec": [
+						"pm.test('BC converted to BL', function() {",
+						"    pm.response.to.have.status(200);",
+						"    var jsonData = pm.response.json();",
+						"    pm.expect(jsonData.success).to.be.true;",
+						"});",
+						"",
+						"pm.test('BL created in metadata', function() {",
+						"    var jsonData = pm.response.json();",
+						"    if (jsonData.metadata && jsonData.metadata.bl_creation) {",
+						"        pm.expect(jsonData.metadata.bl_creation.created).to.be.true;",
+						"        pm.expect(jsonData.metadata.bl_creation.bl.id).to.be.a('number');",
+						"        pm.collectionVariables.set('bl_id', jsonData.metadata.bl_creation.bl.id);",
+						"        console.log('BL ID saved: ' + jsonData.metadata.bl_creation.bl.id);",
+						"    }",
+						"});"
+					]
+				}
+			},
+			{
+				"folder": "4. BL Creation & Grouping (Dispatcher)",
+				"request": "Group BLs in BCH",
+				"add_test_script": {
+					"exec": [
+						"pm.test('BL grouped successfully', function() {",
+						"    pm.response.to.have.status(200);",
+						"    var jsonData = pm.response.json();",
+						"    pm.expect(jsonData.success).to.be.true;",
+						"});",
+						"",
+						"pm.test('BCH created in metadata', function() {",
+						"    var jsonData = pm.response.json();",
+						"    if (jsonData.metadata && jsonData.metadata.bch_creation) {",
+						"        pm.expect(jsonData.metadata.bch_creation.created).to.be.true;",
+						"        pm.expect(jsonData.metadata.bch_creation.bch.id).to.be.a('number');",
+						"        pm.collectionVariables.set('bch_id', jsonData.metadata.bch_creation.bch.id);",
+						"        console.log('BCH ID saved: ' + jsonData.metadata.bch_creation.bch.id);",
+						"    }",
+						"});"
+					]
+				}
+			}
+		]
+	},
+	"instructions": "To complete the Postman collection:\n\n1. Open BC_Workflow_Complete_Testing.postman_collection.json\n2. Add the new requests listed above to their respective folders\n3. Update existing requests with enhanced test scripts\n4. Ensure all collection variables are set (product_id, livreur_id, partner_id)\n5. Update authentication endpoints to use correct emails and backend/login path\n6. Test the complete workflow from start to finish\n\nKey additions:\n- Dashboard endpoints for all roles\n- Detail endpoints (BC, BL, BCH, BP)\n- BP item quantity updates (incremental)\n- Stock management\n- List endpoints (draft BLs, pending preparations, in-transit BLs)\n- Enhanced test scripts with proper assertions and variable extraction"
+}

@@ -9,6 +9,7 @@ import {
 } from 'lucide-react';
 import { MasterLayout } from '@/components/layout/MasterLayout';
 import { useAdvDashboard } from '@/hooks/adv/useAdvDashboard';
+import { TaskWidget } from '@/components/tasks';
 
 const AdvDashboardContent = () => {
     const { data, loading, error, refetch } = useAdvDashboard();
@@ -60,7 +61,7 @@ const AdvDashboardContent = () => {
         },
         {
             label: 'Encours Global',
-            value: `${parseFloat(stats.total_credit_exposure).toLocaleString()} Dh`,
+            value: `${Number(stats.total_credit_exposure).toLocaleString()} Dh`,
             change: 'Total Exposure',
             icon: TrendingUp,
             color: 'text-emerald-600',
@@ -123,6 +124,14 @@ const AdvDashboardContent = () => {
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
                 {/* Main Action Area */}
                 <div className="lg:col-span-2 space-y-6">
+                    {/* Task Workflow Widget */}
+                    <TaskWidget
+                        workflowType="bc"
+                        title="Tâches de validation BC"
+                        maxTasks={5}
+                        showViewAll={true}
+                    />
+
                     <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
                         <div className="px-6 py-4 border-b border-gray-100 flex justify-between items-center bg-gray-50/50">
                             <h3 className="font-semibold text-gray-900">Validations en attente</h3>
@@ -148,7 +157,7 @@ const AdvDashboardContent = () => {
                                 <div key={alert.id} className="flex gap-3 items-start border-l-2 border-amber-400 pl-3">
                                     <div>
                                         <p className="text-sm text-gray-800 font-bold leading-tight">{alert.name}</p>
-                                        <p className="text-xs text-gray-500 mt-1">Utilisé: {parseFloat(alert.credit_used).toLocaleString()} / {parseFloat(alert.credit_limit).toLocaleString()}</p>
+                                        <p className="text-xs text-gray-500 mt-1">Utilisé: {Number(alert.credit_used).toLocaleString()} / {Number(alert.credit_limit).toLocaleString()}</p>
                                         <p className="text-[10px] text-gray-400 mt-0.5">{new Date(alert.created_at).toLocaleDateString()}</p>
                                     </div>
                                 </div>

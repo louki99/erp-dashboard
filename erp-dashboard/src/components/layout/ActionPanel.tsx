@@ -8,7 +8,7 @@ const ActionGroup = ({ children }: { children: React.ReactNode }) => (
     </div>
 );
 
-interface ActionItemProps {
+export interface ActionItemProps {
     icon: React.ElementType;
     label: string;
     onClick?: () => void;

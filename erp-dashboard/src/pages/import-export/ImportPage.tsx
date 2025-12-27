@@ -150,14 +150,43 @@ export const ImportPage = () => {
         
         const errors: Record<number, any> = {};
         const requiredFields = selectedTemplate.fields?.filter(f => f.is_required).map(f => f.field_name) || [];
+        const fieldDisplayNames = selectedTemplate.fields?.reduce((acc: any, f: any) => {
+            acc[f.field_name] = f.display_name || f.field_name;
+            return acc;
+        }, {}) || {};
 
         editedData.forEach((row, index) => {
             const rowErrors: any = {};
+            
+            // Check required fields
             requiredFields.forEach(field => {
                 if (!row[field] || row[field].toString().trim() === '') {
-                    rowErrors[field] = 'Champ requis';
+                    rowErrors[field] = `${fieldDisplayNames[field] || field} est requis`;
                 }
             });
+            
+            // Additional validation based on field types
+            selectedTemplate.fields?.forEach((field: any) => {
+                const value = row[field.field_name];
+                if (!value || value.toString().trim() === '') return; // Skip empty non-required fields
+                
+                // Validate numeric fields
+                if (field.data_type === 'decimal' || field.data_type === 'integer') {
+                    const numValue = parseFloat(value);
+                    if (isNaN(numValue)) {
+                        rowErrors[field.field_name] = `${fieldDisplayNames[field.field_name]} doit être un nombre valide`;
+                    }
+                }
+                
+                // Validate boolean fields
+                if (field.data_type === 'boolean') {
+                    const strValue = value.toString().toLowerCase();
+                    if (!['true', 'false', '1', '0', 'oui', 'non', 'yes', 'no'].includes(strValue)) {
+                        rowErrors[field.field_name] = `${fieldDisplayNames[field.field_name]} doit être vrai/faux (true/false, 1/0, oui/non)`;
+                    }
+                }
+            });
+            
             if (Object.keys(rowErrors).length > 0) {
                 errors[index] = rowErrors;
             }
@@ -166,11 +195,14 @@ export const ImportPage = () => {
         setValidationErrors(errors);
         
         if (Object.keys(errors).length > 0) {
-            toast.error(`${Object.keys(errors).length} ligne(s) avec des erreurs`);
+            const totalErrors = Object.values(errors).reduce((sum, rowErrors) => sum + Object.keys(rowErrors).length, 0);
+            toast.error(`${Object.keys(errors).length} ligne(s) avec ${totalErrors} erreur(s) - Voir les détails ci-dessous`, {
+                duration: 5000
+            });
             return false;
         }
         
-        toast.success('Validation réussie');
+        toast.success('Validation réussie - Toutes les données sont valides');
         return true;
     };
 
@@ -909,6 +941,7 @@ const PreviewTab = ({ template, previewData, editedData, updateCellData, validat
     ];
 
     const errorCount = Object.keys(validationErrors).length;
+    const totalErrorCount = Object.values(validationErrors).reduce((sum: number, rowErrors) => sum + Object.keys(rowErrors).length, 0);
 
     return (
         <div className="space-y-4">
@@ -925,7 +958,7 @@ const PreviewTab = ({ template, previewData, editedData, updateCellData, validat
                             <div className="flex items-center gap-2 px-3 py-1.5 bg-red-50 border border-red-200 rounded-lg">
                                 <AlertTriangle className="w-4 h-4 text-red-600" />
                                 <span className="text-sm font-medium text-red-700">
-                                    {errorCount} erreur(s)
+                                    {errorCount} ligne(s) • {totalErrorCount} erreur(s)
                                 </span>
                             </div>
                         )}
@@ -939,6 +972,36 @@ const PreviewTab = ({ template, previewData, editedData, updateCellData, validat
                     </div>
                 </div>
             </div>
+
+            {errorCount > 0 && (
+                <div className="bg-red-50 border border-red-300 rounded-lg p-4">
+                    <div className="flex items-start gap-3">
+                        <AlertTriangle className="w-5 h-5 text-red-600 flex-shrink-0 mt-0.5" />
+                        <div className="flex-1">
+                            <h4 className="font-semibold text-red-900 mb-2">Erreurs de Validation Détectées</h4>
+                            <p className="text-sm text-red-700 mb-3">
+                                {errorCount} ligne(s) contiennent {totalErrorCount} erreur(s). Corrigez les erreurs ci-dessous avant de continuer.
+                            </p>
+                            <div className="space-y-2 max-h-60 overflow-y-auto">
+                                {Object.entries(validationErrors).map(([rowIndex, rowErrors]: [string, any]) => (
+                                    <div key={rowIndex} className="bg-white border border-red-200 rounded p-3">
+                                        <div className="font-medium text-red-900 mb-1">
+                                            Ligne {parseInt(rowIndex) + 1}
+                                        </div>
+                                        <ul className="list-disc list-inside space-y-1 text-sm text-red-700">
+                                            {Object.entries(rowErrors).map(([field, error]: [string, any]) => (
+                                                <li key={field}>
+                                                    <strong>{templateFields.find((f: any) => f.field_name === field)?.display_name || field}:</strong> {error}
+                                                </li>
+                                            ))}
+                                        </ul>
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            )}
 
             <div className="bg-white border border-gray-200 rounded-lg overflow-hidden" style={{ height: '600px' }}>
                 <DataGrid

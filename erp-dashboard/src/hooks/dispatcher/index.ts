@@ -4,9 +4,6 @@ export { useDispatcherDashboard } from './useDispatcherDashboard';
 // Orders
 export {
     useDispatcherPendingOrders,
-    useDispatcherOrderDetail,
-    useConvertToBl,
-    useConvertMultipleToBl,
 } from './useDispatcherOrders';
 
 // Bon Livraisons
@@ -43,3 +40,9 @@ export {
     useRejectDecharge,
 } from './useDispatcherDecharges';
 
+// Workflow State Management
+export { 
+    useDispatcherBLWorkflow, 
+    useDispatcherBCHWorkflow,
+    useDispatcherOrderConversion 
+} from './useDispatcherWorkflow';

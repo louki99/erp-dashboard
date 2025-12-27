@@ -483,6 +483,7 @@ export interface BC {
     total_amount: string;
     payment_status: string;
     order_status: string;
+    bc_status: BcStatus;
     is_urgent: boolean;
     is_overdue: boolean;
     items_count: number;

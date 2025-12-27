@@ -11,8 +11,8 @@ export const PromotionType = {
 export type PromotionType = (typeof PromotionType)[keyof typeof PromotionType];
 
 export const BreakpointType = {
-    VALUE_BASED: 1,      // MAD amount
-    QUANTITY_BASED: 2,   // Number of units
+    QUANTITY_BASED: 1,   // Number of units
+    VALUE_BASED: 2,      // MAD amount
     PROMO_UNIT_BASED: 3  // Standardized units
 } as const;
 
@@ -55,7 +55,7 @@ export interface PromotionLine {
     name: string;
 
     // Target
-    paid_based_on_product: boolean; // false = family-based, true = product-based
+    paid_based_on_product: PromotionPaidBasedOn; // 'cart', 'family', 'product'
     paid_product_code?: string;
     paid_product_family_code?: string;
 
@@ -81,9 +81,13 @@ export interface Promotion {
     sequence: number; // Priority (lower = higher priority)
 
     breakpoint_type: BreakpointType;
-    scale_method?: number; // 1=Linear, 2=Step (usually implied by logic)
+    scale_method: 1 | 2; // 1 = Cumulative/Progressive, 2 = Bracket/Highest tier only
 
     payment_term_dependent: boolean;
+
+    // Burning / Redemption
+    is_burning_promo?: boolean;
+    based_on_burned?: string; // Code of the balance to burn (e.g. POINTS, BUDGET)
 
     // Relationships
     lines: PromotionLine[];
@@ -119,11 +123,8 @@ export interface PartnerFamily {
     name: string;
     partner_condition?: string;
     partners_count?: number;
-    partners?: Array<{
-        id: number;
-        code: string;
-        name: string;
-    }>;
+    created_at?: string;
+    partners?: string[]; // Array of partner codes
     promotions?: Promotion[];
     boosts?: ProductFamilyBoost[];
 }
@@ -144,11 +145,12 @@ export interface ProductFamily {
     description?: string;
     sales_group_code?: string;
     products_count?: number;
+    created_at?: string;
     products?: Array<{
         id: number;
         code: string;
         name: string;
-    }>;
+    }> | string[]; // Can be objects from API or strings in form
     boosts?: ProductFamilyBoost[];
 }
 

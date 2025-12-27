@@ -23,7 +23,11 @@ export function usePermissions() {
     const { user } = useAuth();
 
     const permissions = useMemo(() => {
-        return user?.permissions?.effective || [];
+        const perms = user?.permissions?.effective || [];
+        if (import.meta.env.DEV && perms.length > 0) {
+            console.log('📋 Loaded permissions:', perms.length);
+        }
+        return perms;
     }, [user]);
 
     const roles = useMemo(() => {
