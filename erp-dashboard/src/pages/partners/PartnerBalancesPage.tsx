@@ -9,8 +9,8 @@ import type { ColDef } from 'ag-grid-community';
 import { Wallet, Coins, ArrowRightLeft, Filter, Download, Plus, Minus, X, CheckCircle, Clock, Loader2, RotateCcw } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import toast from 'react-hot-toast';
-import 'ag-grid-community/styles/ag-grid.css';
-import 'ag-grid-community/styles/ag-theme-quartz.css';
+// import 'ag-grid-community/styles/ag-grid.css';
+// import 'ag-grid-community/styles/ag-theme-quartz.css';
 
 export const PartnerBalancesPage = () => {
     const queryClient = useQueryClient();

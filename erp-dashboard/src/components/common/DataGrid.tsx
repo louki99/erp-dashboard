@@ -104,13 +104,12 @@ export const DataGrid = ({
             <style>
                 {`
           .ag-theme-custom {
-              --ag-header-height: 32px;
-              --ag-row-height: 32px;
-              --ag-font-size: 12px;
-              --ag-header-background-color: #cbffc3ff;
+              --ag-header-height: 30px;
+              --ag-font-size: 10px;
+              --ag-header-background-color: #ccd6db;
               --ag-odd-row-background-color: #ffffff;
-              --ag-row-hover-color: #a0fccbff;
-              --ag-selected-row-background-color: #dbeafe;
+              --ag-row-hover-color: #f2fcf6ff;
+              --ag-selected-row-background-color: #ccd6db;
               --ag-cell-horizontal-padding: 12px;
           }
           .ag-header-cell-label {

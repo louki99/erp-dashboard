@@ -404,11 +404,10 @@ const OrderLinesContent = ({ lines }: { lines: OrderProduct[] }) => {
 
                 return (
                     <div className="flex items-center justify-center h-full">
-                        <span className={`inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-semibold ${
-                            isAvailable
-                                ? 'bg-emerald-100 text-emerald-700'
-                                : 'bg-red-100 text-red-700'
-                        }`}>
+                        <span className={`inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-semibold ${isAvailable
+                            ? 'bg-emerald-100 text-emerald-700'
+                            : 'bg-red-100 text-red-700'
+                            }`}>
                             {isAvailable ? (
                                 <><CheckCircle className="w-3 h-3" /> EN STOCK</>
                             ) : (
@@ -424,7 +423,7 @@ const OrderLinesContent = ({ lines }: { lines: OrderProduct[] }) => {
     return (
         <div className="space-y-4">
             {/* Data Grid */}
-            <div className="h-96 bg-white dark:bg-gray-800 rounded-xl border-2 border-gray-200 dark:border-gray-700 overflow-hidden shadow-lg ag-theme-alpine dark:ag-theme-alpine-dark">
+            <div className="h-96 bg-white dark:bg-gray-800 rounded-xl border-2 border-gray-200 dark:border-gray-700 overflow-hidden shadow-lg ag-theme-quartz">
                 <AgGridReact
                     rowData={lines}
                     columnDefs={columnDefs}
@@ -435,8 +434,6 @@ const OrderLinesContent = ({ lines }: { lines: OrderProduct[] }) => {
                     }}
                     pagination={true}
                     paginationPageSize={10}
-                    headerHeight={44}
-                    rowHeight={50}
                 />
             </div>
         </div>
@@ -805,7 +802,7 @@ const PaymentTermContent = ({ partner }: { partner: Partner }) => {
 
 const BcDetailView = ({ bc, onRefresh }: { bc: BC; onRefresh: () => void }) => {
     const { workflowHistory, isLoadingHistory } = useAdvWorkflow(bc.id);
-    
+
     const tabs: TabItem[] = [
         { id: 'info', label: 'Informations', icon: Info },
         { id: 'lines', label: 'Lignes de Commande', icon: FileText },
@@ -984,8 +981,8 @@ const BcDetailView = ({ bc, onRefresh }: { bc: BC; onRefresh: () => void }) => {
                             {/* Workflow Actions */}
                             <div className="border-t border-gray-200 dark:border-gray-700 pt-6">
                                 <h3 className="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-4">Actions Workflow</h3>
-                                <BCWorkflowActions 
-                                    orderId={bc.id} 
+                                <BCWorkflowActions
+                                    orderId={bc.id}
                                     onSuccess={onRefresh}
                                 />
                             </div>
@@ -1040,8 +1037,8 @@ const BcDetailView = ({ bc, onRefresh }: { bc: BC; onRefresh: () => void }) => {
                         onOpenChange={(open) => toggleSection('history', open)}
                     >
                         <div className="p-6">
-                            <WorkflowHistory 
-                                history={workflowHistory} 
+                            <WorkflowHistory
+                                history={workflowHistory}
                                 isLoading={isLoadingHistory}
                             />
                         </div>
@@ -1258,7 +1255,7 @@ export const AdvValidationPage = () => {
             const response = await apiClient.get<ApiResponse>('/api/backend/adv/bc');
             if (response.data?.bcs?.data) {
                 setBcs(response.data.bcs.data);
-                
+
                 // Check if bcId is in URL query params
                 const bcIdParam = searchParams.get('bcId');
                 if (bcIdParam) {
@@ -1289,19 +1286,26 @@ export const AdvValidationPage = () => {
             field: 'bc_number',
             headerName: 'N° BC',
             width: 160,
+            pinned: 'left',
             cellRenderer: (params: any) => (
                 <div className="flex items-center h-full">
-                    <span className="font-medium text-gray-900 dark:text-gray-100">{params.value}</span>
+                    <span className="font-bold text-gray-900 dark:text-gray-100">{params.value}</span>
                 </div>
             )
         },
         {
             field: 'created_at',
             headerName: 'Date',
-            width: 110,
+            width: 130,
             cellRenderer: (params: any) => (
                 <div className="flex items-center h-full">
-                    <span className="text-gray-500">{new Date(params.value).toLocaleDateString()}</span>
+                    <span className="text-sm text-gray-600 dark:text-gray-400">
+                        {new Date(params.value).toLocaleDateString('fr-FR', {
+                            day: '2-digit',
+                            month: 'short',
+                            year: 'numeric'
+                        })}
+                    </span>
                 </div>
             )
         },
@@ -1309,18 +1313,24 @@ export const AdvValidationPage = () => {
             field: 'partner.name',
             headerName: 'Client',
             flex: 1,
+            minWidth: 200,
             cellRenderer: (params: any) => (
-                <div className="flex items-center h-full text-gray-700 dark:text-gray-300">
-                    <span className="truncate" title={params.value}>{params.value}</span>
+                <div className="flex items-center h-full text-gray-700 dark:text-gray-300 min-w-0">
+                    <span className="truncate font-medium" title={params.value}>{params.value}</span>
                 </div>
             )
         },
         {
             field: 'total_amount',
             headerName: 'Montant',
-            width: 100,
-            cellClass: 'text-right font-medium',
-            valueFormatter: (params: any) => `${parseFloat(params.value).toLocaleString()} Dh`
+            width: 130,
+            cellRenderer: (params: any) => (
+                <div className="flex items-center justify-end h-full">
+                    <span className="font-bold text-sage-600 dark:text-sage-400">
+                        {parseFloat(params.value).toLocaleString()} Dh
+                    </span>
+                </div>
+            )
         },
     ], []);
 
@@ -1339,6 +1349,8 @@ export const AdvValidationPage = () => {
                     rowData={bcs}
                     columnDefs={colDefs}
                     loading={loading}
+                    pagination={true}
+                    paginationPageSize={15}
                     onRowSelected={(data) => {
                         setSelectedBcId(data.id);
                         fetchBcDetails(String(data.id));
@@ -1368,8 +1380,8 @@ export const AdvValidationPage = () => {
                                 <p>Chargement du détail...</p>
                             </div>
                         ) : selectedBcDetails ? (
-                            <BcDetailView 
-                                bc={selectedBcDetails} 
+                            <BcDetailView
+                                bc={selectedBcDetails}
                                 onRefresh={() => {
                                     fetchData();
                                     if (selectedBcId) fetchBcDetails(String(selectedBcId));
