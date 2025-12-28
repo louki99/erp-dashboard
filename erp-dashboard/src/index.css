@@ -5,7 +5,6 @@
 @layer base {
   :root {
     --background: 210 40% 98%;
-    /* Slightly cooler white */
     --foreground: 222.2 84% 4.9%;
 
     --card: 0 0% 100%;
@@ -15,7 +14,6 @@
     --popover-foreground: 222.2 84% 4.9%;
 
     --primary: 158 100% 34%;
-    /* Sage Green #00b06b */
     --primary-foreground: 210 40% 98%;
 
     --secondary: 210 40% 96.1%;
@@ -33,7 +31,6 @@
     --border: 214.3 31.8% 91.4%;
     --input: 214.3 31.8% 91.4%;
     --ring: 158 100% 34%;
-    /* Match primary */
 
     --radius: 0.5rem;
 
@@ -48,7 +45,6 @@
 
   .dark {
     --background: 222 47% 11%;
-    /* Deep rich blue-black */
     --foreground: 210 40% 98%;
 
     --card: 217 33% 17%;
@@ -58,7 +54,6 @@
     --popover-foreground: 210 40% 98%;
 
     --primary: 158 100% 45%;
-    /* Brighter Sage for dark mode */
     --primary-foreground: 222.2 47.4% 11.2%;
 
     --secondary: 217.2 32.6% 17.5%;
@@ -86,7 +81,398 @@
 
   body {
     @apply bg-background text-foreground;
+    font-feature-settings: "cv11", "ss01";
+    font-variation-settings: "opsz" auto;
   }
+}
+
+/* ============================================
+   AG-GRID CUSTOM SAGE THEME
+   Professional theme with proper icon support
+   ============================================ */
+
+.ag-theme-sage {
+  /* Base Layout */
+  --ag-header-height: 40px;
+  --ag-row-height: 36px;
+  --ag-font-size: 13px;
+  --ag-font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+
+  /* Colors - Light Mode */
+  --ag-background-color: #ffffff;
+  --ag-foreground-color: #1f2937;
+  --ag-border-color: #e5e7eb;
+
+  /* Header */
+  --ag-header-background-color: #f8fafc;
+  --ag-header-foreground-color: #475569;
+  --ag-header-cell-hover-background-color: #f1f5f9;
+
+  /* Rows */
+  --ag-odd-row-background-color: #ffffff;
+  --ag-even-row-background-color: #f9fafb;
+  --ag-row-hover-color: #f0fdf4;
+  --ag-selected-row-background-color: #dcfce7;
+
+  /* Sage Accents */
+  --ag-range-selection-border-color: #00b06b;
+  --ag-input-focus-border-color: #00b06b;
+  --ag-checkbox-checked-color: #00b06b;
+  --ag-range-selection-background-color: rgba(0, 176, 107, 0.1);
+
+  /* Spacing */
+  --ag-cell-horizontal-padding: 12px;
+  --ag-grid-size: 4px;
+
+  /* Borders */
+  --ag-borders: solid 1px;
+  --ag-row-border-color: #f3f4f6;
+  --ag-border-radius: 0px;
+}
+
+/* Dark Mode */
+.dark .ag-theme-sage {
+  --ag-background-color: #111827;
+  --ag-foreground-color: #f3f4f6;
+  --ag-border-color: #374151;
+
+  --ag-header-background-color: #1f2937;
+  --ag-header-foreground-color: #9ca3af;
+  --ag-header-cell-hover-background-color: #374151;
+
+  --ag-odd-row-background-color: #111827;
+  --ag-even-row-background-color: #1f2937;
+  --ag-row-hover-color: rgba(22, 101, 52, 0.3);
+  --ag-selected-row-background-color: rgba(20, 83, 45, 0.5);
+
+  --ag-row-border-color: #1f2937;
+  --ag-checkbox-checked-color: #22c55e;
+  --ag-range-selection-border-color: #22c55e;
+}
+
+/* ============================================
+   HEADER STYLING
+   ============================================ */
+
+.ag-theme-sage .ag-header {
+  border-bottom: 2px solid #e5e7eb;
+  font-weight: 600;
+}
+
+.dark .ag-theme-sage .ag-header {
+  border-bottom: 2px solid #374151;
+}
+
+.ag-theme-sage .ag-header-cell {
+  padding: 0 12px;
+}
+
+.ag-theme-sage .ag-header-cell-label {
+  font-weight: 600;
+  text-transform: uppercase;
+  font-size: 11px;
+  letter-spacing: 0.05em;
+  color: #475569;
+}
+
+.dark .ag-theme-sage .ag-header-cell-label {
+  color: #9ca3af;
+}
+
+/* Header Icons */
+.ag-theme-sage .ag-icon {
+  color: #6b7280;
+}
+
+.dark .ag-theme-sage .ag-icon {
+  color: #9ca3af;
+}
+
+.ag-theme-sage .ag-header-cell:hover .ag-icon {
+  color: #00b06b;
+}
+
+.dark .ag-theme-sage .ag-header-cell:hover .ag-icon {
+  color: #22c55e;
+}
+
+/* ============================================
+   ROW STYLING
+   ============================================ */
+
+.ag-theme-sage .ag-row {
+  border-bottom: 1px solid #f3f4f6;
+  transition: background-color 0.15s ease-in-out;
+}
+
+.dark .ag-theme-sage .ag-row {
+  border-bottom: 1px solid #1f2937;
+}
+
+.ag-theme-sage .ag-row-hover {
+  background-color: #f0fdf4 !important;
+  box-shadow: inset 0 0 0 1px rgba(0, 176, 107, 0.1);
+}
+
+.dark .ag-theme-sage .ag-row-hover {
+  background-color: rgba(22, 101, 52, 0.3) !important;
+  box-shadow: inset 0 0 0 1px rgba(34, 197, 94, 0.2);
+}
+
+.ag-theme-sage .ag-row-selected {
+  background-color: #dcfce7 !important;
+  border-left: 3px solid #00b06b !important;
+  font-weight: 500;
+}
+
+.dark .ag-theme-sage .ag-row-selected {
+  background-color: rgba(20, 83, 45, 0.5) !important;
+  border-left: 3px solid #22c55e !important;
+}
+
+.ag-theme-sage .ag-row-selected:hover {
+  background-color: #d1fae5 !important;
+}
+
+.dark .ag-theme-sage .ag-row-selected:hover {
+  background-color: rgba(20, 83, 45, 0.7) !important;
+}
+
+/* ============================================
+   CELL STYLING
+   ============================================ */
+
+.ag-theme-sage .ag-cell {
+  display: flex;
+  align-items: center;
+  line-height: 1.5;
+  padding: 0 12px;
+}
+
+.ag-theme-sage .ag-cell-focus,
+.ag-theme-sage .ag-cell:focus-within {
+  border: 2px solid #00b06b !important;
+  outline: none;
+}
+
+.dark .ag-theme-sage .ag-cell-focus,
+.dark .ag-theme-sage .ag-cell:focus-within {
+  border: 2px solid #22c55e !important;
+}
+
+/* ============================================
+   CHECKBOX STYLING
+   ============================================ */
+
+.ag-theme-sage .ag-checkbox-input-wrapper {
+  width: 18px;
+  height: 18px;
+  border-radius: 4px;
+}
+
+.ag-theme-sage .ag-checkbox-input-wrapper.ag-checked {
+  background-color: #00b06b;
+  border-color: #00b06b;
+}
+
+.dark .ag-theme-sage .ag-checkbox-input-wrapper.ag-checked {
+  background-color: #22c55e;
+  border-color: #22c55e;
+}
+
+.ag-theme-sage .ag-checkbox-input-wrapper.ag-checked::after {
+  color: white;
+}
+
+/* ============================================
+   SORT & FILTER ICONS
+   ============================================ */
+
+.ag-theme-sage .ag-header-cell-sorted-asc .ag-icon,
+.ag-theme-sage .ag-header-cell-sorted-desc .ag-icon {
+  color: #00b06b;
+}
+
+.dark .ag-theme-sage .ag-header-cell-sorted-asc .ag-icon,
+.dark .ag-theme-sage .ag-header-cell-sorted-desc .ag-icon {
+  color: #22c55e;
+}
+
+.ag-theme-sage .ag-header-cell-menu-button,
+.ag-theme-sage .ag-header-cell-filter-button {
+  opacity: 0;
+  transition: opacity 0.2s ease;
+}
+
+.ag-theme-sage .ag-header-cell:hover .ag-header-cell-menu-button,
+.ag-theme-sage .ag-header-cell:hover .ag-header-cell-filter-button {
+  opacity: 1;
+}
+
+/* ============================================
+   COLUMN RESIZE
+   ============================================ */
+
+.ag-theme-sage .ag-header-cell-resize {
+  width: 2px;
+  background-color: #cbd5e1;
+  transition: all 0.2s ease;
+}
+
+.dark .ag-theme-sage .ag-header-cell-resize {
+  background-color: #4b5563;
+}
+
+.ag-theme-sage .ag-header-cell-resize:hover {
+  background-color: #00b06b;
+  width: 3px;
+}
+
+.dark .ag-theme-sage .ag-header-cell-resize:hover {
+  background-color: #22c55e;
+}
+
+/* ============================================
+   PAGINATION
+   ============================================ */
+
+.ag-theme-sage .ag-paging-panel {
+  border-top: 2px solid #e5e7eb;
+  background-color: #f8fafc;
+  padding: 8px 16px;
+  font-size: 12px;
+}
+
+.dark .ag-theme-sage .ag-paging-panel {
+  border-top: 2px solid #374151;
+  background-color: #1f2937;
+}
+
+.ag-theme-sage .ag-paging-button {
+  transition: all 0.2s ease;
+}
+
+.ag-theme-sage .ag-paging-button:hover:not([disabled]) {
+  background-color: #e5e7eb;
+  color: #00b06b;
+}
+
+.dark .ag-theme-sage .ag-paging-button:hover:not([disabled]) {
+  background-color: #374151;
+  color: #22c55e;
+}
+
+/* ============================================
+   SCROLLBARS
+   ============================================ */
+
+.ag-theme-sage .ag-body-horizontal-scroll-viewport::-webkit-scrollbar,
+.ag-theme-sage .ag-body-vertical-scroll-viewport::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+.ag-theme-sage .ag-body-horizontal-scroll-viewport::-webkit-scrollbar-track,
+.ag-theme-sage .ag-body-vertical-scroll-viewport::-webkit-scrollbar-track {
+  background: #f9fafb;
+  border-radius: 5px;
+}
+
+.dark .ag-theme-sage .ag-body-horizontal-scroll-viewport::-webkit-scrollbar-track,
+.dark .ag-theme-sage .ag-body-vertical-scroll-viewport::-webkit-scrollbar-track {
+  background: #1f2937;
+}
+
+.ag-theme-sage .ag-body-horizontal-scroll-viewport::-webkit-scrollbar-thumb,
+.ag-theme-sage .ag-body-vertical-scroll-viewport::-webkit-scrollbar-thumb {
+  background: #cbd5e1;
+  border-radius: 5px;
+  border: 2px solid #f9fafb;
+}
+
+.dark .ag-theme-sage .ag-body-horizontal-scroll-viewport::-webkit-scrollbar-thumb,
+.dark .ag-theme-sage .ag-body-vertical-scroll-viewport::-webkit-scrollbar-thumb {
+  background: #4b5563;
+  border-color: #1f2937;
+}
+
+.ag-theme-sage .ag-body-horizontal-scroll-viewport::-webkit-scrollbar-thumb:hover,
+.ag-theme-sage .ag-body-vertical-scroll-viewport::-webkit-scrollbar-thumb:hover {
+  background: #94a3b8;
+}
+
+.dark .ag-theme-sage .ag-body-horizontal-scroll-viewport::-webkit-scrollbar-thumb:hover,
+.dark .ag-theme-sage .ag-body-vertical-scroll-viewport::-webkit-scrollbar-thumb:hover {
+  background: #6b7280;
+}
+
+/* ============================================
+   OVERLAYS
+   ============================================ */
+
+.ag-theme-sage .ag-overlay-loading-wrapper {
+  background-color: rgba(255, 255, 255, 0.95);
+}
+
+.dark .ag-theme-sage .ag-overlay-loading-wrapper {
+  background-color: rgba(17, 24, 39, 0.95);
+}
+
+.ag-theme-sage .ag-overlay-no-rows-wrapper {
+  background-color: rgba(255, 255, 255, 0.95);
+}
+
+.dark .ag-theme-sage .ag-overlay-no-rows-wrapper {
+  background-color: rgba(17, 24, 39, 0.95);
+}
+
+/* ============================================
+   FILTER PANEL
+   ============================================ */
+
+.ag-theme-sage .ag-filter {
+  background-color: white;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  box-shadow: 0 10px 25px rgba(0, 0, 0, 0.1);
+}
+
+.dark .ag-theme-sage .ag-filter {
+  background-color: #1f2937;
+  border-color: #374151;
+}
+
+.ag-theme-sage .ag-filter-apply-panel {
+  border-top: 1px solid #e5e7eb;
+  padding: 8px;
+}
+
+.dark .ag-theme-sage .ag-filter-apply-panel {
+  border-top-color: #374151;
+}
+
+/* ============================================
+   CONTEXT MENU
+   ============================================ */
+
+.ag-theme-sage .ag-menu {
+  background-color: white;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  box-shadow: 0 10px 25px rgba(0, 0, 0, 0.1);
+}
+
+.dark .ag-theme-sage .ag-menu {
+  background-color: #1f2937;
+  border-color: #374151;
+}
+
+.ag-theme-sage .ag-menu-option-active {
+  background-color: #f0fdf4;
+}
+
+.dark .ag-theme-sage .ag-menu-option-active {
+  background-color: rgba(22, 101, 52, 0.3);
 }
 
 /* React Split Gutter Styles */
@@ -106,4 +492,194 @@
 .gutter.gutter-horizontal {
   background-image: url('data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAUAAAAeCAYAAADkftS9AAAAIklEQVQoU2M4c+bMfxAGAgYYmwGrIIiDjrELjpo5aiZeOgF86wt78Yj6ZgAAAABJRU5ErkJggg==');
   cursor: col-resize;
+}
+
+.dark .gutter {
+  background-color: #374151;
+}
+
+.dark .gutter::before {
+  background: linear-gradient(to bottom,
+      transparent 0%,
+      #4b5563 20%,
+      #4b5563 80%,
+      transparent 100%);
+}
+
+.dark .gutter:hover {
+  background-color: #4b5563;
+}
+
+.dark .gutter:hover::before {
+  background: linear-gradient(to bottom,
+      transparent 0%,
+      #22c55e 20%,
+      #22c55e 80%,
+      transparent 100%);
+}
+
+/* Professional Input Styles */
+input[type="text"],
+input[type="email"],
+input[type="password"],
+input[type="number"],
+input[type="date"],
+select,
+textarea {
+  @apply transition-all duration-200 ease-in-out;
+}
+
+input[type="text"]:hover,
+input[type="email"]:hover,
+input[type="password"]:hover,
+input[type="number"]:hover,
+input[type="date"]:hover,
+select:hover,
+textarea:hover {
+  @apply border-gray-400 dark:border-gray-500;
+}
+
+input[type="text"]:focus,
+input[type="email"]:focus,
+input[type="password"]:focus,
+input[type="number"]:focus,
+input[type="date"]:focus,
+select:focus,
+textarea:focus {
+  @apply ring-2 ring-sage-500 border-sage-500 outline-none;
+}
+
+/* Professional Button Styles */
+button {
+  @apply transition-all duration-200 ease-in-out;
+}
+
+button:active {
+  @apply scale-[0.98];
+}
+
+/* Smooth Scrollbar */
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+::-webkit-scrollbar-track {
+  background: #f1f5f9;
+  border-radius: 5px;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #cbd5e1;
+  border-radius: 5px;
+  border: 2px solid #f1f5f9;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #94a3b8;
+}
+
+.dark ::-webkit-scrollbar-track {
+  background: #1e293b;
+}
+
+.dark ::-webkit-scrollbar-thumb {
+  background: #475569;
+  border-color: #1e293b;
+}
+
+.dark ::-webkit-scrollbar-thumb:hover {
+  background: #64748b;
+}
+
+/* Professional Card Hover Effects */
+.hover-lift {
+  @apply transition-all duration-300 ease-in-out;
+}
+
+.hover-lift:hover {
+  @apply -translate-y-0.5 shadow-lg;
+}
+
+/* Professional Badge Styles */
+.badge {
+  @apply inline-flex items-center justify-center px-2.5 py-0.5 text-xs font-semibold rounded-full;
+  @apply transition-all duration-200 ease-in-out;
+}
+
+.badge:hover {
+  @apply scale-105 shadow-md;
+}
+
+/* Professional Table Styles */
+table {
+  @apply w-full border-collapse;
+}
+
+th {
+  @apply bg-gray-50 dark:bg-gray-800 text-left text-xs font-semibold text-gray-600 dark:text-gray-400;
+  @apply uppercase tracking-wider px-4 py-3 border-b-2 border-gray-200 dark:border-gray-700;
+}
+
+td {
+  @apply px-4 py-3 text-sm text-gray-900 dark:text-gray-100 border-b border-gray-100 dark:border-gray-800;
+}
+
+tr {
+  @apply transition-colors duration-150 ease-in-out;
+}
+
+tbody tr:hover {
+  @apply bg-gray-50 dark:bg-gray-800/50;
+}
+
+/* Professional Loading Animation */
+@keyframes shimmer {
+  0% {
+    background-position: -1000px 0;
+  }
+
+  100% {
+    background-position: 1000px 0;
+  }
+}
+
+.skeleton {
+  animation: shimmer 2s infinite linear;
+  background: linear-gradient(to right, #f6f7f8 0%, #edeef1 20%, #f6f7f8 40%, #f6f7f8 100%);
+  background-size: 1000px 100%;
+}
+
+.dark .skeleton {
+  background: linear-gradient(to right, #2d3748 0%, #4a5568 20%, #2d3748 40%, #2d3748 100%);
+}
+
+/* Professional Focus Styles */
+.focus-ring {
+  @apply focus:ring-2 focus:ring-sage-500 focus:ring-offset-2 focus:outline-none;
+  @apply dark:focus:ring-offset-gray-900;
+}
+
+/* Professional Divider */
+.divider {
+  @apply relative my-6;
+}
+
+.divider::before {
+  content: '';
+  @apply absolute left-0 right-0 top-1/2 h-px bg-gradient-to-r from-transparent via-gray-300 to-transparent;
+  @apply dark:via-gray-700;
+}
+
+/* Professional Shadow Variations */
+.shadow-soft {
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04), 0 1px 2px rgba(0, 0, 0, 0.06);
+}
+
+.shadow-elevated {
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.08), 0 2px 4px rgba(0, 0, 0, 0.06);
+}
+
+.shadow-intense {
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.12), 0 4px 8px rgba(0, 0, 0, 0.08);
 }
