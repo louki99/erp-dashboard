@@ -392,7 +392,7 @@ export const PromotionLinesGrid = ({ onLineSelected }: PromotionLinesGridProps) 
         append({
             name: `Règle #${fields.length + 1}`,
             paid_based_on_product: PromotionPaidBasedOn.PRODUCT_FAMILY,
-            assortment_type: AssortmentType.NONE,
+            assortment_type: 'none',
             assortments: [],
             details: []
         } as PromotionLine);
@@ -408,20 +408,20 @@ export const PromotionLinesGrid = ({ onLineSelected }: PromotionLinesGridProps) 
 
     return (
         <div className="flex flex-col relative min-h-[400px]">
-            <div className="flex justify-between items-center bg-gradient-to-r from-sage-50 to-white px-4 py-3 border-b border-gray-200">
+            <div className="flex justify-between items-center bg-gradient-to-r from-purple-50 to-white px-4 py-3 border-b border-gray-200">
                 <div>
-                    <h3 className="text-sm font-semibold text-gray-900">Règles de Promotion</h3>
-                    <p className="text-xs text-gray-500 mt-0.5">Définissez les conditions et cibles de remise. Sélectionnez une règle pour configurer les paliers de remise ci-dessous.</p>
+                    <h3 className="text-sm font-semibold text-gray-900">📋 Règles de Promotion</h3>
+                    <p className="text-xs text-gray-500 mt-0.5">Définissez les conditions et cibles. Chaque règle peut avoir plusieurs paliers de remise.</p>
                 </div>
                 <button
                     type="button"
                     onClick={addNewLine}
-                    className="text-xs flex items-center gap-1 px-3 py-1.5 bg-sage-600 text-white rounded-md hover:bg-sage-700 transition-colors shadow-sm"
+                    className="text-xs flex items-center gap-1 px-3 py-1.5 bg-purple-600 text-white rounded-md hover:bg-purple-700 transition-colors shadow-sm font-medium"
                 >
-                    <Plus className="w-3 h-3" /> Ajouter une Règle
+                    <Plus className="w-3 h-3" /> Ajouter Règle
                 </button>
             </div>
-            <div className="ag-theme-balham" style={{ height: '350px' }}>
+            <div className="ag-theme-balham" style={{ height: '300px' }}>
                 <AgGridReact
                     rowData={rowData}
                     columnDefs={columnDefs}

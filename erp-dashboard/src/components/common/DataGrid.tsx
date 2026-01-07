@@ -13,6 +13,8 @@ interface DataGridProps {
     onRowDoubleClicked?: (data: any) => void;
     rowSelection?: 'single' | 'multiple';
     loading?: boolean;
+    pagination?: boolean;
+    paginationPageSize?: number;
     getRowClass?: (params: any) => string;
     isRowSelectable?: (params: any) => boolean;
     defaultSelectedIds?: (row: any) => boolean; // Function to determine if a row should be selected by default
@@ -26,6 +28,8 @@ export const DataGrid = ({
     onRowDoubleClicked,
     rowSelection = 'single',
     loading,
+    pagination = false,
+    paginationPageSize = 10,
     getRowClass,
     isRowSelectable,
     defaultSelectedIds
@@ -151,6 +155,8 @@ export const DataGrid = ({
                     headerHeight={40}
                     rowHeight={36}
                     loading={loading}
+                    paginationPageSize={paginationPageSize}
+                    pagination={pagination}
                     overlayLoadingTemplate={'<span class="ag-overlay-loading-center">Chargement...</span>'}
                 />
             </div>

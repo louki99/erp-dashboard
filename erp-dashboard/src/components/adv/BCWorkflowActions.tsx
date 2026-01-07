@@ -40,7 +40,7 @@ const ACTION_CONFIGS: Partial<Record<string, ActionConfig>> = {
 // Smart defaults based on action naming patterns
 const getDefaultActionConfig = (action: string, label: string): ActionConfig => {
     const lowerAction = action.toLowerCase();
-    
+
     // Destructive actions (require comment)
     if (lowerAction.includes('reject') || lowerAction.includes('cancel') || lowerAction.includes('delete')) {
         return {
@@ -51,7 +51,7 @@ const getDefaultActionConfig = (action: string, label: string): ActionConfig => 
             dialogDescription: `Please provide a reason for this action.`,
         };
     }
-    
+
     // Hold/Pause actions
     if (lowerAction.includes('hold') || lowerAction.includes('pause')) {
         return {
@@ -62,7 +62,7 @@ const getDefaultActionConfig = (action: string, label: string): ActionConfig => 
             dialogDescription: `Please provide a reason for putting this order on hold.`,
         };
     }
-    
+
     // Approval/Success actions
     if (lowerAction.includes('approve') || lowerAction.includes('confirm') || lowerAction.includes('convert')) {
         return {
@@ -74,7 +74,7 @@ const getDefaultActionConfig = (action: string, label: string): ActionConfig => 
             dialogDescription: `Execute action: ${label}`,
         };
     }
-    
+
     // Review/Pending actions
     if (lowerAction.includes('review') || lowerAction.includes('pending')) {
         return {
@@ -85,7 +85,7 @@ const getDefaultActionConfig = (action: string, label: string): ActionConfig => 
             dialogDescription: `Send for review: ${label}`,
         };
     }
-    
+
     // Default for any other action
     return {
         icon: CheckCircle,
@@ -143,7 +143,7 @@ export function BCWorkflowActions({ orderId, onSuccess }: BCWorkflowActionsProps
 
     const renderActionButton = (action: WorkflowAction) => {
         const canExecute = action.metadata?.can_execute ?? false;
-        
+
         // Don't show actions that can't be executed
         if (!canExecute) return null;
 
@@ -188,6 +188,8 @@ export function BCWorkflowActions({ orderId, onSuccess }: BCWorkflowActionsProps
                     <p className="text-sm text-muted-foreground">No actions available for current state</p>
                 )}
             </div>
+
+            <div>louki : {workflowState.actions?.length}</div>
 
             <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
                 <DialogContent>

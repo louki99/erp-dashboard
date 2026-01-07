@@ -49,6 +49,7 @@ import { WorkflowDetailPage } from '@/pages/workflows/WorkflowDetailPage';
 import { WorkflowCreatePage } from './pages/workflows/WorkflowCreatePage';
 import { TaskTemplateDetailPage } from './pages/workflows/TaskTemplateDetailPage';
 import { WorkflowMonitoringPage } from '@/pages/workflows/WorkflowMonitoringPage';
+import { WorkflowEnginePage } from '@/pages/workflows/WorkflowEnginePage';
 import { AdminMonitoringDashboard } from '@/pages/admin/AdminMonitoringDashboard';
 
 
@@ -376,6 +377,11 @@ function AppRoutes() {
       <Route path="/workflows/monitoring" element={
         <ProtectedRoute requiredPermission={PERMISSIONS.WORKFLOW_TEMPLATES.INDEX}>
           <WorkflowMonitoringPage />
+        </ProtectedRoute>
+      } />
+      <Route path="/workflows/engine" element={
+        <ProtectedRoute>
+          <WorkflowEnginePage />
         </ProtectedRoute>
       } />
 

@@ -241,33 +241,33 @@ export const PromotionsPage = () => {
 
     const SidebarContent = (
         <div className="flex flex-col h-full bg-white border-r border-gray-200 w-full">
-            <div className="p-4 border-b border-gray-200 flex justify-between items-center bg-gray-50/50">
+            <div className="p-4 border-b border-gray-200 flex justify-between items-center bg-gradient-to-r from-purple-50 to-white">
                 <div className="flex items-center gap-2">
                     <Tag className="w-5 h-5 text-purple-600" />
-                    <h2 className="font-bold text-gray-900">Promotions</h2>
+                    <h2 className="font-bold text-gray-900 text-lg">Promotions</h2>
                 </div>
-                <div className="text-xs px-2 py-1 bg-purple-100 text-purple-700 rounded-full font-medium">
+                <div className="text-xs px-3 py-1 bg-purple-600 text-white rounded-full font-semibold shadow-sm">
                     {promotions.length}
                 </div>
             </div>
 
             <div className="p-3 border-b border-gray-200 bg-white">
-                <div className="grid grid-cols-2 gap-2 mb-3 text-xs">
-                    <div className="p-2 bg-green-50 rounded">
-                        <div className="text-green-600 font-medium">Actives</div>
-                        <div className="text-green-900 font-bold text-lg">{stats.active}</div>
+                <div className="grid grid-cols-2 gap-2 text-xs">
+                    <div className="p-3 bg-gradient-to-br from-green-50 to-green-100/50 rounded-lg border border-green-200/50">
+                        <div className="text-green-700 font-semibold text-[10px] uppercase tracking-wide">Actives</div>
+                        <div className="text-green-900 font-bold text-2xl mt-1">{stats.active}</div>
                     </div>
-                    <div className="p-2 bg-blue-50 rounded">
-                        <div className="text-blue-600 font-medium">À venir</div>
-                        <div className="text-blue-900 font-bold text-lg">{stats.upcoming}</div>
+                    <div className="p-3 bg-gradient-to-br from-blue-50 to-blue-100/50 rounded-lg border border-blue-200/50">
+                        <div className="text-blue-700 font-semibold text-[10px] uppercase tracking-wide">À venir</div>
+                        <div className="text-blue-900 font-bold text-2xl mt-1">{stats.upcoming}</div>
                     </div>
-                    <div className="p-2 bg-orange-50 rounded">
-                        <div className="text-orange-600 font-medium">Expirées</div>
-                        <div className="text-orange-900 font-bold text-lg">{stats.expired}</div>
+                    <div className="p-3 bg-gradient-to-br from-orange-50 to-orange-100/50 rounded-lg border border-orange-200/50">
+                        <div className="text-orange-700 font-semibold text-[10px] uppercase tracking-wide">Expirées</div>
+                        <div className="text-orange-900 font-bold text-2xl mt-1">{stats.expired}</div>
                     </div>
-                    <div className="p-2 bg-gray-50 rounded">
-                        <div className="text-gray-600 font-medium">Total</div>
-                        <div className="text-gray-900 font-bold text-lg">{stats.total}</div>
+                    <div className="p-3 bg-gradient-to-br from-gray-50 to-gray-100/50 rounded-lg border border-gray-200/50">
+                        <div className="text-gray-700 font-semibold text-[10px] uppercase tracking-wide">Total</div>
+                        <div className="text-gray-900 font-bold text-2xl mt-1">{stats.total}</div>
                     </div>
                 </div>
             </div>
@@ -285,54 +285,48 @@ export const PromotionsPage = () => {
     );
 
     const DetailView = selectedPromotion ? (
-        <div className="flex flex-col h-full bg-slate-50 overflow-hidden">
-            <div className="bg-white border-b border-gray-200 p-6">
+        <div className="flex flex-col h-full bg-gradient-to-br from-slate-50 to-white overflow-hidden">
+            <div className="bg-white border-b border-gray-200 p-6 shadow-sm">
                 <div className="flex justify-between items-start">
-                    <div>
-                        <h1 className="text-2xl font-bold text-gray-900 mb-1">
-                            {selectedPromotion.name}
-                        </h1>
-                        <div className="flex items-center gap-4 text-sm text-gray-500">
-                            <span className="flex items-center gap-1">
-                                <Clock className="w-4 h-4" /> {new Date(selectedPromotion.start_date).toLocaleDateString('fr-FR')} - {new Date(selectedPromotion.end_date).toLocaleDateString('fr-FR')}
-                            </span>
-                            <span className="uppercase font-medium">{selectedPromotion.code}</span>
+                    <div className="flex-1">
+                        <div className="flex items-center gap-3 mb-2">
+                            <h1 className="text-2xl font-bold text-gray-900">
+                                {selectedPromotion.name}
+                            </h1>
+                            {getStatusBadge(selectedPromotion)}
                         </div>
-                    </div>
-                    <div className="text-right">
-                        {getStatusBadge(selectedPromotion)}
+                        <div className="flex items-center gap-4 text-sm text-gray-500">
+                            <span className="flex items-center gap-1.5 px-2 py-1 bg-gray-50 rounded">
+                                <Clock className="w-4 h-4" /> 
+                                <span className="font-medium">{new Date(selectedPromotion.start_date).toLocaleDateString('fr-FR')}</span>
+                                <span className="text-gray-400">→</span>
+                                <span className="font-medium">{new Date(selectedPromotion.end_date).toLocaleDateString('fr-FR')}</span>
+                            </span>
+                            <span className="px-2 py-1 bg-purple-50 text-purple-700 rounded font-mono text-xs font-semibold">{selectedPromotion.code}</span>
+                        </div>
                     </div>
                 </div>
             </div>
 
             <div className="flex-1 overflow-auto p-6">
-                <div className="space-y-4">
-                    <div className="bg-white rounded-lg border border-gray-200 p-6">
-                        <h3 className="text-lg font-semibold text-gray-900 mb-4">Informations Générales</h3>
-                        <div className="grid grid-cols-2 gap-4">
-                            <div>
-                                <p className="text-xs text-gray-600 mb-1">Code</p>
-                                <p className="font-medium text-gray-900">{selectedPromotion.code}</p>
+                <div className="space-y-4 max-w-4xl">
+                    <div className="bg-white rounded-lg border border-gray-200 p-6 shadow-sm">
+                        <h3 className="text-base font-semibold text-gray-900 mb-4 flex items-center gap-2">
+                            <div className="w-1 h-5 bg-purple-500 rounded-full"></div>
+                            Informations Générales
+                        </h3>
+                        <div className="grid grid-cols-3 gap-4">
+                            <div className="p-3 bg-gray-50 rounded-lg">
+                                <p className="text-xs text-gray-600 mb-1 font-medium">Code</p>
+                                <p className="font-semibold text-gray-900 font-mono">{selectedPromotion.code}</p>
                             </div>
-                            <div>
-                                <p className="text-xs text-gray-600 mb-1">Nom</p>
-                                <p className="font-medium text-gray-900">{selectedPromotion.name}</p>
+                            <div className="p-3 bg-gray-50 rounded-lg">
+                                <p className="text-xs text-gray-600 mb-1 font-medium">Séquence</p>
+                                <p className="font-semibold text-gray-900">{selectedPromotion.sequence}</p>
                             </div>
-                            <div>
-                                <p className="text-xs text-gray-600 mb-1">Date de début</p>
-                                <p className="font-medium text-gray-900">{new Date(selectedPromotion.start_date).toLocaleDateString('fr-FR')}</p>
-                            </div>
-                            <div>
-                                <p className="text-xs text-gray-600 mb-1">Date de fin</p>
-                                <p className="font-medium text-gray-900">{new Date(selectedPromotion.end_date).toLocaleDateString('fr-FR')}</p>
-                            </div>
-                            <div>
-                                <p className="text-xs text-gray-600 mb-1">Séquence</p>
-                                <p className="font-medium text-gray-900">{selectedPromotion.sequence}</p>
-                            </div>
-                            <div>
-                                <p className="text-xs text-gray-600 mb-1">Lignes</p>
-                                <p className="font-medium text-gray-900">{selectedPromotion.lines?.length || 0}</p>
+                            <div className="p-3 bg-gray-50 rounded-lg">
+                                <p className="text-xs text-gray-600 mb-1 font-medium">Règles</p>
+                                <p className="font-semibold text-gray-900">{selectedPromotion.lines?.length || 0} ligne(s)</p>
                             </div>
                         </div>
                         {selectedPromotion.description && (
@@ -344,16 +338,19 @@ export const PromotionsPage = () => {
                     </div>
 
                     {selectedPromotion.usage_count !== undefined && (
-                        <div className="bg-white rounded-lg border border-gray-200 p-6">
-                            <h3 className="text-lg font-semibold text-gray-900 mb-4">Statistiques</h3>
+                        <div className="bg-white rounded-lg border border-gray-200 p-6 shadow-sm">
+                            <h3 className="text-base font-semibold text-gray-900 mb-4 flex items-center gap-2">
+                                <div className="w-1 h-5 bg-blue-500 rounded-full"></div>
+                                Statistiques d'Utilisation
+                            </h3>
                             <div className="grid grid-cols-2 gap-4">
-                                <div className="p-4 bg-blue-50 rounded-lg text-center">
-                                    <p className="text-xs text-blue-600">Utilisations</p>
-                                    <p className="text-2xl font-bold text-blue-700 mt-1">{selectedPromotion.usage_count}</p>
+                                <div className="p-5 bg-gradient-to-br from-blue-50 to-blue-100/50 rounded-lg border border-blue-200/50">
+                                    <p className="text-xs text-blue-700 font-semibold uppercase tracking-wide">Utilisations</p>
+                                    <p className="text-3xl font-bold text-blue-900 mt-2">{selectedPromotion.usage_count}</p>
                                 </div>
-                                <div className="p-4 bg-green-50 rounded-lg text-center">
-                                    <p className="text-xs text-green-600">Remise Totale</p>
-                                    <p className="text-2xl font-bold text-green-700 mt-1">{selectedPromotion.total_discount?.toLocaleString()} MAD</p>
+                                <div className="p-5 bg-gradient-to-br from-green-50 to-green-100/50 rounded-lg border border-green-200/50">
+                                    <p className="text-xs text-green-700 font-semibold uppercase tracking-wide">Remise Totale</p>
+                                    <p className="text-3xl font-bold text-green-900 mt-2">{selectedPromotion.total_discount?.toLocaleString()} <span className="text-lg">MAD</span></p>
                                 </div>
                             </div>
                         </div>
