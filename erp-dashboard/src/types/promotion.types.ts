@@ -19,10 +19,11 @@ export const BreakpointType = {
 export type BreakpointType = (typeof BreakpointType)[keyof typeof BreakpointType];
 
 export const AssortmentType = {
-    NONE: 0,
-    MULTIPLE_AND: 1,     // Must have X of Product A AND Y of Product B
-    CART_AMOUNT: 2,      // Minimum cart total
-    BOTH: 3              // Both Assortment AND Cart Amount
+    NONE: 0,                    // No requirement - any products qualify
+    QUANTITY: 1,                // Absolute Quantity - Each item must meet minimum quantity
+    QUANTITY_PERCENT: 2,        // Quantity % - Each item must be minimum % of total quantity
+    AMOUNT_PERCENT: 3,          // Amount % - Each item must be minimum % of total amount
+    AMOUNT: 4                   // Absolute Amount - Each item must meet minimum amount (MAD)
 } as const;
 
 export type AssortmentType = (typeof AssortmentType)[keyof typeof AssortmentType];
@@ -68,7 +69,7 @@ export interface PromotionLine {
     free_product_family_code?: string; // UI helper
 
     // Assortment Rules
-    assortment_type: AssortmentType | string;
+    assortment_type: AssortmentType | string | number;
     minimum_cart_amount?: number;
     assortments?: PromotionLineAssortment[];
 
@@ -87,6 +88,7 @@ export interface Promotion {
 
     is_closed: boolean;
     sequence: number; // Priority (lower = higher priority)
+    skip_to_sequence?: number; // Skip promotions with sequence < this value (0 = no skip)
 
     breakpoint_type: BreakpointType;
     scale_method: 1 | 2; // 1 = Cumulative/Progressive, 2 = Bracket/Highest tier only

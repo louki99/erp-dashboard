@@ -13,7 +13,7 @@ import {
 } from 'ag-grid-community';
 import { useFormContext, useFieldArray } from 'react-hook-form';
 import type { Promotion, PromotionLine } from '@/types/promotion.types';
-import { AssortmentType, PromotionPaidBasedOn } from '@/types/promotion.types';
+import { AssortmentType } from '@/types/promotion.types';
 import { Plus, Search, Trash2, X, Box } from 'lucide-react';
 import { ProductSelectionModal } from './ProductSelectionModal';
 import { ProductFamilySelectionDrawer } from './ProductFamilySelectionDrawer';
@@ -53,7 +53,7 @@ export const PromotionLinesGrid = ({ onLineSelected }: PromotionLinesGridProps) 
             // Update the form with the new product code AND switch type to product
             const updatedLine: PromotionLine = {
                 ...currentLine,
-                paid_based_on_product: PromotionPaidBasedOn.SPECIFIC_PRODUCT,
+                paid_based_on_product: 'product',
                 paid_product_code: code,
                 paid_product_family_code: undefined // Optionally clear family code
             };
@@ -69,7 +69,7 @@ export const PromotionLinesGrid = ({ onLineSelected }: PromotionLinesGridProps) 
             // Update the form with the new family code AND switch type to family
             const updatedLine: PromotionLine = {
                 ...currentLine,
-                paid_based_on_product: PromotionPaidBasedOn.PRODUCT_FAMILY,
+                paid_based_on_product: 'family',
                 paid_product_family_code: code,
                 paid_product_code: undefined // Clear product code
             };
@@ -105,20 +105,16 @@ export const PromotionLinesGrid = ({ onLineSelected }: PromotionLinesGridProps) 
             field: 'paid_based_on_product',
             editable: true,
             cellEditor: 'agSelectCellEditor',
-            cellEditorParams: () => {
-                return {
-                    values: [PromotionPaidBasedOn.ENTIRE_CART, PromotionPaidBasedOn.PRODUCT_FAMILY, PromotionPaidBasedOn.SPECIFIC_PRODUCT],
-                    formatValue: (value: any) => {
-                        if (value === PromotionPaidBasedOn.SPECIFIC_PRODUCT) return 'Produit Spécifique';
-                        if (value === PromotionPaidBasedOn.PRODUCT_FAMILY) return 'Famille de Produits';
-                        return 'Panier Entier';
-                    }
-                };
+            cellEditorParams: {
+                values: ['cart', 'family', 'product'],
+                valueListGap: 0,
+                valueListMaxHeight: 220
             },
             valueFormatter: (params) => {
-                if (params.value === PromotionPaidBasedOn.SPECIFIC_PRODUCT) return 'Produit Spécifique';
-                if (params.value === PromotionPaidBasedOn.PRODUCT_FAMILY) return 'Famille de Produits';
-                return 'Panier Entier';
+                if (params.value === 'product') return 'Produit Spécifique';
+                if (params.value === 'family') return 'Famille de Produits';
+                if (params.value === 'cart') return 'Panier Entier';
+                return params.value || 'Non défini';
             },
             width: 160,
             tooltipValueGetter: () => 'Où la remise s\'applique : Panier Entier, Famille de Produits, ou Produit Spécifique'
@@ -129,9 +125,9 @@ export const PromotionLinesGrid = ({ onLineSelected }: PromotionLinesGridProps) 
             editable: false,
             width: 180,
             cellRenderer: (params: any) => {
-                const isEditable = params.data.paid_based_on_product === PromotionPaidBasedOn.SPECIFIC_PRODUCT;
+                const isEditable = params.data.paid_based_on_product === 'product';
                 const hasValue = params.value;
-                const isDisabled = params.data.paid_based_on_product !== PromotionPaidBasedOn.SPECIFIC_PRODUCT;
+                const isDisabled = params.data.paid_based_on_product !== 'product';
 
                 return (
                     <div className={`flex items-center justify-between w-full h-full group ${isDisabled ? 'opacity-40 bg-gray-50' : ''
@@ -178,10 +174,10 @@ export const PromotionLinesGrid = ({ onLineSelected }: PromotionLinesGridProps) 
                 );
             },
             cellClass: (params: any) => {
-                return params.data.paid_based_on_product !== PromotionPaidBasedOn.SPECIFIC_PRODUCT ? 'ag-cell-disabled' : '';
+                return params.data.paid_based_on_product !== 'product' ? 'ag-cell-disabled' : '';
             },
             tooltipValueGetter: (params: any) => {
-                if (params.data.paid_based_on_product !== PromotionPaidBasedOn.SPECIFIC_PRODUCT) {
+                if (params.data.paid_based_on_product !== 'product') {
                     return 'Cette colonne est désactivée. Sélectionnez "Produit Spécifique" dans la colonne "Cible de Remise" pour l\'activer.';
                 }
                 return 'Cliquez sur l\'icône de recherche pour sélectionner un produit';
@@ -238,9 +234,9 @@ export const PromotionLinesGrid = ({ onLineSelected }: PromotionLinesGridProps) 
             editable: false,
             width: 200,
             cellRenderer: (params: any) => {
-                const isEditable = params.data.paid_based_on_product === PromotionPaidBasedOn.PRODUCT_FAMILY;
+                const isEditable = params.data.paid_based_on_product === 'family';
                 const hasValue = params.value;
-                const isDisabled = params.data.paid_based_on_product !== PromotionPaidBasedOn.PRODUCT_FAMILY;
+                const isDisabled = params.data.paid_based_on_product !== 'family';
 
                 return (
                     <div className={`flex items-center justify-between w-full h-full group ${isDisabled ? 'opacity-40 bg-gray-50' : ''
@@ -287,10 +283,10 @@ export const PromotionLinesGrid = ({ onLineSelected }: PromotionLinesGridProps) 
                 );
             },
             cellClass: (params: any) => {
-                return params.data.paid_based_on_product !== PromotionPaidBasedOn.PRODUCT_FAMILY ? 'ag-cell-disabled' : '';
+                return params.data.paid_based_on_product !== 'family' ? 'ag-cell-disabled' : '';
             },
             tooltipValueGetter: (params: any) => {
-                if (params.data.paid_based_on_product !== PromotionPaidBasedOn.PRODUCT_FAMILY) {
+                if (params.data.paid_based_on_product !== 'family') {
                     return 'Cette colonne est désactivée. Sélectionnez "Famille de Produits" dans la colonne "Cible de Remise" pour l\'activer.';
                 }
                 return 'Cliquez sur l\'icône de recherche pour sélectionner une famille de produits';
@@ -344,10 +340,10 @@ export const PromotionLinesGrid = ({ onLineSelected }: PromotionLinesGridProps) 
 
             // If the paid_based_on_product field changed, clear the irrelevant codes
             if (colDef.field === 'paid_based_on_product') {
-                if (data.paid_based_on_product === PromotionPaidBasedOn.SPECIFIC_PRODUCT) {
+                if (data.paid_based_on_product === 'product') {
                     // Product specific - clear family code
                     updatedLine.paid_product_family_code = undefined;
-                } else if (data.paid_based_on_product === PromotionPaidBasedOn.PRODUCT_FAMILY) {
+                } else if (data.paid_based_on_product === 'family') {
                     // Family - clear product code
                     updatedLine.paid_product_code = undefined;
                 } else {
@@ -391,7 +387,7 @@ export const PromotionLinesGrid = ({ onLineSelected }: PromotionLinesGridProps) 
     const addNewLine = () => {
         append({
             name: `Règle #${fields.length + 1}`,
-            paid_based_on_product: PromotionPaidBasedOn.PRODUCT_FAMILY,
+            paid_based_on_product: 'product',
             assortment_type: 'none',
             assortments: [],
             details: []

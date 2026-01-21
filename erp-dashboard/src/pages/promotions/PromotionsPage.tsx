@@ -13,16 +13,17 @@ import {
     Plus,
     Edit,
     Trash2,
-    Eye,
     Clock,
     CheckCircle,
     XCircle,
     Copy,
     Zap,
-    Loader2
+    Loader2,
+    X
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { ConfirmationModal } from '@/components/common/ConfirmationModal';
+import { PromotionFormRedesigned } from './components/PromotionFormRedesigned';
 
 
 export const PromotionsPage = () => {
@@ -34,6 +35,8 @@ export const PromotionsPage = () => {
     const [showDeleteModal, setShowDeleteModal] = useState(false);
     const [promotionToDelete, setPromotionToDelete] = useState<number | null>(null);
     const [isDeleting, setIsDeleting] = useState(false);
+    const [isEditDrawerOpen, setIsEditDrawerOpen] = useState(false);
+    const [editingPromotionId, setEditingPromotionId] = useState<number | null>(null);
 
     const loadPromotions = async () => {
         try {
@@ -187,26 +190,17 @@ export const PromotionsPage = () => {
             headerName: 'Actions',
             width: 140,
             cellRenderer: (params: any) => {
-                const promotion = params.data as Promotion;
+                const promo = params.data as Promotion;
                 
                 return (
-                    <div className="flex items-center justify-center gap-1 h-full">
+                    <div className="flex items-center gap-1 h-full">
                         <button
                             onClick={(e) => {
                                 e.stopPropagation();
-                                setSelectedPromotion(promotion);
+                                setEditingPromotionId(promo.id!);
+                                setIsEditDrawerOpen(true);
                             }}
-                            className="p-1.5 text-purple-600 hover:bg-purple-50 rounded transition-colors"
-                            title="Voir détails"
-                        >
-                            <Eye className="w-4 h-4" />
-                        </button>
-                        <button
-                            onClick={(e) => {
-                                e.stopPropagation();
-                                navigate(`/promotions/${promotion.id}/edit`);
-                            }}
-                            className="p-1.5 text-gray-600 hover:bg-gray-50 rounded transition-colors"
+                            className="p-1.5 text-blue-600 hover:bg-blue-50 rounded transition-colors"
                             title="Modifier"
                         >
                             <Edit className="w-4 h-4" />
@@ -214,9 +208,9 @@ export const PromotionsPage = () => {
                         <button
                             onClick={(e) => {
                                 e.stopPropagation();
-                                handleClone(promotion.id!);
+                                handleClone(promo.id!);
                             }}
-                            className="p-1.5 text-blue-600 hover:bg-blue-50 rounded transition-colors"
+                            className="p-1.5 text-purple-600 hover:bg-purple-50 rounded transition-colors"
                             title="Cloner"
                         >
                             <Copy className="w-4 h-4" />
@@ -224,7 +218,7 @@ export const PromotionsPage = () => {
                         <button
                             onClick={(e) => {
                                 e.stopPropagation();
-                                handleDeleteClick(promotion.id!);
+                                handleDeleteClick(promo.id!);
                             }}
                             className="p-1.5 text-red-600 hover:bg-red-50 rounded transition-colors"
                             title="Supprimer"
@@ -251,26 +245,6 @@ export const PromotionsPage = () => {
                 </div>
             </div>
 
-            <div className="p-3 border-b border-gray-200 bg-white">
-                <div className="grid grid-cols-2 gap-2 text-xs">
-                    <div className="p-3 bg-gradient-to-br from-green-50 to-green-100/50 rounded-lg border border-green-200/50">
-                        <div className="text-green-700 font-semibold text-[10px] uppercase tracking-wide">Actives</div>
-                        <div className="text-green-900 font-bold text-2xl mt-1">{stats.active}</div>
-                    </div>
-                    <div className="p-3 bg-gradient-to-br from-blue-50 to-blue-100/50 rounded-lg border border-blue-200/50">
-                        <div className="text-blue-700 font-semibold text-[10px] uppercase tracking-wide">À venir</div>
-                        <div className="text-blue-900 font-bold text-2xl mt-1">{stats.upcoming}</div>
-                    </div>
-                    <div className="p-3 bg-gradient-to-br from-orange-50 to-orange-100/50 rounded-lg border border-orange-200/50">
-                        <div className="text-orange-700 font-semibold text-[10px] uppercase tracking-wide">Expirées</div>
-                        <div className="text-orange-900 font-bold text-2xl mt-1">{stats.expired}</div>
-                    </div>
-                    <div className="p-3 bg-gradient-to-br from-gray-50 to-gray-100/50 rounded-lg border border-gray-200/50">
-                        <div className="text-gray-700 font-semibold text-[10px] uppercase tracking-wide">Total</div>
-                        <div className="text-gray-900 font-bold text-2xl mt-1">{stats.total}</div>
-                    </div>
-                </div>
-            </div>
 
 
             <div className="flex-1 w-full overflow-hidden">
@@ -445,6 +419,27 @@ export const PromotionsPage = () => {
                 variant="danger"
                 isLoading={isDeleting}
             />
+
+            {isEditDrawerOpen && editingPromotionId && (
+                <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-sm">
+                    <div className="fixed inset-0 bg-white overflow-auto">
+                        <div className="sticky top-0 z-10 bg-white border-b border-gray-200 px-6 py-4 flex items-center justify-between shadow-sm">
+                            <h2 className="text-xl font-bold text-gray-900">Modifier la Promotion</h2>
+                            <button
+                                onClick={() => {
+                                    setIsEditDrawerOpen(false);
+                                    setEditingPromotionId(null);
+                                    loadPromotions();
+                                }}
+                                className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
+                            >
+                                <X className="w-5 h-5 text-gray-500" />
+                            </button>
+                        </div>
+                        <PromotionFormRedesigned key={editingPromotionId} />
+                    </div>
+                </div>
+            )}
         </>
     );
 };

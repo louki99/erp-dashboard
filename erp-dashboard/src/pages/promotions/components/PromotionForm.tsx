@@ -80,13 +80,45 @@ export const PromotionForm = ({ isEdit = false }: PromotionFormProps) => {
                 }).filter(Boolean);
             }
 
+            // Normalize promotion lines - map API format to UI format
+            const normalizedLines = promo.lines?.map((line: any) => {
+                // Map paid_code back to UI helper fields
+                let paid_product_code = undefined;
+                let paid_product_family_code = undefined;
+                
+                if (line.paid_based_on_product === 'product') {
+                    paid_product_code = line.paid_code;
+                } else if (line.paid_based_on_product === 'family') {
+                    paid_product_family_code = line.paid_code;
+                }
+
+                // Map free_code back to UI helper fields
+                let free_product_code = undefined;
+                let free_product_family_code = undefined;
+                
+                if (line.free_based_on_product === '1') {
+                    free_product_code = line.free_code;
+                } else if (line.free_based_on_product === '0') {
+                    free_product_family_code = line.free_code;
+                }
+
+                return {
+                    ...line,
+                    paid_product_code,
+                    paid_product_family_code,
+                    free_product_code,
+                    free_product_family_code
+                };
+            }) || [];
+
             // Reset form with normalized data
             methods.reset({
                 ...promo,
                 start_date: promo.start_date ? promo.start_date.split('T')[0] : '',
                 end_date: promo.end_date ? promo.end_date.split('T')[0] : '',
                 partner_families: normalizedPartnerFamilies,
-                payment_terms: normalizedPaymentTerms
+                payment_terms: normalizedPaymentTerms,
+                lines: normalizedLines
             });
         } catch (error: any) {
             console.error('Failed to load promotion:', error);

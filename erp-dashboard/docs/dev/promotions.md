@@ -1,1412 +1,1726 @@
-# Promotion System - Complete Developer Guide
+# Promotion System API Documentation
 
-## 📋 Table of Contents
-
-1. [Overview](#overview)
-2. [System Architecture](#system-architecture)
-3. [Promotion Types](#promotion-types)
-4. [API Endpoints](#api-endpoints)
-5. [Request/Response Examples](#requestresponse-examples)
-6. [Promotion Configuration](#promotion-configuration)
-7. [Calculation Engine](#calculation-engine)
-8. [Frontend Integration](#frontend-integration)
-9. [Testing Guide](#testing-guide)
-10. [Troubleshooting](#troubleshooting)
-
----
-
-## 🎯 Overview
-
-The ERP Promotion System is a comprehensive, flexible engine for managing complex promotional campaigns. It supports multiple discount types, breakpoint-based pricing, product/family targeting, partner segmentation, and automatic calculation.
-
-### Key Features
-
-✅ **7 Promotion Types** - Percentage, Fixed Amount, Free Goods, Best Price, Replace Price, etc.  
-✅ **Flexible Targeting** - By product, product family, or entire cart  
-✅ **Breakpoint System** - Value-based (MAD) or Quantity-based thresholds  
-✅ **Partner Segmentation** - Target specific customer groups  
-✅ **Assortment Rules** - Require product mix (AND/OR logic)  
-✅ **Payment Term Dependent** - Promotions based on payment conditions  
-✅ **Automatic Calculation** - Real-time discount computation  
-✅ **Repeating Promotions** - Apply discount multiple times  
-✅ **Analytics & Tracking** - Usage statistics and performance metrics  
-
----
-
-## 🏗️ System Architecture
-
-### Database Schema
-
+## Base URL
 ```
-promotions
-├── promotion_lines (conditions)
-│   ├── promotion_line_details (breakpoints/rules)
-│   └── promotion_line_assortments (product mix requirements)
-├── partner_family_promotions (customer targeting)
-└── promotion_payment_terms (payment conditions)
-
-product_families
-└── product_family_products (product grouping)
-
-partner_families
-└── partner_family_partners (customer grouping)
+http://localhost:8000/api/admin/promotions
 ```
 
-### Core Models
-
-- **Promotion** - Main promotion entity
-- **PromotionLine** - Condition/rule container
-- **PromotionLineDetail** - Breakpoint with discount type
-- **PromotionLineAssortment** - Product mix requirement
-- **ProductFamily** - Product grouping for targeting
-- **PartnerFamily** - Customer grouping for eligibility
-
-### Services
-
-- **PromotionEngine** - Core calculation logic
-- **PromotionService** - Business logic layer
-- **PromotionAnalyticsService** - Statistics and reporting
-
----
-
-## 💰 Promotion Types
-
-### Type 1: Percentage Discount
-**Description:** Apply a percentage discount to qualifying products  
-**Amount Field:** Percentage value (e.g., 10 = 10%)  
-**Example:** Buy 1000 MAD worth of products, get 10% off
-
-```json
-{
-  "promo_type": 1,
-  "minimum_value": 1000,
-  "amount": 10,
-  "repeating": false
-}
-```
-
-### Type 2: Fixed Amount Discount
-**Description:** Subtract a fixed amount from the total  
-**Amount Field:** Discount amount in MAD  
-**Example:** Buy 5 units, get 50 MAD off
-
-```json
-{
-  "promo_type": 2,
-  "minimum_value": 5,
-  "amount": 50,
-  "repeating": true
-}
-```
-
-### Type 3: Best Price
-**Description:** Set a maximum price per unit  
-**Amount Field:** Best price per unit  
-**Example:** Buy 10+ units, pay maximum 45 MAD per unit
-
-```json
-{
-  "promo_type": 3,
-  "minimum_value": 10,
-  "amount": 45,
-  "repeating": false
-}
-```
-
-### Type 4: Amount Per Unit
-**Description:** Discount per unit purchased  
-**Amount Field:** Discount per unit  
-**Example:** Buy 20+ units, get 5 MAD off per unit
-
-```json
-{
-  "promo_type": 4,
-  "minimum_value": 20,
-  "amount": 5,
-  "repeating": false
-}
-```
-
-### Type 5: Free Promo Unit (Different Product)
-**Description:** Get free units of a different product  
-**Amount Field:** Number of free units  
-**Example:** Buy 10 Product A, get 2 free Product B
-
-```json
-{
-  "promo_type": 5,
-  "minimum_value": 10,
-  "amount": 2,
-  "repeating": false
-}
-```
-
-### Type 6: Flat Amount Discount
-**Description:** Fixed discount regardless of quantity  
-**Amount Field:** Total discount amount  
-**Example:** Buy 1000 MAD worth, get 100 MAD off
-
-```json
-{
-  "promo_type": 6,
-  "minimum_value": 1000,
-  "amount": 100,
-  "repeating": false
-}
-```
-
-### Type 7: Replace/Special Price
-**Description:** Replace unit price with special price  
-**Amount Field:** New price per unit  
-**Example:** Buy 50+ units, pay only 40 MAD per unit
-
-```json
-{
-  "promo_type": 7,
-  "minimum_value": 50,
-  "amount": 40,
-  "repeating": false
-}
+## Authentication
+All requests require Bearer token authentication:
+```bash
+Authorization: Bearer YOUR_TOKEN_HERE
 ```
 
 ---
 
-## 🔌 API Endpoints
+## 1. PROMOTION CRUD OPERATIONS
 
-### Backend Management (Admin)
+### 1.1 List All Promotions
+```bash
+curl --location 'http://localhost:8000/api/admin/promotions' \
+--header 'Authorization: Bearer YOUR_TOKEN'
+```
 
-#### 1. List All Promotions
-```http
-GET /api/backend/promotions
-Authorization: Bearer {token}
+**With Filters:**
+```bash
+curl --location 'http://localhost:8000/api/admin/promotions?status=active&breakpoint_type=1&search=discount' \
+--header 'Authorization: Bearer YOUR_TOKEN'
 ```
 
 **Query Parameters:**
-- `status` - Filter by status (active, upcoming, expired)
-- `breakpoint_type` - Filter by type (1=value, 2=quantity, 3=promo-unit)
-- `search` - Search by name/code/description
-- `start_date` - Filter by start date
-- `end_date` - Filter by end date
-- `page` - Pagination page number
+- `status`: `active`, `upcoming`, `expired`
+- `breakpoint_type`: `1` (Quantity), `2` (Amount), `3` (Promo Unit)
+- `start_date`: Filter by start date
+- `end_date`: Filter by end date
+- `search`: Search in name, code, description
 
-**Response:**
-```json
-{
-  "promotions": {
-    "data": [...],
-    "current_page": 1,
-    "total": 50
-  },
-  "statistics": {
-    "total": 50,
-    "active": 12,
-    "upcoming": 8,
-    "expired": 30
-  },
-  "productFamilies": [...],
-  "partnerFamilies": [...]
-}
-```
+---
 
-#### 2. Get Promotion Details
-```http
-GET /api/backend/promotions/{id}
-Authorization: Bearer {token}
-```
-
-**Response:**
-```json
-{
-  "promotion": {
-    "id": 1,
-    "code": "PROMO2024",
-    "name": "Winter Sale",
-    "description": "Special winter promotion",
-    "start_date": "2024-01-01",
-    "end_date": "2024-03-31",
+### 1.2 Create Promotion - Type 1: Percentage Discount
+```bash
+curl --location 'http://localhost:8000/api/admin/promotions' \
+--header 'Authorization: Bearer YOUR_TOKEN' \
+--header 'Content-Type: application/json' \
+--data '{
+    "code": "PROMO_PERCENT_001",
+    "name": "10% Discount on Family A",
+    "description": "Get 10% off when you buy 5 or more items",
+    "start_date": "2026-01-01",
+    "end_date": "2026-12-31",
     "breakpoint_type": 1,
+    "scale_method": 2,
+    "sequence": 10,
+    "payment_term_dependent": false,
+    "is_loyalty_program": false,
+    "is_closed": false,
+    "partner_families": ["FAM001"],
     "lines": [
-      {
-        "line_number": 0,
-        "name": "Main Discount",
-        "paid_based_on_product": false,
-        "paid_product_family_code": "FAMILY001",
-        "assortment_type": 0,
-        "details": [
-          {
-            "detail_number": 0,
-            "promo_type": 1,
-            "minimum_value": 1000,
-            "amount": 10,
-            "repeating": false
-          }
-        ],
-        "assortments": []
-      }
-    ],
-    "partnerFamilies": [...],
-    "paymentTerms": [...]
-  },
-  "usageStats": {
-    "invoice_count": 150,
-    "total_discount": 45000,
-    "avg_discount": 300
-  }
-}
-```
-
-#### 3. Create Promotion
-```http
-POST /api/backend/promotions
-Authorization: Bearer {token}
-Content-Type: application/json
-```
-
-**Request Body:**
-```json
-{
-  "code": "PROMO2024",
-  "name": "Winter Sale",
-  "description": "Special winter promotion",
-  "start_date": "2024-01-01",
-  "end_date": "2024-03-31",
-  "breakpoint_type": 1,
-  "sequence": 10,
-  "scale_method": 2,
-  "payment_term_dependent": false,
-  "is_closed": false,
-  "partner_families": ["FAMILY001", "FAMILY002"],
-  "payment_terms": ["NET30", "NET60"],
-  "lines": [
-    {
-      "name": "Main Discount",
-      "paid_based_on_product": "family",
-      "paid_code": "FAMILY001",
-      "assortment_type": "none",
-      "details": [
         {
-          "promo_type": 1,
-          "minimum_value": 1000,
-          "amount": 10,
-          "repeating": false
+            "name": "Rule #1",
+            "paid_based_on_product": "family",
+            "paid_code": "FAMILY_A",
+            "assortment_type": "none",
+            "details": [
+                {
+                    "promo_type": 1,
+                    "minimum_value": 5,
+                    "amount": -10,
+                    "repeating": true
+                },
+                {
+                    "promo_type": 1,
+                    "minimum_value": 10,
+                    "amount": -15,
+                    "repeating": true
+                }
+            ]
+        }
+    ]
+}'
+```
+
+---
+
+### 1.3 Create Promotion - Type 2: Amount Per Unit Discount
+```bash
+curl --location 'http://localhost:8000/api/admin/promotions' \
+--header 'Authorization: Bearer YOUR_TOKEN' \
+--header 'Content-Type: application/json' \
+--data '{
+    "code": "PROMO_AMOUNT_001",
+    "name": "5 MAD off per unit",
+    "description": "Get 5 MAD discount per unit when you buy 3+",
+    "start_date": "2026-01-01",
+    "end_date": "2026-12-31",
+    "breakpoint_type": 1,
+    "scale_method": 2,
+    "sequence": 20,
+    "lines": [
+        {
+            "name": "Rule #1",
+            "paid_based_on_product": "product",
+            "paid_code": "PROD001",
+            "assortment_type": "none",
+            "details": [
+                {
+                    "promo_type": 2,
+                    "minimum_value": 3,
+                    "amount": -5,
+                    "repeating": true
+                }
+            ]
+        }
+    ]
+}'
+```
+
+---
+
+### 1.4 Create Promotion - Type 3: Best Price
+```bash
+curl --location 'http://localhost:8000/api/admin/promotions' \
+--header 'Authorization: Bearer YOUR_TOKEN' \
+--header 'Content-Type: application/json' \
+--data '{
+    "code": "PROMO_BESTPRICE_001",
+    "name": "Best Price 50 MAD",
+    "description": "Best price guarantee - max 50 MAD per unit",
+    "start_date": "2026-01-01",
+    "end_date": "2026-12-31",
+    "breakpoint_type": 1,
+    "scale_method": 2,
+    "sequence": 30,
+    "lines": [
+        {
+            "name": "Rule #1",
+            "paid_based_on_product": "product",
+            "paid_code": "PROD002",
+            "assortment_type": "none",
+            "details": [
+                {
+                    "promo_type": 3,
+                    "minimum_value": 1,
+                    "amount": 50,
+                    "repeating": false
+                }
+            ]
+        }
+    ]
+}'
+```
+
+---
+
+### 1.5 Create Promotion - Type 4: Free Units (Buy X Get Y Free)
+```bash
+curl --location 'http://localhost:8000/api/admin/promotions' \
+--header 'Authorization: Bearer YOUR_TOKEN' \
+--header 'Content-Type: application/json' \
+--data '{
+    "code": "PROMO_FREEUNIT_001",
+    "name": "Buy 10 Get 2 Free",
+    "description": "Buy 10 units and get 2 free",
+    "start_date": "2026-01-01",
+    "end_date": "2026-12-31",
+    "breakpoint_type": 1,
+    "scale_method": 2,
+    "sequence": 40,
+    "lines": [
+        {
+            "name": "Rule #1",
+            "paid_based_on_product": "family",
+            "paid_code": "FAMILY_B",
+            "free_based_on_product": "1",
+            "free_code": "PROD003",
+            "assortment_type": "none",
+            "details": [
+                {
+                    "promo_type": 4,
+                    "minimum_value": 10,
+                    "amount": -2,
+                    "repeating": true
+                }
+            ]
+        }
+    ]
+}'
+```
+
+---
+
+### 1.6 Create Promotion - Type 5: Free Promo Units
+```bash
+curl --location 'http://localhost:8000/api/admin/promotions' \
+--header 'Authorization: Bearer YOUR_TOKEN' \
+--header 'Content-Type: application/json' \
+--data '{
+    "code": "PROMO_FREEPROMO_001",
+    "name": "Free Promo Units",
+    "description": "Get free promo units based on promo_unit field",
+    "start_date": "2026-01-01",
+    "end_date": "2026-12-31",
+    "breakpoint_type": 3,
+    "scale_method": 2,
+    "sequence": 50,
+    "lines": [
+        {
+            "name": "Rule #1",
+            "paid_based_on_product": "family",
+            "paid_code": "FAMILY_C",
+            "free_based_on_product": "0",
+            "free_code": "FAMILY_D",
+            "assortment_type": "none",
+            "details": [
+                {
+                    "promo_type": 5,
+                    "minimum_value": 100,
+                    "amount": -10,
+                    "repeating": false
+                }
+            ]
+        }
+    ]
+}'
+```
+
+---
+
+### 1.7 Create Promotion - Type 6: Flat Amount Discount
+```bash
+curl --location 'http://localhost:8000/api/admin/promotions' \
+--header 'Authorization: Bearer YOUR_TOKEN' \
+--header 'Content-Type: application/json' \
+--data '{
+    "code": "PROMO_FLAT_001",
+    "name": "100 MAD Flat Discount",
+    "description": "Get 100 MAD off when cart total reaches 1000 MAD",
+    "start_date": "2026-01-01",
+    "end_date": "2026-12-31",
+    "breakpoint_type": 2,
+    "scale_method": 2,
+    "sequence": 60,
+    "lines": [
+        {
+            "name": "Rule #1",
+            "paid_based_on_product": "entire_cart",
+            "assortment_type": "none",
+            "details": [
+                {
+                    "promo_type": 6,
+                    "minimum_value": 1000,
+                    "amount": -100,
+                    "repeating": false
+                }
+            ]
+        }
+    ]
+}'
+```
+
+---
+
+### 1.8 Create Promotion - Type 7: Replace Price
+```bash
+curl --location 'http://localhost:8000/api/admin/promotions' \
+--header 'Authorization: Bearer YOUR_TOKEN' \
+--header 'Content-Type: application/json' \
+--data '{
+    "code": "PROMO_REPLACE_001",
+    "name": "Special Price 76 MAD",
+    "description": "Replace price to 76 MAD when buying 10+",
+    "start_date": "2026-01-01",
+    "end_date": "2026-12-31",
+    "breakpoint_type": 1,
+    "scale_method": 2,
+    "sequence": 70,
+    "lines": [
+        {
+            "name": "Rule #1",
+            "paid_based_on_product": "product",
+            "paid_code": "PSUR0200112",
+            "assortment_type": "none",
+            "details": [
+                {
+                    "promo_type": 7,
+                    "minimum_value": 10,
+                    "amount": 76,
+                    "repeating": true
+                }
+            ]
+        }
+    ]
+}'
+```
+
+---
+
+### 1.9 Create Promotion with Assortments
+```bash
+curl --location 'http://localhost:8000/api/admin/promotions' \
+--header 'Authorization: Bearer YOUR_TOKEN' \
+--header 'Content-Type: application/json' \
+--data '{
+    "code": "PROMO_ASSORT_001",
+    "name": "Mix & Match Discount",
+    "description": "Buy 3 different products from family and get 20% off",
+    "start_date": "2026-01-01",
+    "end_date": "2026-12-31",
+    "breakpoint_type": 1,
+    "scale_method": 2,
+    "sequence": 80,
+    "lines": [
+        {
+            "name": "Rule #1",
+            "paid_based_on_product": "family",
+            "paid_code": "FAMILY_E",
+            "assortment_type": "1",
+            "details": [
+                {
+                    "promo_type": 1,
+                    "minimum_value": 5,
+                    "amount": -20,
+                    "repeating": true
+                }
+            ]
+        }
+    ],
+    "assortments": [
+        {
+            "based_on_product": "1",
+            "product_code": "PROD004",
+            "minimum": 1
         },
         {
-          "promo_type": 1,
-          "minimum_value": 2000,
-          "amount": 15,
-          "repeating": false
+            "based_on_product": "1",
+            "product_code": "PROD005",
+            "minimum": 1
+        },
+        {
+            "based_on_product": "1",
+            "product_code": "PROD006",
+            "minimum": 1
         }
-      ]
-    }
-  ]
-}
-```
-
-**Response:**
-```json
-{
-  "success": true,
-  "message": "Promotion created successfully",
-  "promotion": {...}
-}
-```
-
-#### 4. Update Promotion
-```http
-PUT /api/backend/promotions/{id}
-Authorization: Bearer {token}
-Content-Type: application/json
-```
-
-**Request Body:** Same as Create
-
-#### 5. Delete Promotion
-```http
-DELETE /api/backend/promotions/{id}
-Authorization: Bearer {token}
-```
-
-**Response:**
-```json
-{
-  "success": true,
-  "message": "Promotion deleted successfully"
-}
-```
-
-#### 6. Clone Promotion
-```http
-POST /api/backend/promotions/{id}/clone
-Authorization: Bearer {token}
-```
-
-**Response:**
-```json
-{
-  "success": true,
-  "message": "Promotion cloned successfully",
-  "clone": {...}
-}
+    ]
+}'
 ```
 
 ---
 
-### Calculation API (Frontend/Mobile)
-
-#### 7. Calculate Promotions
-```http
-POST /api/promotions/calculate
-Content-Type: application/json
-```
-
-**Request Body:**
-```json
-{
-  "partner_code": "PARTNER001",
-  "payment_term_code": "NET30",
-  "branch_code": "BRANCH001",
-  "date": "2024-12-16",
-  "save_to_document": false,
-  "document_code": "INV-2024-001",
-  "document_type": "invoice",
-  "line_items": [
-    {
-      "product_code": "PROD001",
-      "quantity": 10,
-      "price": 150
-    },
-    {
-      "product_code": "PROD002",
-      "quantity": 5,
-      "price": 200
-    }
-  ]
-}
-```
-
-**Response:**
-```json
-{
-  "success": true,
-  "message": "Promotions calculated successfully",
-  "data": {
-    "promotions": [
-      {
-        "promotion_id": 1,
-        "promotion_code": "PROMO2024",
-        "promotion_name": "Winter Sale",
-        "applied": true,
-        "total_discount": 250,
-        "lines": [
-          {
-            "line_number": 0,
-            "name": "Main Discount",
-            "applied": true,
-            "discount": 250,
+### 1.10 Create Promotion with Cumulative Scale Method
+```bash
+curl --location 'http://localhost:8000/api/admin/promotions' \
+--header 'Authorization: Bearer YOUR_TOKEN' \
+--header 'Content-Type: application/json' \
+--data '{
+    "code": "PROMO_CUMUL_001",
+    "name": "Cumulative Discount Tiers",
+    "description": "Progressive discount: 5% at 10 units, 10% at 20 units",
+    "start_date": "2026-01-01",
+    "end_date": "2026-12-31",
+    "breakpoint_type": 1,
+    "scale_method": 1,
+    "sequence": 90,
+    "lines": [
+        {
+            "name": "Rule #1",
+            "paid_based_on_product": "family",
+            "paid_code": "FAMILY_F",
+            "assortment_type": "none",
             "details": [
-              {
-                "detail_number": 0,
-                "minimum_value": 1000,
-                "promo_type": 1,
-                "amount": 10,
-                "discount": 250,
-                "breakpoint_value": 2500
-              }
+                {
+                    "promo_type": 1,
+                    "minimum_value": 10,
+                    "amount": -5,
+                    "repeating": true
+                },
+                {
+                    "promo_type": 1,
+                    "minimum_value": 20,
+                    "amount": -10,
+                    "repeating": true
+                }
             ]
-          }
-        ]
-      }
-    ],
-    "total_discount": 250,
-    "applied_count": 1,
-    "document_code": "INV-2024-001",
-    "saved_to_document": false
-  }
-}
+        }
+    ]
+}'
 ```
 
-#### 8. Get My Promotions (Authenticated Partner)
-```http
-GET /api/my-promotions
-Authorization: Bearer {token}
+---
+
+### 1.11 Show Promotion Details
+```bash
+curl --location 'http://localhost:8000/api/admin/promotions/1' \
+--header 'Authorization: Bearer YOUR_TOKEN'
 ```
 
-**Query Parameters:**
-- `payment_term_code` - Filter by payment term
-- `date` - Check eligibility for specific date
+---
 
-**Response:**
-```json
-{
-  "success": true,
-  "message": "Promotions retrieved successfully",
-  "data": {
-    "partner": {
-      "code": "PARTNER001",
-      "name": "ABC Company",
-      "city": "Casablanca",
-      "is_b2b": true
-    },
-    "promotions": [
-      {
-        "id": 1,
-        "code": "PROMO2024",
-        "name": "Winter Sale",
-        "description": "Special winter promotion",
-        "start_date": "2024-01-01",
-        "end_date": "2024-03-31",
-        "breakpoint_type": "value_based",
-        "breakpoint_type_label": "Value Based (MAD)",
-        "is_active": true,
-        "rules": [
-          {
-            "line_number": 0,
-            "name": "Main Discount",
-            "product_family_code": "FAMILY001",
-            "tiers": [
-              {
-                "tier_number": 0,
-                "minimum_value": 1000,
-                "discount_type": "Percentage Discount",
-                "discount_type_code": 1,
-                "amount": 10,
-                "repeating": false
-              }
+### 1.12 Update Promotion
+```bash
+curl --location --request PUT 'http://localhost:8000/api/admin/promotions/1' \
+--header 'Authorization: Bearer YOUR_TOKEN' \
+--header 'Content-Type: application/json' \
+--data '{
+    "code": "PROMO_PERCENT_001_UPDATED",
+    "name": "15% Discount on Family A",
+    "description": "Updated: Get 15% off when you buy 5 or more items",
+    "start_date": "2026-01-01",
+    "end_date": "2026-12-31",
+    "breakpoint_type": 1,
+    "scale_method": 2,
+    "sequence": 10,
+    "is_closed": false,
+    "lines": [
+        {
+            "name": "Rule #1",
+            "paid_based_on_product": "family",
+            "paid_product_family_code": "FAMILY_A",
+            "assortment_type": "0",
+            "details": [
+                {
+                    "promo_type": 1,
+                    "minimum_value": 5,
+                    "amount": -15,
+                    "repeating": true
+                }
             ]
-          }
-        ]
-      }
-    ],
-    "total_count": 5,
-    "date_checked": "2024-12-16 10:00:00"
-  }
+        }
+    ]
+}'
+```
+
+---
+
+### 1.13 Clone Promotion
+```bash
+curl --location --request POST 'http://localhost:8000/api/admin/promotions/1/clone' \
+--header 'Authorization: Bearer YOUR_TOKEN'
+```
+
+---
+
+### 1.14 Delete Promotion
+```bash
+curl --location --request DELETE 'http://localhost:8000/api/admin/promotions/1' \
+--header 'Authorization: Bearer YOUR_TOKEN'
+```
+
+---
+
+## 2. PARTNER FAMILY MANAGEMENT
+
+### 2.1 List Partner Families
+```bash
+curl --location 'http://localhost:8000/api/admin/promotions/partner-families' \
+--header 'Authorization: Bearer YOUR_TOKEN'
+```
+
+---
+
+### 2.2 Create Partner Family
+```bash
+curl --location 'http://localhost:8000/api/admin/promotions/partner-families' \
+--header 'Authorization: Bearer YOUR_TOKEN' \
+--header 'Content-Type: application/json' \
+--data '{
+    "code": "PFAM001",
+    "name": "Premium Partners",
+    "partner_condition": "Credit limit > 50000",
+    "partners": ["PART001", "PART002", "PART003"]
+}'
+```
+
+---
+
+### 2.3 Show Partner Family
+```bash
+curl --location 'http://localhost:8000/api/admin/promotions/partner-families/1' \
+--header 'Authorization: Bearer YOUR_TOKEN'
+```
+
+---
+
+### 2.4 Update Partner Family
+```bash
+curl --location --request PUT 'http://localhost:8000/api/admin/promotions/partner-families/1' \
+--header 'Authorization: Bearer YOUR_TOKEN' \
+--header 'Content-Type: application/json' \
+--data '{
+    "code": "PFAM001",
+    "name": "Premium Partners Updated",
+    "partner_condition": "Credit limit > 100000",
+    "partners": ["PART001", "PART002", "PART003", "PART004"]
+}'
+```
+
+---
+
+### 2.5 Delete Partner Family
+```bash
+curl --location --request DELETE 'http://localhost:8000/api/admin/promotions/partner-families/1' \
+--header 'Authorization: Bearer YOUR_TOKEN'
+```
+
+---
+
+## 3. PRODUCT FAMILY MANAGEMENT
+
+### 3.1 List Product Families
+```bash
+curl --location 'http://localhost:8000/api/admin/promotions/product-families' \
+--header 'Authorization: Bearer YOUR_TOKEN'
+```
+
+---
+
+### 3.2 Create Product Family
+```bash
+curl --location 'http://localhost:8000/api/admin/promotions/product-families' \
+--header 'Authorization: Bearer YOUR_TOKEN' \
+--header 'Content-Type: application/json' \
+--data '{
+    "code": "PRODFAM001",
+    "name": "Frozen Foods",
+    "description": "All frozen food products",
+    "sales_group_code": "SG001",
+    "products": ["PROD001", "PROD002", "PROD003"]
+}'
+```
+
+---
+
+### 3.3 Show Product Family
+```bash
+curl --location 'http://localhost:8000/api/admin/promotions/product-families/1' \
+--header 'Authorization: Bearer YOUR_TOKEN'
+```
+
+---
+
+### 3.4 Update Product Family
+```bash
+curl --location --request PUT 'http://localhost:8000/api/admin/promotions/product-families/1' \
+--header 'Authorization: Bearer YOUR_TOKEN' \
+--header 'Content-Type: application/json' \
+--data '{
+    "code": "PRODFAM001",
+    "name": "Frozen Foods Updated",
+    "description": "All frozen food products including ice cream",
+    "sales_group_code": "SG001",
+    "products": ["PROD001", "PROD002", "PROD003", "PROD004"]
+}'
+```
+
+---
+
+### 3.5 Delete Product Family
+```bash
+curl --location --request DELETE 'http://localhost:8000/api/admin/promotions/product-families/1' \
+--header 'Authorization: Bearer YOUR_TOKEN'
+```
+
+---
+
+## 4. BOOST MANAGEMENT (Product Family x Partner Family)
+
+### 4.1 List Boosts
+```bash
+curl --location 'http://localhost:8000/api/admin/promotions/boosts' \
+--header 'Authorization: Bearer YOUR_TOKEN'
+```
+
+**With Filters:**
+```bash
+curl --location 'http://localhost:8000/api/admin/promotions/boosts?product_family_id=1&partner_family_id=2' \
+--header 'Authorization: Bearer YOUR_TOKEN'
+```
+
+---
+
+### 4.2 Create Boost
+```bash
+curl --location 'http://localhost:8000/api/admin/promotions/boosts' \
+--header 'Authorization: Bearer YOUR_TOKEN' \
+--header 'Content-Type: application/json' \
+--data '{
+    "product_family_id": 1,
+    "partner_family_id": 2,
+    "rank": 1,
+    "boost_factor": 1.5
+}'
+```
+
+---
+
+### 4.3 Show Boost
+```bash
+curl --location 'http://localhost:8000/api/admin/promotions/boosts/1' \
+--header 'Authorization: Bearer YOUR_TOKEN'
+```
+
+---
+
+### 4.4 Update Boost
+```bash
+curl --location --request PUT 'http://localhost:8000/api/admin/promotions/boosts/1' \
+--header 'Authorization: Bearer YOUR_TOKEN' \
+--header 'Content-Type: application/json' \
+--data '{
+    "product_family_id": 1,
+    "partner_family_id": 2,
+    "rank": 1,
+    "boost_factor": 2.0
+}'
+```
+
+---
+
+### 4.5 Delete Boost
+```bash
+curl --location --request DELETE 'http://localhost:8000/api/admin/promotions/boosts/1' \
+--header 'Authorization: Bearer YOUR_TOKEN'
+```
+
+---
+
+### 4.6 Bulk Sync Boosts for Product Family
+```bash
+curl --location 'http://localhost:8000/api/admin/promotions/boosts/bulk-sync' \
+--header 'Authorization: Bearer YOUR_TOKEN' \
+--header 'Content-Type: application/json' \
+--data '{
+    "product_family_id": 1,
+    "boosts": [
+        {
+            "partner_family_id": 2,
+            "rank": 1,
+            "boost_factor": 1.5
+        },
+        {
+            "partner_family_id": 3,
+            "rank": 2,
+            "boost_factor": 2.0
+        },
+        {
+            "partner_family_id": 4,
+            "rank": 3,
+            "boost_factor": 1.2
+        }
+    ]
+}'
+```
+
+---
+
+## 5. FIELD REFERENCE
+
+### Promotion Fields
+- **code**: Unique promotion code (required)
+- **name**: Promotion name (required)
+- **description**: Detailed description
+- **start_date**: Start date (YYYY-MM-DD, required)
+- **end_date**: End date (YYYY-MM-DD, required)
+- **breakpoint_type**: `1` (Quantity), `2` (Amount), `3` (Promo Unit)
+- **scale_method**: `1` (Cumulative), `2` (Bracket)
+- **sequence**: Promotion execution order (lower = earlier)
+- **skip_to_sequence**: Skip to this sequence if promotion applies
+- **payment_term_dependent**: Restrict to specific payment terms
+- **is_loyalty_program**: Mark as loyalty program
+- **is_closed**: Mark as closed/inactive
+- **partner_families**: Array of partner family codes
+- **payment_terms**: Array of payment term codes
+
+### Promotion Line Fields
+- **name**: Line name/description
+- **paid_based_on_product**: `"product"`, `"family"`, or `"entire_cart"`
+- **paid_code**: Product code or family code (depends on paid_based_on_product)
+- **paid_product_code**: Specific product code
+- **paid_product_family_code**: Product family code
+- **free_based_on_product**: `"0"` (family) or `"1"` (product)
+- **free_code**: Free product/family code
+- **free_product_code**: Specific free product code
+- **free_product_family_code**: Free product family code
+- **assortment_type**: `"none"` (0), `"multiple"` (1), `"cart_amount"` (2), `"both"` (3)
+- **minimum_cart_amount**: Minimum cart amount for line to apply
+
+### Promotion Line Detail Fields (Breakpoints)
+- **promo_type**: 
+  - `1` = Percentage
+  - `2` = Amount Per Unit
+  - `3` = Best Price
+  - `4` = Free Unit
+  - `5` = Free Promo Unit
+  - `6` = Flat Amount
+  - `7` = Replace Price
+- **minimum_value**: Minimum quantity/amount to reach this tier
+- **amount**: Discount amount (negative for discounts, positive for prices)
+- **repeating**: Apply discount repeatedly (true/false)
+
+### Assortment Fields
+- **based_on_product**: `"0"` (family) or `"1"` (product)
+- **product_code**: Product code (if based_on_product = 1)
+- **product_family_code**: Family code (if based_on_product = 0)
+- **minimum**: Minimum quantity required
+
+---
+
+## 6. PROMO TYPE EXAMPLES
+
+### Type 1: Percentage (-10 = 10% off)
+```json
+{
+    "promo_type": 1,
+    "minimum_value": 5,
+    "amount": -10,
+    "repeating": true
 }
 ```
 
-#### 9. Test Promotion (Dry Run)
-```http
-POST /api/promotions/test
-Content-Type: application/json
-```
-
-**Request Body:**
+### Type 2: Amount Per Unit (-5 = 5 MAD off per unit)
 ```json
 {
-  "partner_code": "PARTNER001",
-  "payment_term_code": "NET30",
-  "line_items": [
-    {
-      "product_code": "PROD001",
-      "quantity": 10,
-      "price": 150
-    }
-  ]
+    "promo_type": 2,
+    "minimum_value": 3,
+    "amount": -5,
+    "repeating": true
 }
 ```
 
-**Response:**
+### Type 3: Best Price (50 = max price 50 MAD)
 ```json
 {
-  "success": true,
-  "message": "Eligible promotions retrieved",
-  "data": {
-    "eligible_promotions": [
-      {
-        "id": 1,
-        "code": "PROMO2024",
-        "name": "Winter Sale",
-        "description": "Special winter promotion",
-        "start_date": "2024-01-01",
-        "end_date": "2024-03-31",
-        "lines_count": 1
-      }
-    ],
-    "count": 1
-  }
+    "promo_type": 3,
+    "minimum_value": 1,
+    "amount": 50,
+    "repeating": false
+}
+```
+
+### Type 4: Free Units (-2 = 2 free units)
+```json
+{
+    "promo_type": 4,
+    "minimum_value": 10,
+    "amount": -2,
+    "repeating": true
+}
+```
+
+### Type 5: Free Promo Units (-10 = 10 promo units free)
+```json
+{
+    "promo_type": 5,
+    "minimum_value": 100,
+    "amount": -10,
+    "repeating": false
+}
+```
+
+### Type 6: Flat Amount (-100 = 100 MAD off total)
+```json
+{
+    "promo_type": 6,
+    "minimum_value": 1000,
+    "amount": -100,
+    "repeating": false
+}
+```
+
+### Type 7: Replace Price (76 = new price 76 MAD)
+```json
+{
+    "promo_type": 7,
+    "minimum_value": 10,
+    "amount": 76,
+    "repeating": true
 }
 ```
 
 ---
 
-### Product & Partner Family Management
+## 7. COMMON SCENARIOS
 
-#### 10. List Product Families
-```http
-GET /api/backend/promotions/product-families
-Authorization: Bearer {token}
-```
+### Scenario 1: Simple Percentage Discount
+**"10% off when buying 5+ units from Family A"**
+- breakpoint_type: `1` (Quantity)
+- promo_type: `1` (Percentage)
+- paid_based_on_product: `"family"`
+- minimum_value: `5`
+- amount: `-10`
 
-**Response:**
-```json
-{
-  "success": true,
-  "data": [
-    {
-      "id": 1,
-      "code": "ELECTRONICS",
-      "name": "Electronics Products",
-      "description": "All electronic devices",
-      "products_count": 15
-    }
-  ]
-}
-```
+### Scenario 2: Buy X Get Y Free
+**"Buy 10 get 2 free"**
+- breakpoint_type: `1` (Quantity)
+- promo_type: `4` (Free Unit)
+- paid_based_on_product: `"family"`
+- free_based_on_product: `"1"`
+- minimum_value: `10`
+- amount: `-2`
 
-#### 11. Create Product Family
-```http
-POST /api/backend/promotions/product-families
-Authorization: Bearer {token}
-Content-Type: application/json
-```
+### Scenario 3: Tiered Discount
+**"5% at 10 units, 10% at 20 units, 15% at 30 units"**
+- breakpoint_type: `1` (Quantity)
+- scale_method: `2` (Bracket)
+- Multiple details with increasing minimum_value
 
-**Request Body:**
-```json
-{
-  "code": "FAMILY001",
-  "name": "Electronics",
-  "description": "Electronic products",
-  "products": ["PROD001", "PROD002", "PROD003"]
-}
-```
+### Scenario 4: Cart Total Discount
+**"100 MAD off when cart reaches 1000 MAD"**
+- breakpoint_type: `2` (Amount)
+- promo_type: `6` (Flat Amount)
+- paid_based_on_product: `"entire_cart"`
+- minimum_value: `1000`
+- amount: `-100`
 
-**Response:**
-```json
-{
-  "success": true,
-  "message": "Product family created successfully",
-  "data": {...}
-}
-```
-
-#### 12. Get Product Family Details
-```http
-GET /api/backend/promotions/product-families/{id}
-Authorization: Bearer {token}
-```
-
-#### 13. Update Product Family
-```http
-PUT /api/backend/promotions/product-families/{id}
-Authorization: Bearer {token}
-Content-Type: application/json
-```
-
-#### 14. Delete Product Family
-```http
-DELETE /api/backend/promotions/product-families/{id}
-Authorization: Bearer {token}
-```
+### Scenario 5: Special Price
+**"Special price 76 MAD when buying 10+"**
+- breakpoint_type: `1` (Quantity)
+- promo_type: `7` (Replace Price)
+- paid_based_on_product: `"product"`
+- minimum_value: `10`
+- amount: `76`
 
 ---
 
-#### 15. List Partner Families
-```http
-GET /api/backend/promotions/partner-families
-Authorization: Bearer {token}
-```
+## 8. SEQUENCE & SKIP LOGIC
 
-**Response:**
-```json
-{
-  "success": true,
-  "data": [
-    {
-      "id": 1,
-      "code": "PREMIUM",
-      "name": "Premium Customers",
-      "partner_condition": "credit_limit > 50000",
-      "partners_count": 25
-    }
-  ]
-}
-```
+### What is Sequence?
 
-#### 16. Create Partner Family
-```http
-POST /api/backend/promotions/partner-families
-Authorization: Bearer {token}
-Content-Type: application/json
-```
+**Sequence** determines the **order** in which promotions are evaluated and applied.
 
-**Request Body:**
-```json
-{
-  "code": "FAMILY001",
-  "name": "Premium Customers",
-  "partner_condition": "credit_limit > 50000",
-  "partners": ["PARTNER001", "PARTNER002"]
-}
-```
+- **Lower sequence = Higher priority** (evaluated first)
+- Promotions are sorted by `sequence` in ascending order
+- Example: `sequence: 10` is evaluated before `sequence: 20`
 
-**Response:**
-```json
-{
-  "success": true,
-  "message": "Partner family created successfully",
-  "data": {...}
-}
-```
+### What is Skip to Sequence?
 
-#### 17. Get Partner Family Details
-```http
-GET /api/backend/promotions/partner-families/{id}
-Authorization: Bearer {token}
-```
+**Skip to Sequence** (`skip_to_sequence`) is a control mechanism that allows a promotion to **skip subsequent promotions** after it is applied.
 
-#### 18. Update Partner Family
-```http
-PUT /api/backend/promotions/partner-families/{id}
-Authorization: Bearer {token}
-Content-Type: application/json
-```
-
-#### 19. Delete Partner Family
-```http
-DELETE /api/backend/promotions/partner-families/{id}
-Authorization: Bearer {token}
-```
-
----
-
-### Boosts Management (Product Family × Partner Family)
-
-#### 20. List Boosts
-```http
-GET /api/backend/promotions/boosts
-Authorization: Bearer {token}
-```
-
-**Description:** Manage promotional boosts that link product families with partner families for targeted promotions.
-
-**Response:**
-```json
-{
-  "success": true,
-  "data": [
-    {
-      "id": 1,
-      "product_family_code": "ELECTRONICS",
-      "partner_family_code": "PREMIUM",
-      "boost_percentage": 10,
-      "is_active": true
-    }
-  ]
-}
-```
-
-#### 21. Create Boost
-```http
-POST /api/backend/promotions/boosts
-Authorization: Bearer {token}
-Content-Type: application/json
-```
-
-**Request Body:**
-```json
-{
-  "product_family_code": "ELECTRONICS",
-  "partner_family_code": "PREMIUM",
-  "boost_percentage": 10,
-  "is_active": true
-}
-```
-
-#### 22. Bulk Sync Boosts
-```http
-POST /api/backend/promotions/boosts/bulk-sync
-Authorization: Bearer {token}
-Content-Type: application/json
-```
-
-**Description:** Synchronize multiple boosts at once.
-
-**Request Body:**
-```json
-{
-  "boosts": [
-    {
-      "product_family_code": "ELECTRONICS",
-      "partner_family_code": "PREMIUM",
-      "boost_percentage": 10
-    },
-    {
-      "product_family_code": "FOOD",
-      "partner_family_code": "WHOLESALE",
-      "boost_percentage": 5
-    }
-  ]
-}
-```
-
-#### 23. Get Boost Details
-```http
-GET /api/backend/promotions/boosts/{id}
-Authorization: Bearer {token}
-```
-
-#### 24. Update Boost
-```http
-PUT /api/backend/promotions/boosts/{id}
-Authorization: Bearer {token}
-Content-Type: application/json
-```
-
-#### 25. Delete Boost
-```http
-DELETE /api/backend/promotions/boosts/{id}
-Authorization: Bearer {token}
-```
-
----
-
-## 📝 Promotion Configuration
-
-### Breakpoint Types
-
-#### Type 1: Value-Based (MAD)
-Promotions trigger based on total purchase amount in currency.
-
-**Example:** Buy 1000 MAD worth of products, get 10% off
-
-```json
-{
-  "breakpoint_type": 1,
-  "lines": [{
-    "details": [{
-      "minimum_value": 1000,
-      "promo_type": 1,
-      "amount": 10
-    }]
-  }]
-}
-```
-
-#### Type 2: Quantity-Based (Units)
-Promotions trigger based on total number of units.
-
-**Example:** Buy 50 units, get 100 MAD off
-
-```json
-{
-  "breakpoint_type": 2,
-  "lines": [{
-    "details": [{
-      "minimum_value": 50,
-      "promo_type": 2,
-      "amount": 100
-    }]
-  }]
-}
-```
-
-#### Type 3: Promo-Unit-Based
-Promotions trigger based on standardized promo units (for products with different sizes).
-
-**Example:** Buy 100 promo units, get 15% off
-
-```json
-{
-  "breakpoint_type": 3,
-  "lines": [{
-    "details": [{
-      "minimum_value": 100,
-      "promo_type": 1,
-      "amount": 15
-    }]
-  }]
-}
-```
-
-### Discount Targets
-
-#### Entire Cart
-Apply discount to all products in cart.
-
-```json
-{
-  "paid_based_on_product": null,
-  "paid_product_code": null,
-  "paid_product_family_code": null
-}
-```
-
-#### Product Family
-Apply discount to specific product family.
-
-```json
-{
-  "paid_based_on_product": false,
-  "paid_product_family_code": "FAMILY001"
-}
-```
-
-#### Specific Product
-Apply discount to specific product only.
-
-```json
-{
-  "paid_based_on_product": true,
-  "paid_product_code": "PROD001"
-}
-```
-
-### Assortment Types
-
-#### Type 0: None
-No product mix requirement.
-
-```json
-{
-  "assortment_type": 0,
-  "assortments": []
-}
-```
-
-#### Type 1: Multiple (AND Logic)
-ALL assortments must meet minimum.
-
-**Example:** Must buy at least 5 of Product A AND 3 of Product B
-
-```json
-{
-  "assortment_type": 1,
-  "assortments": [
-    {
-      "based_on_product": true,
-      "product_code": "PROD_A",
-      "minimum": 5
-    },
-    {
-      "based_on_product": true,
-      "product_code": "PROD_B",
-      "minimum": 3
-    }
-  ]
-}
-```
-
-#### Type 2: Cart Amount
-Minimum cart amount required.
-
-```json
-{
-  "assortment_type": 2,
-  "minimum_cart_amount": 1000
-}
-```
-
-#### Type 3: Both (AND + Cart Amount)
-Both assortment AND cart amount required.
-
-```json
-{
-  "assortment_type": 3,
-  "minimum_cart_amount": 1000,
-  "assortments": [...]
-}
-```
-
-### Repeating Promotions
-
-When `repeating: true`, the discount applies multiple times based on how many times the threshold is met.
-
-**Example:** Buy 10 units, get 50 MAD off (repeating)
-- 10 units = 50 MAD off
-- 20 units = 100 MAD off
-- 30 units = 150 MAD off
-
-```json
-{
-  "promo_type": 2,
-  "minimum_value": 10,
-  "amount": 50,
-  "repeating": true
-}
-```
-
----
-
-## ⚙️ Calculation Engine
+- When a promotion applies, it can set a "jump point"
+- All promotions with `sequence < skip_to_sequence` are skipped
+- Only updates when promotion **actually applies** (not just evaluated)
 
 ### How It Works
 
-1. **Get Eligible Promotions**
-   - Check date range (start_date <= now <= end_date)
-   - Check partner eligibility (partner families)
-   - Check payment term dependency
-   - Order by sequence
-
-2. **Apply Each Promotion**
-   - For each promotion line:
-     - Get qualifying products
-     - Check assortment requirements
-     - Calculate total value (based on breakpoint type)
-     - Apply matching details/breakpoints
-
-3. **Calculate Discount**
-   - Based on promo_type
-   - Apply repeating logic if enabled
-   - Sum all discounts
-
-4. **Save Results** (if requested)
-   - Save to invoice_promotion_details or order_promotion_details
-
-### Eligibility Logic
-
-```javascript
-// Partner Eligibility
-1. No partner restriction (available to all)
-   OR
-2. Specific partner (partner_precondition = partner_code)
-   OR
-3. Partner in partner family
-
-// Payment Term Eligibility
-1. Not payment term dependent
-   OR
-2. Payment term in promotion_payment_terms
-
-// Date Eligibility
-start_date <= current_date <= end_date AND is_closed = false
 ```
-
-### Calculation Examples
-
-#### Example 1: Percentage Discount
-```
-Cart:
-- Product A: 10 units × 150 MAD = 1500 MAD
-- Product B: 5 units × 200 MAD = 1000 MAD
-Total: 2500 MAD
-
-Promotion:
-- Breakpoint: 2000 MAD
-- Type: Percentage (10%)
-
-Calculation:
-2500 MAD × 10% = 250 MAD discount
-```
-
-#### Example 2: Fixed Amount with Repeating
-```
-Cart:
-- Product A: 25 units × 100 MAD = 2500 MAD
-
-Promotion:
-- Breakpoint: 10 units
-- Type: Fixed Amount (50 MAD)
-- Repeating: true
-
-Calculation:
-25 units ÷ 10 = 2 (floor)
-2 × 50 MAD = 100 MAD discount
-```
-
-#### Example 3: Replace Price
-```
-Cart:
-- Product A: 50 units × 60 MAD = 3000 MAD
-
-Promotion:
-- Breakpoint: 50 units
-- Type: Replace Price (45 MAD per unit)
-
-Calculation:
-Current: 50 × 60 = 3000 MAD
-New: 50 × 45 = 2250 MAD
-Discount: 3000 - 2250 = 750 MAD
+1. System fetches promotions ordered by sequence (10, 20, 30, 40...)
+2. Start with skipToSequence = 0
+3. For each promotion:
+   - If promotion.sequence < skipToSequence → SKIP
+   - Otherwise, evaluate promotion
+   - If promotion applies → skipToSequence = promotion.skip_to_sequence
+4. Continue to next promotion
 ```
 
 ---
 
-## 🎨 Frontend Integration
+### 8.1 Example 1: Exclusive VIP Promotion
 
-### React Example
+**Business Rule:** "VIP customers get 30% off and cannot combine with other promotions"
 
-```jsx
-import { useState, useEffect } from 'react';
-
-function PromotionCalculator() {
-  const [cart, setCart] = useState([]);
-  const [promotions, setPromotions] = useState([]);
-  const [totalDiscount, setTotalDiscount] = useState(0);
-
-  const calculatePromotions = async () => {
-    const response = await fetch('/api/promotions/calculate', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${token}`
-      },
-      body: JSON.stringify({
-        partner_code: partnerCode,
-        payment_term_code: paymentTerm,
-        save_to_document: false,
-        line_items: cart.map(item => ({
-          product_code: item.code,
-          quantity: item.quantity,
-          price: item.price
-        }))
-      })
-    });
-
-    const data = await response.json();
-    if (data.success) {
-      setPromotions(data.data.promotions);
-      setTotalDiscount(data.data.total_discount);
-    }
-  };
-
-  useEffect(() => {
-    if (cart.length > 0) {
-      calculatePromotions();
-    }
-  }, [cart]);
-
-  return (
-    <div>
-      <h2>Cart Total: {cartTotal} MAD</h2>
-      <h3>Promotions Applied: {promotions.length}</h3>
-      <h3>Total Discount: {totalDiscount} MAD</h3>
-      <h2>Final Total: {cartTotal - totalDiscount} MAD</h2>
-
-      {promotions.map(promo => (
-        <div key={promo.promotion_id} className="promo-badge">
-          <strong>{promo.promotion_name}</strong>
-          <span>-{promo.total_discount} MAD</span>
-        </div>
-      ))}
-    </div>
-  );
-}
-```
-
-### Vue Example
-
-```vue
-<template>
-  <div class="promotion-calculator">
-    <div class="cart-summary">
-      <h2>Cart Total: {{ cartTotal }} MAD</h2>
-      <h3>Promotions: {{ appliedPromotions.length }}</h3>
-      <h3>Discount: {{ totalDiscount }} MAD</h3>
-      <h2>Final: {{ finalTotal }} MAD</h2>
-    </div>
-
-    <div v-for="promo in appliedPromotions" :key="promo.promotion_id" class="promo-badge">
-      <strong>{{ promo.promotion_name }}</strong>
-      <span>-{{ promo.total_discount }} MAD</span>
-    </div>
-  </div>
-</template>
-
-<script>
-export default {
-  data() {
-    return {
-      cart: [],
-      appliedPromotions: [],
-      totalDiscount: 0
-    };
-  },
-  computed: {
-    cartTotal() {
-      return this.cart.reduce((sum, item) => sum + (item.quantity * item.price), 0);
-    },
-    finalTotal() {
-      return this.cartTotal - this.totalDiscount;
-    }
-  },
-  watch: {
-    cart: {
-      handler() {
-        this.calculatePromotions();
-      },
-      deep: true
-    }
-  },
-  methods: {
-    async calculatePromotions() {
-      const response = await fetch('/api/promotions/calculate', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${this.token}`
-        },
-        body: JSON.stringify({
-          partner_code: this.partnerCode,
-          line_items: this.cart.map(item => ({
-            product_code: item.code,
-            quantity: item.quantity,
-            price: item.price
-          }))
-        })
-      });
-
-      const data = await response.json();
-      if (data.success) {
-        this.appliedPromotions = data.data.promotions;
-        this.totalDiscount = data.data.total_discount;
-      }
-    }
-  }
-};
-</script>
-```
-
-### Display Promotion Badge
-
-```jsx
-function PromotionBadge({ promotion }) {
-  return (
-    <div className="promotion-badge">
-      <div className="badge-header">
-        <span className="badge-icon">🎁</span>
-        <strong>{promotion.promotion_name}</strong>
-      </div>
-      <div className="badge-discount">
-        -{promotion.total_discount} MAD
-      </div>
-      {promotion.lines.map(line => (
-        <div key={line.line_number} className="badge-detail">
-          {line.name}: {line.discount} MAD
-        </div>
-      ))}
-    </div>
-  );
-}
-```
-
----
-
-## 🧪 Testing Guide
-
-### Test Scenarios
-
-#### 1. Simple Percentage Discount
 ```bash
-curl -X POST http://localhost:8000/api/promotions/calculate \
-  -H "Content-Type: application/json" \
-  -d '{
-    "partner_code": "PARTNER001",
-    "line_items": [
-      {"product_code": "PROD001", "quantity": 10, "price": 150}
+curl --location 'http://localhost:8000/api/admin/promotions' \
+--header 'Authorization: Bearer YOUR_TOKEN' \
+--header 'Content-Type: application/json' \
+--data '{
+    "code": "VIP_EXCLUSIVE",
+    "name": "VIP 30% Discount",
+    "description": "Exclusive VIP discount - blocks all other promotions",
+    "start_date": "2026-01-01",
+    "end_date": "2026-12-31",
+    "breakpoint_type": 1,
+    "scale_method": 2,
+    "sequence": 10,
+    "skip_to_sequence": 999,
+    "partner_families": ["VIP_PARTNERS"],
+    "lines": [
+        {
+            "name": "VIP Rule",
+            "paid_based_on_product": "entire_cart",
+            "assortment_type": "none",
+            "details": [
+                {
+                    "promo_type": 1,
+                    "minimum_value": 1,
+                    "amount": -30,
+                    "repeating": true
+                }
+            ]
+        }
     ]
-  }'
+}'
 ```
 
-#### 2. Multi-Tier Promotion
+**Result:**
+- VIP customer: Gets 30% off, all other promos (seq 11-998) are skipped ✅
+- Regular customer: VIP promo doesn't apply, other promos work normally ✅
+
+---
+
+### 8.2 Example 2: Tiered Promotion Priority
+
+**Business Rule:** "Apply best promotion per category, skip lower-tier promos in same category"
+
 ```bash
-curl -X POST http://localhost:8000/api/promotions/calculate \
-  -H "Content-Type: application/json" \
-  -d '{
-    "partner_code": "PARTNER001",
-    "line_items": [
-      {"product_code": "PROD001", "quantity": 50, "price": 100}
+# Premium Tier (blocks Standard tier)
+curl --location 'http://localhost:8000/api/admin/promotions' \
+--header 'Authorization: Bearer YOUR_TOKEN' \
+--header 'Content-Type: application/json' \
+--data '{
+    "code": "PREMIUM_TIER",
+    "name": "Premium 20% Discount",
+    "description": "Premium tier - blocks standard promotions",
+    "start_date": "2026-01-01",
+    "end_date": "2026-12-31",
+    "breakpoint_type": 1,
+    "scale_method": 2,
+    "sequence": 10,
+    "skip_to_sequence": 30,
+    "partner_families": ["PREMIUM_PARTNERS"],
+    "lines": [
+        {
+            "name": "Premium Rule",
+            "paid_based_on_product": "family",
+            "paid_code": "ELECTRONICS",
+            "assortment_type": "none",
+            "details": [
+                {
+                    "promo_type": 1,
+                    "minimum_value": 5,
+                    "amount": -20,
+                    "repeating": true
+                }
+            ]
+        }
     ]
-  }'
-```
+}'
 
-#### 3. Assortment Requirement
-```bash
-curl -X POST http://localhost:8000/api/promotions/calculate \
-  -H "Content-Type: application/json" \
-  -d '{
-    "partner_code": "PARTNER001",
-    "line_items": [
-      {"product_code": "PROD_A", "quantity": 10, "price": 100},
-      {"product_code": "PROD_B", "quantity": 5, "price": 150}
+# Standard Tier (would be skipped if Premium applies)
+curl --location 'http://localhost:8000/api/admin/promotions' \
+--header 'Authorization: Bearer YOUR_TOKEN' \
+--header 'Content-Type: application/json' \
+--data '{
+    "code": "STANDARD_TIER",
+    "name": "Standard 10% Discount",
+    "description": "Standard tier promotion",
+    "start_date": "2026-01-01",
+    "end_date": "2026-12-31",
+    "breakpoint_type": 1,
+    "scale_method": 2,
+    "sequence": 20,
+    "skip_to_sequence": 0,
+    "partner_families": ["STANDARD_PARTNERS"],
+    "lines": [
+        {
+            "name": "Standard Rule",
+            "paid_based_on_product": "family",
+            "paid_code": "ELECTRONICS",
+            "assortment_type": "none",
+            "details": [
+                {
+                    "promo_type": 1,
+                    "minimum_value": 5,
+                    "amount": -10,
+                    "repeating": true
+                }
+            ]
+        }
     ]
-  }'
+}'
+
+# Clearance (always evaluated, regardless of tier)
+curl --location 'http://localhost:8000/api/admin/promotions' \
+--header 'Authorization: Bearer YOUR_TOKEN' \
+--header 'Content-Type: application/json' \
+--data '{
+    "code": "CLEARANCE_PROMO",
+    "name": "Clearance Items 50% Off",
+    "description": "Clearance promotion - always applies",
+    "start_date": "2026-01-01",
+    "end_date": "2026-12-31",
+    "breakpoint_type": 1,
+    "scale_method": 2,
+    "sequence": 30,
+    "skip_to_sequence": 0,
+    "lines": [
+        {
+            "name": "Clearance Rule",
+            "paid_based_on_product": "family",
+            "paid_code": "CLEARANCE",
+            "assortment_type": "none",
+            "details": [
+                {
+                    "promo_type": 1,
+                    "minimum_value": 1,
+                    "amount": -50,
+                    "repeating": true
+                }
+            ]
+        }
+    ]
+}'
 ```
 
-### Validation Tests
+**Execution Flow:**
 
-```javascript
-// Test 1: Minimum value not met
-{
-  "line_items": [{"product_code": "PROD001", "quantity": 1, "price": 100}]
-}
-// Expected: No promotions applied
+**Premium Customer:**
+```
+1. Evaluate Premium (seq=10) → Applies ✅ → skipToSequence = 30
+2. Check Standard (seq=20) → 20 < 30 → SKIP ❌
+3. Evaluate Clearance (seq=30) → 30 >= 30 → Applies ✅
+Result: Premium 20% + Clearance 50%
+```
 
-// Test 2: Exact minimum value
-{
-  "line_items": [{"product_code": "PROD001", "quantity": 10, "price": 100}]
-}
-// Expected: Promotion applied
-
-// Test 3: Multiple promotions
-{
-  "line_items": [
-    {"product_code": "PROD001", "quantity": 20, "price": 100},
-    {"product_code": "PROD002", "quantity": 15, "price": 150}
-  ]
-}
-// Expected: Multiple promotions may apply
+**Standard Customer:**
+```
+1. Check Premium (seq=10) → Doesn't qualify ❌ → skipToSequence = 0
+2. Evaluate Standard (seq=20) → Applies ✅ → skipToSequence = 0
+3. Evaluate Clearance (seq=30) → Applies ✅
+Result: Standard 10% + Clearance 50%
 ```
 
 ---
 
-## 🔧 Troubleshooting
+### 8.3 Example 3: Stackable Promotions (No Skip)
 
-### Common Issues
+**Business Rule:** "Allow multiple promotions to stack"
 
-#### Issue 1: Promotion Not Applying
-**Symptoms:** Eligible promotion doesn't show in calculation
-
-**Checklist:**
-- ✅ Check date range (start_date <= now <= end_date)
-- ✅ Verify promotion is not closed (is_closed = false)
-- ✅ Check partner eligibility (partner families)
-- ✅ Verify payment term dependency
-- ✅ Check product/family targeting
-- ✅ Verify minimum value threshold
-
-**Debug:**
 ```bash
-# Check eligible promotions
-curl -X POST http://localhost:8000/api/promotions/test \
-  -H "Content-Type: application/json" \
-  -d '{"partner_code": "PARTNER001", "line_items": [...]}'
+# First Promotion - No skip
+curl --location 'http://localhost:8000/api/admin/promotions' \
+--header 'Authorization: Bearer YOUR_TOKEN' \
+--header 'Content-Type: application/json' \
+--data '{
+    "code": "PROMO_STACK_1",
+    "name": "5% Volume Discount",
+    "description": "Stackable promotion 1",
+    "start_date": "2026-01-01",
+    "end_date": "2026-12-31",
+    "breakpoint_type": 1,
+    "scale_method": 2,
+    "sequence": 10,
+    "skip_to_sequence": 0,
+    "lines": [
+        {
+            "name": "Volume Rule",
+            "paid_based_on_product": "family",
+            "paid_code": "FOOD",
+            "assortment_type": "none",
+            "details": [
+                {
+                    "promo_type": 1,
+                    "minimum_value": 10,
+                    "amount": -5,
+                    "repeating": true
+                }
+            ]
+        }
+    ]
+}'
+
+# Second Promotion - No skip
+curl --location 'http://localhost:8000/api/admin/promotions' \
+--header 'Authorization: Bearer YOUR_TOKEN' \
+--header 'Content-Type: application/json' \
+--data '{
+    "code": "PROMO_STACK_2",
+    "name": "3% Loyalty Discount",
+    "description": "Stackable promotion 2",
+    "start_date": "2026-01-01",
+    "end_date": "2026-12-31",
+    "breakpoint_type": 1,
+    "scale_method": 2,
+    "sequence": 20,
+    "skip_to_sequence": 0,
+    "lines": [
+        {
+            "name": "Loyalty Rule",
+            "paid_based_on_product": "family",
+            "paid_code": "FOOD",
+            "assortment_type": "none",
+            "details": [
+                {
+                    "promo_type": 1,
+                    "minimum_value": 1,
+                    "amount": -3,
+                    "repeating": true
+                }
+            ]
+        }
+    ]
+}'
 ```
 
-#### Issue 2: Wrong Discount Amount
-**Symptoms:** Calculated discount doesn't match expected
-
-**Checklist:**
-- ✅ Verify promo_type (1-7)
-- ✅ Check amount field value
-- ✅ Verify breakpoint_type (value vs quantity)
-- ✅ Check repeating flag
-- ✅ Verify qualifying products
-
-**Debug:**
-```php
-// Enable detailed logging
-\Log::info('Promotion calculation', [
-    'promotion_id' => $promotion->id,
-    'total_value' => $totalValue,
-    'minimum_value' => $detail->minimum_value,
-    'promo_type' => $detail->promo_type,
-    'amount' => $detail->amount,
-    'calculated_discount' => $discount
-]);
-```
-
-#### Issue 3: Assortment Not Working
-**Symptoms:** Promotion requires product mix but doesn't apply
-
-**Checklist:**
-- ✅ Verify assortment_type (0, 1, 2, 3)
-- ✅ Check assortment minimum values
-- ✅ Verify product codes in assortments
-- ✅ Check AND vs OR logic
-
-**Debug:**
-```php
-// Check assortment calculation
-foreach ($line->assortments as $assortment) {
-    $qty = $this->calculateAssortmentQuantity($assortment, $qualifyingItems);
-    \Log::info('Assortment check', [
-        'product_code' => $assortment->product_code,
-        'minimum' => $assortment->minimum,
-        'actual_qty' => $qty,
-        'met' => $qty >= $assortment->minimum
-    ]);
-}
-```
-
-### Error Messages
-
-| Error | Cause | Solution |
-|-------|-------|----------|
-| `Validation failed` | Invalid request format | Check API documentation |
-| `Promotion not found` | Invalid promotion ID | Verify promotion exists |
-| `Partner not eligible` | Partner not in target group | Check partner families |
-| `No qualifying products` | Products don't match criteria | Verify product/family codes |
-| `Minimum not met` | Cart value/quantity too low | Check breakpoint thresholds |
+**Result:** Both promotions apply (5% + 3% = 8% total discount)
 
 ---
 
-## 📊 Analytics & Reporting
+### 8.4 Example 4: Black Friday Special
 
-### Usage Statistics
+**Business Rule:** "Black Friday promotion blocks everything except loyalty points"
 
-```php
-// Get promotion usage stats
-$stats = DB::table('invoice_promotion_details')
-    ->where('promotion_id', $promotionId)
-    ->select(
-        DB::raw('COUNT(DISTINCT invoice_code) as invoice_count'),
-        DB::raw('SUM(discount) as total_discount'),
-        DB::raw('AVG(discount) as avg_discount'),
-        DB::raw('MAX(discount) as max_discount'),
-        DB::raw('MIN(discount) as min_discount')
-    )
-    ->first();
+```bash
+# Black Friday - Blocks most promos
+curl --location 'http://localhost:8000/api/admin/promotions' \
+--header 'Authorization: Bearer YOUR_TOKEN' \
+--header 'Content-Type: application/json' \
+--data '{
+    "code": "BLACK_FRIDAY_2026",
+    "name": "Black Friday 40% Off",
+    "description": "Black Friday special - blocks regular promotions",
+    "start_date": "2026-11-28",
+    "end_date": "2026-11-30",
+    "breakpoint_type": 1,
+    "scale_method": 2,
+    "sequence": 5,
+    "skip_to_sequence": 100,
+    "lines": [
+        {
+            "name": "Black Friday Rule",
+            "paid_based_on_product": "entire_cart",
+            "assortment_type": "none",
+            "details": [
+                {
+                    "promo_type": 1,
+                    "minimum_value": 1,
+                    "amount": -40,
+                    "repeating": true
+                }
+            ]
+        }
+    ]
+}'
+
+# Regular promotions (seq 6-99) would be skipped
+
+# Loyalty Points - Always applies
+curl --location 'http://localhost:8000/api/admin/promotions' \
+--header 'Authorization: Bearer YOUR_TOKEN' \
+--header 'Content-Type: application/json' \
+--data '{
+    "code": "LOYALTY_POINTS",
+    "name": "Loyalty Points Bonus",
+    "description": "Earn loyalty points - always active",
+    "start_date": "2026-01-01",
+    "end_date": "2026-12-31",
+    "breakpoint_type": 2,
+    "scale_method": 2,
+    "sequence": 100,
+    "skip_to_sequence": 0,
+    "is_loyalty_program": true,
+    "lines": [
+        {
+            "name": "Points Rule",
+            "paid_based_on_product": "entire_cart",
+            "assortment_type": "none",
+            "details": [
+                {
+                    "promo_type": 1,
+                    "minimum_value": 100,
+                    "amount": -2,
+                    "repeating": false
+                }
+            ]
+        }
+    ]
+}'
 ```
 
-### Top Performing Promotions
+**Result:** Black Friday 40% + Loyalty Points (all promos seq 6-99 are skipped)
 
-```php
-$topPromotions = DB::table('invoice_promotion_details')
-    ->join('promotions', 'promotions.id', '=', 'invoice_promotion_details.promotion_id')
-    ->select(
-        'promotions.code',
-        'promotions.name',
-        DB::raw('COUNT(DISTINCT invoice_code) as usage_count'),
-        DB::raw('SUM(discount) as total_discount')
-    )
-    ->groupBy('promotions.id', 'promotions.code', 'promotions.name')
-    ->orderByDesc('total_discount')
-    ->limit(10)
-    ->get();
+---
+
+### 8.5 Sequence Planning Guide
+
+#### Recommended Sequence Ranges
+
+```
+1-10:    Exclusive/VIP promotions (high skip values)
+11-20:   Premium tier promotions
+21-30:   Standard tier promotions
+31-40:   Clearance/Special offers
+41-50:   Category-specific promotions
+51-99:   General promotions
+100+:    Always-apply promotions (loyalty, points, etc.)
+```
+
+#### Skip Strategy Table
+
+| Scenario | Sequence | Skip To | Effect |
+|----------|----------|---------|--------|
+| Exclusive promo | 10 | 999 | Blocks everything |
+| Tier-based | 10 | 30 | Blocks same tier |
+| Stackable | 10 | 0 | Allows all |
+| Category block | 20 | 50 | Blocks category promos |
+| No restriction | Any | 0 | Normal flow |
+
+---
+
+### 8.6 Testing Skip Logic
+
+**Test Scenario 1: VIP vs Regular**
+```bash
+# Create promotions with sequences: 10 (VIP, skip=50), 20 (Regular), 30 (Regular), 50 (Clearance)
+# Test with VIP partner → Should get: VIP + Clearance only
+# Test with Regular partner → Should get: Regular(20) + Regular(30) + Clearance
+```
+
+**Test Scenario 2: Verify Skip Updates Only on Apply**
+```bash
+# Create promotion: seq=10, skip=50, minimum_value=100
+# Test with cart total 50 → Promo doesn't apply → Other promos work
+# Test with cart total 150 → Promo applies → Promos 11-49 are skipped
 ```
 
 ---
 
-## 🎯 Best Practices
+## 9. ASSORTMENT TYPES (MIX & MATCH REQUIREMENTS)
 
-### 1. Promotion Naming
-- Use clear, descriptive names
-- Include date range in name (e.g., "Winter Sale 2024")
-- Use consistent code format (e.g., PROMO_YYYY_MM)
+### What is Assortment Type?
 
-### 2. Sequence Management
-- Lower sequence = higher priority
-- Leave gaps (10, 20, 30) for future insertions
-- Document sequence logic
+**Assortment Type** enforces **mix and match** requirements for promotions. It ensures customers buy a **variety of products** (not just one product repeatedly) to qualify.
 
-### 3. Testing
-- Always test with `save_to_document: false` first
-- Test edge cases (exact minimum, just below minimum)
-- Test with multiple products
-- Test repeating logic
+**Without Assortment:**
+- Customer buys 10 units of same product → Qualifies ✅
 
-### 4. Performance
-- Use product families instead of individual products when possible
-- Limit number of active promotions
-- Archive expired promotions
-- Index frequently queried fields
+**With Assortment (Type 1, min 2 each):**
+- Customer buys 2A + 2B + 2C → Qualifies ✅
+- Customer buys 10A + 0B + 0C → Doesn't qualify ❌
 
-### 5. Partner Communication
-- Clearly communicate promotion rules
-- Provide examples of discount calculation
-- Show breakpoint tiers visually
-- Display eligible products
+### Assortment Type Values
 
----
+| Type | Code | Name | Description |
+|------|------|------|-------------|
+| 0 | None | No Requirement | Any products qualify (default) |
+| 1 | Quantity | Absolute Quantity | Each assortment item must meet minimum quantity |
+| 2 | QuantityPercent | Quantity % | Each item must represent minimum % of total quantity |
+| 3 | AmountPercent | Amount % | Each item must represent minimum % of total amount |
+| 4 | Amount | Absolute Amount | Each assortment item must meet minimum amount (MAD) |
 
-## 📚 Additional Resources
+### How It Works
 
-- **Database Schema:** `database/migrations/2025_11_15_235539_create_promotions_table.php`
-- **Promotion Engine:** `app/Services/PromotionEngine.php`
-- **API Controller:** `app/Http/Controllers/API/PromotionCalculationController.php`
-- **Backend Controller:** `app/Http/Controllers/Backend/PromotionController.php`
-- **Models:** `app/Models/Promotion*.php`
+```
+1. Define assortment items (products or families)
+2. Set minimum requirement for each item
+3. System validates cart against all assortment items
+4. If ANY item fails to meet minimum → Promotion doesn't apply
+5. If ALL items meet minimum → Promotion applies
+```
 
 ---
 
-**Version:** 1.0.0  
-**Last Updated:** December 16, 2024  
-**Status:** ✅ Production Ready
+### 9.1 Example 1: Type 1 (Quantity) - Mix & Match Products
+
+**Business Rule:** "Buy at least 2 units each of 3 different beverages to get 15% off"
+
+```bash
+curl --location 'http://localhost:8000/api/admin/promotions' \
+--header 'Authorization: Bearer YOUR_TOKEN' \
+--header 'Content-Type: application/json' \
+--data '{
+    "code": "MIX_BEVERAGES_001",
+    "name": "Mix & Match 3 Beverages",
+    "description": "Buy 2 units each of 3 different beverages, get 15% off",
+    "start_date": "2026-01-01",
+    "end_date": "2026-12-31",
+    "breakpoint_type": 1,
+    "scale_method": 2,
+    "sequence": 30,
+    "lines": [
+        {
+            "name": "Mix Rule",
+            "paid_based_on_product": "family",
+            "paid_code": "BEVERAGES",
+            "assortment_type": 1,
+            "assortments": [
+                {
+                    "product_code": "COLA_500ML",
+                    "based_on_product": true,
+                    "minimum": 2
+                },
+                {
+                    "product_code": "ORANGE_500ML",
+                    "based_on_product": true,
+                    "minimum": 2
+                },
+                {
+                    "product_code": "LEMON_500ML",
+                    "based_on_product": true,
+                    "minimum": 2
+                }
+            ],
+            "details": [
+                {
+                    "promo_type": 1,
+                    "minimum_value": 6,
+                    "amount": -15,
+                    "repeating": true
+                }
+            ]
+        }
+    ]
+}'
+```
+
+**Test Cases:**
+
+| Cart | Cola | Orange | Lemon | Result | Reason |
+|------|------|--------|-------|--------|--------|
+| 1 | 2 | 2 | 2 | ✅ PASS | All meet minimum |
+| 2 | 3 | 2 | 1 | ❌ FAIL | Lemon below minimum (1 < 2) |
+| 3 | 5 | 0 | 3 | ❌ FAIL | Orange missing |
+| 4 | 2 | 2 | 0 | ❌ FAIL | Lemon missing |
+| 5 | 4 | 3 | 2 | ✅ PASS | All exceed minimum |
+
+---
+
+### 9.2 Example 2: Type 2 (QuantityPercent) - Balanced Mix
+
+**Business Rule:** "Each product family must represent at least 20% of total quantity"
+
+```bash
+curl --location 'http://localhost:8000/api/admin/promotions' \
+--header 'Authorization: Bearer YOUR_TOKEN' \
+--header 'Content-Type: application/json' \
+--data '{
+    "code": "BALANCED_MIX_001",
+    "name": "Balanced Product Mix 10% Off",
+    "description": "Each family must be at least 20% of total quantity",
+    "start_date": "2026-01-01",
+    "end_date": "2026-12-31",
+    "breakpoint_type": 1,
+    "scale_method": 2,
+    "sequence": 40,
+    "lines": [
+        {
+            "name": "Balance Rule",
+            "paid_based_on_product": "entire_cart",
+            "assortment_type": 2,
+            "assortments": [
+                {
+                    "product_family_code": "DAIRY",
+                    "based_on_product": false,
+                    "minimum": 20
+                },
+                {
+                    "product_family_code": "BAKERY",
+                    "based_on_product": false,
+                    "minimum": 20
+                },
+                {
+                    "product_family_code": "FRUITS",
+                    "based_on_product": false,
+                    "minimum": 20
+                }
+            ],
+            "details": [
+                {
+                    "promo_type": 1,
+                    "minimum_value": 10,
+                    "amount": -10,
+                    "repeating": true
+                }
+            ]
+        }
+    ]
+}'
+```
+
+**Test Cases:**
+
+| Total Qty | Dairy | Bakery | Fruits | Dairy % | Bakery % | Fruits % | Result |
+|-----------|-------|--------|--------|---------|----------|----------|--------|
+| 10 | 3 | 3 | 4 | 30% | 30% | 40% | ✅ PASS |
+| 10 | 5 | 3 | 2 | 50% | 30% | 20% | ✅ PASS |
+| 10 | 6 | 3 | 1 | 60% | 30% | 10% | ❌ FAIL (Fruits < 20%) |
+| 15 | 5 | 5 | 5 | 33% | 33% | 33% | ✅ PASS |
+| 20 | 8 | 8 | 4 | 40% | 40% | 20% | ✅ PASS |
+
+**Formula:** `(Item Quantity / Total Quantity) * 100 >= Minimum %`
+
+---
+
+### 9.3 Example 3: Type 4 (Amount) - Spend on Each Category
+
+**Business Rule:** "Spend at least 100 MAD on each of 2 product families"
+
+```bash
+curl --location 'http://localhost:8000/api/admin/promotions' \
+--header 'Authorization: Bearer YOUR_TOKEN' \
+--header 'Content-Type: application/json' \
+--data '{
+    "code": "VALUE_MIX_001",
+    "name": "Spend 100 MAD on Each Category",
+    "description": "Spend at least 100 MAD on Electronics and Accessories",
+    "start_date": "2026-01-01",
+    "end_date": "2026-12-31",
+    "breakpoint_type": 2,
+    "scale_method": 2,
+    "sequence": 50,
+    "lines": [
+        {
+            "name": "Value Rule",
+            "paid_based_on_product": "entire_cart",
+            "assortment_type": 4,
+            "assortments": [
+                {
+                    "product_family_code": "ELECTRONICS",
+                    "based_on_product": false,
+                    "minimum": 100
+                },
+                {
+                    "product_family_code": "ACCESSORIES",
+                    "based_on_product": false,
+                    "minimum": 100
+                }
+            ],
+            "details": [
+                {
+                    "promo_type": 6,
+                    "minimum_value": 200,
+                    "amount": -50,
+                    "repeating": false
+                }
+            ]
+        }
+    ]
+}'
+```
+
+**Test Cases:**
+
+| Electronics Amount | Accessories Amount | Result | Reason |
+|-------------------|-------------------|--------|--------|
+| 150 MAD | 120 MAD | ✅ PASS | Both exceed minimum |
+| 100 MAD | 100 MAD | ✅ PASS | Both meet minimum exactly |
+| 120 MAD | 80 MAD | ❌ FAIL | Accessories below 100 MAD |
+| 50 MAD | 150 MAD | ❌ FAIL | Electronics below 100 MAD |
+| 200 MAD | 0 MAD | ❌ FAIL | Accessories missing |
+
+---
+
+### 9.4 Example 4: Type 3 (AmountPercent) - Spend Distribution
+
+**Business Rule:** "Each category must represent at least 25% of total cart value"
+
+```bash
+curl --location 'http://localhost:8000/api/admin/promotions' \
+--header 'Authorization: Bearer YOUR_TOKEN' \
+--header 'Content-Type: application/json' \
+--data '{
+    "code": "SPEND_DISTRIBUTION_001",
+    "name": "Balanced Spending 12% Off",
+    "description": "Each category must be at least 25% of cart value",
+    "start_date": "2026-01-01",
+    "end_date": "2026-12-31",
+    "breakpoint_type": 2,
+    "scale_method": 2,
+    "sequence": 60,
+    "lines": [
+        {
+            "name": "Distribution Rule",
+            "paid_based_on_product": "entire_cart",
+            "assortment_type": 3,
+            "assortments": [
+                {
+                    "product_family_code": "FRESH_PRODUCE",
+                    "based_on_product": false,
+                    "minimum": 25
+                },
+                {
+                    "product_family_code": "MEAT_POULTRY",
+                    "based_on_product": false,
+                    "minimum": 25
+                },
+                {
+                    "product_family_code": "DAIRY_EGGS",
+                    "based_on_product": false,
+                    "minimum": 25
+                }
+            ],
+            "details": [
+                {
+                    "promo_type": 1,
+                    "minimum_value": 500,
+                    "amount": -12,
+                    "repeating": true
+                }
+            ]
+        }
+    ]
+}'
+```
+
+**Test Cases:**
+
+| Total | Produce | Meat | Dairy | Produce % | Meat % | Dairy % | Result |
+|-------|---------|------|-------|-----------|--------|---------|--------|
+| 1000 | 300 | 300 | 400 | 30% | 30% | 40% | ✅ PASS |
+| 1000 | 250 | 250 | 500 | 25% | 25% | 50% | ✅ PASS |
+| 1000 | 400 | 400 | 200 | 40% | 40% | 20% | ❌ FAIL (Dairy < 25%) |
+| 800 | 300 | 300 | 200 | 37.5% | 37.5% | 25% | ✅ PASS |
+| 1200 | 500 | 500 | 200 | 41.7% | 41.7% | 16.7% | ❌ FAIL (Dairy < 25%) |
+
+**Formula:** `(Item Amount / Total Amount) * 100 >= Minimum %`
+
+---
+
+### 9.5 Example 5: Type 1 with Product Families
+
+**Business Rule:** "Buy from at least 3 different product families, minimum 5 units each"
+
+```bash
+curl --location 'http://localhost:8000/api/admin/promotions' \
+--header 'Authorization: Bearer YOUR_TOKEN' \
+--header 'Content-Type: application/json' \
+--data '{
+    "code": "FAMILY_MIX_001",
+    "name": "Mix 3 Families 20% Off",
+    "description": "Buy 5+ units from each of 3 families",
+    "start_date": "2026-01-01",
+    "end_date": "2026-12-31",
+    "breakpoint_type": 1,
+    "scale_method": 2,
+    "sequence": 35,
+    "lines": [
+        {
+            "name": "Family Mix Rule",
+            "paid_based_on_product": "entire_cart",
+            "assortment_type": 1,
+            "assortments": [
+                {
+                    "product_family_code": "SNACKS",
+                    "based_on_product": false,
+                    "minimum": 5
+                },
+                {
+                    "product_family_code": "BEVERAGES",
+                    "based_on_product": false,
+                    "minimum": 5
+                },
+                {
+                    "product_family_code": "CONFECTIONERY",
+                    "based_on_product": false,
+                    "minimum": 5
+                }
+            ],
+            "details": [
+                {
+                    "promo_type": 1,
+                    "minimum_value": 15,
+                    "amount": -20,
+                    "repeating": true
+                }
+            ]
+        }
+    ]
+}'
+```
+
+**Test Cases:**
+
+| Snacks Qty | Beverages Qty | Confectionery Qty | Result |
+|------------|---------------|-------------------|--------|
+| 5 | 5 | 5 | ✅ PASS |
+| 10 | 6 | 5 | ✅ PASS |
+| 8 | 4 | 6 | ❌ FAIL (Beverages < 5) |
+| 0 | 10 | 10 | ❌ FAIL (Snacks missing) |
+| 5 | 5 | 0 | ❌ FAIL (Confectionery missing) |
+
+---
+
+### 9.6 Example 6: Type 0 (None) - No Assortment
+
+**Business Rule:** "No mix requirement - any products qualify"
+
+```bash
+curl --location 'http://localhost:8000/api/admin/promotions' \
+--header 'Authorization: Bearer YOUR_TOKEN' \
+--header 'Content-Type: application/json' \
+--data '{
+    "code": "SIMPLE_DISCOUNT_001",
+    "name": "Simple 10% Off",
+    "description": "No mix requirement - buy 10+ units, get 10% off",
+    "start_date": "2026-01-01",
+    "end_date": "2026-12-31",
+    "breakpoint_type": 1,
+    "scale_method": 2,
+    "sequence": 70,
+    "lines": [
+        {
+            "name": "Simple Rule",
+            "paid_based_on_product": "family",
+            "paid_code": "GROCERIES",
+            "assortment_type": 0,
+            "details": [
+                {
+                    "promo_type": 1,
+                    "minimum_value": 10,
+                    "amount": -10,
+                    "repeating": true
+                }
+            ]
+        }
+    ]
+}'
+```
+
+**Test Cases:**
+
+| Cart | Result | Reason |
+|------|--------|--------|
+| 10x Product A | ✅ PASS | No mix requirement |
+| 5x A + 5x B | ✅ PASS | Any combination works |
+| 1x each of 10 products | ✅ PASS | Variety allowed but not required |
+
+---
+
+### 9.7 Assortment Type Comparison
+
+| Type | Use Case | Validation | Example |
+|------|----------|------------|---------|
+| **0 (None)** | Simple promotions | No requirement | "Buy 10 units, get 10% off" |
+| **1 (Quantity)** | Mix & match products | Absolute quantity per item | "Buy 2 of each: A, B, C" |
+| **2 (Qty %)** | Balanced quantity mix | % of total quantity | "Each item ≥20% of total qty" |
+| **3 (Amt %)** | Balanced spending | % of total amount | "Each category ≥25% of cart" |
+| **4 (Amount)** | Minimum spend per item | Absolute amount per item | "Spend ≥100 MAD on each" |
+
+---
+
+### 9.8 Assortment Best Practices
+
+**When to Use Each Type:**
+
+- **Type 0 (None):** Simple volume discounts, single-product promos
+- **Type 1 (Quantity):** Force variety, prevent single-product abuse
+- **Type 2 (Qty %):** Ensure balanced product mix by quantity
+- **Type 3 (Amt %):** Ensure balanced spending across categories
+- **Type 4 (Amount):** Minimum spend requirements per category
+
+**Common Patterns:**
+
+1. **Variety Enforcement:** Type 1 with 3-5 assortment items
+2. **Balanced Cart:** Type 2 or 3 with equal percentages (20-33%)
+3. **Category Spend:** Type 4 with 2-3 high-value categories
+4. **No Restriction:** Type 0 for simple promotions
+
+**Tips:**
+
+- ✅ Use `based_on_product: true` for specific products
+- ✅ Use `based_on_product: false` for product families
+- ✅ Set realistic minimums (test with actual cart data)
+- ✅ Combine with appropriate breakpoint types
+- ❌ Don't set minimums too high (customers won't qualify)
+- ❌ Don't mix percentage and absolute types in same promotion
+
+---
+
+### 9.9 Testing Assortment Logic
+
+**Test Scenario 1: Type 1 Validation**
+```bash
+# Create promotion with Type 1, 3 assortments, minimum 2 each
+# Test: 2A + 2B + 2C → Should PASS
+# Test: 3A + 1B + 2C → Should FAIL (B below minimum)
+# Test: 5A + 0B + 3C → Should FAIL (B missing)
+```
+
+**Test Scenario 2: Type 2 Percentage Calculation**
+```bash
+# Create promotion with Type 2, 3 assortments, minimum 25% each
+# Test: Total 12 (4A + 4B + 4C) → Should PASS (33% each)
+# Test: Total 10 (6A + 3B + 1C) → Should FAIL (C = 10% < 25%)
+```
+
+**Test Scenario 3: Type 4 Amount Validation**
+```bash
+# Create promotion with Type 4, 2 assortments, minimum 100 MAD each
+# Test: 150 MAD Family A + 120 MAD Family B → Should PASS
+# Test: 150 MAD Family A + 80 MAD Family B → Should FAIL (B < 100)
+```
+
+**Test Scenario 4: Empty Assortments**
+```bash
+# Create promotion with assortment_type = 1 but NO assortment items
+# Should PASS (empty assortments = no requirement)
+```
+
+---
+
+## 10. NOTES
+
+### Breakpoint Types
+- **Type 1 (Quantity)**: Based on number of units
+- **Type 2 (Amount)**: Based on total amount in MAD
+- **Type 3 (Promo Unit)**: Based on promo_unit field in products table (can represent weight, volume, points)
+
+### Scale Methods
+- **Method 1 (Cumulative)**: Apply all matching tiers progressively
+- **Method 2 (Bracket)**: Apply only the highest matching tier
+
+### Sequence Best Practices
+- **Plan your sequence ranges** before creating promotions
+- **Lower sequence = Higher priority** (evaluated first)
+- **Use skip_to_sequence strategically** to prevent unwanted stacking
+- **Reserve high sequences (100+)** for always-apply promotions
+- **Test with different partner types** to verify skip logic
+
+### Skip to Sequence Rules
+- **0 = No skip** (allow all subsequent promotions)
+- **Value > 0** = Skip all promotions with sequence < skip_to_sequence
+- **Only updates when promotion applies** (not just evaluated)
+- **Use 999 for exclusive promotions** (blocks everything)
+
+### Amount Sign Convention
+- **Negative amounts**: Discounts (e.g., -10 = 10% off or 10 MAD off)
+- **Positive amounts**: Target prices (e.g., 76 = set price to 76 MAD)
+
+### Repeating Flag
+- **true**: Apply discount multiple times based on quantity
+- **false**: Apply discount once regardless of quantity
+
+### Common Pitfalls
+- ❌ **Don't set skip_to_sequence = own sequence** (will skip itself)
+- ❌ **Don't use same sequence for conflicting promos** (unpredictable order)
+- ❌ **Don't forget to test skip logic** with different partner types
+- ✅ **Do plan sequence ranges** before implementation
+- ✅ **Do document your skip strategy** for maintenance

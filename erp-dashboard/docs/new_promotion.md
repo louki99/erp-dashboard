@@ -821,21 +821,421 @@ curl --location 'http://localhost:8000/api/admin/promotions/boosts/bulk-sync' \
 
 ---
 
-## 8. NOTES
+## 8. SEQUENCE & SKIP LOGIC
+
+### What is Sequence?
+
+**Sequence** determines the **order** in which promotions are evaluated and applied.
+
+- **Lower sequence = Higher priority** (evaluated first)
+- Promotions are sorted by `sequence` in ascending order
+- Example: `sequence: 10` is evaluated before `sequence: 20`
+
+### What is Skip to Sequence?
+
+**Skip to Sequence** (`skip_to_sequence`) is a control mechanism that allows a promotion to **skip subsequent promotions** after it is applied.
+
+- When a promotion applies, it can set a "jump point"
+- All promotions with `sequence < skip_to_sequence` are skipped
+- Only updates when promotion **actually applies** (not just evaluated)
+
+### How It Works
+
+```
+1. System fetches promotions ordered by sequence (10, 20, 30, 40...)
+2. Start with skipToSequence = 0
+3. For each promotion:
+   - If promotion.sequence < skipToSequence → SKIP
+   - Otherwise, evaluate promotion
+   - If promotion applies → skipToSequence = promotion.skip_to_sequence
+4. Continue to next promotion
+```
+
+---
+
+### 8.1 Example 1: Exclusive VIP Promotion
+
+**Business Rule:** "VIP customers get 30% off and cannot combine with other promotions"
+
+```bash
+curl --location 'http://localhost:8000/api/admin/promotions' \
+--header 'Authorization: Bearer YOUR_TOKEN' \
+--header 'Content-Type: application/json' \
+--data '{
+    "code": "VIP_EXCLUSIVE",
+    "name": "VIP 30% Discount",
+    "description": "Exclusive VIP discount - blocks all other promotions",
+    "start_date": "2026-01-01",
+    "end_date": "2026-12-31",
+    "breakpoint_type": 1,
+    "scale_method": 2,
+    "sequence": 10,
+    "skip_to_sequence": 999,
+    "partner_families": ["VIP_PARTNERS"],
+    "lines": [
+        {
+            "name": "VIP Rule",
+            "paid_based_on_product": "entire_cart",
+            "assortment_type": "none",
+            "details": [
+                {
+                    "promo_type": 1,
+                    "minimum_value": 1,
+                    "amount": -30,
+                    "repeating": true
+                }
+            ]
+        }
+    ]
+}'
+```
+
+**Result:**
+- VIP customer: Gets 30% off, all other promos (seq 11-998) are skipped ✅
+- Regular customer: VIP promo doesn't apply, other promos work normally ✅
+
+---
+
+### 8.2 Example 2: Tiered Promotion Priority
+
+**Business Rule:** "Apply best promotion per category, skip lower-tier promos in same category"
+
+```bash
+# Premium Tier (blocks Standard tier)
+curl --location 'http://localhost:8000/api/admin/promotions' \
+--header 'Authorization: Bearer YOUR_TOKEN' \
+--header 'Content-Type: application/json' \
+--data '{
+    "code": "PREMIUM_TIER",
+    "name": "Premium 20% Discount",
+    "description": "Premium tier - blocks standard promotions",
+    "start_date": "2026-01-01",
+    "end_date": "2026-12-31",
+    "breakpoint_type": 1,
+    "scale_method": 2,
+    "sequence": 10,
+    "skip_to_sequence": 30,
+    "partner_families": ["PREMIUM_PARTNERS"],
+    "lines": [
+        {
+            "name": "Premium Rule",
+            "paid_based_on_product": "family",
+            "paid_code": "ELECTRONICS",
+            "assortment_type": "none",
+            "details": [
+                {
+                    "promo_type": 1,
+                    "minimum_value": 5,
+                    "amount": -20,
+                    "repeating": true
+                }
+            ]
+        }
+    ]
+}'
+
+# Standard Tier (would be skipped if Premium applies)
+curl --location 'http://localhost:8000/api/admin/promotions' \
+--header 'Authorization: Bearer YOUR_TOKEN' \
+--header 'Content-Type: application/json' \
+--data '{
+    "code": "STANDARD_TIER",
+    "name": "Standard 10% Discount",
+    "description": "Standard tier promotion",
+    "start_date": "2026-01-01",
+    "end_date": "2026-12-31",
+    "breakpoint_type": 1,
+    "scale_method": 2,
+    "sequence": 20,
+    "skip_to_sequence": 0,
+    "partner_families": ["STANDARD_PARTNERS"],
+    "lines": [
+        {
+            "name": "Standard Rule",
+            "paid_based_on_product": "family",
+            "paid_code": "ELECTRONICS",
+            "assortment_type": "none",
+            "details": [
+                {
+                    "promo_type": 1,
+                    "minimum_value": 5,
+                    "amount": -10,
+                    "repeating": true
+                }
+            ]
+        }
+    ]
+}'
+
+# Clearance (always evaluated, regardless of tier)
+curl --location 'http://localhost:8000/api/admin/promotions' \
+--header 'Authorization: Bearer YOUR_TOKEN' \
+--header 'Content-Type: application/json' \
+--data '{
+    "code": "CLEARANCE_PROMO",
+    "name": "Clearance Items 50% Off",
+    "description": "Clearance promotion - always applies",
+    "start_date": "2026-01-01",
+    "end_date": "2026-12-31",
+    "breakpoint_type": 1,
+    "scale_method": 2,
+    "sequence": 30,
+    "skip_to_sequence": 0,
+    "lines": [
+        {
+            "name": "Clearance Rule",
+            "paid_based_on_product": "family",
+            "paid_code": "CLEARANCE",
+            "assortment_type": "none",
+            "details": [
+                {
+                    "promo_type": 1,
+                    "minimum_value": 1,
+                    "amount": -50,
+                    "repeating": true
+                }
+            ]
+        }
+    ]
+}'
+```
+
+**Execution Flow:**
+
+**Premium Customer:**
+```
+1. Evaluate Premium (seq=10) → Applies ✅ → skipToSequence = 30
+2. Check Standard (seq=20) → 20 < 30 → SKIP ❌
+3. Evaluate Clearance (seq=30) → 30 >= 30 → Applies ✅
+Result: Premium 20% + Clearance 50%
+```
+
+**Standard Customer:**
+```
+1. Check Premium (seq=10) → Doesn't qualify ❌ → skipToSequence = 0
+2. Evaluate Standard (seq=20) → Applies ✅ → skipToSequence = 0
+3. Evaluate Clearance (seq=30) → Applies ✅
+Result: Standard 10% + Clearance 50%
+```
+
+---
+
+### 8.3 Example 3: Stackable Promotions (No Skip)
+
+**Business Rule:** "Allow multiple promotions to stack"
+
+```bash
+# First Promotion - No skip
+curl --location 'http://localhost:8000/api/admin/promotions' \
+--header 'Authorization: Bearer YOUR_TOKEN' \
+--header 'Content-Type: application/json' \
+--data '{
+    "code": "PROMO_STACK_1",
+    "name": "5% Volume Discount",
+    "description": "Stackable promotion 1",
+    "start_date": "2026-01-01",
+    "end_date": "2026-12-31",
+    "breakpoint_type": 1,
+    "scale_method": 2,
+    "sequence": 10,
+    "skip_to_sequence": 0,
+    "lines": [
+        {
+            "name": "Volume Rule",
+            "paid_based_on_product": "family",
+            "paid_code": "FOOD",
+            "assortment_type": "none",
+            "details": [
+                {
+                    "promo_type": 1,
+                    "minimum_value": 10,
+                    "amount": -5,
+                    "repeating": true
+                }
+            ]
+        }
+    ]
+}'
+
+# Second Promotion - No skip
+curl --location 'http://localhost:8000/api/admin/promotions' \
+--header 'Authorization: Bearer YOUR_TOKEN' \
+--header 'Content-Type: application/json' \
+--data '{
+    "code": "PROMO_STACK_2",
+    "name": "3% Loyalty Discount",
+    "description": "Stackable promotion 2",
+    "start_date": "2026-01-01",
+    "end_date": "2026-12-31",
+    "breakpoint_type": 1,
+    "scale_method": 2,
+    "sequence": 20,
+    "skip_to_sequence": 0,
+    "lines": [
+        {
+            "name": "Loyalty Rule",
+            "paid_based_on_product": "family",
+            "paid_code": "FOOD",
+            "assortment_type": "none",
+            "details": [
+                {
+                    "promo_type": 1,
+                    "minimum_value": 1,
+                    "amount": -3,
+                    "repeating": true
+                }
+            ]
+        }
+    ]
+}'
+```
+
+**Result:** Both promotions apply (5% + 3% = 8% total discount)
+
+---
+
+### 8.4 Example 4: Black Friday Special
+
+**Business Rule:** "Black Friday promotion blocks everything except loyalty points"
+
+```bash
+# Black Friday - Blocks most promos
+curl --location 'http://localhost:8000/api/admin/promotions' \
+--header 'Authorization: Bearer YOUR_TOKEN' \
+--header 'Content-Type: application/json' \
+--data '{
+    "code": "BLACK_FRIDAY_2026",
+    "name": "Black Friday 40% Off",
+    "description": "Black Friday special - blocks regular promotions",
+    "start_date": "2026-11-28",
+    "end_date": "2026-11-30",
+    "breakpoint_type": 1,
+    "scale_method": 2,
+    "sequence": 5,
+    "skip_to_sequence": 100,
+    "lines": [
+        {
+            "name": "Black Friday Rule",
+            "paid_based_on_product": "entire_cart",
+            "assortment_type": "none",
+            "details": [
+                {
+                    "promo_type": 1,
+                    "minimum_value": 1,
+                    "amount": -40,
+                    "repeating": true
+                }
+            ]
+        }
+    ]
+}'
+
+# Regular promotions (seq 6-99) would be skipped
+
+# Loyalty Points - Always applies
+curl --location 'http://localhost:8000/api/admin/promotions' \
+--header 'Authorization: Bearer YOUR_TOKEN' \
+--header 'Content-Type: application/json' \
+--data '{
+    "code": "LOYALTY_POINTS",
+    "name": "Loyalty Points Bonus",
+    "description": "Earn loyalty points - always active",
+    "start_date": "2026-01-01",
+    "end_date": "2026-12-31",
+    "breakpoint_type": 2,
+    "scale_method": 2,
+    "sequence": 100,
+    "skip_to_sequence": 0,
+    "is_loyalty_program": true,
+    "lines": [
+        {
+            "name": "Points Rule",
+            "paid_based_on_product": "entire_cart",
+            "assortment_type": "none",
+            "details": [
+                {
+                    "promo_type": 1,
+                    "minimum_value": 100,
+                    "amount": -2,
+                    "repeating": false
+                }
+            ]
+        }
+    ]
+}'
+```
+
+**Result:** Black Friday 40% + Loyalty Points (all promos seq 6-99 are skipped)
+
+---
+
+### 8.5 Sequence Planning Guide
+
+#### Recommended Sequence Ranges
+
+```
+1-10:    Exclusive/VIP promotions (high skip values)
+11-20:   Premium tier promotions
+21-30:   Standard tier promotions
+31-40:   Clearance/Special offers
+41-50:   Category-specific promotions
+51-99:   General promotions
+100+:    Always-apply promotions (loyalty, points, etc.)
+```
+
+#### Skip Strategy Table
+
+| Scenario | Sequence | Skip To | Effect |
+|----------|----------|---------|--------|
+| Exclusive promo | 10 | 999 | Blocks everything |
+| Tier-based | 10 | 30 | Blocks same tier |
+| Stackable | 10 | 0 | Allows all |
+| Category block | 20 | 50 | Blocks category promos |
+| No restriction | Any | 0 | Normal flow |
+
+---
+
+### 8.6 Testing Skip Logic
+
+**Test Scenario 1: VIP vs Regular**
+```bash
+# Create promotions with sequences: 10 (VIP, skip=50), 20 (Regular), 30 (Regular), 50 (Clearance)
+# Test with VIP partner → Should get: VIP + Clearance only
+# Test with Regular partner → Should get: Regular(20) + Regular(30) + Clearance
+```
+
+**Test Scenario 2: Verify Skip Updates Only on Apply**
+```bash
+# Create promotion: seq=10, skip=50, minimum_value=100
+# Test with cart total 50 → Promo doesn't apply → Other promos work
+# Test with cart total 150 → Promo applies → Promos 11-49 are skipped
+```
+
+---
+
+## 9. NOTES
 
 ### Breakpoint Types
 - **Type 1 (Quantity)**: Based on number of units
 - **Type 2 (Amount)**: Based on total amount in MAD
-- **Type 3 (Promo Unit)**: Based on promo_unit field in products table
+- **Type 3 (Promo Unit)**: Based on promo_unit field in products table (can represent weight, volume, points)
 
 ### Scale Methods
 - **Method 1 (Cumulative)**: Apply all matching tiers progressively
 - **Method 2 (Bracket)**: Apply only the highest matching tier
 
-### Sequence Logic
-- Promotions are evaluated in ascending sequence order
-- Lower sequence = higher priority
-- Use skip_to_sequence to skip subsequent promotions
+### Sequence Best Practices
+- **Plan your sequence ranges** before creating promotions
+- **Lower sequence = Higher priority** (evaluated first)
+- **Use skip_to_sequence strategically** to prevent unwanted stacking
+- **Reserve high sequences (100+)** for always-apply promotions
+- **Test with different partner types** to verify skip logic
+
+### Skip to Sequence Rules
+- **0 = No skip** (allow all subsequent promotions)
+- **Value > 0** = Skip all promotions with sequence < skip_to_sequence
+- **Only updates when promotion applies** (not just evaluated)
+- **Use 999 for exclusive promotions** (blocks everything)
 
 ### Amount Sign Convention
 - **Negative amounts**: Discounts (e.g., -10 = 10% off or 10 MAD off)
@@ -844,3 +1244,10 @@ curl --location 'http://localhost:8000/api/admin/promotions/boosts/bulk-sync' \
 ### Repeating Flag
 - **true**: Apply discount multiple times based on quantity
 - **false**: Apply discount once regardless of quantity
+
+### Common Pitfalls
+- ❌ **Don't set skip_to_sequence = own sequence** (will skip itself)
+- ❌ **Don't use same sequence for conflicting promos** (unpredictable order)
+- ❌ **Don't forget to test skip logic** with different partner types
+- ✅ **Do plan sequence ranges** before implementation
+- ✅ **Do document your skip strategy** for maintenance

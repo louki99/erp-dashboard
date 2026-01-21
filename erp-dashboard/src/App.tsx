@@ -32,6 +32,7 @@ import { ProductsPage } from '@/pages/products/ProductsPage';
 import { SettingsPage } from '@/pages/settings/SettingsPage';
 import { PromotionsPage } from '@/pages/promotions/PromotionsPage';
 import { PromotionForm } from '@/pages/promotions/components/PromotionForm';
+import { PromotionFormRedesigned } from '@/pages/promotions/components/PromotionFormRedesigned';
 import { PartnerFamiliesPage } from '@/pages/promotions/PartnerFamiliesPage';
 import { ProductFamiliesPage } from '@/pages/promotions/ProductFamiliesPage';
 import { BoostsPage } from '@/pages/promotions/BoostsPage';
@@ -259,12 +260,12 @@ function AppRoutes() {
       } />
       <Route path="/promotions/new" element={
         <ProtectedRoute>
-          <PromotionForm />
+          <PromotionFormRedesigned />
         </ProtectedRoute>
       } />
       <Route path="/promotions/:id/edit" element={
         <ProtectedRoute>
-          <PromotionForm isEdit />
+          <PromotionFormRedesigned />
         </ProtectedRoute>
       } />
 
