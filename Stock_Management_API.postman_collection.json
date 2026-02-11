@@ -1,0 +1,180 @@
+{
+  "info": {
+    "name": "Stock Management API",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "List Stocks",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{token}}"
+          }
+        ],
+        "url": {
+          "raw": "{{base_url}}/api/backend/stock-management/stocks?branch_code=A0001",
+          "host": [
+            "{{base_url}}"
+          ],
+          "path": [
+            "api",
+            "backend",
+            "stock-management",
+            "stocks"
+          ],
+          "query": [
+            {
+              "key": "branch_code",
+              "value": "A0001"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "List Movements",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{token}}"
+          }
+        ],
+        "url": {
+          "raw": "{{base_url}}/api/backend/stock-management/movements?branch_code=A0001&movement_status=PROVISIONAL",
+          "host": [
+            "{{base_url}}"
+          ],
+          "path": [
+            "api",
+            "backend",
+            "stock-management",
+            "movements"
+          ],
+          "query": [
+            {
+              "key": "branch_code",
+              "value": "A0001"
+            },
+            {
+              "key": "movement_status",
+              "value": "PROVISIONAL"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "Effective Stock Breakdown",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{token}}"
+          }
+        ],
+        "url": {
+          "raw": "{{base_url}}/api/backend/stock-management/effective?product_id=123&branch_code=A0001",
+          "host": [
+            "{{base_url}}"
+          ],
+          "path": [
+            "api",
+            "backend",
+            "stock-management",
+            "effective"
+          ],
+          "query": [
+            {
+              "key": "product_id",
+              "value": "123"
+            },
+            {
+              "key": "branch_code",
+              "value": "A0001"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "Create Provisional Movement",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{token}}"
+          },
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"branch_code\": \"A0001\",\n  \"product_id\": 123,\n  \"quantity\": 10,\n  \"type\": \"purchase\",\n  \"reference_type\": \"ManualProvisional\",\n  \"reference_id\": null,\n  \"external_reference\": \"POS-REC-0001\",\n  \"notes\": \"Local reception\"\n}"
+        },
+        "url": {
+          "raw": "{{base_url}}/api/backend/stock-management/provisional",
+          "host": [
+            "{{base_url}}"
+          ],
+          "path": [
+            "api",
+            "backend",
+            "stock-management",
+            "provisional"
+          ]
+        }
+      }
+    },
+    {
+      "name": "Reconcile From X3",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{token}}"
+          },
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"branch_code\": \"A0001\",\n  \"product_id\": 123,\n  \"quantity\": 10,\n  \"type\": \"purchase\",\n  \"external_reference\": \"X3-REC-2026-001\",\n  \"notes\": \"X3 sync receipt\"\n}"
+        },
+        "url": {
+          "raw": "{{base_url}}/api/backend/stock-management/reconcile-x3",
+          "host": [
+            "{{base_url}}"
+          ],
+          "path": [
+            "api",
+            "backend",
+            "stock-management",
+            "reconcile-x3"
+          ]
+        }
+      }
+    }
+  ],
+  "variable": [
+    {
+      "key": "base_url",
+      "value": "http://localhost:8000"
+    },
+    {
+      "key": "token",
+      "value": "YOUR_TOKEN_HERE"
+    }
+  ]
+}

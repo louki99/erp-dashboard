@@ -54,15 +54,15 @@ export const ProductFormModal = ({ isOpen, onClose, onSuccess, product }: Produc
             setFormData({
                 name: product.name || '',
                 code: product.code || '',
-                price: product.price || 0,
-                discount_price: product.discount_price || 0,
+                price: Number(product.price) || 0,
+                discount_price: product.discount_price ? Number(product.discount_price) : undefined,
                 quantity: product.quantity || 0,
                 min_order_quantity: product.min_order_quantity || 1,
                 brand: product.brand_id,
                 unit: product.unit_id,
                 short_description: product.short_description || '',
                 description: product.description || '',
-                buy_price: product.buy_price || 0,
+                buy_price: product.buy_price ? Number(product.buy_price) : undefined,
                 has_colisage: product.has_colisage || false,
                 categories: product.categories?.map(c => c.id) || [],
                 vat_taxes: product.vatTaxes?.map(v => v.id) || [],
@@ -70,7 +70,7 @@ export const ProductFormModal = ({ isOpen, onClose, onSuccess, product }: Produc
                 is_salable: product.flags?.is_salable ?? true,
                 is_returnable: product.flags?.is_returnable ?? true,
                 is_discountable: product.flags?.is_discountable ?? true,
-                is_visible_individually: product.flags?.is_visible_individually ?? true,
+                is_visible_individually: product.marketing?.is_visible_individually ?? true,
             });
         } else if (isOpen && !product) {
             resetForm();
@@ -233,9 +233,9 @@ export const ProductFormModal = ({ isOpen, onClose, onSuccess, product }: Produc
     const vatTaxes = metadata?.data?.vat_taxes || [];
 
     return (
-        <Modal 
-            isOpen={isOpen} 
-            onClose={onClose} 
+        <Modal
+            isOpen={isOpen}
+            onClose={onClose}
             title={isEditMode ? 'Modifier le produit' : 'Nouveau produit'}
             size="xl"
         >
@@ -270,9 +270,8 @@ export const ProductFormModal = ({ isOpen, onClose, onSuccess, product }: Produc
                                                 type="text"
                                                 value={formData.name}
                                                 onChange={(e) => handleInputChange('name', e.target.value)}
-                                                className={`w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 ${
-                                                    errors.name ? 'border-red-500' : 'border-gray-300'
-                                                }`}
+                                                className={`w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 ${errors.name ? 'border-red-500' : 'border-gray-300'
+                                                    }`}
                                                 placeholder="Ex: Foie de Poulet Surgelé"
                                             />
                                             {errors.name && (
@@ -291,9 +290,8 @@ export const ProductFormModal = ({ isOpen, onClose, onSuccess, product }: Produc
                                                 type="text"
                                                 value={formData.code}
                                                 onChange={(e) => handleInputChange('code', e.target.value)}
-                                                className={`w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 ${
-                                                    errors.code ? 'border-red-500' : 'border-gray-300'
-                                                }`}
+                                                className={`w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 ${errors.code ? 'border-red-500' : 'border-gray-300'
+                                                    }`}
                                                 placeholder="Ex: FOIE-001"
                                             />
                                             {errors.code && (
@@ -313,9 +311,8 @@ export const ProductFormModal = ({ isOpen, onClose, onSuccess, product }: Produc
                                             <select
                                                 value={formData.brand || ''}
                                                 onChange={(e) => handleInputChange('brand', e.target.value ? Number(e.target.value) : undefined)}
-                                                className={`w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 ${
-                                                    errors.brand ? 'border-red-500' : 'border-gray-300'
-                                                }`}
+                                                className={`w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 ${errors.brand ? 'border-red-500' : 'border-gray-300'
+                                                    }`}
                                             >
                                                 <option value="">Sélectionner une marque</option>
                                                 {brands.map((brand: any) => (
@@ -339,9 +336,8 @@ export const ProductFormModal = ({ isOpen, onClose, onSuccess, product }: Produc
                                             <select
                                                 value={formData.unit || ''}
                                                 onChange={(e) => handleInputChange('unit', e.target.value ? Number(e.target.value) : undefined)}
-                                                className={`w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 ${
-                                                    errors.unit ? 'border-red-500' : 'border-gray-300'
-                                                }`}
+                                                className={`w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 ${errors.unit ? 'border-red-500' : 'border-gray-300'
+                                                    }`}
                                             >
                                                 <option value="">Sélectionner une unité</option>
                                                 {units.map((unit: any) => (
@@ -400,9 +396,8 @@ export const ProductFormModal = ({ isOpen, onClose, onSuccess, product }: Produc
                                                 step="0.01"
                                                 value={formData.price}
                                                 onChange={(e) => handleInputChange('price', parseFloat(e.target.value) || 0)}
-                                                className={`w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 ${
-                                                    errors.price ? 'border-red-500' : 'border-gray-300'
-                                                }`}
+                                                className={`w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 ${errors.price ? 'border-red-500' : 'border-gray-300'
+                                                    }`}
                                                 placeholder="0.00"
                                             />
                                             {errors.price && (
@@ -460,7 +455,7 @@ export const ProductFormModal = ({ isOpen, onClose, onSuccess, product }: Produc
 
                                     <div className="space-y-3 pt-4 border-t border-gray-200">
                                         <h3 className="text-sm font-semibold text-gray-900">Options de tarification</h3>
-                                        
+
                                         <label className="flex items-center gap-2 cursor-pointer">
                                             <input
                                                 type="checkbox"
@@ -510,7 +505,7 @@ export const ProductFormModal = ({ isOpen, onClose, onSuccess, product }: Produc
 
                                     <div className="space-y-3 pt-4 border-t border-gray-200">
                                         <h3 className="text-sm font-semibold text-gray-900">Options de gestion du stock</h3>
-                                        
+
                                         <label className="flex items-center gap-2 cursor-pointer">
                                             <input
                                                 type="checkbox"
@@ -635,7 +630,7 @@ export const ProductFormModal = ({ isOpen, onClose, onSuccess, product }: Produc
 
                                     <div className="space-y-3 pt-4 border-t border-gray-200">
                                         <h3 className="text-sm font-semibold text-gray-900">Options de vente</h3>
-                                        
+
                                         <label className="flex items-center gap-2 cursor-pointer">
                                             <input
                                                 type="checkbox"
