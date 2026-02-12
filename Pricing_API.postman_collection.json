@@ -1,0 +1,888 @@
+{
+    "info": {
+        "name": "Pricing Management API",
+        "_postman_id": "b7c1b9d6-4f6f-4b6c-9a5f-6b3efc0b9a01",
+        "description": "Backend pricing management endpoints",
+        "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+    },
+    "item": [
+        {
+            "name": "Price Lists",
+            "item": [
+                {
+                    "name": "List Price Lists",
+                    "request": {
+                        "method": "GET",
+                        "header": [
+                            {
+                                "key": "Authorization",
+                                "value": "Bearer {{token}}"
+                            },
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{base_url}}/api/backend/pricing?per_page=20&q=retail",
+                            "host": [
+                                "{{base_url}}"
+                            ],
+                            "path": [
+                                "api",
+                                "backend",
+                                "pricing"
+                            ],
+                            "query": [
+                                {
+                                    "key": "per_page",
+                                    "value": "20"
+                                },
+                                {
+                                    "key": "q",
+                                    "value": "retail"
+                                }
+                            ]
+                        }
+                    }
+                },
+                {
+                    "name": "Create Price List",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Authorization",
+                                "value": "Bearer {{token}}"
+                            },
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            },
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n  \"code\": \"PL001\",\n  \"name\": \"Retail\",\n  \"rank\": 1,\n  \"redirect_to_lines\": true\n}"
+                        },
+                        "url": {
+                            "raw": "{{base_url}}/api/backend/pricing",
+                            "host": [
+                                "{{base_url}}"
+                            ],
+                            "path": [
+                                "api",
+                                "backend",
+                                "pricing"
+                            ]
+                        }
+                    }
+                },
+                {
+                    "name": "Get Price List",
+                    "request": {
+                        "method": "GET",
+                        "header": [
+                            {
+                                "key": "Authorization",
+                                "value": "Bearer {{token}}"
+                            },
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{base_url}}/api/backend/pricing/1",
+                            "host": [
+                                "{{base_url}}"
+                            ],
+                            "path": [
+                                "api",
+                                "backend",
+                                "pricing",
+                                "1"
+                            ]
+                        }
+                    }
+                },
+                {
+                    "name": "Update Price List",
+                    "request": {
+                        "method": "PUT",
+                        "header": [
+                            {
+                                "key": "Authorization",
+                                "value": "Bearer {{token}}"
+                            },
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            },
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n  \"code\": \"PL001\",\n  \"name\": \"Retail (Updated)\",\n  \"rank\": 2\n}"
+                        },
+                        "url": {
+                            "raw": "{{base_url}}/api/backend/pricing/1",
+                            "host": [
+                                "{{base_url}}"
+                            ],
+                            "path": [
+                                "api",
+                                "backend",
+                                "pricing",
+                                "1"
+                            ]
+                        }
+                    }
+                },
+                {
+                    "name": "Delete Price List",
+                    "request": {
+                        "method": "DELETE",
+                        "header": [
+                            {
+                                "key": "Authorization",
+                                "value": "Bearer {{token}}"
+                            },
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{base_url}}/api/backend/pricing/1",
+                            "host": [
+                                "{{base_url}}"
+                            ],
+                            "path": [
+                                "api",
+                                "backend",
+                                "pricing",
+                                "1"
+                            ]
+                        }
+                    }
+                }
+            ]
+        },
+        {
+            "name": "Products",
+            "item": [
+                {
+                    "name": "Search Products",
+                    "request": {
+                        "method": "GET",
+                        "header": [
+                            {
+                                "key": "Authorization",
+                                "value": "Bearer {{token}}"
+                            },
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{base_url}}/api/backend/pricing/products/search?q=milk",
+                            "host": [
+                                "{{base_url}}"
+                            ],
+                            "path": [
+                                "api",
+                                "backend",
+                                "pricing",
+                                "products",
+                                "search"
+                            ],
+                            "query": [
+                                {
+                                    "key": "q",
+                                    "value": "milk"
+                                }
+                            ]
+                        }
+                    }
+                },
+                {
+                    "name": "Get Product Packagings",
+                    "request": {
+                        "method": "GET",
+                        "header": [
+                            {
+                                "key": "Authorization",
+                                "value": "Bearer {{token}}"
+                            },
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{base_url}}/api/backend/pricing/products/123/packagings",
+                            "host": [
+                                "{{base_url}}"
+                            ],
+                            "path": [
+                                "api",
+                                "backend",
+                                "pricing",
+                                "products",
+                                "123",
+                                "packagings"
+                            ]
+                        }
+                    }
+                }
+            ]
+        },
+        {
+            "name": "Price List Lines",
+            "item": [
+                {
+                    "name": "Create Line",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Authorization",
+                                "value": "Bearer {{token}}"
+                            },
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            },
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n  \"line_number\": 1,\n  \"name\": \"Q1 2026\",\n  \"start_date\": \"2026-02-01\",\n  \"end_date\": \"2026-03-31\",\n  \"closed\": false\n}"
+                        },
+                        "url": {
+                            "raw": "{{base_url}}/api/backend/pricing/1/lines",
+                            "host": [
+                                "{{base_url}}"
+                            ],
+                            "path": [
+                                "api",
+                                "backend",
+                                "pricing",
+                                "1",
+                                "lines"
+                            ]
+                        }
+                    }
+                },
+                {
+                    "name": "Edit Line (Load Details)",
+                    "request": {
+                        "method": "GET",
+                        "header": [
+                            {
+                                "key": "Authorization",
+                                "value": "Bearer {{token}}"
+                            },
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{base_url}}/api/backend/pricing/1/lines/1/edit",
+                            "host": [
+                                "{{base_url}}"
+                            ],
+                            "path": [
+                                "api",
+                                "backend",
+                                "pricing",
+                                "1",
+                                "lines",
+                                "1",
+                                "edit"
+                            ]
+                        }
+                    }
+                },
+                {
+                    "name": "Update Line Metadata",
+                    "request": {
+                        "method": "PUT",
+                        "header": [
+                            {
+                                "key": "Authorization",
+                                "value": "Bearer {{token}}"
+                            },
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            },
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n  \"name\": \"Q1 2026 - Final\",\n  \"start_date\": \"2026-02-01\",\n  \"end_date\": \"2026-03-31\",\n  \"closed\": false\n}"
+                        },
+                        "url": {
+                            "raw": "{{base_url}}/api/backend/pricing/1/lines/1",
+                            "host": [
+                                "{{base_url}}"
+                            ],
+                            "path": [
+                                "api",
+                                "backend",
+                                "pricing",
+                                "1",
+                                "lines",
+                                "1"
+                            ]
+                        }
+                    }
+                },
+                {
+                    "name": "Upsert Line Details",
+                    "request": {
+                        "method": "PUT",
+                        "header": [
+                            {
+                                "key": "Authorization",
+                                "value": "Bearer {{token}}"
+                            },
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            },
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n  \"action\": \"upsert_details\",\n  \"details\": [\n    {\n      \"product_id\": 123,\n      \"sales_price\": 10.5,\n      \"return_price\": 9.0,\n      \"min_sales_price\": 0,\n      \"max_sales_price\": 0,\n      \"discount_amount\": 0,\n      \"discount_rate\": 0\n    }\n  ]\n}"
+                        },
+                        "url": {
+                            "raw": "{{base_url}}/api/backend/pricing/1/lines/1",
+                            "host": [
+                                "{{base_url}}"
+                            ],
+                            "path": [
+                                "api",
+                                "backend",
+                                "pricing",
+                                "1",
+                                "lines",
+                                "1"
+                            ]
+                        }
+                    }
+                },
+                {
+                    "name": "Clear Line Details",
+                    "request": {
+                        "method": "PUT",
+                        "header": [
+                            {
+                                "key": "Authorization",
+                                "value": "Bearer {{token}}"
+                            },
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            },
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n  \"action\": \"clear_details\"\n}"
+                        },
+                        "url": {
+                            "raw": "{{base_url}}/api/backend/pricing/1/lines/1",
+                            "host": [
+                                "{{base_url}}"
+                            ],
+                            "path": [
+                                "api",
+                                "backend",
+                                "pricing",
+                                "1",
+                                "lines",
+                                "1"
+                            ]
+                        }
+                    }
+                },
+                {
+                    "name": "Duplicate Line",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Authorization",
+                                "value": "Bearer {{token}}"
+                            },
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            },
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n  \"from_line\": 1,\n  \"to_line\": 2,\n  \"name\": \"Q2 2026\",\n  \"start_date\": \"2026-04-01\",\n  \"end_date\": \"2026-06-30\",\n  \"closed\": false\n}"
+                        },
+                        "url": {
+                            "raw": "{{base_url}}/api/backend/pricing/1/lines/duplicate",
+                            "host": [
+                                "{{base_url}}"
+                            ],
+                            "path": [
+                                "api",
+                                "backend",
+                                "pricing",
+                                "1",
+                                "lines",
+                                "duplicate"
+                            ]
+                        }
+                    }
+                },
+                {
+                    "name": "Import Line Details CSV",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Authorization",
+                                "value": "Bearer {{token}}"
+                            },
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            }
+                        ],
+                        "body": {
+                            "mode": "formdata",
+                            "formdata": [
+                                {
+                                    "key": "csv",
+                                    "type": "file",
+                                    "src": "price_list_import.csv"
+                                },
+                                {
+                                    "key": "mode",
+                                    "value": "merge",
+                                    "type": "text"
+                                },
+                                {
+                                    "key": "has_header",
+                                    "value": "true",
+                                    "type": "text"
+                                },
+                                {
+                                    "key": "product_identifier",
+                                    "value": "id",
+                                    "type": "text"
+                                }
+                            ]
+                        },
+                        "url": {
+                            "raw": "{{base_url}}/api/backend/pricing/1/lines/1/import",
+                            "host": [
+                                "{{base_url}}"
+                            ],
+                            "path": [
+                                "api",
+                                "backend",
+                                "pricing",
+                                "1",
+                                "lines",
+                                "1",
+                                "import"
+                            ]
+                        }
+                    }
+                }
+            ]
+        },
+        {
+            "name": "Overrides",
+            "item": [
+                {
+                    "name": "List Overrides",
+                    "request": {
+                        "method": "GET",
+                        "header": [
+                            {
+                                "key": "Authorization",
+                                "value": "Bearer {{token}}"
+                            },
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{base_url}}/api/backend/pricing/overrides?active=1",
+                            "host": [
+                                "{{base_url}}"
+                            ],
+                            "path": [
+                                "api",
+                                "backend",
+                                "pricing",
+                                "overrides"
+                            ],
+                            "query": [
+                                {
+                                    "key": "active",
+                                    "value": "1"
+                                }
+                            ]
+                        }
+                    }
+                },
+                {
+                    "name": "Create Override",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Authorization",
+                                "value": "Bearer {{token}}"
+                            },
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            },
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n  \"partner_id\": 10,\n  \"product_id\": 123,\n  \"fixed_price\": 9.5,\n  \"discount_rate\": 0,\n  \"discount_amount\": 0,\n  \"valid_from\": \"2026-02-01\",\n  \"valid_to\": \"2026-03-31\",\n  \"active\": true,\n  \"priority\": 10\n}"
+                        },
+                        "url": {
+                            "raw": "{{base_url}}/api/backend/pricing/overrides",
+                            "host": [
+                                "{{base_url}}"
+                            ],
+                            "path": [
+                                "api",
+                                "backend",
+                                "pricing",
+                                "overrides"
+                            ]
+                        }
+                    }
+                },
+                {
+                    "name": "Preview Effective Price",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Authorization",
+                                "value": "Bearer {{token}}"
+                            },
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            },
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n  \"partner_id\": 10,\n  \"product_id\": 123,\n  \"at\": \"2026-02-10\"\n}"
+                        },
+                        "url": {
+                            "raw": "{{base_url}}/api/backend/pricing/overrides/preview",
+                            "host": [
+                                "{{base_url}}"
+                            ],
+                            "path": [
+                                "api",
+                                "backend",
+                                "pricing",
+                                "overrides",
+                                "preview"
+                            ]
+                        }
+                    }
+                },
+                {
+                    "name": "Toggle Override",
+                    "request": {
+                        "method": "PATCH",
+                        "header": [
+                            {
+                                "key": "Authorization",
+                                "value": "Bearer {{token}}"
+                            },
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{base_url}}/api/backend/pricing/overrides/5/toggle",
+                            "host": [
+                                "{{base_url}}"
+                            ],
+                            "path": [
+                                "api",
+                                "backend",
+                                "pricing",
+                                "overrides",
+                                "5",
+                                "toggle"
+                            ]
+                        }
+                    }
+                },
+                {
+                    "name": "Delete Override",
+                    "request": {
+                        "method": "DELETE",
+                        "header": [
+                            {
+                                "key": "Authorization",
+                                "value": "Bearer {{token}}"
+                            },
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{base_url}}/api/backend/pricing/overrides/5",
+                            "host": [
+                                "{{base_url}}"
+                            ],
+                            "path": [
+                                "api",
+                                "backend",
+                                "pricing",
+                                "overrides",
+                                "5"
+                            ]
+                        }
+                    }
+                }
+            ]
+        },
+        {
+            "name": "Packaging Prices",
+            "item": [
+                {
+                    "name": "List Packaging Prices",
+                    "request": {
+                        "method": "GET",
+                        "header": [
+                            {
+                                "key": "Authorization",
+                                "value": "Bearer {{token}}"
+                            },
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{base_url}}/api/backend/pricing/packaging-prices?price_list_id=1",
+                            "host": [
+                                "{{base_url}}"
+                            ],
+                            "path": [
+                                "api",
+                                "backend",
+                                "pricing",
+                                "packaging-prices"
+                            ],
+                            "query": [
+                                {
+                                    "key": "price_list_id",
+                                    "value": "1"
+                                }
+                            ]
+                        }
+                    }
+                },
+                {
+                    "name": "Create Packaging Price",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Authorization",
+                                "value": "Bearer {{token}}"
+                            },
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            },
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n  \"line_detail_id\": 50,\n  \"packaging_id\": 7,\n  \"sales_price\": 25.0,\n  \"return_price\": 23.0,\n  \"min_sales_price\": 0,\n  \"max_sales_price\": 0,\n  \"sales_discount\": 0,\n  \"discount_amount\": 0,\n  \"discount_rate\": 0\n}"
+                        },
+                        "url": {
+                            "raw": "{{base_url}}/api/backend/pricing/packaging-prices",
+                            "host": [
+                                "{{base_url}}"
+                            ],
+                            "path": [
+                                "api",
+                                "backend",
+                                "pricing",
+                                "packaging-prices"
+                            ]
+                        }
+                    }
+                },
+                {
+                    "name": "Update Packaging Price",
+                    "request": {
+                        "method": "PUT",
+                        "header": [
+                            {
+                                "key": "Authorization",
+                                "value": "Bearer {{token}}"
+                            },
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            },
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n  \"line_detail_id\": 50,\n  \"packaging_id\": 7,\n  \"sales_price\": 26.0,\n  \"return_price\": 23.0,\n  \"min_sales_price\": 0,\n  \"max_sales_price\": 0,\n  \"sales_discount\": 0,\n  \"discount_amount\": 0,\n  \"discount_rate\": 0\n}"
+                        },
+                        "url": {
+                            "raw": "{{base_url}}/api/backend/pricing/packaging-prices/10",
+                            "host": [
+                                "{{base_url}}"
+                            ],
+                            "path": [
+                                "api",
+                                "backend",
+                                "pricing",
+                                "packaging-prices",
+                                "10"
+                            ]
+                        }
+                    }
+                },
+                {
+                    "name": "Delete Packaging Price",
+                    "request": {
+                        "method": "DELETE",
+                        "header": [
+                            {
+                                "key": "Authorization",
+                                "value": "Bearer {{token}}"
+                            },
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{base_url}}/api/backend/pricing/packaging-prices/10",
+                            "host": [
+                                "{{base_url}}"
+                            ],
+                            "path": [
+                                "api",
+                                "backend",
+                                "pricing",
+                                "packaging-prices",
+                                "10"
+                            ]
+                        }
+                    }
+                },
+                {
+                    "name": "AJAX Packagings by Product",
+                    "request": {
+                        "method": "GET",
+                        "header": [
+                            {
+                                "key": "Authorization",
+                                "value": "Bearer {{token}}"
+                            },
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{base_url}}/api/backend/pricing/packaging-prices/ajax/packagings?product_id=123",
+                            "host": [
+                                "{{base_url}}"
+                            ],
+                            "path": [
+                                "api",
+                                "backend",
+                                "pricing",
+                                "packaging-prices",
+                                "ajax",
+                                "packagings"
+                            ],
+                            "query": [
+                                {
+                                    "key": "product_id",
+                                    "value": "123"
+                                }
+                            ]
+                        }
+                    }
+                }
+            ]
+        }
+    ],
+    "variable": [
+        {
+            "key": "base_url",
+            "value": "http://localhost:8000"
+        },
+        {
+            "key": "token",
+            "value": "<token>"
+        }
+    ]
+}

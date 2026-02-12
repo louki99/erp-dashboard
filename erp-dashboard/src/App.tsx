@@ -50,6 +50,8 @@ import { WorkflowCreatePage } from './pages/workflows/WorkflowCreatePage';
 import { TaskTemplateDetailPage } from './pages/workflows/TaskTemplateDetailPage';
 import { WorkflowMonitoringPage } from '@/pages/workflows/WorkflowMonitoringPage';
 import { AdminMonitoringDashboard } from '@/pages/admin/AdminMonitoringDashboard';
+import { StockManagementPage } from '@/pages/stock/StockManagementPage';
+import { PricingManagementPage } from '@/pages/pricing/PricingManagementPage';
 
 
 // Simple Navigation Wrapper to show active route in DevSwitcher style (optional, but let's stick to MegaMenu for now)
@@ -376,6 +378,20 @@ function AppRoutes() {
       <Route path="/workflows/monitoring" element={
         <ProtectedRoute requiredPermission={PERMISSIONS.WORKFLOW_TEMPLATES.INDEX}>
           <WorkflowMonitoringPage />
+        </ProtectedRoute>
+      } />
+
+      {/* Stock Management Module */}
+      <Route path="/stock-management" element={
+        <ProtectedRoute>
+          <StockManagementPage />
+        </ProtectedRoute>
+      } />
+
+      {/* Pricing Management */}
+      <Route path="/pricing" element={
+        <ProtectedRoute>
+          <PricingManagementPage />
         </ProtectedRoute>
       } />
 

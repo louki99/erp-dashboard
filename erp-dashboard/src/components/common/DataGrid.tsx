@@ -1,6 +1,6 @@
 import { AgGridReact } from 'ag-grid-react';
 import { AllCommunityModule, ModuleRegistry } from 'ag-grid-community';
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, forwardRef } from 'react';
 
 // Register all Community features
 ModuleRegistry.registerModules([AllCommunityModule]);
@@ -11,6 +11,8 @@ interface DataGridProps {
     onRowSelected?: (data: any) => void;
     onSelectionChanged?: (rows: any[]) => void;
     onRowDoubleClicked?: (data: any) => void;
+    onRowClicked?: (event: any) => void;
+    onCellValueChanged?: (event: any) => void;
     rowSelection?: 'single' | 'multiple';
     loading?: boolean;
     getRowClass?: (params: any) => string;
@@ -18,18 +20,20 @@ interface DataGridProps {
     defaultSelectedIds?: (row: any) => boolean; // Function to determine if a row should be selected by default
 }
 
-export const DataGrid = ({
+export const DataGrid = forwardRef<AgGridReact, DataGridProps>(({
     rowData,
     columnDefs,
     onRowSelected,
     onSelectionChanged,
     onRowDoubleClicked,
+    onRowClicked,
+    onCellValueChanged,
     rowSelection = 'single',
     loading,
     getRowClass,
     isRowSelectable,
     defaultSelectedIds
-}: DataGridProps) => {
+}, ref) => {
     const [gridApi, setGridApi] = useState<any>(null);
     const isInitializingSelection = useRef(false);
     const previousSelectedIdsRef = useRef<Set<any>>(new Set());
@@ -119,6 +123,7 @@ export const DataGrid = ({
             </style>
             <div className="h-full w-full ag-theme-custom">
                 <AgGridReact
+                    ref={ref}
                     rowData={rowData}
                     columnDefs={columnDefs}
                     defaultColDef={defaultColDef}
@@ -146,6 +151,12 @@ export const DataGrid = ({
                             onRowDoubleClicked(event.data);
                         }
                     }}
+                    onRowClicked={(event) => {
+                        if (onRowClicked) {
+                            onRowClicked(event);
+                        }
+                    }}
+                    onCellValueChanged={onCellValueChanged}
                     onGridReady={onGridReady}
                     animateRows={true}
                     headerHeight={40}
@@ -156,4 +167,6 @@ export const DataGrid = ({
             </div>
         </div>
     );
-};
+});
+
+DataGrid.displayName = 'DataGrid';
