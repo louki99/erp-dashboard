@@ -116,6 +116,9 @@ export const DataGrid = forwardRef<AgGridReact, DataGridProps>(({
               --ag-selected-row-background-color: #ccd6db;
               --ag-cell-horizontal-padding: 12px;
           }
+          .ag-theme-custom .ag-row {
+              cursor: pointer;
+          }
           .ag-header-cell-label {
              font-weight: 600;
           }

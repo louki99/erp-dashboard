@@ -192,7 +192,7 @@ export const importLineCsv = async (priceListId: number, lineNumber: number, par
     return response.data;
 };
 
-// ─── Products & Search ───────────────────────────────────────────────────────
+// ─── Products & Partners Search ──────────────────────────────────────────────
 
 export interface ProductSearchResult {
     id: number;
@@ -207,6 +207,23 @@ export const searchProducts = async (query: string): Promise<ProductSearchResult
         { params: { q: query } }
     );
     return response.data;
+};
+
+export interface PartnerSearchResult {
+    id: number;
+    code: string;
+    name: string;
+    email: string | null;
+    phone: string | null;
+    status: string;
+}
+
+export const searchPartners = async (query: string): Promise<PartnerSearchResult[]> => {
+    const response = await apiClient.get<ApiSuccessResponse<PartnerSearchResult[]>>(
+        `${BASE_PATH}/partners/search`,
+        { params: { q: query } }
+    );
+    return response.data.data;
 };
 
 export const getProductPackagings = async (productId: number) => {

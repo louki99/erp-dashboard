@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import type { ColDef, CellValueChangedEvent } from 'ag-grid-community';
 import {
     Search,
@@ -130,6 +130,31 @@ export const PricingManagementPage = () => {
     // Use detailed data if available, otherwise fallback to list data
     const priceListDetail = priceListDetailData || selectedPriceList;
     const priceLists = priceListsData?.data || [];
+
+    // Keep selectedDetailsLine in sync when detail data refreshes
+    useEffect(() => {
+        if (!priceListDetailData) {
+            // Detail was cleared (e.g. switching price list) — clear line too
+            setSelectedDetailsLine(null);
+            setEditedDetails(new Map());
+            return;
+        }
+        if (selectedDetailsLine) {
+            // Find the same line in the fresh data and update
+            const fresh = priceListDetailData.lines?.find(
+                (l: PriceListLine) => l.id === selectedDetailsLine.id
+            );
+            if (fresh) {
+                setSelectedDetailsLine(fresh);
+            } else {
+                // Line no longer exists in the new data (different price list)
+                setSelectedDetailsLine(null);
+                setEditedDetails(new Map());
+            }
+        }
+    // Only trigger when the detail data object reference changes (refetch / new PL)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [priceListDetailData]);
 
     // Overrides Hook
     const {
@@ -532,10 +557,24 @@ export const PricingManagementPage = () => {
     };
 
     const handleSelectPriceList = (row: PriceList) => {
+        // Show loading cursor while detail panel loads
+        const style = document.createElement('style');
+        style.id = 'loading-cursor-style';
+        style.innerHTML = '* { cursor: wait !important; }';
+        document.head.appendChild(style);
+
         setSelectedPriceList(row);
         setShowDetailPanel(true);
         setActiveTab('info');
+        // Clear stale state from previous selection
+        setSelectedDetailsLine(null);
+        setEditedDetails(new Map());
         setOverrideFilters(prev => ({ ...prev, price_list_id: row.id, page: 1 }));
+
+        setTimeout(() => {
+            const el = document.getElementById('loading-cursor-style');
+            if (el) el.remove();
+        }, 800);
     };
 
     const toggleSection = (section: string, isOpen: boolean) => {

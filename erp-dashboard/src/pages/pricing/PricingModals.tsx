@@ -14,7 +14,7 @@ import type {
     CreatePackagingPriceRequest,
 } from '@/types/pricing.types';
 import { SearchSelect, type SearchSelectOption } from '@/components/common/SearchSelect';
-import { searchProducts, type ProductSearchResult } from '@/services/api/pricingApi';
+import { searchProducts, type ProductSearchResult, searchPartners, type PartnerSearchResult } from '@/services/api/pricingApi';
 
 // ─── Shared modal wrapper ─────────────────────────────────────────────────────
 
@@ -173,7 +173,7 @@ export const ModalDuplicateLine: React.FC<ModalDuplicateLineProps> = ({ dupForm,
     </ModalWrapper>
 );
 
-// ─── Product search helper ───────────────────────────────────────────────────
+// ─── Search helpers ──────────────────────────────────────────────────────────
 
 const useProductSearch = () =>
     useCallback(async (query: string): Promise<SearchSelectOption[]> => {
@@ -182,6 +182,17 @@ const useProductSearch = () =>
             id: r.id,
             label: r.name,
             sublabel: r.code,
+            raw: r,
+        }));
+    }, []);
+
+const usePartnerSearch = () =>
+    useCallback(async (query: string): Promise<SearchSelectOption[]> => {
+        const results: PartnerSearchResult[] = await searchPartners(query);
+        return results.map(r => ({
+            id: r.id,
+            label: r.name,
+            sublabel: `${r.code}${r.status ? ` · ${r.status}` : ''}`,
             raw: r,
         }));
     }, []);
@@ -201,10 +212,14 @@ interface ModalOverrideProps {
 
 export const ModalOverride: React.FC<ModalOverrideProps> = ({ editingOverride, form, setForm, onClose, onSubmit, loading }) => {
     const handleProductSearch = useProductSearch();
+    const handlePartnerSearch = usePartnerSearch();
 
-    // Build the display label for the currently selected product
+    // Build display labels for currently selected values when editing
     const productLabel = editingOverride?.product
         ? `${editingOverride.product.name}`
+        : undefined;
+    const partnerLabel = editingOverride?.partner
+        ? `${editingOverride.partner.name}`
         : undefined;
 
     return (
@@ -212,8 +227,15 @@ export const ModalOverride: React.FC<ModalOverrideProps> = ({ editingOverride, f
             <ModalHeader icon={editingOverride ? Edit : Plus} title={editingOverride ? 'Modifier la dérogation' : 'Nouvelle dérogation'} onClose={onClose} />
             <div className="p-4 space-y-4">
                 <div className="grid grid-cols-2 gap-3">
-                    <Field label="ID Partenaire" required>
-                        <input type="number" value={form.partner_id || ''} onChange={e => setForm((prev: any) => ({ ...prev, partner_id: parseInt(e.target.value) || 0 }))} className={inputCls} />
+                    <Field label="Partenaire" required>
+                        <SearchSelect
+                            value={form.partner_id || null}
+                            valueLabel={partnerLabel}
+                            onChange={(id) => setForm((prev: any) => ({ ...prev, partner_id: id || 0 }))}
+                            onSearch={handlePartnerSearch}
+                            placeholder="Rechercher un partenaire..."
+                            minChars={2}
+                        />
                     </Field>
                     <Field label="Produit" required>
                         <SearchSelect
@@ -277,14 +299,21 @@ interface ModalPreviewProps {
 
 export const ModalPreview: React.FC<ModalPreviewProps> = ({ form, setForm, onClose, onSubmit, loading, previewData }) => {
     const handleProductSearch = useProductSearch();
+    const handlePartnerSearch = usePartnerSearch();
 
     return (
         <ModalWrapper onClose={onClose}>
             <ModalHeader icon={Eye} title="Prévisualiser le prix" onClose={onClose} />
             <div className="p-4 space-y-4">
                 <div className="grid grid-cols-2 gap-3">
-                    <Field label="ID Partenaire" required>
-                        <input type="number" value={form.partner_id || ''} onChange={e => setForm((prev: any) => ({ ...prev, partner_id: parseInt(e.target.value) || 0 }))} className={inputCls} />
+                    <Field label="Partenaire" required>
+                        <SearchSelect
+                            value={form.partner_id || null}
+                            onChange={(id) => setForm((prev: any) => ({ ...prev, partner_id: id || 0 }))}
+                            onSearch={handlePartnerSearch}
+                            placeholder="Rechercher un partenaire..."
+                            minChars={2}
+                        />
                     </Field>
                     <Field label="Produit" required>
                         <SearchSelect
