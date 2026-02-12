@@ -52,6 +52,7 @@ import { WorkflowMonitoringPage } from '@/pages/workflows/WorkflowMonitoringPage
 import { AdminMonitoringDashboard } from '@/pages/admin/AdminMonitoringDashboard';
 import { StockManagementPage } from '@/pages/stock/StockManagementPage';
 import { PricingManagementPage } from '@/pages/pricing/PricingManagementPage';
+import { CustomFieldsPage } from '@/pages/custom-fields/CustomFieldsPage';
 
 
 // Simple Navigation Wrapper to show active route in DevSwitcher style (optional, but let's stick to MegaMenu for now)
@@ -392,6 +393,13 @@ function AppRoutes() {
       <Route path="/pricing" element={
         <ProtectedRoute>
           <PricingManagementPage />
+        </ProtectedRoute>
+      } />
+
+      {/* Custom Fields Management */}
+      <Route path="/custom-fields" element={
+        <ProtectedRoute>
+          <CustomFieldsPage />
         </ProtectedRoute>
       } />
 

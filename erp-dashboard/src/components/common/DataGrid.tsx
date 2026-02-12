@@ -18,6 +18,7 @@ interface DataGridProps {
     getRowClass?: (params: any) => string;
     isRowSelectable?: (params: any) => boolean;
     defaultSelectedIds?: (row: any) => boolean; // Function to determine if a row should be selected by default
+    rowHeight?: number;
 }
 
 export const DataGrid = forwardRef<AgGridReact, DataGridProps>(({
@@ -32,7 +33,8 @@ export const DataGrid = forwardRef<AgGridReact, DataGridProps>(({
     loading,
     getRowClass,
     isRowSelectable,
-    defaultSelectedIds
+    defaultSelectedIds,
+    rowHeight: customRowHeight,
 }, ref) => {
     const [gridApi, setGridApi] = useState<any>(null);
     const isInitializingSelection = useRef(false);
@@ -163,7 +165,7 @@ export const DataGrid = forwardRef<AgGridReact, DataGridProps>(({
                     onGridReady={onGridReady}
                     animateRows={true}
                     headerHeight={40}
-                    rowHeight={36}
+                    rowHeight={customRowHeight ?? 36}
                     loading={loading}
                     overlayLoadingTemplate={'<span class="ag-overlay-loading-center">Chargement...</span>'}
                 />
