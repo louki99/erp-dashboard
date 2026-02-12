@@ -194,8 +194,15 @@ export const importLineCsv = async (priceListId: number, lineNumber: number, par
 
 // ─── Products & Search ───────────────────────────────────────────────────────
 
-export const searchProducts = async (query: string) => {
-    const response = await apiClient.get<ApiSuccessResponse<PricingProduct[]>>(
+export interface ProductSearchResult {
+    id: number;
+    text: string;
+    code: string;
+    name: string;
+}
+
+export const searchProducts = async (query: string): Promise<ProductSearchResult[]> => {
+    const response = await apiClient.get<ProductSearchResult[]>(
         `${BASE_PATH}/products/search`,
         { params: { q: query } }
     );

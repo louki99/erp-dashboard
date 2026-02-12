@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useCallback } from 'react';
 import { Loader2, Plus, X, AlertTriangle, Copy, Upload, Eye, Edit, DollarSign } from 'lucide-react';
 import type {
     PriceList,
@@ -13,6 +13,8 @@ import type {
     PreviewPriceResponse,
     CreatePackagingPriceRequest,
 } from '@/types/pricing.types';
+import { SearchSelect, type SearchSelectOption } from '@/components/common/SearchSelect';
+import { searchProducts, type ProductSearchResult } from '@/services/api/pricingApi';
 
 // ─── Shared modal wrapper ─────────────────────────────────────────────────────
 
@@ -171,6 +173,19 @@ export const ModalDuplicateLine: React.FC<ModalDuplicateLineProps> = ({ dupForm,
     </ModalWrapper>
 );
 
+// ─── Product search helper ───────────────────────────────────────────────────
+
+const useProductSearch = () =>
+    useCallback(async (query: string): Promise<SearchSelectOption[]> => {
+        const results: ProductSearchResult[] = await searchProducts(query);
+        return results.map(r => ({
+            id: r.id,
+            label: r.name,
+            sublabel: r.code,
+            raw: r,
+        }));
+    }, []);
+
 // ═══════════════════════════════════════════════════════════════════════════════
 // Override
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -184,52 +199,68 @@ interface ModalOverrideProps {
     loading: boolean;
 }
 
-export const ModalOverride: React.FC<ModalOverrideProps> = ({ editingOverride, form, setForm, onClose, onSubmit, loading }) => (
-    <ModalWrapper onClose={onClose}>
-        <ModalHeader icon={editingOverride ? Edit : Plus} title={editingOverride ? 'Modifier la dérogation' : 'Nouvelle dérogation'} onClose={onClose} />
-        <div className="p-4 space-y-4">
-            <div className="grid grid-cols-2 gap-3">
-                <Field label="ID Partenaire" required>
-                    <input type="number" value={form.partner_id || ''} onChange={e => setForm((prev: any) => ({ ...prev, partner_id: parseInt(e.target.value) || 0 }))} className={inputCls} />
-                </Field>
-                <Field label="ID Produit" required>
-                    <input type="number" value={form.product_id || ''} onChange={e => setForm((prev: any) => ({ ...prev, product_id: parseInt(e.target.value) || 0 }))} className={inputCls} />
-                </Field>
+export const ModalOverride: React.FC<ModalOverrideProps> = ({ editingOverride, form, setForm, onClose, onSubmit, loading }) => {
+    const handleProductSearch = useProductSearch();
+
+    // Build the display label for the currently selected product
+    const productLabel = editingOverride?.product
+        ? `${editingOverride.product.name}`
+        : undefined;
+
+    return (
+        <ModalWrapper onClose={onClose}>
+            <ModalHeader icon={editingOverride ? Edit : Plus} title={editingOverride ? 'Modifier la dérogation' : 'Nouvelle dérogation'} onClose={onClose} />
+            <div className="p-4 space-y-4">
+                <div className="grid grid-cols-2 gap-3">
+                    <Field label="ID Partenaire" required>
+                        <input type="number" value={form.partner_id || ''} onChange={e => setForm((prev: any) => ({ ...prev, partner_id: parseInt(e.target.value) || 0 }))} className={inputCls} />
+                    </Field>
+                    <Field label="Produit" required>
+                        <SearchSelect
+                            value={form.product_id || null}
+                            valueLabel={productLabel}
+                            onChange={(id) => setForm((prev: any) => ({ ...prev, product_id: id || 0 }))}
+                            onSearch={handleProductSearch}
+                            placeholder="Rechercher un produit..."
+                            minChars={2}
+                        />
+                    </Field>
+                </div>
+                <div className="grid grid-cols-3 gap-3">
+                    <Field label="Prix fixe">
+                        <input type="number" step="0.01" value={form.fixed_price || ''} onChange={e => setForm((prev: any) => ({ ...prev, fixed_price: parseFloat(e.target.value) || 0 }))} className={inputCls} />
+                    </Field>
+                    <Field label="Remise %">
+                        <input type="number" step="0.01" value={form.discount_rate || ''} onChange={e => setForm((prev: any) => ({ ...prev, discount_rate: parseFloat(e.target.value) || 0 }))} className={inputCls} />
+                    </Field>
+                    <Field label="Remise €">
+                        <input type="number" step="0.01" value={form.discount_amount || ''} onChange={e => setForm((prev: any) => ({ ...prev, discount_amount: parseFloat(e.target.value) || 0 }))} className={inputCls} />
+                    </Field>
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                    <Field label="Valide du" required>
+                        <input type="date" value={form.valid_from || ''} onChange={e => setForm((prev: any) => ({ ...prev, valid_from: e.target.value }))} className={inputCls} />
+                    </Field>
+                    <Field label="Valide au" required>
+                        <input type="date" value={form.valid_to || ''} onChange={e => setForm((prev: any) => ({ ...prev, valid_to: e.target.value }))} className={inputCls} />
+                    </Field>
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                    <Field label="Priorité">
+                        <input type="number" value={form.priority || ''} onChange={e => setForm((prev: any) => ({ ...prev, priority: parseInt(e.target.value) || 0 }))} className={inputCls} min="1" />
+                    </Field>
+                    <Field label="Statut">
+                        <select value={form.active ? 'active' : 'inactive'} onChange={e => setForm((prev: any) => ({ ...prev, active: e.target.value === 'active' }))} className={selectCls}>
+                            <option value="active">Active</option>
+                            <option value="inactive">Inactive</option>
+                        </select>
+                    </Field>
+                </div>
             </div>
-            <div className="grid grid-cols-3 gap-3">
-                <Field label="Prix fixe">
-                    <input type="number" step="0.01" value={form.fixed_price || ''} onChange={e => setForm((prev: any) => ({ ...prev, fixed_price: parseFloat(e.target.value) || 0 }))} className={inputCls} />
-                </Field>
-                <Field label="Remise %">
-                    <input type="number" step="0.01" value={form.discount_rate || ''} onChange={e => setForm((prev: any) => ({ ...prev, discount_rate: parseFloat(e.target.value) || 0 }))} className={inputCls} />
-                </Field>
-                <Field label="Remise €">
-                    <input type="number" step="0.01" value={form.discount_amount || ''} onChange={e => setForm((prev: any) => ({ ...prev, discount_amount: parseFloat(e.target.value) || 0 }))} className={inputCls} />
-                </Field>
-            </div>
-            <div className="grid grid-cols-2 gap-3">
-                <Field label="Valide du" required>
-                    <input type="date" value={form.valid_from || ''} onChange={e => setForm((prev: any) => ({ ...prev, valid_from: e.target.value }))} className={inputCls} />
-                </Field>
-                <Field label="Valide au" required>
-                    <input type="date" value={form.valid_to || ''} onChange={e => setForm((prev: any) => ({ ...prev, valid_to: e.target.value }))} className={inputCls} />
-                </Field>
-            </div>
-            <div className="grid grid-cols-2 gap-3">
-                <Field label="Priorité">
-                    <input type="number" value={form.priority || ''} onChange={e => setForm((prev: any) => ({ ...prev, priority: parseInt(e.target.value) || 0 }))} className={inputCls} min="1" />
-                </Field>
-                <Field label="Statut">
-                    <select value={form.active ? 'active' : 'inactive'} onChange={e => setForm((prev: any) => ({ ...prev, active: e.target.value === 'active' }))} className={selectCls}>
-                        <option value="active">Active</option>
-                        <option value="inactive">Inactive</option>
-                    </select>
-                </Field>
-            </div>
-        </div>
-        <ModalFooter onClose={onClose} onSubmit={onSubmit} loading={loading} label={editingOverride ? 'Enregistrer' : 'Créer'} />
-    </ModalWrapper>
-);
+            <ModalFooter onClose={onClose} onSubmit={onSubmit} loading={loading} label={editingOverride ? 'Enregistrer' : 'Créer'} />
+        </ModalWrapper>
+    );
+};
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // Preview Price
@@ -244,55 +275,65 @@ interface ModalPreviewProps {
     previewData: PreviewPriceResponse | null;
 }
 
-export const ModalPreview: React.FC<ModalPreviewProps> = ({ form, setForm, onClose, onSubmit, loading, previewData }) => (
-    <ModalWrapper onClose={onClose}>
-        <ModalHeader icon={Eye} title="Prévisualiser le prix" onClose={onClose} />
-        <div className="p-4 space-y-4">
-            <div className="grid grid-cols-2 gap-3">
-                <Field label="ID Partenaire" required>
-                    <input type="number" value={form.partner_id || ''} onChange={e => setForm((prev: any) => ({ ...prev, partner_id: parseInt(e.target.value) || 0 }))} className={inputCls} />
-                </Field>
-                <Field label="ID Produit" required>
-                    <input type="number" value={form.product_id || ''} onChange={e => setForm((prev: any) => ({ ...prev, product_id: parseInt(e.target.value) || 0 }))} className={inputCls} />
-                </Field>
-            </div>
-            <Field label="Date">
-                <input type="date" value={form.date || ''} onChange={e => setForm((prev: any) => ({ ...prev, date: e.target.value }))} className={inputCls} />
-            </Field>
+export const ModalPreview: React.FC<ModalPreviewProps> = ({ form, setForm, onClose, onSubmit, loading, previewData }) => {
+    const handleProductSearch = useProductSearch();
 
-            {previewData && (
-                <div className="p-4 bg-gradient-to-br from-blue-50 to-indigo-50 rounded-lg border border-blue-200 space-y-3">
-                    <div className="text-center">
-                        <div className="text-xs text-blue-600 mb-1">Prix effectif</div>
-                        <div className="text-3xl font-bold text-blue-800">{previewData.final_price.toFixed(2)} €</div>
-                    </div>
-                    <div className="grid grid-cols-3 gap-2 text-center text-xs">
-                        <div className="p-2 bg-white rounded border border-blue-100">
-                            <div className="text-gray-500">Prix de base</div>
-                            <div className="font-bold text-gray-900">{previewData.base_price.toFixed(2)}</div>
-                        </div>
-                        <div className="p-2 bg-white rounded border border-blue-100">
-                            <div className="text-gray-500">Remise</div>
-                            <div className="font-bold text-amber-600">-{(previewData.base_price - previewData.final_price).toFixed(2)}</div>
-                        </div>
-                        <div className="p-2 bg-white rounded border border-blue-100">
-                            <div className="text-gray-500">Source</div>
-                            <div className="font-bold text-gray-700">{previewData.applied_rule}</div>
-                        </div>
-                    </div>
+    return (
+        <ModalWrapper onClose={onClose}>
+            <ModalHeader icon={Eye} title="Prévisualiser le prix" onClose={onClose} />
+            <div className="p-4 space-y-4">
+                <div className="grid grid-cols-2 gap-3">
+                    <Field label="ID Partenaire" required>
+                        <input type="number" value={form.partner_id || ''} onChange={e => setForm((prev: any) => ({ ...prev, partner_id: parseInt(e.target.value) || 0 }))} className={inputCls} />
+                    </Field>
+                    <Field label="Produit" required>
+                        <SearchSelect
+                            value={form.product_id || null}
+                            onChange={(id) => setForm((prev: any) => ({ ...prev, product_id: id || 0 }))}
+                            onSearch={handleProductSearch}
+                            placeholder="Rechercher un produit..."
+                            minChars={2}
+                        />
+                    </Field>
                 </div>
-            )}
-        </div>
-        <div className="flex items-center justify-end gap-2 p-4 border-t border-gray-100">
-            <button onClick={onClose} className="px-4 py-2 text-sm text-gray-600 hover:bg-gray-100 rounded-lg transition-colors">Fermer</button>
-            <button onClick={onSubmit} disabled={loading}
-                className="px-4 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 transition-colors flex items-center gap-2">
-                {loading && <Loader2 className="w-4 h-4 animate-spin" />}
-                Calculer
-            </button>
-        </div>
-    </ModalWrapper>
-);
+                <Field label="Date">
+                    <input type="date" value={form.date || ''} onChange={e => setForm((prev: any) => ({ ...prev, date: e.target.value }))} className={inputCls} />
+                </Field>
+
+                {previewData && (
+                    <div className="p-4 bg-gradient-to-br from-blue-50 to-indigo-50 rounded-lg border border-blue-200 space-y-3">
+                        <div className="text-center">
+                            <div className="text-xs text-blue-600 mb-1">Prix effectif</div>
+                            <div className="text-3xl font-bold text-blue-800">{previewData.final_price.toFixed(2)} €</div>
+                        </div>
+                        <div className="grid grid-cols-3 gap-2 text-center text-xs">
+                            <div className="p-2 bg-white rounded border border-blue-100">
+                                <div className="text-gray-500">Prix de base</div>
+                                <div className="font-bold text-gray-900">{previewData.base_price.toFixed(2)}</div>
+                            </div>
+                            <div className="p-2 bg-white rounded border border-blue-100">
+                                <div className="text-gray-500">Remise</div>
+                                <div className="font-bold text-amber-600">-{(previewData.base_price - previewData.final_price).toFixed(2)}</div>
+                            </div>
+                            <div className="p-2 bg-white rounded border border-blue-100">
+                                <div className="text-gray-500">Source</div>
+                                <div className="font-bold text-gray-700">{previewData.applied_rule}</div>
+                            </div>
+                        </div>
+                    </div>
+                )}
+            </div>
+            <div className="flex items-center justify-end gap-2 p-4 border-t border-gray-100">
+                <button onClick={onClose} className="px-4 py-2 text-sm text-gray-600 hover:bg-gray-100 rounded-lg transition-colors">Fermer</button>
+                <button onClick={onSubmit} disabled={loading}
+                    className="px-4 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 transition-colors flex items-center gap-2">
+                    {loading && <Loader2 className="w-4 h-4 animate-spin" />}
+                    Calculer
+                </button>
+            </div>
+        </ModalWrapper>
+    );
+};
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // Packaging Price
