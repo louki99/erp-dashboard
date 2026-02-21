@@ -1,9 +1,10 @@
-import React, { useEffect, useState, useCallback, useMemo } from 'react';
+import React, { useEffect, useRef, useState, useCallback, useMemo } from 'react';
+import ReactDOM from 'react-dom';
 import {
     Loader2, Save, X, ArrowLeft, Plus, Eye, EyeOff,
     Phone, Mail, MapPin, CreditCard, DollarSign,
     FileText, Tag, User, Lock, AlertCircle, CheckCircle2,
-    Briefcase, Truck,
+    Briefcase, Truck, BookOpen, LogOut,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 
@@ -11,6 +12,7 @@ import { cn } from '@/lib/utils';
 import { SageTabs, type TabItem } from '@/components/common/SageTabs';
 import SearchableSelect, { FieldError, type SelectOption } from '@/components/common/SearchableSelect';
 import DynamicGeoSelector from '@/components/common/DynamicGeoSelector';
+import { usePartnerDraft, type PartnerDraft } from '@/hooks/usePartnerDraft';
 
 import type { GeoSelectionStep } from '@/types/geoHierarchy.types';
 import type {
@@ -118,6 +120,119 @@ const SectionCard: React.FC<{
     </div>
 );
 
+// ─── CancelConfirmDialog ──────────────────────────────────────────────────────
+
+interface CancelConfirmDialogProps {
+    open:         boolean;
+    partnerName:  string;
+    savingDraft:  boolean;
+    onStay:       () => void;
+    onLeave:      () => void;
+    onSaveDraft:  () => Promise<void>;
+}
+
+const CancelConfirmDialog: React.FC<CancelConfirmDialogProps> = ({
+    open, partnerName, savingDraft, onStay, onLeave, onSaveDraft,
+}) => {
+    if (!open) return null;
+
+    const modal = (
+        <div
+            className="fixed inset-0 z-[9999] flex items-center justify-center p-4"
+            style={{ backgroundColor: 'rgba(15,23,42,0.55)', backdropFilter: 'blur(4px)' }}
+        >
+            <div
+                className="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden"
+                style={{ animation: 'modalIn 160ms cubic-bezier(.16,1,.3,1)' }}
+            >
+                {/* Header */}
+                <div className="px-6 pt-6 pb-4">
+                    <div className="flex items-start gap-4">
+                        <div className="w-11 h-11 rounded-xl bg-amber-50 border border-amber-100 flex items-center justify-center shrink-0">
+                            <AlertCircle className="w-5 h-5 text-amber-500" />
+                        </div>
+                        <div className="flex-1 min-w-0">
+                            <h2 className="text-base font-bold text-gray-900">
+                                Quitter sans enregistrer ?
+                            </h2>
+                            <p className="mt-1 text-sm text-gray-500 leading-relaxed">
+                                {partnerName
+                                    ? <>Le formulaire <span className="font-medium text-gray-700">«&nbsp;{partnerName}&nbsp;»</span> contient des modifications non sauvegardées.</>
+                                    : 'Le formulaire contient des modifications non sauvegardées.'
+                                }
+                            </p>
+                        </div>
+                    </div>
+                </div>
+
+                {/* Save-as-draft card */}
+                <div className="mx-6 mb-4">
+                    <button
+                        type="button"
+                        onClick={onSaveDraft}
+                        disabled={savingDraft}
+                        className={cn(
+                            'w-full flex items-start gap-4 px-4 py-3.5 rounded-xl border-2 transition-all text-left',
+                            'border-blue-200 bg-blue-50 hover:bg-blue-100 hover:border-blue-300',
+                            savingDraft && 'opacity-60 cursor-not-allowed',
+                        )}
+                    >
+                        <div className="w-9 h-9 rounded-lg bg-blue-600 flex items-center justify-center shrink-0 mt-0.5">
+                            {savingDraft
+                                ? <Loader2 className="w-4 h-4 text-white animate-spin" />
+                                : <BookOpen className="w-4 h-4 text-white" />
+                            }
+                        </div>
+                        <div>
+                            <p className="text-sm font-semibold text-blue-900">Enregistrer comme brouillon</p>
+                            <p className="text-xs text-blue-600 mt-0.5">
+                                Vos données seront sauvegardées localement. Vous pourrez reprendre plus tard.
+                            </p>
+                        </div>
+                    </button>
+                </div>
+
+                {/* Divider */}
+                <div className="mx-6 mb-4 flex items-center gap-3">
+                    <hr className="flex-1 border-gray-100" />
+                    <span className="text-[11px] text-gray-400 font-medium">ou</span>
+                    <hr className="flex-1 border-gray-100" />
+                </div>
+
+                {/* Footer buttons */}
+                <div className="px-6 pb-6 flex flex-col sm:flex-row gap-2">
+                    <button
+                        type="button"
+                        onClick={onLeave}
+                        className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl border border-gray-200 text-sm text-gray-600 hover:text-red-600 hover:border-red-200 hover:bg-red-50 transition-all"
+                    >
+                        <LogOut className="w-4 h-4" />
+                        Quitter sans sauvegarder
+                    </button>
+                    <button
+                        type="button"
+                        onClick={onStay}
+                        className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-gray-900 text-sm text-white hover:bg-gray-800 transition-colors shadow-sm"
+                    >
+                        Continuer l'édition
+                    </button>
+                </div>
+            </div>
+
+            <style>{`
+                @keyframes modalIn {
+                    from { opacity: 0; transform: scale(.96) translateY(8px); }
+                    to   { opacity: 1; transform: scale(1)  translateY(0);    }
+                }
+            `}</style>
+        </div>
+    );
+
+    return typeof document !== 'undefined'
+        ? ReactDOM.createPortal(modal, document.body)
+        : null;
+};
+
 // ─── Props & Exports ─────────────────────────────────────────────────────────
 
 export interface PartnerFormPanelProps {
@@ -128,6 +243,10 @@ export interface PartnerFormPanelProps {
     onSave: (payload: PartnerSavePayload) => Promise<void>;
     onCancel: () => void;
     saving: boolean;
+    /** Pre-fill the form from a saved draft (create mode only) */
+    initialDraft?: PartnerDraft | null;
+    /** Called after a successful save so the parent can delete the draft */
+    onAfterSave?: (draftId: string) => void;
 }
 
 // ─── Default state ───────────────────────────────────────────────────────────
@@ -158,6 +277,7 @@ const tabForError = (key: string, isCreate: boolean): string => {
 
 export const PartnerFormPanel: React.FC<PartnerFormPanelProps> = ({
     mode, partner, masterData, masterDataLoading, onSave, onCancel, saving,
+    initialDraft, onAfterSave,
 }) => {
     const isCreate = mode === 'create';
 
@@ -169,6 +289,17 @@ export const PartnerFormPanel: React.FC<PartnerFormPanelProps> = ({
     const [touched, setTouched] = useState(false);
     const [showPwd, setShowPwd] = useState(false);
     const [showConfirmPwd, setShowConfirmPwd] = useState(false);
+    const [showCancelConfirm, setShowCancelConfirm] = useState(false);
+    const [savingDraft, setSavingDraft] = useState(false);
+
+    // Stable draft ID for this form session
+    const draftId = useRef<string>(
+        mode === 'edit' && partner?.id
+            ? `draft-edit-${partner.id}`
+            : `draft-create-${Date.now()}`
+    ).current;
+
+    const { saveDraft, deleteDraft } = usePartnerDraft();
 
     // Reset on mode change
     useEffect(() => {
@@ -202,12 +333,18 @@ export const PartnerFormPanel: React.FC<PartnerFormPanelProps> = ({
                 delivery_instructions: partner.delivery_instructions || '',
                 min_order_amount: parseFloat(String(partner.min_order_amount)) || undefined,
             });
+        } else if (initialDraft) {
+            // Restore from a saved draft
+            setAuth(initialDraft.auth as Partial<AuthFormData>);
+            setPForm(initialDraft.pForm as Partial<CreatePartnerFullPayload['partner']>);
+            setCfForm(initialDraft.cfForm);
+            setTouched(true); // Mark dirty so unsaved warning shows
         } else {
             setAuth(initAuth());
             setPForm(initPartner());
             setCfForm({});
         }
-    }, [mode, partner]);
+    }, [mode, partner, initialDraft]);
 
     // ── Options (memoized) ────────────────────────────────────────────────────
 
@@ -346,6 +483,38 @@ export const PartnerFormPanel: React.FC<PartnerFormPanelProps> = ({
         return Object.keys(errs).length === 0;
     }, [isCreate, auth, pForm, cfForm, masterData?.custom_fields]);
 
+    // ── Cancel with confirmation ──────────────────────────────────────────────
+
+    const handleCancelClick = useCallback(() => {
+        if (touched) {
+            setShowCancelConfirm(true);
+        } else {
+            onCancel();
+        }
+    }, [touched, onCancel]);
+
+    const handleSaveDraft = useCallback(async () => {
+        setSavingDraft(true);
+        try {
+            await saveDraft({
+                id:          draftId,
+                mode,
+                partnerId:   partner?.id,
+                partnerName: (pForm.name as string | undefined) || partner?.name || 'Nouveau partenaire',
+                auth:        auth  as Record<string, unknown>,
+                pForm:       pForm as Record<string, unknown>,
+                cfForm,
+            });
+            toast.success('Brouillon enregistré — vous pourrez reprendre plus tard.');
+            setShowCancelConfirm(false);
+            onCancel();
+        } catch {
+            toast.error('Impossible d\'enregistrer le brouillon.');
+        } finally {
+            setSavingDraft(false);
+        }
+    }, [saveDraft, draftId, mode, partner, pForm, auth, cfForm, onCancel]);
+
     // ── Submit ────────────────────────────────────────────────────────────────
 
     const handleSubmit = async () => {
@@ -440,6 +609,9 @@ export const PartnerFormPanel: React.FC<PartnerFormPanelProps> = ({
                     } as Partial<CreatePartnerRequest>,
                 });
             }
+            // Successful save — silently remove any draft for this session
+            await deleteDraft(draftId).catch(() => {/* ignore */});
+            onAfterSave?.(draftId);
         } catch (e: any) {
             if (e?.response?.status === 422) {
                 const apiErrors: Record<string, string | string[]> = e.response?.data?.errors ?? {};
@@ -827,7 +999,7 @@ export const PartnerFormPanel: React.FC<PartnerFormPanelProps> = ({
 
             {/* ── Header ──────────────────────────────────────── */}
             <div className="px-3 sm:px-4 py-3 border-b border-gray-200 shrink-0 bg-white flex items-center gap-3">
-                <button onClick={onCancel} className="p-1.5 rounded-lg hover:bg-gray-100 transition-colors shrink-0" title="Retour">
+                <button onClick={handleCancelClick} className="p-1.5 rounded-lg hover:bg-gray-100 transition-colors shrink-0" title="Retour">
                     <ArrowLeft className="w-5 h-5 text-gray-600" />
                 </button>
                 <div className={cn(
@@ -850,7 +1022,7 @@ export const PartnerFormPanel: React.FC<PartnerFormPanelProps> = ({
                             <AlertCircle className="w-3 h-3" /> Non enregistré
                         </span>
                     )}
-                    <button onClick={onCancel} className="px-3 py-1.5 text-sm text-gray-500 hover:text-gray-900 hover:bg-gray-100 rounded-lg transition-colors hidden sm:flex items-center gap-1.5">
+                    <button onClick={handleCancelClick} className="px-3 py-1.5 text-sm text-gray-500 hover:text-gray-900 hover:bg-gray-100 rounded-lg transition-colors hidden sm:flex items-center gap-1.5">
                         <X className="w-4 h-4" /> Annuler
                     </button>
                     <button onClick={handleSubmit} disabled={saving}
@@ -908,7 +1080,7 @@ export const PartnerFormPanel: React.FC<PartnerFormPanelProps> = ({
                             ))}
                         </div>
                         <div className="flex items-center gap-2 shrink-0">
-                            <button onClick={onCancel} className="px-4 py-2 text-sm text-gray-500 hover:text-gray-900 hover:bg-gray-100 rounded-lg transition-colors">
+                            <button onClick={handleCancelClick} className="px-4 py-2 text-sm text-gray-500 hover:text-gray-900 hover:bg-gray-100 rounded-lg transition-colors">
                                 Annuler
                             </button>
                             <button onClick={handleSubmit} disabled={saving}
@@ -920,6 +1092,16 @@ export const PartnerFormPanel: React.FC<PartnerFormPanelProps> = ({
                     </div>
                 </>
             )}
+
+            {/* ── Cancel confirmation dialog ───────────────────── */}
+            <CancelConfirmDialog
+                open={showCancelConfirm}
+                partnerName={(pForm.name as string | undefined) || partner?.name || ''}
+                savingDraft={savingDraft}
+                onStay={() => setShowCancelConfirm(false)}
+                onLeave={() => { setShowCancelConfirm(false); onCancel(); }}
+                onSaveDraft={handleSaveDraft}
+            />
         </div>
     );
 };
