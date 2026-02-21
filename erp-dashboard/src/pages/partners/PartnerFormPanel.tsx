@@ -1,17 +1,18 @@
-import React, { useEffect, useState, useCallback, useMemo, useRef } from 'react';
-import ReactDOM from 'react-dom';
+import React, { useEffect, useState, useCallback, useMemo } from 'react';
 import {
     Loader2, Save, X, ArrowLeft, Plus, Eye, EyeOff,
     Phone, Mail, MapPin, CreditCard, DollarSign,
     FileText, Tag, User, Lock, AlertCircle, CheckCircle2,
-    Briefcase, Search, ChevronDown, Check,
-    Truck,
+    Briefcase, Truck,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 
 import { cn } from '@/lib/utils';
 import { SageTabs, type TabItem } from '@/components/common/SageTabs';
+import SearchableSelect, { FieldError, type SelectOption } from '@/components/common/SearchableSelect';
+import DynamicGeoSelector from '@/components/common/DynamicGeoSelector';
 
+import type { GeoSelectionStep } from '@/types/geoHierarchy.types';
 import type {
     Partner,
     PartnerStatus,
@@ -65,6 +66,13 @@ const TARGET_APP_OPTIONS = [
     { value: 'ERP', label: 'ERP (Backoffice)' },
 ];
 
+// ─── Geo-area type code constants ─────────────────────────────────────────────
+// Used ONLY to map the DynamicGeoSelector selection path back to the partner's
+// flat text fields (partner.region, partner.city).  The DynamicGeoSelector
+// itself is fully dynamic and does not use these values internally.
+const GEO_TYPE_REGION = '200'; // Région  → mapped to partner.region
+const GEO_TYPE_VILLE  = '400'; // Ville   → mapped to partner.city
+
 // ─── Styles ──────────────────────────────────────────────────────────────────
 
 const inputCls = 'w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400 transition-colors bg-white placeholder:text-gray-300';
@@ -76,194 +84,7 @@ const labelCls = 'block text-[10px] font-bold text-gray-500 mb-1 uppercase track
 const flagEmoji = (code: string): string =>
     [...code.toUpperCase()].map(c => String.fromCodePoint(c.charCodeAt(0) - 65 + 0x1F1E6)).join('');
 
-// ─── SearchableSelect ─────────────────────────────────────────────────────────
-
-interface SelectOption {
-    value: string | number;
-    label: string;
-    sublabel?: string;
-    badge?: string;
-}
-
-interface SearchableSelectProps {
-    options: SelectOption[];
-    value?: string | number | null;
-    onChange: (val: string | number | undefined) => void;
-    placeholder?: string;
-    clearable?: boolean;
-    hasError?: boolean;
-    disabled?: boolean;
-}
-
-const SearchableSelect: React.FC<SearchableSelectProps> = ({
-    options, value, onChange, placeholder = '— Sélectionner —',
-    clearable = false, hasError = false, disabled = false,
-}) => {
-    const [open, setOpen] = useState(false);
-    const [query, setQuery] = useState('');
-    const [dropPos, setDropPos] = useState<React.CSSProperties>({});
-    const triggerRef = useRef<HTMLButtonElement>(null);
-    const searchRef = useRef<HTMLInputElement>(null);
-
-    // Close on outside click
-    useEffect(() => {
-        if (!open) return;
-        const handler = (e: MouseEvent) => {
-            const target = e.target as Node;
-            const dropdown = document.getElementById('sage-searchable-dropdown');
-            if (triggerRef.current?.contains(target) || dropdown?.contains(target)) return;
-            setOpen(false);
-            setQuery('');
-        };
-        document.addEventListener('mousedown', handler);
-        return () => document.removeEventListener('mousedown', handler);
-    }, [open]);
-
-    // Focus search input when opened
-    useEffect(() => {
-        if (open) setTimeout(() => searchRef.current?.focus(), 60);
-    }, [open]);
-
-    const handleToggle = () => {
-        if (disabled) return;
-        if (!open && triggerRef.current) {
-            const rect = triggerRef.current.getBoundingClientRect();
-            const spaceBelow = window.innerHeight - rect.bottom;
-            const dropH = Math.min(280, options.length * 36 + 56);
-            setDropPos({
-                position: 'fixed',
-                top: spaceBelow > dropH ? rect.bottom + 4 : rect.top - dropH - 4,
-                left: rect.left,
-                width: rect.width,
-                zIndex: 9999,
-            });
-        }
-        setOpen(o => !o);
-        if (open) setQuery('');
-    };
-
-    const selected = options.find(o => String(o.value) === String(value ?? ''));
-
-    const filtered = useMemo(() => {
-        const q = query.trim().toLowerCase();
-        if (!q) return options;
-        return options.filter(o =>
-            o.label.toLowerCase().includes(q) ||
-            (o.sublabel ?? '').toLowerCase().includes(q) ||
-            (o.badge ?? '').toLowerCase().includes(q)
-        );
-    }, [options, query]);
-
-    const handleSelect = (opt: SelectOption) => {
-        onChange(opt.value);
-        setOpen(false);
-        setQuery('');
-    };
-
-    const handleClear = (e: React.MouseEvent) => {
-        e.stopPropagation();
-        onChange(undefined);
-    };
-
-    const dropdown = open ? (
-        <div id="sage-searchable-dropdown" style={dropPos} className="bg-white border border-gray-200 rounded-xl shadow-2xl shadow-gray-200/80 overflow-hidden">
-            <div className="p-2 border-b border-gray-100 bg-gray-50/80">
-                <div className="relative">
-                    <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400" />
-                    <input
-                        ref={searchRef}
-                        type="text"
-                        value={query}
-                        onChange={e => setQuery(e.target.value)}
-                        onKeyDown={e => {
-                            if (e.key === 'Escape') { setOpen(false); setQuery(''); }
-                            if (e.key === 'Enter' && filtered.length > 0) handleSelect(filtered[0]);
-                        }}
-                        placeholder="Rechercher..."
-                        className="w-full pl-8 pr-3 py-1.5 text-sm border border-gray-200 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400"
-                    />
-                </div>
-            </div>
-            <div className="overflow-y-auto" style={{ maxHeight: 216 }}>
-                {filtered.length === 0 ? (
-                    <div className="px-4 py-8 text-sm text-center text-gray-400">Aucun résultat pour « {query} »</div>
-                ) : (
-                    filtered.map(opt => {
-                        const isActive = String(opt.value) === String(value ?? '');
-                        return (
-                            <button
-                                key={opt.value}
-                                type="button"
-                                onMouseDown={e => { e.preventDefault(); handleSelect(opt); }}
-                                className={cn(
-                                    'w-full flex items-center justify-between gap-2 px-3 py-2 text-sm text-left transition-colors',
-                                    isActive ? 'bg-blue-50 text-blue-700' : 'hover:bg-gray-50 text-gray-800'
-                                )}
-                            >
-                                <span className="flex items-center gap-2 min-w-0 flex-1">
-                                    <span className={cn('font-medium truncate', isActive && 'text-blue-700')}>{opt.label}</span>
-                                    {opt.sublabel && <span className="text-[11px] text-gray-400 shrink-0">{opt.sublabel}</span>}
-                                </span>
-                                <span className="flex items-center gap-1.5 shrink-0">
-                                    {opt.badge && (
-                                        <span className="px-1.5 py-0.5 text-[10px] font-mono bg-gray-100 text-gray-500 rounded">{opt.badge}</span>
-                                    )}
-                                    {isActive && <Check className="w-3.5 h-3.5 text-blue-600" />}
-                                </span>
-                            </button>
-                        );
-                    })
-                )}
-            </div>
-            {options.length > 0 && (
-                <div className="px-3 py-1.5 border-t border-gray-100 bg-gray-50/50">
-                    <p className="text-[10px] text-gray-400">
-                        {filtered.length} / {options.length} résultats
-                    </p>
-                </div>
-            )}
-        </div>
-    ) : null;
-
-    return (
-        <>
-            <button
-                ref={triggerRef}
-                type="button"
-                onClick={handleToggle}
-                disabled={disabled}
-                className={cn(
-                    'w-full flex items-center justify-between gap-2 px-3 py-2 border rounded-lg text-sm transition-all text-left min-h-[38px]',
-                    hasError ? 'border-red-300 bg-red-50/30' : 'border-gray-200 bg-white hover:border-gray-300',
-                    open && 'border-blue-400 ring-2 ring-blue-500/20',
-                    disabled && 'opacity-50 cursor-not-allowed bg-gray-50'
-                )}
-            >
-                <span className={cn('truncate flex-1', selected ? 'text-gray-800' : 'text-gray-300')}>
-                    {selected?.label ?? placeholder}
-                </span>
-                <span className="flex items-center gap-1 shrink-0">
-                    {clearable && selected && (
-                        <span
-                            onMouseDown={e => e.preventDefault()}
-                            onClick={handleClear}
-                            className="p-0.5 hover:bg-gray-100 rounded text-gray-400 hover:text-gray-700 cursor-pointer"
-                        >
-                            <X className="w-3 h-3" />
-                        </span>
-                    )}
-                    <ChevronDown className={cn('w-4 h-4 text-gray-400 transition-transform duration-200', open && 'rotate-180')} />
-                </span>
-            </button>
-            {typeof document !== 'undefined' && ReactDOM.createPortal(dropdown, document.body)}
-        </>
-    );
-};
-
 // ─── Sub-components ──────────────────────────────────────────────────────────
-
-const FieldError: React.FC<{ msg?: string }> = ({ msg }) =>
-    msg ? <p className="flex items-center gap-1 text-[10px] text-red-500 mt-1"><AlertCircle className="w-3 h-3 shrink-0" />{msg}</p> : null;
 
 const FormField: React.FC<{
     label: string; required?: boolean; children: React.ReactNode;
@@ -405,6 +226,12 @@ export const PartnerFormPanel: React.FC<PartnerFormPanelProps> = ({
         [masterData?.payment_terms]
     );
 
+    const branchOptions = useMemo<SelectOption[]>(() =>
+        (masterData?.branches ?? []).map(b => ({ value: b.code, label: b.name, badge: b.code })),
+        [masterData?.branches]
+    );
+
+    // Used in the Account tab (user geo_area_code, not partner geo_area_code)
     const geoAreaOptions = useMemo<SelectOption[]>(() =>
         (masterData?.geo_areas ?? []).map(a => ({
             value: a.code,
@@ -413,11 +240,6 @@ export const PartnerFormPanel: React.FC<PartnerFormPanelProps> = ({
             badge: a.code,
         })),
         [masterData?.geo_areas]
-    );
-
-    const branchOptions = useMemo<SelectOption[]>(() =>
-        (masterData?.branches ?? []).map(b => ({ value: b.code, label: b.name, badge: b.code })),
-        [masterData?.branches]
     );
 
     const countryOptions = useMemo<SelectOption[]>(() =>
@@ -449,6 +271,28 @@ export const PartnerFormPanel: React.FC<PartnerFormPanelProps> = ({
         setErrors(p => { const n = { ...p }; delete n[`custom_fields.${field}`]; return n; });
         if (!touched) setTouched(true);
     }, [touched]);
+
+    /**
+     * handleGeoChange
+     * ───────────────
+     * Called by DynamicGeoSelector whenever the leaf selection changes.
+     *
+     * • Updates geo_area_code (the leaf node code, sent to the API).
+     * • Auto-populates the partner's readable address fields (region, city)
+     *   by finding the matching step in the breadcrumb path.
+     *   GEO_TYPE_REGION / GEO_TYPE_VILLE constants map hierarchy levels to
+     *   the partner flat-text fields — this mapping is business logic that
+     *   belongs here, NOT inside the generic DynamicGeoSelector.
+     */
+    const handleGeoChange = useCallback((leafCode: string, path: GeoSelectionStep[]) => {
+        up('geo_area_code', leafCode || undefined);
+        if (leafCode) {
+            const regionStep = path.find(s => s.typeCode === GEO_TYPE_REGION);
+            const villeStep  = path.find(s => s.typeCode === GEO_TYPE_VILLE);
+            if (regionStep) up('region', regionStep.areaName);
+            if (villeStep)  up('city',   villeStep.areaName);
+        }
+    }, [up]);
 
     // ── Tab config ────────────────────────────────────────────────────────────
 
@@ -828,15 +672,36 @@ export const PartnerFormPanel: React.FC<PartnerFormPanelProps> = ({
                         <input type="text" value={pForm.address_line2 || ''} onChange={e => up('address_line2', e.target.value)}
                             className={inputCls} placeholder="Appartement, étage, immeuble..." />
                     </FormField>
-                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                        <FormField label="Ville">
+                    {/* Dynamic geo hierarchy – cascading dropdowns built from the API tree */}
+                    {(masterData?.geo_areas?.length ?? 0) > 0 && (
+                        <div>
+                            <label className="block text-[10px] font-bold text-gray-500 mb-2 uppercase tracking-widest">
+                                Zone géographique
+                            </label>
+                            <DynamicGeoSelector
+                                geoAreas={masterData!.geo_areas}
+                                geoAreaTypes={masterData!.geo_area_types}
+                                value={pForm.geo_area_code ?? null}
+                                onChange={handleGeoChange}
+                                showBreadcrumb
+                            />
+                            <p className="text-[10px] text-gray-400 mt-1">
+                                La ville et la région ci-dessous sont mises à jour automatiquement.
+                            </p>
+                        </div>
+                    )}
+                    {/* Readable address fields – auto-populated by DynamicGeoSelector but freely editable */}
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                        <FormField label="Ville" hint="Auto-rempli depuis la zone, modifiable">
                             <input type="text" value={pForm.city || ''} onChange={e => up('city', e.target.value)}
                                 className={inputCls} placeholder="Casablanca" />
                         </FormField>
-                        <FormField label="Région">
+                        <FormField label="Région" hint="Auto-rempli depuis la zone, modifiable">
                             <input type="text" value={pForm.region || ''} onChange={e => up('region', e.target.value)}
-                                className={inputCls} placeholder="Grand Casablanca" />
+                                className={inputCls} placeholder="Casablanca-Settat" />
                         </FormField>
+                    </div>
+                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
                         <FormField label="Code postal">
                             <input type="text" value={pForm.postal_code || ''} onChange={e => up('postal_code', e.target.value)}
                                 className={inputCls} placeholder="20000" />
@@ -847,13 +712,6 @@ export const PartnerFormPanel: React.FC<PartnerFormPanelProps> = ({
                                 placeholder="— Pays —" clearable />
                         </FormField>
                     </div>
-                    {geoAreaOptions.length > 0 && (
-                        <FormField label="Zone géographique (partenaire)">
-                            <SearchableSelect options={geoAreaOptions} value={pForm.geo_area_code}
-                                onChange={v => up('geo_area_code', v)}
-                                placeholder="— Sélectionner une zone —" clearable />
-                        </FormField>
-                    )}
                 </div>
             </SectionCard>
         </div>
