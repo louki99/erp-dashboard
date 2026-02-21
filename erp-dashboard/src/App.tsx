@@ -6,7 +6,7 @@ import { ThemeProvider } from '@/context/ThemeContext';
 import { ProtectedRoute } from '@/components/rbac';
 import { PERMISSIONS } from '@/lib/rbac/permissions';
 import { Login } from '@/pages/Login';
-import { PartnerPage } from '@/components/layout/PartnerPage';
+import { PartnerManagementPage } from '@/pages/partners/PartnerManagementPage';
 import { OrdersPage } from '@/pages/OrdersPage';
 import { PartnerBalancesPage } from '@/pages/partners/PartnerBalancesPage';
 import { Dashboard } from '@/pages/Dashboard';
@@ -88,7 +88,7 @@ function AppRoutes() {
 
       <Route path="/partners" element={
         <ProtectedRoute requiredPermission={PERMISSIONS.PARTNERS.INDEX}>
-          <PartnerPage />
+          <PartnerManagementPage />
         </ProtectedRoute>
       } />
 
