@@ -13,9 +13,12 @@ import type {
     BlockPartnerRequest,
     UpdateCreditRequest,
     PaginatedPartners,
+    PartnerMasterData,
+    CreatePartnerFullPayload,
 } from '../../types/partner.types';
 
 const BASE_PATH = '/api/backend/partners';
+const MASTERDATA_PATH = '/api/backend/masterdata';
 
 // ─── List & Search ──────────────────────────────────────────────────────────
 
@@ -42,7 +45,19 @@ export const generateCode = async (documentType: string = 'CL'): Promise<{ code:
     return response.data;
 };
 
-// ─── Create form metadata ───────────────────────────────────────────────────
+// ─── Master Data for partner form ───────────────────────────────────────────
+
+export const getPartnerFormMasterData = async (): Promise<PartnerMasterData> => {
+    const response = await apiClient.get<PartnerMasterData>(`${MASTERDATA_PATH}/for-partner-form`);
+    return response.data;
+};
+
+export const getCountries = async (): Promise<import('../../types/partner.types').CountryItem[]> => {
+    const response = await apiClient.get<{ success: boolean; data: import('../../types/partner.types').CountryItem[] }>(`${MASTERDATA_PATH}/countries`);
+    return response.data.data ?? [];
+};
+
+// ─── Create form metadata (legacy - used for edit mode only) ─────────────────
 
 export const getCreateFormMeta = async (): Promise<PartnerCreateFormResponse> => {
     const response = await apiClient.get<PartnerCreateFormResponse>(`${BASE_PATH}/create`);
@@ -56,7 +71,7 @@ export const getEditFormMeta = async (id: number): Promise<PartnerCreateFormResp
 
 // ─── CRUD ───────────────────────────────────────────────────────────────────
 
-export const createPartner = async (data: CreatePartnerRequest) => {
+export const createPartner = async (data: CreatePartnerFullPayload) => {
     const response = await apiClient.post<{ success: boolean; message: string; partner: Partner }>(BASE_PATH, data);
     return response.data;
 };

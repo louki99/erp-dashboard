@@ -13,6 +13,7 @@ import type {
     UpdateCreditRequest,
     CreditHistoryResponse,
     PartnerPaymentTermsResponse,
+    PartnerMasterData,
 } from '../../types/partner.types';
 
 // ─── Generic mutation helper ────────────────────────────────────────────────
@@ -114,6 +115,33 @@ export const usePartnerStatistics = () => {
     useEffect(() => { fetch(); }, [fetch]);
 
     return { data, loading, refetch: fetch };
+};
+
+// ─── Partner Form Master Data Hook ──────────────────────────────────────────
+
+export const usePartnerFormMasterData = () => {
+    const [data, setData] = useState<PartnerMasterData | null>(null);
+    const [loading, setLoading] = useState(false);
+    const [error, setError] = useState<string | null>(null);
+
+    const fetch = useCallback(async () => {
+        setLoading(true);
+        setError(null);
+        try {
+            const [masterData, countries] = await Promise.all([
+                partnerApi.getPartnerFormMasterData(),
+                partnerApi.getCountries(),
+            ]);
+            setData({ ...masterData, countries });
+        } catch (err) {
+            setError(err instanceof Error ? err.message : 'Erreur de chargement des données');
+            console.error(err);
+        } finally {
+            setLoading(false);
+        }
+    }, []);
+
+    return { data, loading, error, fetch };
 };
 
 // ─── Form Metadata Hook (create + edit) ─────────────────────────────────────

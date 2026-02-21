@@ -19,7 +19,7 @@ import {
     usePartnersList,
     usePartnerDetail,
     usePartnerStatistics,
-    useCreateFormMeta,
+    usePartnerFormMasterData,
     useCreditHistory,
     usePaymentTerms,
     useCreatePartner,
@@ -40,10 +40,10 @@ import type {
     Partner,
     PartnerStatus,
     PartnerFilters,
-    CreatePartnerRequest,
     UpdateStatusRequest,
     BlockPartnerRequest,
     UpdateCreditRequest,
+    PartnerSavePayload,
 } from '@/types/partner.types';
 
 import {
@@ -211,7 +211,7 @@ export const PartnerManagementPage = () => {
     const { data: statsData, refetch: refetchStats } = usePartnerStatistics();
     const stats = statsData?.statistics;
 
-    const { data: formMeta, loading: formMetaLoading, fetch: fetchFormMeta, fetchForEdit: fetchEditMeta } = useCreateFormMeta();
+    const { data: masterData, loading: masterDataLoading, fetch: fetchMasterData } = usePartnerFormMasterData();
 
     const { data: creditHistoryData, loading: creditHistLoading, refetch: refetchCreditHistory } = useCreditHistory(
         showDetailPanel && selectedPartner ? selectedPartner.id : null
@@ -369,41 +369,38 @@ export const PartnerManagementPage = () => {
         setSelectedPartner(null);
         setShowDetailPanel(true);
         setFormMode('create');
-        fetchFormMeta();
+        fetchMasterData();
     };
 
     const handleOpenEdit = async () => {
         if (!partnerDetail) return;
         setFormMode('edit');
-        fetchEditMeta(partnerDetail.id);
+        fetchMasterData();
     };
 
     const handleCancelForm = () => {
         if (formMode === 'create') {
-            // Return to empty state
             setFormMode('view');
             setShowDetailPanel(false);
             setSelectedPartner(null);
         } else {
-            // Return to detail view
             setFormMode('view');
         }
     };
 
-    const handleSavePartner = async (data: Partial<CreatePartnerRequest>) => {
-        const toastId = toast.loading(formMode === 'edit' ? 'Mise à jour...' : 'Création...');
+    const handleSavePartner = async (payload: PartnerSavePayload) => {
+        const toastId = toast.loading(payload.mode === 'edit' ? 'Mise à jour...' : 'Création...');
         try {
-            if (formMode === 'edit' && selectedPartner) {
-                await updatePartner({ id: selectedPartner.id, data });
+            if (payload.mode === 'edit' && selectedPartner) {
+                await updatePartner({ id: selectedPartner.id, data: payload.data });
                 toast.dismiss(toastId);
                 toast.success('Partenaire mis à jour');
                 setFormMode('view');
                 refetchDetail();
-            } else {
-                const result = await createPartner(data as CreatePartnerRequest);
+            } else if (payload.mode === 'create') {
+                const result = await createPartner(payload.data);
                 toast.dismiss(toastId);
-                toast.success('Partenaire créé');
-                // Select the newly created partner and switch to view mode
+                toast.success('Partenaire créé avec succès');
                 if (result?.partner) {
                     setSelectedPartner(result.partner);
                 }
@@ -413,7 +410,11 @@ export const PartnerManagementPage = () => {
             refetchStats();
         } catch (e: any) {
             toast.dismiss(toastId);
-            toast.error(e?.response?.data?.message || 'Erreur');
+            if (e?.response?.status === 422) {
+                // Re-throw so PartnerFormPanel can map field-level errors
+                throw e;
+            }
+            toast.error(e?.response?.data?.message || 'Une erreur est survenue');
         }
     };
 
@@ -746,8 +747,8 @@ export const PartnerManagementPage = () => {
                             <PartnerFormPanel
                                 mode={formMode}
                                 partner={formMode === 'edit' ? partnerDetail : null}
-                                formMeta={formMeta}
-                                formMetaLoading={formMetaLoading}
+                                masterData={masterData}
+                                masterDataLoading={masterDataLoading}
                                 onSave={handleSavePartner}
                                 onCancel={handleCancelForm}
                                 saving={creating || updating}

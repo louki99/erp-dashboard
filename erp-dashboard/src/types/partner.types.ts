@@ -205,3 +205,137 @@ export interface UpdateCreditRequest {
     credit_limit: number;
     reason?: string;
 }
+
+// ─── Master Data (GET /api/backend/masterdata/for-partner-form) ───────────────
+
+export interface GeoAreaItem {
+    id: number;
+    code: string;
+    name: string;
+    name_ar?: string;
+    geo_area_type_id: number;
+    parent_code: string | null;
+    sort_order: number;
+    geo_area_type: { id: number; code: string; name: string };
+}
+
+export interface BranchItem {
+    id: number;
+    code: string;
+    name: string;
+    name_ar?: string;
+    geo_area_code: string | null;
+}
+
+export interface CustomFieldDef {
+    id: number;
+    field_name: string;
+    field_label: string;
+    field_type: string;
+    options: Array<{ value: string; label: string }> | null;
+    is_required: boolean;
+    order: number;
+    placeholder?: string;
+    help_text?: string;
+    default_value?: any;
+}
+
+export interface CountryItem {
+    code: string;
+    name: string;
+    name_ar?: string;
+    dial_code: string;
+}
+
+export interface PartnerMasterData {
+    success: boolean;
+    price_lists: { id: number; code: string; name: string; rank?: number }[];
+    payment_terms: {
+        id: number;
+        code: string;
+        name: string;
+        description?: string;
+        is_credit: boolean;
+        is_cash: boolean;
+        is_bank_transfer: boolean;
+    }[];
+    vat_taxes: { id: number; type: string; name: string; percentage: string; deduction: string }[];
+    geo_areas: GeoAreaItem[];
+    geo_area_types: { id: number; code: string; name: string; name_ar?: string; rank: number }[];
+    branches: BranchItem[];
+    itineraries: { id: number; code: string; name: string; branch_code: string; geo_area_code?: string }[];
+    salespersons: any[];
+    partner_families: any[];
+    custom_fields: CustomFieldDef[];
+    countries?: CountryItem[];
+}
+
+// ─── Auth form data (create partner with user account) ───────────────────────
+
+export interface AuthFormData {
+    name: string;
+    last_name: string;
+    email: string;
+    password: string;
+    confirm_password: string;
+    phone: string;
+    phone_code: string;
+    gender: string;
+    date_of_birth: string;
+    branch_code: string;
+    geo_area_code: string;
+    is_active: boolean;
+    target_app: string;
+}
+
+// ─── Full create payload ──────────────────────────────────────────────────────
+
+export interface CreatePartnerFullPayload {
+    auth: {
+        name: string;
+        last_name?: string;
+        email: string;
+        password: string;
+        phone: string;
+        phone_code?: string;
+        gender?: string;
+        date_of_birth?: string;
+        branch_code?: string;
+        geo_area_code?: string;
+        is_active: boolean;
+        target_app: string;
+    };
+    partner: {
+        name: string;
+        code?: string;
+        price_list_id?: number;
+        payment_term_id?: number;
+        partner_type: string;
+        channel: string;
+        status: PartnerStatus;
+        credit_limit?: number;
+        default_discount_rate?: number;
+        phone?: string;
+        email?: string;
+        address_line1?: string;
+        address_line2?: string;
+        city?: string;
+        region?: string;
+        country?: string;
+        postal_code?: string;
+        tax_number_ice?: string;
+        tax_number_if?: string;
+        tax_exempt?: boolean;
+        geo_area_code?: string;
+        delivery_zone?: string;
+        delivery_instructions?: string;
+        min_order_amount?: number;
+    };
+    custom_fields?: Record<string, string>;
+}
+
+// ─── Discriminated union for the form panel's onSave callback ─────────────────
+
+export type PartnerSavePayload =
+    | { mode: 'create'; data: CreatePartnerFullPayload }
+    | { mode: 'edit'; data: Partial<CreatePartnerRequest> };
