@@ -40,6 +40,8 @@ export interface Partner {
     delivery_instructions: string | null;
     min_order_amount: number | null;
     delivery_zone: string | null;
+    // Classification
+    risk_score: number;
     // Hierarchy
     parent_partner_id: number | null;
     salesperson_id: number | null;
@@ -50,6 +52,9 @@ export interface Partner {
     default_discount_rate: number;
     default_discount_amount: number;
     max_discount_rate: number;
+    // Options
+    allow_show_on_pos: boolean;
+    currency?: string;
     // Relations
     price_list?: { id: number; code: string; name: string } | null;
     customer?: { id: number; user?: { id: number; name: string; email: string } } | null;
@@ -159,20 +164,34 @@ export interface PartnerFilters {
 }
 
 export interface CreatePartnerRequest {
+    // Identity
     name: string;
     code?: string;
-    price_list_id?: number;
-    payment_term_id?: number;
-    email?: string;
-    phone?: string;
-    whatsapp?: string;
-    status?: PartnerStatus;
     partner_type?: string;
     channel?: string;
+    status?: PartnerStatus;
+    risk_score?: number;
+    parent_partner_id?: number | null;
+    salesperson_id?: number | null;
+    // Commercial
+    price_list_id?: number;
+    payment_term_id?: number;
+    currency?: string;
     credit_limit?: number;
+    default_discount_rate?: number;
+    default_discount_amount?: number;
+    max_discount_rate?: number;
+    // Tax
     tax_number_ice?: string;
     tax_number_if?: string;
     tax_exempt?: boolean;
+    vat_group_code?: string;
+    // Contact
+    phone?: string;
+    whatsapp?: string;
+    email?: string;
+    website?: string;
+    // Address
     address_line1?: string;
     address_line2?: string;
     city?: string;
@@ -180,13 +199,18 @@ export interface CreatePartnerRequest {
     country?: string;
     postal_code?: string;
     geo_area_code?: string;
-    opening_hours?: string;
+    geo_lat?: number | null;
+    geo_lng?: number | null;
+    // Delivery
+    opening_hours?: Record<string, string> | string;
     delivery_instructions?: string;
     min_order_amount?: number;
     delivery_zone?: string;
-    default_discount_rate?: number;
-    default_discount_amount?: number;
-    max_discount_rate?: number;
+    // Options
+    allow_show_on_pos?: boolean;
+    blocked_until?: string | null;
+    block_reason?: string | null;
+    // Custom fields
     custom_fields?: Record<string, string>;
 }
 
@@ -291,7 +315,8 @@ export interface AuthFormData {
 // ─── Full create payload ──────────────────────────────────────────────────────
 
 export interface CreatePartnerFullPayload {
-    auth: {
+    /** Omit entirely for a partner without B2B login */
+    auth?: {
         name: string;
         last_name?: string;
         email: string;
@@ -306,30 +331,52 @@ export interface CreatePartnerFullPayload {
         target_app: string;
     };
     partner: {
+        // Identity
         name: string;
         code?: string;
-        price_list_id?: number;
-        payment_term_id?: number;
         partner_type: string;
         channel: string;
         status: PartnerStatus;
+        risk_score?: number;
+        parent_partner_id?: number | null;
+        salesperson_id?: number | null;
+        // Commercial
+        price_list_id?: number;
+        payment_term_id?: number;
+        currency?: string;
         credit_limit?: number;
         default_discount_rate?: number;
+        default_discount_amount?: number;
+        max_discount_rate?: number;
+        // Tax
+        tax_number_ice?: string;
+        tax_number_if?: string;
+        tax_exempt?: boolean;
+        vat_group_code?: string;
+        // Contact
         phone?: string;
+        whatsapp?: string;
         email?: string;
+        website?: string;
+        // Address
         address_line1?: string;
         address_line2?: string;
         city?: string;
         region?: string;
         country?: string;
         postal_code?: string;
-        tax_number_ice?: string;
-        tax_number_if?: string;
-        tax_exempt?: boolean;
         geo_area_code?: string;
-        delivery_zone?: string;
+        geo_lat?: number | null;
+        geo_lng?: number | null;
+        // Delivery
+        opening_hours?: Record<string, string> | string;
         delivery_instructions?: string;
         min_order_amount?: number;
+        delivery_zone?: string;
+        // Options
+        allow_show_on_pos?: boolean;
+        blocked_until?: string | null;
+        block_reason?: string | null;
     };
     custom_fields?: Record<string, string>;
 }

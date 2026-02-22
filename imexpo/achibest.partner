@@ -1,0 +1,56 @@
+# Partner Import File
+# Version: 1.0
+# Generated: 2026-02-21
+# Source: ERP Dashboard — Modèle de démonstration
+#
+# UTILISATION
+# ───────────
+# Chaque ligne suit le format :  champ__:valeur;
+# Les lignes commençant par # sont des commentaires (ignorées).
+# Préfixe auth.*   → champs du compte utilisateur
+# Préfixe cf.*     → champs personnalisés (custom fields)
+# (sans préfixe)   → champs du profil partenaire
+
+# ── Identité ──────────────────────────────────────────────────────────────────
+name__:Atlas Food;
+partner_type__:CUSTOMER;
+channel__:DIRECT;
+status__:ACTIVE;
+
+# ── Contact ───────────────────────────────────────────────────────────────────
+phone__:+212600000055;
+email__:atlas@afood.ma;
+website__:https://atlas.food.ma;
+
+# ── Adresse ───────────────────────────────────────────────────────────────────
+address_line1__:123 Rue Mohammed V;
+city__:Casablanca;
+region__:Casablanca-Settat;
+country__:MA;
+postal_code__:20000;
+
+# ── Commercial ────────────────────────────────────────────────────────────────
+price_list_id__:3;
+payment_term_id__:2;
+credit_limit__:50000;
+default_discount_rate__:5;
+
+# ── Fiscal ────────────────────────────────────────────────────────────────────
+tax_number_ice__:001234567000099;
+tax_exempt__:false;
+
+# ── Livraison ─────────────────────────────────────────────────────────────────
+delivery_zone__:Zone Nord Casablanca;
+min_order_amount__:500;
+
+# ── Compte utilisateur (create seulement) ────────────────────────────────────
+auth.name__:Mohamed;
+auth.last_name__:Atlas;
+auth.email__:admin@atlas.ma;
+auth.phone__:+212600000099;
+auth.gender__:male;
+auth.branch_code__:A0001;
+auth.target_app__:B2B;
+
+# ── Champs personnalisés ──────────────────────────────────────────────────────
+cf.partner_rib__:MA0123456789012345677;
