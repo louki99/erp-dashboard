@@ -42,72 +42,76 @@ export function usePermissions() {
         return user?.can?.is_root || false;
     }, [user]);
 
+    const isAdminUser = useMemo(() => {
+        return isAdmin(roles, isRoot);
+    }, [roles, isRoot]);
+
     // Main permission check function
     const checkPermission = useCallback(
         (check: PermissionCheck, options?: PermissionCheckOptions): boolean => {
-            // Root users have all permissions
-            if (isRoot) return true;
+            // Admin and root users have all permissions
+            if (isAdminUser) return true;
 
             return can(permissions, check, {
                 ...options,
                 checkBlacklist: options?.checkBlacklist ?? false,
             });
         },
-        [permissions, isRoot]
+        [permissions, isAdminUser]
     );
 
     // Check single permission
     const has = useCallback(
         (permission: string): boolean => {
-            if (isRoot) return true;
+            if (isAdminUser) return true;
             return hasPermission(permissions, permission, blacklist);
         },
-        [permissions, blacklist, isRoot]
+        [permissions, blacklist, isAdminUser]
     );
 
     // Check any permission
     const hasAny = useCallback(
         (permissionList: string[]): boolean => {
-            if (isRoot) return true;
+            if (isAdminUser) return true;
             return hasAnyPermission(permissions, permissionList, blacklist);
         },
-        [permissions, blacklist, isRoot]
+        [permissions, blacklist, isAdminUser]
     );
 
     // Check all permissions
     const hasAll = useCallback(
         (permissionList: string[]): boolean => {
-            if (isRoot) return true;
+            if (isAdminUser) return true;
             return hasAllPermissions(permissions, permissionList, blacklist);
         },
-        [permissions, blacklist, isRoot]
+        [permissions, blacklist, isAdminUser]
     );
 
     // Check role
     const hasRoleCheck = useCallback(
         (role: string): boolean => {
-            if (isRoot) return true;
+            if (isAdminUser) return true;
             return hasRole(roles, role);
         },
-        [roles, isRoot]
+        [roles, isAdminUser]
     );
 
     // Check any role
     const hasAnyRoleCheck = useCallback(
         (roleList: string[]): boolean => {
-            if (isRoot) return true;
+            if (isAdminUser) return true;
             return hasAnyRole(roles, roleList);
         },
-        [roles, isRoot]
+        [roles, isAdminUser]
     );
 
     // Check all roles
     const hasAllRolesCheck = useCallback(
         (roleList: string[]): boolean => {
-            if (isRoot) return true;
+            if (isAdminUser) return true;
             return hasAllRoles(roles, roleList);
         },
-        [roles, isRoot]
+        [roles, isAdminUser]
     );
 
     // Check if admin
@@ -118,19 +122,19 @@ export function usePermissions() {
     // Check route access
     const canAccessRouteCheck = useCallback(
         (routePermissions: string | string[] | undefined): boolean => {
-            if (isRoot) return true;
+            if (isAdminUser) return true;
             return canAccessRoute(permissions, routePermissions);
         },
-        [permissions, isRoot]
+        [permissions, isAdminUser]
     );
 
     // Check bulk action permission
     const canBulk = useCallback(
         (action: 'approve' | 'reject' | 'delete' | 'export'): boolean => {
-            if (isRoot) return true;
+            if (isAdminUser) return true;
             return canBulkAction(permissions, action);
         },
-        [permissions, isRoot]
+        [permissions, isAdminUser]
     );
 
     // Check if permission is blacklisted
@@ -162,6 +166,7 @@ export function usePermissions() {
         roles,
         blacklist,
         isRoot,
+        isAdminUser,
         capabilities,
 
         // Check functions
