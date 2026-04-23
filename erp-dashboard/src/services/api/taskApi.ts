@@ -269,6 +269,27 @@ export const taskApi = {
         },
 
         /**
+         * Get task progress for BC/Order by model ID
+         * GET /tasks/bc/{orderId}/progress
+         */
+        getProgressByModel: async (
+            modelType: string,
+            modelId: number
+        ): Promise<WorkflowProgressResponse> => {
+            // Map model type to workflow type
+            const workflowType = modelType === 'App\\Models\\Order' ? 'bc' : 'bc';
+
+            console.log('[Task API] Fetching progress for:', { modelType, modelId, workflowType });
+
+            const response = await apiClient.get<WorkflowProgressResponse>(
+                `${TASK_BASE}/${workflowType}/${modelId}/progress`
+            );
+
+            console.log('[Task API] Progress response:', response.data);
+            return response.data;
+        },
+
+        /**
          * Get task statistics
          */
         getStatistics: async (): Promise<any> => {

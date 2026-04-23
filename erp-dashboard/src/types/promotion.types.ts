@@ -1,11 +1,11 @@
 export const PromotionType = {
-    PERCENTAGE_DISCOUNT: 1,
-    FIXED_AMOUNT_DISCOUNT: 2,
-    BEST_PRICE: 3,
-    AMOUNT_PER_UNIT: 4,
-    FREE_PROMO_UNIT: 5,
-    FLAT_AMOUNT_DISCOUNT: 6,
-    REPLACE_PRICE: 7
+    PERCENTAGE_DISCOUNT: 1,        // Type 1: Percentage (-10 = 10% off)
+    AMOUNT_PER_UNIT: 2,           // Type 2: Amount Per Unit (-5 = 5 MAD off per unit)
+    BEST_PRICE: 3,                // Type 3: Best Price (50 = max price 50 MAD)
+    FREE_UNIT: 4,                 // Type 4: Free Units (-2 = 2 free units)
+    FREE_PROMO_UNIT: 5,           // Type 5: Free Promo Units (-10 = 10 promo units free)
+    FLAT_AMOUNT_DISCOUNT: 6,      // Type 6: Flat Amount (-100 = 100 MAD off total)
+    REPLACE_PRICE: 7              // Type 7: Replace Price (76 = new price 76 MAD)
 } as const;
 
 export type PromotionType = (typeof PromotionType)[keyof typeof PromotionType];
@@ -19,10 +19,11 @@ export const BreakpointType = {
 export type BreakpointType = (typeof BreakpointType)[keyof typeof BreakpointType];
 
 export const AssortmentType = {
-    NONE: 0,
-    MULTIPLE_AND: 1,     // Must have X of Product A AND Y of Product B
-    CART_AMOUNT: 2,      // Minimum cart total
-    BOTH: 3              // Both Assortment AND Cart Amount
+    NONE: 0,                    // No requirement - any products qualify
+    QUANTITY: 1,                // Absolute Quantity - Each item must meet minimum quantity
+    QUANTITY_PERCENT: 2,        // Quantity % - Each item must be minimum % of total quantity
+    AMOUNT_PERCENT: 3,          // Amount % - Each item must be minimum % of total amount
+    AMOUNT: 4                   // Absolute Amount - Each item must meet minimum amount (MAD)
 } as const;
 
 export type AssortmentType = (typeof AssortmentType)[keyof typeof AssortmentType];
@@ -37,8 +38,9 @@ export type PromotionPaidBasedOn = (typeof PromotionPaidBasedOn)[keyof typeof Pr
 
 export interface PromotionLineAssortment {
     id?: number;
-    based_on_product: boolean;
-    product_code: string; // Product Code or Family Code
+    based_on_product: string; // "0" = family, "1" = product
+    product_code?: string;
+    product_family_code?: string;
     minimum: number;
 }
 
@@ -54,15 +56,22 @@ export interface PromotionLine {
     line_number?: number;
     name: string;
 
-    // Target
-    paid_based_on_product: PromotionPaidBasedOn; // 'cart', 'family', 'product'
-    paid_product_code?: string;
-    paid_product_family_code?: string;
+    // Paid Target (what triggers the discount)
+    paid_based_on_product: PromotionPaidBasedOn; // 'entire_cart', 'family', 'product'
+    paid_code?: string; // Unified field for API
+    paid_product_code?: string; // UI helper
+    paid_product_family_code?: string; // UI helper
+
+    // Free Target (for Type 4 & 5 - what you get free)
+    free_based_on_product?: string; // "0" = family, "1" = product
+    free_code?: string; // Unified field for API
+    free_product_code?: string; // UI helper
+    free_product_family_code?: string; // UI helper
 
     // Assortment Rules
-    assortment_type: AssortmentType;
+    assortment_type: AssortmentType | string | number;
     minimum_cart_amount?: number;
-    assortments: PromotionLineAssortment[];
+    assortments?: PromotionLineAssortment[];
 
     // Breakpoints & Rewards
     details: PromotionLineDetail[];
@@ -79,6 +88,7 @@ export interface Promotion {
 
     is_closed: boolean;
     sequence: number; // Priority (lower = higher priority)
+    skip_to_sequence?: number; // Skip promotions with sequence < this value (0 = no skip)
 
     breakpoint_type: BreakpointType;
     scale_method: 1 | 2; // 1 = Cumulative/Progressive, 2 = Bracket/Highest tier only

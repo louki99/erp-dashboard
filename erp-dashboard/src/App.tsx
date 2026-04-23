@@ -32,6 +32,7 @@ import { ProductsPage } from '@/pages/products/ProductsPage';
 import { SettingsPage } from '@/pages/settings/SettingsPage';
 import { PromotionsPage } from '@/pages/promotions/PromotionsPage';
 import { PromotionForm } from '@/pages/promotions/components/PromotionForm';
+import { PromotionFormRedesigned } from '@/pages/promotions/components/PromotionFormRedesigned';
 import { PartnerFamiliesPage } from '@/pages/promotions/PartnerFamiliesPage';
 import { ProductFamiliesPage } from '@/pages/promotions/ProductFamiliesPage';
 import { BoostsPage } from '@/pages/promotions/BoostsPage';
@@ -49,6 +50,7 @@ import { WorkflowDetailPage } from '@/pages/workflows/WorkflowDetailPage';
 import { WorkflowCreatePage } from './pages/workflows/WorkflowCreatePage';
 import { TaskTemplateDetailPage } from './pages/workflows/TaskTemplateDetailPage';
 import { WorkflowMonitoringPage } from '@/pages/workflows/WorkflowMonitoringPage';
+import { WorkflowEnginePage } from '@/pages/workflows/WorkflowEnginePage';
 import { AdminMonitoringDashboard } from '@/pages/admin/AdminMonitoringDashboard';
 import { StockManagementPage } from '@/pages/stock/StockManagementPage';
 import { PricingManagementPage } from '@/pages/pricing/PricingManagementPage';
@@ -261,12 +263,12 @@ function AppRoutes() {
       } />
       <Route path="/promotions/new" element={
         <ProtectedRoute>
-          <PromotionForm />
+          <PromotionFormRedesigned />
         </ProtectedRoute>
       } />
       <Route path="/promotions/:id/edit" element={
         <ProtectedRoute>
-          <PromotionForm isEdit />
+          <PromotionFormRedesigned />
         </ProtectedRoute>
       } />
 
@@ -379,6 +381,11 @@ function AppRoutes() {
       <Route path="/workflows/monitoring" element={
         <ProtectedRoute requiredPermission={PERMISSIONS.WORKFLOW_TEMPLATES.INDEX}>
           <WorkflowMonitoringPage />
+        </ProtectedRoute>
+      } />
+      <Route path="/workflows/engine" element={
+        <ProtectedRoute>
+          <WorkflowEnginePage />
         </ProtectedRoute>
       } />
 

@@ -80,13 +80,45 @@ export const PromotionForm = ({ isEdit = false }: PromotionFormProps) => {
                 }).filter(Boolean);
             }
 
+            // Normalize promotion lines - map API format to UI format
+            const normalizedLines = promo.lines?.map((line: any) => {
+                // Map paid_code back to UI helper fields
+                let paid_product_code = undefined;
+                let paid_product_family_code = undefined;
+                
+                if (line.paid_based_on_product === 'product') {
+                    paid_product_code = line.paid_code;
+                } else if (line.paid_based_on_product === 'family') {
+                    paid_product_family_code = line.paid_code;
+                }
+
+                // Map free_code back to UI helper fields
+                let free_product_code = undefined;
+                let free_product_family_code = undefined;
+                
+                if (line.free_based_on_product === '1') {
+                    free_product_code = line.free_code;
+                } else if (line.free_based_on_product === '0') {
+                    free_product_family_code = line.free_code;
+                }
+
+                return {
+                    ...line,
+                    paid_product_code,
+                    paid_product_family_code,
+                    free_product_code,
+                    free_product_family_code
+                };
+            }) || [];
+
             // Reset form with normalized data
             methods.reset({
                 ...promo,
                 start_date: promo.start_date ? promo.start_date.split('T')[0] : '',
                 end_date: promo.end_date ? promo.end_date.split('T')[0] : '',
                 partner_families: normalizedPartnerFamilies,
-                payment_terms: normalizedPaymentTerms
+                payment_terms: normalizedPaymentTerms,
+                lines: normalizedLines
             });
         } catch (error: any) {
             console.error('Failed to load promotion:', error);
@@ -237,23 +269,51 @@ export const PromotionForm = ({ isEdit = false }: PromotionFormProps) => {
                 return;
             }
 
-            // Clean up data before submission
+            // Transform data to API format
             const cleanedData = {
                 ...data,
                 code: data.code.trim().toUpperCase(),
                 name: data.name.trim(),
                 description: data.description?.trim() || '',
-                lines: data.lines.map(line => ({
-                    ...line,
-                    name: line.name.trim(),
-                    details: line.details.map(detail => ({
-                        ...detail,
-                        promo_type: Number(detail.promo_type) as any,
-                        minimum_value: Number(detail.minimum_value),
-                        amount: Number(detail.amount),
-                        repeating: Boolean(detail.repeating)
-                    }))
-                }))
+                lines: data.lines.map(line => {
+                    // Map paid_code based on paid_based_on_product
+                    let paid_code = undefined;
+                    if (line.paid_based_on_product === 'product') {
+                        paid_code = line.paid_product_code;
+                    } else if (line.paid_based_on_product === 'family') {
+                        paid_code = line.paid_product_family_code;
+                    }
+
+                    // Convert assortment_type to string for API
+                    let assortment_type = 'none';
+                    if (typeof line.assortment_type === 'number') {
+                        assortment_type = ['none', 'multiple', 'cart_amount', 'both'][line.assortment_type] || 'none';
+                    } else {
+                        assortment_type = line.assortment_type || 'none';
+                    }
+
+                    return {
+                        name: line.name.trim(),
+                        paid_based_on_product: line.paid_based_on_product,
+                        paid_code,
+                        free_based_on_product: line.free_based_on_product,
+                        free_code: line.free_code,
+                        assortment_type,
+                        minimum_cart_amount: line.minimum_cart_amount,
+                        assortments: line.assortments?.map(a => ({
+                            based_on_product: a.based_on_product,
+                            product_code: a.based_on_product === '1' ? a.product_code : undefined,
+                            product_family_code: a.based_on_product === '0' ? a.product_family_code : undefined,
+                            minimum: Number(a.minimum)
+                        })) || [],
+                        details: line.details.map(detail => ({
+                            promo_type: Number(detail.promo_type),
+                            minimum_value: Number(detail.minimum_value),
+                            amount: Number(detail.amount),
+                            repeating: Boolean(detail.repeating)
+                        }))
+                    };
+                })
             } as Promotion;
 
             if (isEdit && id) {
@@ -427,19 +487,19 @@ export const PromotionForm = ({ isEdit = false }: PromotionFormProps) => {
                                         <div className="space-y-6 animate-in fade-in slide-in-from-bottom-2">
                                             <div className="grid grid-cols-2 gap-6">
                                                 <div className="col-span-2 md:col-span-1 space-y-2">
-                                                    <label className="text-sm font-medium text-gray-700">Nom de la Promotion <span className="text-red-500">*</span></label>
-                                                    <input {...register('name', { required: true })} className="w-full p-2 border rounded focus:ring-sage-500 focus:border-sage-500 outline-none" placeholder="ex: Vente d'Hiver 2024" />
-                                                    {errors.name && <span className="text-xs text-red-500">Obligatoire</span>}
+                                                    <label className="text-sm font-semibold text-gray-700">Nom de la Promotion <span className="text-red-500">*</span></label>
+                                                    <input {...register('name', { required: true })} className="w-full px-3 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-purple-500 outline-none transition" placeholder="ex: Vente d'Hiver 2024" />
+                                                    {errors.name && <span className="text-xs text-red-500 font-medium">Obligatoire</span>}
                                                 </div>
                                                 <div className="col-span-2 md:col-span-1 space-y-2">
-                                                    <label className="text-sm font-medium text-gray-700">Code Promotion <span className="text-red-500">*</span></label>
-                                                    <input {...register('code', { required: true })} className="w-full p-2 border rounded focus:ring-sage-500 focus:border-sage-500 outline-none uppercase font-mono" placeholder="PROMO-XXX" />
+                                                    <label className="text-sm font-semibold text-gray-700">Code Promotion <span className="text-red-500">*</span></label>
+                                                    <input {...register('code', { required: true })} className="w-full px-3 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-purple-500 outline-none uppercase font-mono transition" placeholder="PROMO-XXX" />
                                                 </div>
 
 
                                                 <div className="col-span-2 space-y-2">
-                                                    <label className="text-sm font-medium text-gray-700">Description</label>
-                                                    <textarea {...register('description')} className="w-full p-2 border rounded focus:ring-sage-500 focus:border-sage-500 outline-none" rows={3} placeholder="Description détaillée de la promotion..." />
+                                                    <label className="text-sm font-semibold text-gray-700">Description</label>
+                                                    <textarea {...register('description')} className="w-full px-3 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-purple-500 outline-none transition" rows={3} placeholder="Description détaillée de la promotion..." />
                                                 </div>
 
                                                 {/* Burning / Redemption Section - New */}
@@ -477,62 +537,55 @@ export const PromotionForm = ({ isEdit = false }: PromotionFormProps) => {
                                                 </div>
 
                                                 <div className="col-span-1 space-y-2">
-                                                    <label className="text-sm font-medium text-gray-700">Date de Début</label>
+                                                    <label className="text-sm font-semibold text-gray-700">Date de Début <span className="text-red-500">*</span></label>
                                                     <div className="relative">
                                                         <Calendar className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
-                                                        <input type="date" {...register('start_date')} className="w-full pl-9 p-2 border rounded focus:ring-sage-500 focus:border-sage-500 outline-none" />
+                                                        <input type="date" {...register('start_date')} className="w-full pl-10 pr-3 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-purple-500 outline-none transition" />
                                                     </div>
                                                 </div>
                                                 <div className="col-span-1 space-y-2">
-                                                    <label className="text-sm font-medium text-gray-700">Date de Fin</label>
+                                                    <label className="text-sm font-semibold text-gray-700">Date de Fin <span className="text-red-500">*</span></label>
                                                     <div className="relative">
                                                         <Calendar className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
-                                                        <input type="date" {...register('end_date')} className="w-full pl-9 p-2 border rounded focus:ring-sage-500 focus:border-sage-500 outline-none" />
+                                                        <input type="date" {...register('end_date')} className="w-full pl-10 pr-3 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-purple-500 outline-none transition" />
                                                     </div>
                                                 </div>
 
                                                 <div className="col-span-1 space-y-2">
-                                                    <label className="text-sm font-medium text-gray-700">
-                                                        Priorité (Séquence)
-                                                        <span className="ml-2 text-xs font-normal text-gray-500">(Obligatoire)</span>
+                                                    <label className="text-sm font-semibold text-gray-700">
+                                                        Priorité (Séquence) <span className="text-red-500">*</span>
                                                     </label>
-                                                    <input type="number" {...register('sequence', { valueAsNumber: true })} className="w-full p-2 border rounded focus:ring-sage-500 focus:border-sage-500 outline-none" placeholder="10" min="1" />
-                                                    <p className="text-xs text-gray-500">
-                                                        <strong>Nombre plus petit = Priorité plus élevée</strong><br />
-                                                        Lorsque plusieurs promotions s'appliquent, les séquences plus basses sont évaluées en premier.<br />
-                                                        Recommandé : Utilisez des incréments de 10 (10, 20, 30) pour plus de flexibilité.
+                                                    <input type="number" {...register('sequence', { valueAsNumber: true })} className="w-full px-3 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-purple-500 outline-none transition" placeholder="10" min="1" />
+                                                    <p className="text-xs text-gray-600 bg-blue-50 p-2 rounded border border-blue-100">
+                                                        <strong className="text-blue-900">Plus petit = Plus prioritaire</strong><br />
+                                                        Recommandé: 10, 20, 30... pour flexibilité
                                                     </p>
                                                 </div>
 
                                                 <div className="col-span-1 space-y-2">
-                                                    <label className="text-sm font-medium text-gray-700">
-                                                        Type de Seuil
-                                                        <span className="ml-2 text-xs font-normal text-gray-500">(Obligatoire)</span>
+                                                    <label className="text-sm font-semibold text-gray-700">
+                                                        Type de Seuil <span className="text-red-500">*</span>
                                                     </label>
-                                                    <select {...register('breakpoint_type', { valueAsNumber: true })} className="w-full p-2 border rounded focus:ring-sage-500 focus:border-sage-500 outline-none">
-                                                        <option value={BreakpointType.QUANTITY_BASED}>Basé sur la Quantité (Unités)</option>
-                                                        <option value={BreakpointType.VALUE_BASED}>Basé sur la Valeur (Montant en MAD)</option>
-                                                        <option value={BreakpointType.PROMO_UNIT_BASED}>Basé sur Unités Promo</option>
+                                                    <select {...register('breakpoint_type', { valueAsNumber: true })} className="w-full px-3 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-purple-500 outline-none bg-white transition">
+                                                        <option value={BreakpointType.QUANTITY_BASED}>📦 Quantité (Unités)</option>
+                                                        <option value={BreakpointType.VALUE_BASED}>💰 Valeur (MAD)</option>
+                                                        <option value={BreakpointType.PROMO_UNIT_BASED}>🎁 Unités Promo</option>
                                                     </select>
-                                                    <p className="text-xs text-gray-500">
-                                                        <strong>Basé sur la Quantité :</strong> Les seuils sont calculés sur le nombre d'unités<br />
-                                                        <strong>Basé sur la Valeur :</strong> Les seuils sont calculés sur le montant total d'achat en MAD<br />
-                                                        <strong>Basé sur Unités Promo :</strong> Les seuils sont calculés sur des unités promo standardisées
+                                                    <p className="text-xs text-gray-600 bg-gray-50 p-2 rounded border border-gray-100">
+                                                        Définit comment les seuils sont calculés
                                                     </p>
                                                 </div>
 
                                                 <div className="col-span-1 space-y-2">
-                                                    <label className="text-sm font-medium text-gray-700">
-                                                        Méthode de Calcul
-                                                        <span className="ml-2 text-xs font-normal text-gray-500">(Obligatoire)</span>
+                                                    <label className="text-sm font-semibold text-gray-700">
+                                                        Méthode de Calcul <span className="text-red-500">*</span>
                                                     </label>
-                                                    <select {...register('scale_method', { valueAsNumber: true })} className="w-full p-2 border rounded focus:ring-sage-500 focus:border-sage-500 outline-none">
+                                                    <select {...register('scale_method', { valueAsNumber: true })} className="w-full px-3 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-purple-500 outline-none bg-white transition">
                                                         <option value={1}>📊 Cumulatif (Progressive)</option>
                                                         <option value={2}>🎯 Tranche (Bracket)</option>
                                                     </select>
-                                                    <p className="text-xs text-gray-500">
-                                                        <strong>📊 Cumulatif :</strong> Les remises s'accumulent pour chaque palier atteint (ex: 3% sur 100-200 MAD, puis 5% sur 200-300 MAD)<br />
-                                                        <strong>🎯 Tranche :</strong> Seule la remise du palier le plus élevé s'applique sur le total (ex: 10% sur tout si ≥300 MAD)
+                                                    <p className="text-xs text-gray-600 bg-gray-50 p-2 rounded border border-gray-100">
+                                                        <strong>Cumulatif:</strong> Accumule les paliers | <strong>Tranche:</strong> Palier le plus élevé uniquement
                                                     </p>
                                                 </div>
                                             </div>

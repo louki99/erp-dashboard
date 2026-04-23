@@ -52,23 +52,23 @@ export const PromotionLineDetailsGrid = ({ lineIndex }: PromotionLineDetailsGrid
 
     const promoTypeOptions = Object.values(PromotionType).filter(v => typeof v === 'number');
     const promoTypeLabels = {
-        [PromotionType.PERCENTAGE_DISCOUNT]: 'Remise en Pourcentage',
-        [PromotionType.FIXED_AMOUNT_DISCOUNT]: 'Montant Fixe',
-        [PromotionType.BEST_PRICE]: 'Meilleur Prix',
-        [PromotionType.AMOUNT_PER_UNIT]: 'Montant par Unité',
-        [PromotionType.FREE_PROMO_UNIT]: 'Unité Promo Gratuite',
-        [PromotionType.FLAT_AMOUNT_DISCOUNT]: 'Montant Forfaitaire',
-        [PromotionType.REPLACE_PRICE]: 'Prix de Remplacement'
+        [PromotionType.PERCENTAGE_DISCOUNT]: '% Remise Pourcentage',
+        [PromotionType.AMOUNT_PER_UNIT]: 'MAD par Unité',
+        [PromotionType.BEST_PRICE]: 'Prix Maximum',
+        [PromotionType.FREE_UNIT]: 'Unités Gratuites',
+        [PromotionType.FREE_PROMO_UNIT]: 'Unités Promo Gratuites',
+        [PromotionType.FLAT_AMOUNT_DISCOUNT]: 'Remise Forfaitaire',
+        [PromotionType.REPLACE_PRICE]: 'Remplacer Prix'
     };
 
     const promoTypeDescriptions = {
-        [PromotionType.PERCENTAGE_DISCOUNT]: 'Appliquer une remise en pourcentage (ex: 10 = 10%)',
-        [PromotionType.FIXED_AMOUNT_DISCOUNT]: 'Soustraire un montant fixe en MAD',
-        [PromotionType.BEST_PRICE]: 'Définir le prix maximum par unité',
-        [PromotionType.AMOUNT_PER_UNIT]: 'Remise par unité achetée',
-        [PromotionType.FREE_PROMO_UNIT]: 'Unités gratuites d\'un produit différent',
-        [PromotionType.FLAT_AMOUNT_DISCOUNT]: 'Remise forfaitaire indépendante de la quantité',
-        [PromotionType.REPLACE_PRICE]: 'Remplacer le prix unitaire par un prix spécial'
+        [PromotionType.PERCENTAGE_DISCOUNT]: 'Type 1: -10 = 10% de remise',
+        [PromotionType.AMOUNT_PER_UNIT]: 'Type 2: -5 = 5 MAD de remise par unité',
+        [PromotionType.BEST_PRICE]: 'Type 3: 50 = prix max 50 MAD par unité',
+        [PromotionType.FREE_UNIT]: 'Type 4: -2 = 2 unités gratuites',
+        [PromotionType.FREE_PROMO_UNIT]: 'Type 5: -10 = 10 unités promo gratuites',
+        [PromotionType.FLAT_AMOUNT_DISCOUNT]: 'Type 6: -100 = 100 MAD de remise sur total',
+        [PromotionType.REPLACE_PRICE]: 'Type 7: 76 = nouveau prix 76 MAD par unité'
     };
 
     // Get threshold label based on breakpoint type
@@ -92,14 +92,12 @@ export const PromotionLineDetailsGrid = ({ lineIndex }: PromotionLineDetailsGrid
             headerName: 'Type de Remise',
             editable: true,
             cellEditor: 'agSelectCellEditor',
-            cellEditorParams: (params: any) => {
-                return {
-                    values: promoTypeOptions,
-                    formatValue: (value: any) => {
-                        const type = Number(value) as PromotionType;
-                        return promoTypeLabels[type] || `Type ${type}`;
-                    }
-                };
+            cellEditorParams: {
+                values: promoTypeOptions,
+                formatValue: (value: any) => {
+                    const type = Number(value) as PromotionType;
+                    return promoTypeLabels[type] || `Type ${type}`;
+                }
             },
             valueFormatter: (params) => {
                 const type = params.value as PromotionType;
@@ -190,11 +188,11 @@ export const PromotionLineDetailsGrid = ({ lineIndex }: PromotionLineDetailsGrid
                 if (type === PromotionType.AMOUNT_PER_UNIT) {
                     return `${value.toFixed(2)} MAD/unité`;
                 }
-                if (type === PromotionType.FIXED_AMOUNT_DISCOUNT || type === PromotionType.FLAT_AMOUNT_DISCOUNT) {
+                if (type === PromotionType.FLAT_AMOUNT_DISCOUNT) {
                     return `${value.toFixed(2)} MAD`;
                 }
-                if (type === PromotionType.FREE_PROMO_UNIT) {
-                    return `${value} unité(s) gratuite(s)`;
+                if (type === PromotionType.FREE_UNIT || type === PromotionType.FREE_PROMO_UNIT) {
+                    return `${Math.abs(value)} unité(s) gratuite(s)`;
                 }
                 return `${value}`;
             },
@@ -207,13 +205,13 @@ export const PromotionLineDetailsGrid = ({ lineIndex }: PromotionLineDetailsGrid
                 if (!params.data) return '';
                 const type = params.data.promo_type;
                 const descriptions: Record<number, string> = {
-                    [PromotionType.PERCENTAGE_DISCOUNT]: 'Valeur en pourcentage (ex: 10 = 10% de remise)',
-                    [PromotionType.FIXED_AMOUNT_DISCOUNT]: 'Montant fixe de remise en MAD soustrait du total',
-                    [PromotionType.BEST_PRICE]: 'Prix maximum par unité en MAD (le produit ne coûtera pas plus cher)',
-                    [PromotionType.AMOUNT_PER_UNIT]: 'Montant de remise par unité achetée en MAD',
-                    [PromotionType.FREE_PROMO_UNIT]: 'Nombre d\'unités gratuites d\'un produit différent',
-                    [PromotionType.FLAT_AMOUNT_DISCOUNT]: 'Montant forfaitaire de remise en MAD (indépendant de la quantité)',
-                    [PromotionType.REPLACE_PRICE]: 'Nouveau prix par unité en MAD (remplace le prix original)'
+                    [PromotionType.PERCENTAGE_DISCOUNT]: 'Pourcentage: -10 = 10% de remise',
+                    [PromotionType.AMOUNT_PER_UNIT]: 'Par unité: -5 = 5 MAD de remise par unité',
+                    [PromotionType.BEST_PRICE]: 'Prix max: 50 = ne dépassera pas 50 MAD/unité',
+                    [PromotionType.FREE_UNIT]: 'Unités gratuites: -2 = 2 unités gratuites',
+                    [PromotionType.FREE_PROMO_UNIT]: 'Promo gratuites: -10 = 10 unités promo gratuites',
+                    [PromotionType.FLAT_AMOUNT_DISCOUNT]: 'Forfaitaire: -100 = 100 MAD de remise totale',
+                    [PromotionType.REPLACE_PRICE]: 'Nouveau prix: 76 = prix devient 76 MAD/unité'
                 };
                 return descriptions[type] || 'Valeur de la remise selon le type sélectionné';
             },

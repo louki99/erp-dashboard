@@ -13,16 +13,17 @@ import {
     Plus,
     Edit,
     Trash2,
-    Eye,
     Clock,
     CheckCircle,
     XCircle,
     Copy,
     Zap,
-    Loader2
+    Loader2,
+    X
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { ConfirmationModal } from '@/components/common/ConfirmationModal';
+import { PromotionFormRedesigned } from './components/PromotionFormRedesigned';
 
 
 export const PromotionsPage = () => {
@@ -34,6 +35,8 @@ export const PromotionsPage = () => {
     const [showDeleteModal, setShowDeleteModal] = useState(false);
     const [promotionToDelete, setPromotionToDelete] = useState<number | null>(null);
     const [isDeleting, setIsDeleting] = useState(false);
+    const [isEditDrawerOpen, setIsEditDrawerOpen] = useState(false);
+    const [editingPromotionId, setEditingPromotionId] = useState<number | null>(null);
 
     const loadPromotions = async () => {
         try {
@@ -187,26 +190,17 @@ export const PromotionsPage = () => {
             headerName: 'Actions',
             width: 140,
             cellRenderer: (params: any) => {
-                const promotion = params.data as Promotion;
+                const promo = params.data as Promotion;
                 
                 return (
-                    <div className="flex items-center justify-center gap-1 h-full">
+                    <div className="flex items-center gap-1 h-full">
                         <button
                             onClick={(e) => {
                                 e.stopPropagation();
-                                setSelectedPromotion(promotion);
+                                setEditingPromotionId(promo.id!);
+                                setIsEditDrawerOpen(true);
                             }}
-                            className="p-1.5 text-purple-600 hover:bg-purple-50 rounded transition-colors"
-                            title="Voir détails"
-                        >
-                            <Eye className="w-4 h-4" />
-                        </button>
-                        <button
-                            onClick={(e) => {
-                                e.stopPropagation();
-                                navigate(`/promotions/${promotion.id}/edit`);
-                            }}
-                            className="p-1.5 text-gray-600 hover:bg-gray-50 rounded transition-colors"
+                            className="p-1.5 text-blue-600 hover:bg-blue-50 rounded transition-colors"
                             title="Modifier"
                         >
                             <Edit className="w-4 h-4" />
@@ -214,9 +208,9 @@ export const PromotionsPage = () => {
                         <button
                             onClick={(e) => {
                                 e.stopPropagation();
-                                handleClone(promotion.id!);
+                                handleClone(promo.id!);
                             }}
-                            className="p-1.5 text-blue-600 hover:bg-blue-50 rounded transition-colors"
+                            className="p-1.5 text-purple-600 hover:bg-purple-50 rounded transition-colors"
                             title="Cloner"
                         >
                             <Copy className="w-4 h-4" />
@@ -224,7 +218,7 @@ export const PromotionsPage = () => {
                         <button
                             onClick={(e) => {
                                 e.stopPropagation();
-                                handleDeleteClick(promotion.id!);
+                                handleDeleteClick(promo.id!);
                             }}
                             className="p-1.5 text-red-600 hover:bg-red-50 rounded transition-colors"
                             title="Supprimer"
@@ -241,36 +235,16 @@ export const PromotionsPage = () => {
 
     const SidebarContent = (
         <div className="flex flex-col h-full bg-white border-r border-gray-200 w-full">
-            <div className="p-4 border-b border-gray-200 flex justify-between items-center bg-gray-50/50">
+            <div className="p-4 border-b border-gray-200 flex justify-between items-center bg-gradient-to-r from-purple-50 to-white">
                 <div className="flex items-center gap-2">
                     <Tag className="w-5 h-5 text-purple-600" />
-                    <h2 className="font-bold text-gray-900">Promotions</h2>
+                    <h2 className="font-bold text-gray-900 text-lg">Promotions</h2>
                 </div>
-                <div className="text-xs px-2 py-1 bg-purple-100 text-purple-700 rounded-full font-medium">
+                <div className="text-xs px-3 py-1 bg-purple-600 text-white rounded-full font-semibold shadow-sm">
                     {promotions.length}
                 </div>
             </div>
 
-            <div className="p-3 border-b border-gray-200 bg-white">
-                <div className="grid grid-cols-2 gap-2 mb-3 text-xs">
-                    <div className="p-2 bg-green-50 rounded">
-                        <div className="text-green-600 font-medium">Actives</div>
-                        <div className="text-green-900 font-bold text-lg">{stats.active}</div>
-                    </div>
-                    <div className="p-2 bg-blue-50 rounded">
-                        <div className="text-blue-600 font-medium">À venir</div>
-                        <div className="text-blue-900 font-bold text-lg">{stats.upcoming}</div>
-                    </div>
-                    <div className="p-2 bg-orange-50 rounded">
-                        <div className="text-orange-600 font-medium">Expirées</div>
-                        <div className="text-orange-900 font-bold text-lg">{stats.expired}</div>
-                    </div>
-                    <div className="p-2 bg-gray-50 rounded">
-                        <div className="text-gray-600 font-medium">Total</div>
-                        <div className="text-gray-900 font-bold text-lg">{stats.total}</div>
-                    </div>
-                </div>
-            </div>
 
 
             <div className="flex-1 w-full overflow-hidden">
@@ -285,54 +259,48 @@ export const PromotionsPage = () => {
     );
 
     const DetailView = selectedPromotion ? (
-        <div className="flex flex-col h-full bg-slate-50 overflow-hidden">
-            <div className="bg-white border-b border-gray-200 p-6">
+        <div className="flex flex-col h-full bg-gradient-to-br from-slate-50 to-white overflow-hidden">
+            <div className="bg-white border-b border-gray-200 p-6 shadow-sm">
                 <div className="flex justify-between items-start">
-                    <div>
-                        <h1 className="text-2xl font-bold text-gray-900 mb-1">
-                            {selectedPromotion.name}
-                        </h1>
-                        <div className="flex items-center gap-4 text-sm text-gray-500">
-                            <span className="flex items-center gap-1">
-                                <Clock className="w-4 h-4" /> {new Date(selectedPromotion.start_date).toLocaleDateString('fr-FR')} - {new Date(selectedPromotion.end_date).toLocaleDateString('fr-FR')}
-                            </span>
-                            <span className="uppercase font-medium">{selectedPromotion.code}</span>
+                    <div className="flex-1">
+                        <div className="flex items-center gap-3 mb-2">
+                            <h1 className="text-2xl font-bold text-gray-900">
+                                {selectedPromotion.name}
+                            </h1>
+                            {getStatusBadge(selectedPromotion)}
                         </div>
-                    </div>
-                    <div className="text-right">
-                        {getStatusBadge(selectedPromotion)}
+                        <div className="flex items-center gap-4 text-sm text-gray-500">
+                            <span className="flex items-center gap-1.5 px-2 py-1 bg-gray-50 rounded">
+                                <Clock className="w-4 h-4" /> 
+                                <span className="font-medium">{new Date(selectedPromotion.start_date).toLocaleDateString('fr-FR')}</span>
+                                <span className="text-gray-400">→</span>
+                                <span className="font-medium">{new Date(selectedPromotion.end_date).toLocaleDateString('fr-FR')}</span>
+                            </span>
+                            <span className="px-2 py-1 bg-purple-50 text-purple-700 rounded font-mono text-xs font-semibold">{selectedPromotion.code}</span>
+                        </div>
                     </div>
                 </div>
             </div>
 
             <div className="flex-1 overflow-auto p-6">
-                <div className="space-y-4">
-                    <div className="bg-white rounded-lg border border-gray-200 p-6">
-                        <h3 className="text-lg font-semibold text-gray-900 mb-4">Informations Générales</h3>
-                        <div className="grid grid-cols-2 gap-4">
-                            <div>
-                                <p className="text-xs text-gray-600 mb-1">Code</p>
-                                <p className="font-medium text-gray-900">{selectedPromotion.code}</p>
+                <div className="space-y-4 max-w-4xl">
+                    <div className="bg-white rounded-lg border border-gray-200 p-6 shadow-sm">
+                        <h3 className="text-base font-semibold text-gray-900 mb-4 flex items-center gap-2">
+                            <div className="w-1 h-5 bg-purple-500 rounded-full"></div>
+                            Informations Générales
+                        </h3>
+                        <div className="grid grid-cols-3 gap-4">
+                            <div className="p-3 bg-gray-50 rounded-lg">
+                                <p className="text-xs text-gray-600 mb-1 font-medium">Code</p>
+                                <p className="font-semibold text-gray-900 font-mono">{selectedPromotion.code}</p>
                             </div>
-                            <div>
-                                <p className="text-xs text-gray-600 mb-1">Nom</p>
-                                <p className="font-medium text-gray-900">{selectedPromotion.name}</p>
+                            <div className="p-3 bg-gray-50 rounded-lg">
+                                <p className="text-xs text-gray-600 mb-1 font-medium">Séquence</p>
+                                <p className="font-semibold text-gray-900">{selectedPromotion.sequence}</p>
                             </div>
-                            <div>
-                                <p className="text-xs text-gray-600 mb-1">Date de début</p>
-                                <p className="font-medium text-gray-900">{new Date(selectedPromotion.start_date).toLocaleDateString('fr-FR')}</p>
-                            </div>
-                            <div>
-                                <p className="text-xs text-gray-600 mb-1">Date de fin</p>
-                                <p className="font-medium text-gray-900">{new Date(selectedPromotion.end_date).toLocaleDateString('fr-FR')}</p>
-                            </div>
-                            <div>
-                                <p className="text-xs text-gray-600 mb-1">Séquence</p>
-                                <p className="font-medium text-gray-900">{selectedPromotion.sequence}</p>
-                            </div>
-                            <div>
-                                <p className="text-xs text-gray-600 mb-1">Lignes</p>
-                                <p className="font-medium text-gray-900">{selectedPromotion.lines?.length || 0}</p>
+                            <div className="p-3 bg-gray-50 rounded-lg">
+                                <p className="text-xs text-gray-600 mb-1 font-medium">Règles</p>
+                                <p className="font-semibold text-gray-900">{selectedPromotion.lines?.length || 0} ligne(s)</p>
                             </div>
                         </div>
                         {selectedPromotion.description && (
@@ -344,16 +312,19 @@ export const PromotionsPage = () => {
                     </div>
 
                     {selectedPromotion.usage_count !== undefined && (
-                        <div className="bg-white rounded-lg border border-gray-200 p-6">
-                            <h3 className="text-lg font-semibold text-gray-900 mb-4">Statistiques</h3>
+                        <div className="bg-white rounded-lg border border-gray-200 p-6 shadow-sm">
+                            <h3 className="text-base font-semibold text-gray-900 mb-4 flex items-center gap-2">
+                                <div className="w-1 h-5 bg-blue-500 rounded-full"></div>
+                                Statistiques d'Utilisation
+                            </h3>
                             <div className="grid grid-cols-2 gap-4">
-                                <div className="p-4 bg-blue-50 rounded-lg text-center">
-                                    <p className="text-xs text-blue-600">Utilisations</p>
-                                    <p className="text-2xl font-bold text-blue-700 mt-1">{selectedPromotion.usage_count}</p>
+                                <div className="p-5 bg-gradient-to-br from-blue-50 to-blue-100/50 rounded-lg border border-blue-200/50">
+                                    <p className="text-xs text-blue-700 font-semibold uppercase tracking-wide">Utilisations</p>
+                                    <p className="text-3xl font-bold text-blue-900 mt-2">{selectedPromotion.usage_count}</p>
                                 </div>
-                                <div className="p-4 bg-green-50 rounded-lg text-center">
-                                    <p className="text-xs text-green-600">Remise Totale</p>
-                                    <p className="text-2xl font-bold text-green-700 mt-1">{selectedPromotion.total_discount?.toLocaleString()} MAD</p>
+                                <div className="p-5 bg-gradient-to-br from-green-50 to-green-100/50 rounded-lg border border-green-200/50">
+                                    <p className="text-xs text-green-700 font-semibold uppercase tracking-wide">Remise Totale</p>
+                                    <p className="text-3xl font-bold text-green-900 mt-2">{selectedPromotion.total_discount?.toLocaleString()} <span className="text-lg">MAD</span></p>
                                 </div>
                             </div>
                         </div>
@@ -448,6 +419,27 @@ export const PromotionsPage = () => {
                 variant="danger"
                 isLoading={isDeleting}
             />
+
+            {isEditDrawerOpen && editingPromotionId && (
+                <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-sm">
+                    <div className="fixed inset-0 bg-white overflow-auto">
+                        <div className="sticky top-0 z-10 bg-white border-b border-gray-200 px-6 py-4 flex items-center justify-between shadow-sm">
+                            <h2 className="text-xl font-bold text-gray-900">Modifier la Promotion</h2>
+                            <button
+                                onClick={() => {
+                                    setIsEditDrawerOpen(false);
+                                    setEditingPromotionId(null);
+                                    loadPromotions();
+                                }}
+                                className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
+                            >
+                                <X className="w-5 h-5 text-gray-500" />
+                            </button>
+                        </div>
+                        <PromotionFormRedesigned key={editingPromotionId} />
+                    </div>
+                </div>
+            )}
         </>
     );
 };

@@ -15,6 +15,8 @@ interface DataGridProps {
     onCellValueChanged?: (event: any) => void;
     rowSelection?: 'single' | 'multiple';
     loading?: boolean;
+    pagination?: boolean;
+    paginationPageSize?: number;
     getRowClass?: (params: any) => string;
     isRowSelectable?: (params: any) => boolean;
     defaultSelectedIds?: (row: any) => boolean; // Function to determine if a row should be selected by default
@@ -31,6 +33,8 @@ export const DataGrid = forwardRef<AgGridReact, DataGridProps>(({
     onCellValueChanged,
     rowSelection = 'single',
     loading,
+    pagination = false,
+    paginationPageSize = 10,
     getRowClass,
     isRowSelectable,
     defaultSelectedIds,
@@ -167,6 +171,8 @@ export const DataGrid = forwardRef<AgGridReact, DataGridProps>(({
                     headerHeight={40}
                     rowHeight={customRowHeight ?? 36}
                     loading={loading}
+                    paginationPageSize={paginationPageSize}
+                    pagination={pagination}
                     overlayLoadingTemplate={'<span class="ag-overlay-loading-center">Chargement...</span>'}
                 />
             </div>
