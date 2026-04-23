@@ -66,6 +66,9 @@ export interface ProductFlags {
     is_weight_managed?: boolean;
     decimal_step?: string;
     min_quantity_order?: string;
+    requires_preparation?: boolean;
+    delivery_unit?: string | null;
+    allow_partial_delivery?: boolean;
 }
 
 export interface ProductMarketing {
@@ -113,10 +116,16 @@ export interface ProductStock {
     quantity: number;
     available_quantity?: number;
     reserved_quantity?: number;
+    minimum_quantity?: number;
+    maximum_quantity?: number;
     branch?: {
         id: number;
         name: string;
         code: string;
+        address?: string;
+        phone?: string;
+        email?: string;
+        geo_area_code?: string;
     };
 }
 
@@ -137,6 +146,8 @@ export interface Product {
     slug?: string;
     price: number | string;
     discount_price?: number | string;
+    price_ttc?: number | string;
+    ttc_pricing?: boolean;
     quantity?: number;
     min_order_quantity?: number;
     brand_id?: number;
@@ -145,6 +156,10 @@ export interface Product {
     description?: string;
     buy_price?: number | string;
     has_colisage?: boolean;
+    promo_unit?: string;
+    productpage_code?: string;
+    barcode?: string;
+    video_id?: number | null;
     is_active: boolean;
     is_approve?: boolean;
     is_new?: boolean;

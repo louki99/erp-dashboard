@@ -6,6 +6,9 @@ export default {
 	],
 	theme: {
 		extend: {
+			fontFamily: {
+				sans: ['Cairo', 'system-ui', '-apple-system', 'BlinkMacSystemFont', 'Segoe UI', 'Roboto', 'sans-serif'],
+			},
 			borderRadius: {
 				lg: 'var(--radius)',
 				md: 'calc(var(--radius) - 2px)',

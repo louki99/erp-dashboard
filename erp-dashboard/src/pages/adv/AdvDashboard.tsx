@@ -37,45 +37,48 @@ const AdvDashboardContent = () => {
         );
     }
 
-    const { stats, creditAlerts } = data;
+    const stats = data.stats ?? {};
+    const creditAlerts = Array.isArray(data.creditAlerts) ? data.creditAlerts : [];
+
+    const num = (v: unknown): number => (v != null && v !== '' ? Number(v) : 0);
 
     // Derived Stats for UI
     const KPI_CARDS = [
         {
             label: 'Commandes à Valider',
-            value: stats.pending_bc.toString(),
+            value: String(num(stats.pending_bc)),
             change: 'Active',
             icon: FileCheck,
             color: 'text-amber-600',
             bg: 'bg-amber-100',
-            trend: 'down' // Placeholder logic
+            trend: 'down' as const
         },
         {
             label: 'Partenaires Bloqués',
-            value: stats.blocked_partners.toString(),
+            value: String(num(stats.blocked_partners)),
             change: 'Action req.',
             icon: Ban,
             color: 'text-red-600',
             bg: 'bg-red-100',
-            trend: 'down'
+            trend: 'down' as const
         },
         {
             label: 'Encours Global',
-            value: `${Number(stats.total_credit_exposure).toLocaleString()} Dh`,
+            value: `${num(stats.total_credit_exposure).toLocaleString()} Dh`,
             change: 'Total Exposure',
             icon: TrendingUp,
             color: 'text-emerald-600',
             bg: 'bg-emerald-100',
-            trend: 'up'
+            trend: 'up' as const
         },
         {
             label: 'Validation Tiers',
-            value: stats.pending_partners.toString(),
+            value: String(num(stats.pending_partners)),
             change: 'New',
             icon: Users,
             color: 'text-blue-600',
             bg: 'bg-blue-100',
-            trend: 'neutral'
+            trend: 'neutral' as const
         },
     ];
 
@@ -153,12 +156,12 @@ const AdvDashboardContent = () => {
                             Alerte Crédit PARTENAIRES
                         </h3>
                         <div className="space-y-4">
-                            {creditAlerts.length > 0 ? creditAlerts.map((alert) => (
-                                <div key={alert.id} className="flex gap-3 items-start border-l-2 border-amber-400 pl-3">
+                            {creditAlerts.length > 0 ? creditAlerts.map((alert, idx) => (
+                                <div key={alert?.id ?? idx} className="flex gap-3 items-start border-l-2 border-amber-400 pl-3">
                                     <div>
-                                        <p className="text-sm text-gray-800 font-bold leading-tight">{alert.name}</p>
-                                        <p className="text-xs text-gray-500 mt-1">Utilisé: {Number(alert.credit_used).toLocaleString()} / {Number(alert.credit_limit).toLocaleString()}</p>
-                                        <p className="text-[10px] text-gray-400 mt-0.5">{new Date(alert.created_at).toLocaleDateString()}</p>
+                                        <p className="text-sm text-gray-800 font-bold leading-tight">{alert?.name ?? '—'}</p>
+                                        <p className="text-xs text-gray-500 mt-1">Utilisé: {Number(alert?.credit_used ?? 0).toLocaleString()} / {Number(alert?.credit_limit ?? 0).toLocaleString()}</p>
+                                        {alert?.created_at && <p className="text-[10px] text-gray-400 mt-0.5">{new Date(alert.created_at).toLocaleDateString()}</p>}
                                     </div>
                                 </div>
                             )) : (

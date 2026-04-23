@@ -6,7 +6,7 @@ import { ThemeProvider } from '@/context/ThemeContext';
 import { ProtectedRoute } from '@/components/rbac';
 import { PERMISSIONS } from '@/lib/rbac/permissions';
 import { Login } from '@/pages/Login';
-import { PartnerPage } from '@/components/layout/PartnerPage';
+import { PartnerManagementPage } from '@/pages/partners/PartnerManagementPage';
 import { OrdersPage } from '@/pages/OrdersPage';
 import { PartnerBalancesPage } from '@/pages/partners/PartnerBalancesPage';
 import { Dashboard } from '@/pages/Dashboard';
@@ -52,6 +52,9 @@ import { TaskTemplateDetailPage } from './pages/workflows/TaskTemplateDetailPage
 import { WorkflowMonitoringPage } from '@/pages/workflows/WorkflowMonitoringPage';
 import { WorkflowEnginePage } from '@/pages/workflows/WorkflowEnginePage';
 import { AdminMonitoringDashboard } from '@/pages/admin/AdminMonitoringDashboard';
+import { StockManagementPage } from '@/pages/stock/StockManagementPage';
+import { PricingManagementPage } from '@/pages/pricing/PricingManagementPage';
+import { CustomFieldsPage } from '@/pages/custom-fields/CustomFieldsPage';
 
 
 // Simple Navigation Wrapper to show active route in DevSwitcher style (optional, but let's stick to MegaMenu for now)
@@ -87,7 +90,7 @@ function AppRoutes() {
 
       <Route path="/partners" element={
         <ProtectedRoute requiredPermission={PERMISSIONS.PARTNERS.INDEX}>
-          <PartnerPage />
+          <PartnerManagementPage />
         </ProtectedRoute>
       } />
 
@@ -383,6 +386,27 @@ function AppRoutes() {
       <Route path="/workflows/engine" element={
         <ProtectedRoute>
           <WorkflowEnginePage />
+        </ProtectedRoute>
+      } />
+
+      {/* Stock Management Module */}
+      <Route path="/stock-management" element={
+        <ProtectedRoute>
+          <StockManagementPage />
+        </ProtectedRoute>
+      } />
+
+      {/* Pricing Management */}
+      <Route path="/pricing" element={
+        <ProtectedRoute>
+          <PricingManagementPage />
+        </ProtectedRoute>
+      } />
+
+      {/* Custom Fields Management */}
+      <Route path="/custom-fields" element={
+        <ProtectedRoute>
+          <CustomFieldsPage />
         </ProtectedRoute>
       } />
 

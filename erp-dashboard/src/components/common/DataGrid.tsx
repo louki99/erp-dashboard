@@ -1,6 +1,6 @@
 import { AgGridReact } from 'ag-grid-react';
 import { AllCommunityModule, ModuleRegistry } from 'ag-grid-community';
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, forwardRef } from 'react';
 
 // Register all Community features
 ModuleRegistry.registerModules([AllCommunityModule]);
@@ -11,6 +11,8 @@ interface DataGridProps {
     onRowSelected?: (data: any) => void;
     onSelectionChanged?: (rows: any[]) => void;
     onRowDoubleClicked?: (data: any) => void;
+    onRowClicked?: (event: any) => void;
+    onCellValueChanged?: (event: any) => void;
     rowSelection?: 'single' | 'multiple';
     loading?: boolean;
     pagination?: boolean;
@@ -18,22 +20,26 @@ interface DataGridProps {
     getRowClass?: (params: any) => string;
     isRowSelectable?: (params: any) => boolean;
     defaultSelectedIds?: (row: any) => boolean; // Function to determine if a row should be selected by default
+    rowHeight?: number;
 }
 
-export const DataGrid = ({
+export const DataGrid = forwardRef<AgGridReact, DataGridProps>(({
     rowData,
     columnDefs,
     onRowSelected,
     onSelectionChanged,
     onRowDoubleClicked,
+    onRowClicked,
+    onCellValueChanged,
     rowSelection = 'single',
     loading,
     pagination = false,
     paginationPageSize = 10,
     getRowClass,
     isRowSelectable,
-    defaultSelectedIds
-}: DataGridProps) => {
+    defaultSelectedIds,
+    rowHeight: customRowHeight,
+}, ref) => {
     const [gridApi, setGridApi] = useState<any>(null);
     const isInitializingSelection = useRef(false);
     const previousSelectedIdsRef = useRef<Set<any>>(new Set());
@@ -116,6 +122,9 @@ export const DataGrid = ({
               --ag-selected-row-background-color: #ccd6db;
               --ag-cell-horizontal-padding: 12px;
           }
+          .ag-theme-custom .ag-row {
+              cursor: pointer;
+          }
           .ag-header-cell-label {
              font-weight: 600;
           }
@@ -123,6 +132,7 @@ export const DataGrid = ({
             </style>
             <div className="h-full w-full ag-theme-custom">
                 <AgGridReact
+                    ref={ref}
                     rowData={rowData}
                     columnDefs={columnDefs}
                     defaultColDef={defaultColDef}
@@ -150,10 +160,16 @@ export const DataGrid = ({
                             onRowDoubleClicked(event.data);
                         }
                     }}
+                    onRowClicked={(event) => {
+                        if (onRowClicked) {
+                            onRowClicked(event);
+                        }
+                    }}
+                    onCellValueChanged={onCellValueChanged}
                     onGridReady={onGridReady}
                     animateRows={true}
                     headerHeight={40}
-                    rowHeight={36}
+                    rowHeight={customRowHeight ?? 36}
                     loading={loading}
                     paginationPageSize={paginationPageSize}
                     pagination={pagination}
@@ -162,4 +178,6 @@ export const DataGrid = ({
             </div>
         </div>
     );
-};
+});
+
+DataGrid.displayName = 'DataGrid';
