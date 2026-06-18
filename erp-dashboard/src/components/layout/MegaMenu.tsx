@@ -69,15 +69,17 @@ const ITEM_PERMISSIONS: Record<string, string> = {
     'Validation BC': 'admin.adv.bc.validate',
     'Dérogations Crédit': 'admin.adv.credit.approve-increase',
     
-    // Dispatcher
-    'Tableau de bord Dispatcher': 'admin.dispatcher.dashboard',
-    'Commandes en attente': 'admin.dispatcher.orders',
-    'BL brouillons': 'admin.dispatcher.delivery.create',
-    'BL (liste)': 'admin.dispatcher.delivery.index',
-    'Créer BCH': 'admin.dispatcher.loading.create',
-    'BCH (liste)': 'admin.dispatcher.loading.index',
-    'Décharges (liste)': 'admin.dispatcher.unloading.index',
-    
+    // Dispatcher — intentionally NO ITEM_PERMISSIONS entries here. Confirmed by backend
+    // 2026-06-17: /dispatcher/* auth is role-based only (auth:sanctum + role dispatcher/root/
+    // admin), no granular permission slugs exist at all for this module. The slugs that used to
+    // be listed here (admin.dispatcher.loading.index, admin.dispatcher.delivery.index, etc.) were
+    // fictional and silently hid every dispatcher menu item for non-admin users — hasPermission()
+    // only auto-passes for admin/super-admin role, so a real user with the `dispatcher` role but
+    // not `admin` would never see any of these links. hasPermission(undefined) returns true, so
+    // omitting the entries makes every item visible to anyone who can see the Dispatcher module
+    // itself (gated by the module-level requiredRole: 'dispatcher' below) — which matches the
+    // real auth model.
+
     // Magasinier
     'Tableau de bord Magasinier': 'admin.warehouse.dashboard',
     'Bons de préparation': 'admin.warehouse.picking',
@@ -212,16 +214,36 @@ const MENU_DATA: ModuleData[] = [
                 items: ['Commandes en attente']
             },
             {
-                title: 'Bon de Livraison',
-                items: ['BL brouillons', 'BL (liste)']
+                title: 'Workspaces',
+                items: ['Workspace Planification', 'Workspace Chargement', 'Moniteur Logistique']
             },
             {
-                title: 'Bon de Chargement',
-                items: ['Créer BCH', 'BCH (liste)']
+                title: 'Delivery Orders',
+                items: ['Delivery Orders']
+            },
+            {
+                title: 'Bons de Livraison',
+                items: ['BL (liste)']
+            },
+            {
+                title: 'Bons de Chargement',
+                items: ['BCH (liste)']
+            },
+            {
+                title: 'Ruptures',
+                items: ['File de ruptures']
             },
             {
                 title: 'Décharges',
                 items: ['Décharges (liste)']
+            },
+            {
+                title: 'Transferts Entrepôt',
+                items: ['Transferts entrepôt (liste)']
+            },
+            {
+                title: 'Flotte & Livreurs',
+                items: ['Flotte & Livreurs']
             }
         ]
     },
@@ -634,11 +656,18 @@ export const MegaMenu: React.FC<MegaMenuProps> = ({ isOpen, onClose, initialSear
         // Dispatcher Module Routes
         'Tableau de bord Dispatcher': '/dispatcher',
         'Commandes en attente': '/dispatcher/orders',
-        'BL brouillons': '/dispatcher/bon-livraisons/draft',
-        'BL (liste)': '/dispatcher/bon-livraisons',
-        'Créer BCH': '/dispatcher/bon-chargements/create',
-        'BCH (liste)': '/dispatcher/bon-chargements',
+        'Workspace Planification': '/dispatcher/workspace/planning',
+        'Workspace Chargement': '/dispatcher/workspace/loading',
+        'Moniteur Logistique': '/dispatcher/monitor',
+        'Delivery Orders': '/dispatcher/delivery-orders',
+        'BL brouillons': '/dispatcher/bons-livraisons',
+        'BL (liste)': '/dispatcher/bons-livraisons',
+        'Créer BCH': '/dispatcher/bons-chargements',
+        'BCH (liste)': '/dispatcher/bons-chargements',
+        'File de ruptures': '/dispatcher/shortage-queue',
         'Décharges (liste)': '/dispatcher/decharges',
+        'Transferts entrepôt (liste)': '/dispatcher/warehouse-transfers',
+        'Flotte & Livreurs': '/dispatcher/fleet',
 
         // Magasinier Module Routes
         'Tableau de bord Magasinier': '/magasinier',

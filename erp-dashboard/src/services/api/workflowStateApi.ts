@@ -1,8 +1,23 @@
 import apiClient from './client';
 
+export interface WorkflowField {
+    name: string;
+    type: 'textarea' | 'number' | 'text' | 'select';
+    label: string;
+    required: boolean;
+    min_length?: number;
+    placeholder?: string;
+    options?: Array<{ value: string | number; label: string }>;
+}
+
 export interface WorkflowAction {
     action: string;
     label: string;
+    description?: string;
+    intent?: string;
+    confirm?: boolean;
+    danger?: boolean;
+    fields?: WorkflowField[];
     metadata?: {
         can_execute?: boolean;
         required_role?: string;
@@ -24,6 +39,7 @@ export interface WorkflowTransitionRequest {
     comment?: string;
     metadata?: Record<string, any>;
     force?: boolean;
+    fields?: Record<string, any>;
 }
 
 export interface WorkflowTransitionResponse {
@@ -62,8 +78,63 @@ export interface ValidationResult {
 }
 
 const WORKFLOW_BASE = '/api/workflow';
+const BACKEND_WORKFLOW_BASE = '/api/backend/workflow';
 
 export const workflowStateApi = {
+    bonCommande: {
+        getDecisions: async (orderId: number): Promise<WorkflowState> => {
+            const response = await apiClient.get(
+                `${BACKEND_WORKFLOW_BASE}/bon-commande/${orderId}/decisions`
+            );
+            const d = response.data;
+            // Normalize: API returns { decisions: [...] } or { actions: [...] }
+            // Each decision has { decision, label, description, intent, confirm, danger, fields }
+            // We map decision → action and set can_execute: true (all returned decisions are executable)
+            const raw: any[] = d.decisions ?? d.actions ?? [];
+            return {
+                success: d.success ?? true,
+                current_state: d.current_state,
+                current_step_name: d.current_step_name,
+                workflow_status: d.workflow_status,
+                actions: raw.map(item => ({
+                    action: item.decision ?? item.action,
+                    label: item.label,
+                    description: item.description,
+                    intent: item.intent,
+                    confirm: item.confirm ?? true,
+                    danger: item.danger ?? false,
+                    fields: item.fields ?? [],
+                    metadata: {
+                        can_execute: true,
+                        ...(item.metadata ?? {}),
+                    },
+                })),
+                metadata: d.metadata,
+            };
+        },
+
+        execute: async (orderId: number, data: WorkflowTransitionRequest): Promise<WorkflowTransitionResponse> => {
+            const response = await apiClient.post<WorkflowTransitionResponse>(
+                `${BACKEND_WORKFLOW_BASE}/bon-commande/${orderId}/execute`,
+                {
+                    decision: data.action,
+                    force: data.force,
+                    // Spread dynamic fields (justification, reason, payment_term_id, etc.)
+                    ...(data.fields ?? {}),
+                }
+            );
+            return response.data;
+        },
+
+        getHistory: async (orderId: number): Promise<{ success: boolean; history: WorkflowHistory[] }> => {
+            const response = await apiClient.get<{ success: boolean; history: WorkflowHistory[] }>(
+                `${BACKEND_WORKFLOW_BASE}/bon-commande/${orderId}/history`
+            );
+            return response.data;
+        },
+    },
+
+
     order: {
         getAllowedActions: async (orderId: number): Promise<WorkflowState> => {
             const response = await apiClient.get<WorkflowState>(

@@ -1,268 +1,363 @@
 import { useState } from 'react';
-import { Button } from '@/components/ui/button';
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
-import { Textarea } from '@/components/ui/textarea';
-import { Label } from '@/components/ui/label';
-import { Checkbox } from '@/components/ui/checkbox';
-import { CheckCircle, XCircle, Pause, AlertCircle, Loader2, Clock, Ban } from 'lucide-react';
+import {
+    CheckCircle, XCircle, Pause, Play, ShieldAlert, Loader2,
+    Clock, Ban, CreditCard, ArrowRight, AlertTriangle, Info,
+} from 'lucide-react';
 import { useAdvWorkflow } from '@/hooks/adv/useAdvWorkflow';
 import { WorkflowStateIndicator } from '@/components/workflow/WorkflowStateIndicator';
-import type { WorkflowAction } from '@/services/api/workflowStateApi';
+import type { WorkflowAction, WorkflowField } from '@/services/api/workflowStateApi';
+import { cn } from '@/lib/utils';
 
 interface BCWorkflowActionsProps {
     orderId: number;
     onSuccess?: () => void;
 }
 
-interface ActionConfig {
-    icon: any;
-    variant: 'default' | 'destructive' | 'outline' | 'secondary';
-    className?: string;
-    requiresComment?: boolean;
-    showForceOption?: boolean;
-    dialogTitle: string;
-    dialogDescription: string;
-}
+// ─── Intent → visual config ───────────────────────────────────────────────────
 
-// Optional overrides for specific actions - only add here if you need custom styling/behavior
-const ACTION_CONFIGS: Partial<Record<string, ActionConfig>> = {
-    adv_approved: {
+const INTENT_CONFIG: Record<string, { icon: React.ElementType; btn: string; badge: string }> = {
+    APPROVE: {
         icon: CheckCircle,
-        variant: 'default',
-        className: 'bg-green-600 hover:bg-green-700',
-        requiresComment: false,
-        showForceOption: true,
-        dialogTitle: 'Approve Order',
-        dialogDescription: 'Confirm that stock and credit are available for this order.',
+        btn: 'bg-emerald-600 hover:bg-emerald-700 text-white shadow-sm shadow-emerald-200 border-transparent',
+        badge: 'bg-emerald-50 text-emerald-700 ring-emerald-200',
+    },
+    REJECT: {
+        icon: XCircle,
+        btn: 'bg-red-600 hover:bg-red-700 text-white shadow-sm shadow-red-200 border-transparent',
+        badge: 'bg-red-50 text-red-700 ring-red-200',
+    },
+    HOLD: {
+        icon: Pause,
+        btn: 'bg-white hover:bg-amber-50 text-amber-700 border border-amber-300',
+        badge: 'bg-amber-50 text-amber-700 ring-amber-200',
+    },
+    RESUME: {
+        icon: Play,
+        btn: 'bg-white hover:bg-blue-50 text-blue-700 border border-blue-300',
+        badge: 'bg-blue-50 text-blue-700 ring-blue-200',
+    },
+    CREDIT_ESCALATION: {
+        icon: ShieldAlert,
+        btn: 'bg-white hover:bg-purple-50 text-purple-700 border border-purple-300',
+        badge: 'bg-purple-50 text-purple-700 ring-purple-200',
+    },
+    CREDIT_MANAGE: {
+        icon: CreditCard,
+        btn: 'bg-white hover:bg-purple-50 text-purple-700 border border-purple-300',
+        badge: 'bg-purple-50 text-purple-700 ring-purple-200',
+    },
+    SELL: {
+        icon: CreditCard,
+        btn: 'bg-white hover:bg-blue-50 text-blue-700 border border-blue-300',
+        badge: 'bg-blue-50 text-blue-700 ring-blue-200',
+    },
+    CANCEL: {
+        icon: Ban,
+        btn: 'bg-red-600 hover:bg-red-700 text-white border-transparent',
+        badge: 'bg-red-50 text-red-700 ring-red-200',
+    },
+    DEFAULT: {
+        icon: ArrowRight,
+        btn: 'bg-white hover:bg-gray-50 text-gray-700 border border-gray-300',
+        badge: 'bg-gray-50 text-gray-600 ring-gray-200',
     },
 };
 
-// Smart defaults based on action naming patterns
-const getDefaultActionConfig = (action: string, label: string): ActionConfig => {
-    const lowerAction = action.toLowerCase();
+const getIntent = (action: WorkflowAction) => {
+    const intent = action.intent?.toUpperCase() ?? '';
+    if (INTENT_CONFIG[intent]) return INTENT_CONFIG[intent];
 
-    // Destructive actions (require comment)
-    if (lowerAction.includes('reject') || lowerAction.includes('cancel') || lowerAction.includes('delete')) {
-        return {
-            icon: lowerAction.includes('cancel') ? Ban : XCircle,
-            variant: 'destructive',
-            requiresComment: true,
-            dialogTitle: label,
-            dialogDescription: `Please provide a reason for this action.`,
-        };
-    }
-
-    // Hold/Pause actions
-    if (lowerAction.includes('hold') || lowerAction.includes('pause')) {
-        return {
-            icon: Pause,
-            variant: 'outline',
-            requiresComment: true,
-            dialogTitle: label,
-            dialogDescription: `Please provide a reason for putting this order on hold.`,
-        };
-    }
-
-    // Approval/Success actions
-    if (lowerAction.includes('approve') || lowerAction.includes('confirm') || lowerAction.includes('convert')) {
-        return {
-            icon: CheckCircle,
-            variant: 'default',
-            className: 'bg-green-600 hover:bg-green-700',
-            requiresComment: false,
-            dialogTitle: label,
-            dialogDescription: `Execute action: ${label}`,
-        };
-    }
-
-    // Review/Pending actions
-    if (lowerAction.includes('review') || lowerAction.includes('pending')) {
-        return {
-            icon: Clock,
-            variant: 'outline',
-            requiresComment: false,
-            dialogTitle: label,
-            dialogDescription: `Send for review: ${label}`,
-        };
-    }
-
-    // Default for any other action
-    return {
-        icon: CheckCircle,
-        variant: 'default',
-        requiresComment: false,
-        dialogTitle: label,
-        dialogDescription: `Execute action: ${label}`,
-    };
+    // Fallback: infer from action name
+    const a = action.action.toLowerCase();
+    if (a.includes('approve') || a.includes('confirm') || a.includes('finaliz') || a.includes('valid')) return INTENT_CONFIG.APPROVE;
+    if (a.includes('reject') || a.includes('refuse')) return INTENT_CONFIG.REJECT;
+    if (a.includes('cancel')) return INTENT_CONFIG.CANCEL;
+    if (a.includes('hold') || a.includes('pause')) return INTENT_CONFIG.HOLD;
+    if (a.includes('resume') || a.includes('repris')) return INTENT_CONFIG.RESUME;
+    if (a.includes('derog') || a.includes('credit')) return INTENT_CONFIG.CREDIT_MANAGE;
+    return INTENT_CONFIG.DEFAULT;
 };
 
-export function BCWorkflowActions({ orderId, onSuccess }: BCWorkflowActionsProps) {
-    const { workflowState, isTransitioning, actions } = useAdvWorkflow(orderId);
-    const [dialogOpen, setDialogOpen] = useState(false);
-    const [selectedAction, setSelectedAction] = useState<WorkflowAction | null>(null);
-    const [comment, setComment] = useState('');
-    const [forceApprove, setForceApprove] = useState(false);
+// ─── Dynamic field renderer ────────────────────────────────────────────────────
 
-    const handleOpenDialog = (action: WorkflowAction) => {
-        setSelectedAction(action);
-        setComment('');
-        setForceApprove(false);
-        setDialogOpen(true);
-    };
+interface FieldRendererProps {
+    field: WorkflowField;
+    value: string;
+    onChange: (v: string) => void;
+    error?: string;
+}
 
-    const handleSubmit = async () => {
-        if (!selectedAction) return;
+const FieldRenderer = ({ field, value, onChange, error }: FieldRendererProps) => (
+    <div className="space-y-1.5">
+        <label className="text-xs font-semibold text-gray-700 flex items-center gap-1">
+            {field.label}
+            {field.required && <span className="text-red-500">*</span>}
+        </label>
 
-        const config = ACTION_CONFIGS[selectedAction.action];
-        if (config?.requiresComment && !comment.trim()) {
-            alert(`Please provide a comment for ${selectedAction.label}`);
-            return;
-        }
-
-        try {
-            await actions.transition({
-                action: selectedAction.action,
-                comment: comment || undefined,
-                force: forceApprove || undefined,
-            });
-            setDialogOpen(false);
-            onSuccess?.();
-        } catch (error) {
-            console.error('Action failed:', error);
-        }
-    };
-
-    if (!workflowState) {
-        return null;
-    }
-
-    const getActionLabel = (action: WorkflowAction): string => {
-        // Use label from API if available, otherwise format the action name
-        return action.label || action.action.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
-    };
-
-    const renderActionButton = (action: WorkflowAction) => {
-        const canExecute = action.metadata?.can_execute ?? false;
-
-        // Don't show actions that can't be executed
-        if (!canExecute) return null;
-
-        const label = getActionLabel(action);
-        // Get custom config or use smart defaults
-        const config = ACTION_CONFIGS[action.action] || getDefaultActionConfig(action.action, label);
-        const Icon = config.icon;
-
-        return (
-            <Button
-                key={action.action}
-                onClick={() => handleOpenDialog(action)}
-                disabled={isTransitioning}
-                variant={config.variant}
-                className={config.className}
-            >
-                {isTransitioning ? (
-                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                ) : (
-                    <Icon className="mr-2 h-4 w-4" />
+        {(field.type === 'textarea') && (
+            <textarea
+                value={value}
+                onChange={e => onChange(e.target.value)}
+                placeholder={field.placeholder ?? ''}
+                rows={4}
+                className={cn(
+                    'w-full rounded-xl border px-3.5 py-2.5 text-sm resize-none focus:outline-none focus:ring-2 transition-all bg-gray-50 placeholder:text-gray-400',
+                    error
+                        ? 'border-red-300 focus:ring-red-300/50 bg-red-50/30'
+                        : 'border-gray-200 focus:ring-sage-400/40 focus:border-sage-400'
                 )}
-                {label}
-            </Button>
-        );
+            />
+        )}
+
+        {(field.type === 'text') && (
+            <input
+                type="text"
+                value={value}
+                onChange={e => onChange(e.target.value)}
+                placeholder={field.placeholder ?? ''}
+                className={cn(
+                    'w-full rounded-xl border px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 transition-all bg-gray-50 placeholder:text-gray-400',
+                    error
+                        ? 'border-red-300 focus:ring-red-300/50 bg-red-50/30'
+                        : 'border-gray-200 focus:ring-sage-400/40 focus:border-sage-400'
+                )}
+            />
+        )}
+
+        {(field.type === 'number') && (
+            <input
+                type="number"
+                value={value}
+                onChange={e => onChange(e.target.value)}
+                placeholder={field.placeholder ?? ''}
+                className={cn(
+                    'w-full rounded-xl border px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 transition-all bg-gray-50',
+                    error
+                        ? 'border-red-300 focus:ring-red-300/50'
+                        : 'border-gray-200 focus:ring-sage-400/40 focus:border-sage-400'
+                )}
+            />
+        )}
+
+        {error && (
+            <p className="text-xs text-red-500 flex items-center gap-1">
+                <AlertTriangle className="w-3 h-3 shrink-0" />{error}
+            </p>
+        )}
+
+        {field.min_length && !error && value && (
+            <p className={cn('text-[10px] text-right', value.length >= field.min_length ? 'text-gray-400' : 'text-amber-500')}>
+                {value.length}/{field.min_length} car. min
+            </p>
+        )}
+    </div>
+);
+
+// ─── Decision dialog ───────────────────────────────────────────────────────────
+
+interface DecisionDialogProps {
+    action: WorkflowAction;
+    isOpen: boolean;
+    isLoading: boolean;
+    onClose: () => void;
+    onSubmit: (fieldValues: Record<string, string>) => void;
+}
+
+const DecisionDialog = ({ action, isOpen, isLoading, onClose, onSubmit }: DecisionDialogProps) => {
+    const intent = getIntent(action);
+    const Icon = intent.icon;
+    const [values, setValues] = useState<Record<string, string>>({});
+    const [errors, setErrors] = useState<Record<string, string>>({});
+    const fields = action.fields ?? [];
+
+    const validate = (): boolean => {
+        const errs: Record<string, string> = {};
+        for (const f of fields) {
+            const val = (values[f.name] ?? '').trim();
+            if (f.required && !val) {
+                errs[f.name] = `Ce champ est obligatoire`;
+            } else if (f.min_length && val.length < f.min_length) {
+                errs[f.name] = `Minimum ${f.min_length} caractères (${val.length}/${f.min_length})`;
+            }
+        }
+        setErrors(errs);
+        return Object.keys(errs).length === 0;
     };
+
+    const handleSubmit = () => {
+        if (!validate()) return;
+        onSubmit(values);
+    };
+
+    const handleClose = () => {
+        setValues({});
+        setErrors({});
+        onClose();
+    };
+
+    if (!isOpen) return null;
+
+    const isDanger = action.danger;
 
     return (
-        <div className="space-y-4">
-            <div className="flex items-center justify-between">
-                <div>
-                    <h3 className="text-sm font-medium text-muted-foreground">Current State</h3>
-                    <div className="flex items-center gap-2 mt-1">
-                        <WorkflowStateIndicator state={workflowState.current_state} />
-                        <span className="text-xs text-muted-foreground">({workflowState.current_step_name})</span>
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm">
+            <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md border border-gray-200 overflow-hidden">
+                {/* Header */}
+                <div className={cn('px-6 py-5 border-b border-gray-100', isDanger ? 'bg-red-50/50' : 'bg-gray-50/50')}>
+                    <div className="flex items-start gap-3">
+                        <div className={cn('w-10 h-10 rounded-xl flex items-center justify-center shrink-0',
+                            isDanger ? 'bg-red-100' : 'bg-gray-100')}>
+                            <Icon className={cn('w-5 h-5', isDanger ? 'text-red-600' : 'text-gray-600')} />
+                        </div>
+                        <div>
+                            <h3 className="text-sm font-bold text-gray-900">{action.label}</h3>
+                            {action.description && (
+                                <p className="text-xs text-gray-500 mt-0.5 leading-relaxed">{action.description}</p>
+                            )}
+                        </div>
                     </div>
                 </div>
-            </div>
 
-            <div className="flex flex-wrap gap-2">
-                {workflowState.actions?.map(action => renderActionButton(action))}
-                {(!workflowState.actions || workflowState.actions.length === 0) && (
-                    <p className="text-sm text-muted-foreground">No actions available for current state</p>
-                )}
-            </div>
-
-            <div>louki : {workflowState.actions?.length}</div>
-
-            <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-                <DialogContent>
-                    <DialogHeader>
-                        <DialogTitle>
-                            {selectedAction && ACTION_CONFIGS[selectedAction.action]?.dialogTitle}
-                        </DialogTitle>
-                        <DialogDescription>
-                            {selectedAction && ACTION_CONFIGS[selectedAction.action]?.dialogDescription}
-                        </DialogDescription>
-                    </DialogHeader>
-
-                    <div className="space-y-4 py-4">
-                        <div className="space-y-2">
-                            <Label htmlFor="comment">
-                                Comment {selectedAction && ACTION_CONFIGS[selectedAction.action]?.requiresComment && <span className="text-destructive">*</span>}
-                            </Label>
-                            <Textarea
-                                id="comment"
-                                placeholder={
-                                    selectedAction && ACTION_CONFIGS[selectedAction.action]?.requiresComment
-                                        ? 'Provide a reason...'
-                                        : 'Optional: Add a comment...'
-                                }
-                                value={comment}
-                                onChange={(e) => setComment(e.target.value)}
-                                rows={4}
-                            />
+                {/* Fields */}
+                <div className="px-6 py-5 space-y-4">
+                    {fields.length === 0 ? (
+                        <div className="flex items-center gap-2.5 p-3 bg-blue-50 border border-blue-100 rounded-xl">
+                            <Info className="w-4 h-4 text-blue-500 shrink-0" />
+                            <p className="text-xs text-blue-700">Confirmez-vous l'exécution de cette action ?</p>
                         </div>
+                    ) : (
+                        fields.map(f => (
+                            <FieldRenderer
+                                key={f.name}
+                                field={f}
+                                value={values[f.name] ?? ''}
+                                onChange={v => setValues(prev => ({ ...prev, [f.name]: v }))}
+                                error={errors[f.name]}
+                            />
+                        ))
+                    )}
+                </div>
 
-                        {selectedAction && ACTION_CONFIGS[selectedAction.action]?.showForceOption && (
-                            <div className="flex items-center space-x-2 rounded-lg border p-4">
-                                <Checkbox
-                                    id="force"
-                                    checked={forceApprove}
-                                    onCheckedChange={(checked) => setForceApprove(checked as boolean)}
-                                />
-                                <div className="space-y-1">
-                                    <Label htmlFor="force" className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70">
-                                        Force Approve
-                                    </Label>
-                                    <p className="text-sm text-muted-foreground">
-                                        Override stock and credit checks (Admin only)
-                                    </p>
-                                </div>
-                            </div>
-                        )}
-
-                        {forceApprove && (
-                            <div className="flex items-start gap-2 rounded-lg bg-yellow-50 dark:bg-yellow-950 p-3 text-sm">
-                                <AlertCircle className="h-5 w-5 text-yellow-600 dark:text-yellow-400 shrink-0 mt-0.5" />
-                                <p className="text-yellow-800 dark:text-yellow-200">
-                                    Warning: Force approval will bypass all validation guards. Use this only when necessary.
-                                </p>
-                            </div>
-                        )}
-                    </div>
-
-                    <DialogFooter>
-                        <Button variant="outline" onClick={() => setDialogOpen(false)}>
-                            Cancel
-                        </Button>
-                        <Button
-                            onClick={handleSubmit}
-                            disabled={isTransitioning}
-                            variant={selectedAction && ACTION_CONFIGS[selectedAction.action]?.variant}
-                        >
-                            {isTransitioning && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                            {selectedAction && getActionLabel(selectedAction)}
-                        </Button>
-                    </DialogFooter>
-                </DialogContent>
-            </Dialog>
+                {/* Footer */}
+                <div className="px-6 py-4 border-t border-gray-100 flex gap-3">
+                    <button onClick={handleClose} disabled={isLoading}
+                        className="flex-1 px-4 py-2.5 text-sm font-medium text-gray-600 bg-gray-100 rounded-xl hover:bg-gray-200 transition-colors disabled:opacity-50">
+                        Annuler
+                    </button>
+                    <button onClick={handleSubmit} disabled={isLoading}
+                        className={cn(
+                            'flex-1 px-4 py-2.5 text-sm font-semibold rounded-xl transition-colors flex items-center justify-center gap-2 disabled:opacity-50',
+                            isDanger
+                                ? 'bg-red-600 hover:bg-red-700 text-white'
+                                : 'bg-sage-600 hover:bg-sage-700 text-white'
+                        )}>
+                        {isLoading && <Loader2 className="w-4 h-4 animate-spin" />}
+                        {action.label}
+                    </button>
+                </div>
+            </div>
         </div>
+    );
+};
+
+// ─── Main component ────────────────────────────────────────────────────────────
+
+export function BCWorkflowActions({ orderId, onSuccess }: BCWorkflowActionsProps) {
+    const { workflowState, isTransitioning, actions, isLoadingState } = useAdvWorkflow(orderId);
+    const [openAction, setOpenAction] = useState<WorkflowAction | null>(null);
+
+    const handleOpenDialog = (action: WorkflowAction) => {
+        setOpenAction(action);
+    };
+
+    const handleSubmit = async (fieldValues: Record<string, string>) => {
+        if (!openAction) return;
+        try {
+            await actions.transition({
+                action: openAction.action,
+                fields: fieldValues,
+            });
+            setOpenAction(null);
+            onSuccess?.();
+        } catch {
+            // toast handled in useAdvWorkflow
+        }
+    };
+
+    if (isLoadingState) {
+        return (
+            <div className="flex items-center gap-2 text-gray-400">
+                <Loader2 className="w-4 h-4 animate-spin" />
+                <span className="text-xs">Chargement des actions...</span>
+            </div>
+        );
+    }
+
+    if (!workflowState) return null;
+
+    const availableActions = workflowState.actions ?? [];
+
+    return (
+        <>
+            {/* State indicator */}
+            <div className="flex items-center justify-between mb-4">
+                <div className="flex items-center gap-2">
+                    <WorkflowStateIndicator state={workflowState.current_state} />
+                    <span className="text-xs text-gray-400">{workflowState.current_step_name}</span>
+                </div>
+                <span className={cn('text-[10px] font-semibold px-2 py-0.5 rounded-full ring-1',
+                    workflowState.workflow_status === 'in_progress' ? 'bg-blue-50 text-blue-600 ring-blue-200'
+                        : workflowState.workflow_status === 'completed' ? 'bg-emerald-50 text-emerald-600 ring-emerald-200'
+                            : 'bg-gray-50 text-gray-500 ring-gray-200'
+                )}>
+                    {workflowState.workflow_status?.replace('_', ' ')}
+                </span>
+            </div>
+
+            {/* Action buttons */}
+            {availableActions.length === 0 ? (
+                <div className="flex items-center gap-2 p-3 bg-gray-50 border border-gray-100 rounded-xl">
+                    <Clock className="w-4 h-4 text-gray-400 shrink-0" />
+                    <p className="text-xs text-gray-500">Aucune action disponible pour cet état.</p>
+                </div>
+            ) : (
+                <div className="flex flex-wrap gap-2">
+                    {availableActions.map(action => {
+                        const intent = getIntent(action);
+                        const Icon = intent.icon;
+                        return (
+                            <button
+                                key={action.action}
+                                onClick={() => handleOpenDialog(action)}
+                                disabled={isTransitioning}
+                                className={cn(
+                                    'inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-semibold transition-all',
+                                    'focus:outline-none focus:ring-2 focus:ring-offset-1 focus:ring-gray-300',
+                                    'disabled:opacity-40 disabled:cursor-not-allowed',
+                                    intent.btn
+                                )}
+                                title={action.description}
+                            >
+                                {isTransitioning
+                                    ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                                    : <Icon className="w-3.5 h-3.5 shrink-0" />}
+                                {action.label}
+                            </button>
+                        );
+                    })}
+                </div>
+            )}
+
+            {/* Dialog */}
+            {openAction && (
+                <DecisionDialog
+                    action={openAction}
+                    isOpen={true}
+                    isLoading={isTransitioning}
+                    onClose={() => setOpenAction(null)}
+                    onSubmit={handleSubmit}
+                />
+            )}
+        </>
     );
 }

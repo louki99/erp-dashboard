@@ -9,7 +9,6 @@ import type {
     BCApprovalRequest,
     BCRejectionRequest,
     BCHoldRequest,
-    BCRequestInfoRequest,
     BCBatchApprovalRequest,
     DerogationRequest,
     DerogationApprovalRequest,
@@ -210,23 +209,6 @@ export const useHoldBC = (options?: {
         {
             successMessage: 'BC mis en attente',
             errorMessage: 'Échec de la mise en attente du BC',
-            onSuccess: (data, variables) => options?.onSuccess?.(data, variables.bcId),
-        }
-    );
-};
-
-/**
- * Hook to request additional information for BC
- */
-export const useRequestInfo = (options?: {
-    onSuccess?: (data: ApiSuccessResponse, bcId: number) => void;
-}) => {
-    return useMutation(
-        async ({ bcId, data }: { bcId: number; data: BCRequestInfoRequest }) =>
-            advApi.bc.requestInfo(bcId, data),
-        {
-            successMessage: 'Demande d\'information envoyée',
-            errorMessage: 'Échec de l\'envoi de la demande',
             onSuccess: (data, variables) => options?.onSuccess?.(data, variables.bcId),
         }
     );

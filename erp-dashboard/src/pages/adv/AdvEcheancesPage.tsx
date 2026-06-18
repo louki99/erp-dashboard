@@ -1,278 +1,288 @@
 import { useState } from 'react';
-import { Calendar, AlertTriangle, RefreshCw, Loader2, Download } from 'lucide-react';
-import { AgGridReact } from 'ag-grid-react';
+import { Calendar, AlertTriangle, RefreshCw, Loader2, Download, TrendingDown, Clock } from 'lucide-react';
 import type { ColDef } from 'ag-grid-community';
 import { ModuleRegistry, ClientSideRowModelModule, ValidationModule } from 'ag-grid-community';
+import { AgGridReact } from 'ag-grid-react';
 import { MasterLayout } from '@/components/layout/MasterLayout';
-import { StatsCard } from '@/components/adv/StatsCard';
 import { useAdvEcheances } from '@/hooks/adv/useAdvEcheances';
+import type { Invoice } from '@/types/adv.types';
+import { cn } from '@/lib/utils';
 
-// Register AG Grid modules
 ModuleRegistry.registerModules([ClientSideRowModelModule, ValidationModule]);
+
+// ─── KPI stat card ────────────────────────────────────────────────────────────
+
+const StatCard = ({
+    label,
+    value,
+    icon: Icon,
+    color,
+}: {
+    label: string;
+    value: string | number;
+    icon: React.ElementType;
+    color: 'amber' | 'red' | 'blue';
+}) => {
+    const colors = {
+        amber: { bg: 'bg-amber-50', icon: 'text-amber-500', border: 'border-amber-200', text: 'text-amber-700' },
+        red: { bg: 'bg-red-50', icon: 'text-red-500', border: 'border-red-200', text: 'text-red-700' },
+        blue: { bg: 'bg-blue-50', icon: 'text-blue-500', border: 'border-blue-200', text: 'text-blue-700' },
+    }[color];
+
+    return (
+        <div className={cn('rounded-xl border p-4 flex items-center gap-4', colors.bg, colors.border)}>
+            <div className={cn('p-2.5 rounded-xl bg-white/80')}>
+                <Icon className={cn('w-5 h-5', colors.icon)} />
+            </div>
+            <div>
+                <p className={cn('text-2xl font-black', colors.text)}>{value}</p>
+                <p className="text-xs text-gray-600 font-medium mt-0.5">{label}</p>
+            </div>
+        </div>
+    );
+};
+
+// ─── Status badge helper ───────────────────────────────────────────────────────
+
+const statusLabel: Record<string, { text: string; cls: string }> = {
+    overdue: { text: 'En Retard', cls: 'bg-red-100 text-red-700 border-red-200' },
+    partially_paid: { text: 'Part. Payé', cls: 'bg-amber-100 text-amber-700 border-amber-200' },
+    pending: { text: 'En Attente', cls: 'bg-blue-100 text-blue-700 border-blue-200' },
+};
+
+// ─── AG-Grid column definitions ───────────────────────────────────────────────
+
+const buildColumns = (): ColDef<Invoice>[] => [
+    {
+        headerName: 'N° Facture',
+        field: 'invoice_number',
+        width: 160,
+        pinned: 'left',
+        cellRenderer: (p: any) => (
+            <div className="flex items-center h-full">
+                <span className="font-mono font-bold text-blue-600 text-xs">{p.value}</span>
+            </div>
+        ),
+    },
+    {
+        headerName: 'Partenaire',
+        width: 200,
+        valueGetter: (p) => p.data?.partner?.name ?? '—',
+        cellClass: 'font-medium text-sm',
+    },
+    {
+        headerName: 'Code',
+        width: 120,
+        valueGetter: (p) => p.data?.partner?.code ?? '—',
+        cellClass: 'font-mono text-xs text-gray-500',
+    },
+    {
+        headerName: 'N° BC',
+        width: 150,
+        valueGetter: (p) => p.data?.order?.order_code ?? '—',
+        cellClass: 'font-mono text-xs',
+    },
+    {
+        headerName: 'Montant',
+        field: 'amount',
+        width: 140,
+        cellRenderer: (p: any) => (
+            <div className="flex items-center justify-end h-full">
+                <span className="font-bold text-sm text-gray-900">{Number(p.value || 0).toLocaleString('fr-FR')} Dh</span>
+            </div>
+        ),
+    },
+    {
+        headerName: 'Restant',
+        field: 'remaining_amount',
+        width: 140,
+        cellRenderer: (p: any) => (
+            <div className="flex items-center justify-end h-full">
+                <span className="font-bold text-sm text-amber-600">{Number(p.value || 0).toLocaleString('fr-FR')} Dh</span>
+            </div>
+        ),
+    },
+    {
+        headerName: 'Date Échéance',
+        field: 'due_date',
+        width: 140,
+        cellRenderer: (p: any) => (
+            <div className="flex items-center h-full gap-1.5">
+                <Calendar className="w-3.5 h-3.5 text-gray-400 shrink-0" />
+                <span className="text-sm">{p.value ? new Date(p.value).toLocaleDateString('fr-FR') : '—'}</span>
+            </div>
+        ),
+    },
+    {
+        headerName: 'Statut',
+        field: 'status',
+        width: 130,
+        cellRenderer: (p: any) => {
+            const cfg = statusLabel[p.value] ?? { text: p.value, cls: 'bg-gray-100 text-gray-600 border-gray-200' };
+            return (
+                <div className="flex items-center h-full">
+                    <span className={cn('px-2 py-0.5 rounded text-xs font-semibold border', cfg.cls)}>{cfg.text}</span>
+                </div>
+            );
+        },
+    },
+];
+
+// ─── Main content ─────────────────────────────────────────────────────────────
 
 const AdvEcheancesContent = () => {
     const [searchTerm, setSearchTerm] = useState('');
-    const { echeances, loading, error, refetch } = useAdvEcheances();
+    const [overdueOnly, setOverdueOnly] = useState(false);
+    const { invoices, stats, loading, error, refetch } = useAdvEcheances({ overdue_only: overdueOnly || undefined });
 
-    // AG Grid column definitions
-    const columnDefs: ColDef[] = [
-        {
-            headerName: 'N° BC',
-            field: 'order_number',
-            width: 140,
-            pinned: 'left',
-            cellRenderer: (params: any) => (
-                <div className="flex items-center h-full">
-                    <span className="font-mono font-bold text-blue-600 dark:text-blue-400">
-                        {params.value}
-                    </span>
-                </div>
-            ),
-        },
-        {
-            headerName: 'Code Partenaire',
-            field: 'partner_code',
-            width: 140,
-        },
-        {
-            headerName: 'Partenaire',
-            field: 'partner_name',
-            flex: 1,
-            minWidth: 200,
-        },
-        {
-            headerName: 'Conditions Paiement',
-            field: 'payment_term',
-            width: 150,
-        },
-        {
-            headerName: 'Montant',
-            field: 'total_amount',
-            width: 130,
-            valueFormatter: (params) => `${parseFloat(params.value || 0).toLocaleString()} Dh`,
-            cellClass: 'font-bold',
-        },
-        {
-            headerName: 'Date BC',
-            field: 'created_at',
-            width: 120,
-            valueFormatter: (params) =>
-                params.value ? new Date(params.value).toLocaleDateString('fr-FR') : '-',
-        },
-        {
-            headerName: 'Date Échéance',
-            field: 'due_date',
-            width: 140,
-            valueFormatter: (params) =>
-                params.value ? new Date(params.value).toLocaleDateString('fr-FR') : '-',
-            cellClass: 'font-medium',
-        },
-        {
-            headerName: 'Jours de Retard',
-            field: 'days_overdue',
-            width: 140,
-            cellRenderer: (params: any) => {
-                const days = params.value || 0;
-                const colorClass =
-                    days > 60
-                        ? 'bg-red-100 text-red-700 border-red-200'
-                        : days > 30
-                            ? 'bg-orange-100 text-orange-700 border-orange-200'
-                            : 'bg-amber-100 text-amber-700 border-amber-200';
-
-                return (
-                    <div className="flex items-center justify-center h-full">
-                        <span className={`inline-flex items-center gap-1 px-2.5 py-1 rounded text-xs font-bold border ${colorClass}`}>
-                            <AlertTriangle className="w-3 h-3" />
-                            {days} jour{days > 1 ? 's' : ''}
-                        </span>
-                    </div>
-                );
-            },
-        },
-        {
-            headerName: 'Statut BC',
-            field: 'bc_status',
-            width: 120,
-            cellRenderer: (params: any) => {
-                const statusColors: Record<string, string> = {
-                    confirmed: 'bg-blue-100 text-blue-700 border-blue-200',
-                    delivered: 'bg-emerald-100 text-emerald-700 border-emerald-200',
-                    cancelled: 'bg-gray-100 text-gray-700 border-gray-200',
-                };
-                const colorClass = statusColors[params.value] || 'bg-gray-100 text-gray-700 border-gray-200';
-                return (
-                    <div className="flex items-center justify-center h-full">
-                        <span className={`inline-flex px-2 py-0.5 rounded text-xs font-medium border ${colorClass}`}>
-                            {params.value}
-                        </span>
-                    </div>
-                );
-            },
-        },
-    ];
-
-    const echeancesList = echeances?.data || [];
-
-    // Filter by search term
-    const filteredEcheances = searchTerm
-        ? echeancesList.filter(
-            (e) =>
-                e.partner_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                e.partner_code.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                e.order_number.toLowerCase().includes(searchTerm.toLowerCase())
-        )
-        : echeancesList;
-
-    // Calculate stats
-    const totalOverdue = filteredEcheances.length;
-    const criticalOverdue = filteredEcheances.filter((e) => e.days_overdue > 60).length;
-    const totalAmount = filteredEcheances.reduce((sum, e) => sum + parseFloat(String(e.total_amount || 0)), 0);
+    const filtered = searchTerm
+        ? invoices.filter((e) => {
+              const s = searchTerm.toLowerCase();
+              return (
+                  e.partner?.name?.toLowerCase().includes(s) ||
+                  e.partner?.code?.toLowerCase().includes(s) ||
+                  e.invoice_number?.toLowerCase().includes(s) ||
+                  e.order?.order_code?.toLowerCase().includes(s)
+              );
+          })
+        : invoices;
 
     const handleExport = () => {
-        // Simple CSV export
-        const headers = ['N° BC', 'Partenaire', 'Code', 'Montant', 'Date Échéance', 'Jours Retard'];
-        const rows = filteredEcheances.map((e) => [
-            e.order_number,
-            e.partner_name,
-            e.partner_code,
-            e.total_amount,
-            new Date(e.due_date).toLocaleDateString('fr-FR'),
-            e.days_overdue,
+        const headers = ['N° Facture', 'Partenaire', 'Code', 'N° BC', 'Montant', 'Restant', 'Date Échéance', 'Statut'];
+        const rows = filtered.map((e) => [
+            e.invoice_number,
+            e.partner?.name ?? '',
+            e.partner?.code ?? '',
+            e.order?.order_code ?? '',
+            e.amount,
+            e.remaining_amount,
+            e.due_date ? new Date(e.due_date).toLocaleDateString('fr-FR') : '',
+            e.status,
         ]);
-
-        const csvContent = [headers, ...rows].map((row) => row.join(',')).join('\n');
-        const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+        const csv = [headers, ...rows].map((r) => r.join(',')).join('\n');
+        const blob = new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8;' });
         const link = document.createElement('a');
         link.href = URL.createObjectURL(blob);
         link.download = `echeances_${new Date().toISOString().split('T')[0]}.csv`;
         link.click();
     };
 
+    const columnDefs = buildColumns();
+
     return (
-        <div className="h-full flex flex-col bg-slate-50 dark:bg-black/20">
+        <div className="h-full flex flex-col bg-slate-50">
             {/* Header */}
-            <div className="bg-white dark:bg-gray-900 border-b border-gray-200 dark:border-gray-800 p-6">
-                <div className="flex justify-between items-center mb-6">
+            <div className="bg-white border-b border-gray-200 p-6">
+                <div className="flex justify-between items-start mb-5">
                     <div>
-                        <h1 className="text-2xl font-bold text-gray-900 dark:text-white tracking-tight">
-                            Échéances & Retards
-                        </h1>
-                        <p className="text-gray-500 dark:text-gray-400 mt-1">
-                            Suivi des factures en retard et gestion des échéances
-                        </p>
+                        <h1 className="text-xl font-bold text-gray-900 tracking-tight">Échéances & Retards</h1>
+                        <p className="text-gray-500 text-sm mt-0.5">Suivi des factures en retard et gestion des créances</p>
                     </div>
-                    <div className="flex gap-3">
+                    <div className="flex gap-2.5">
                         <button
                             onClick={handleExport}
-                            disabled={!filteredEcheances.length}
-                            className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg shadow-sm transition-colors text-sm font-medium flex items-center gap-2 disabled:opacity-50"
+                            disabled={!filtered.length}
+                            className="px-3.5 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm font-medium flex items-center gap-1.5 disabled:opacity-50 transition-colors"
                         >
                             <Download className="w-4 h-4" />
-                            Exporter CSV
+                            CSV
                         </button>
                         <button
-                            onClick={() => refetch()}
+                            onClick={refetch}
                             disabled={loading}
-                            className="px-4 py-2 bg-sage-600 hover:bg-sage-700 text-white rounded-lg shadow-sm transition-colors text-sm font-medium flex items-center gap-2 disabled:opacity-50"
+                            className="px-3.5 py-2 bg-sage-600 hover:bg-sage-700 text-white rounded-lg text-sm font-medium flex items-center gap-1.5 disabled:opacity-50 transition-colors"
                         >
-                            <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
-                            Rafraîchir
+                            <RefreshCw className={cn('w-4 h-4', loading && 'animate-spin')} />
+                            Actualiser
                         </button>
                     </div>
                 </div>
 
-                {/* Stats */}
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
-                    <StatsCard
-                        label="Total en Retard"
-                        value={totalOverdue}
-                        icon={AlertTriangle}
-                        color="amber"
-                        change="Factures"
-                    />
-                    <StatsCard
-                        label="Critique (> 60j)"
-                        value={criticalOverdue}
+                {/* KPI row */}
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-5">
+                    <StatCard
+                        label="Factures en retard"
+                        value={stats.overdue_count}
                         icon={AlertTriangle}
                         color="red"
-                        change="Urgent"
                     />
-                    <StatsCard
-                        label="Montant Total"
-                        value={`${totalAmount.toLocaleString()} Dh`}
-                        icon={Calendar}
+                    <StatCard
+                        label="Dû cette semaine"
+                        value={`${Number(stats.total_due_this_week).toLocaleString('fr-FR')} Dh`}
+                        icon={Clock}
+                        color="amber"
+                    />
+                    <StatCard
+                        label="Total en souffrance"
+                        value={`${Number(stats.total_overdue).toLocaleString('fr-FR')} Dh`}
+                        icon={TrendingDown}
                         color="blue"
-                        change="En Retard"
                     />
                 </div>
 
-                {/* Search */}
-                <div className="relative">
-                    <input
-                        type="text"
-                        value={searchTerm}
-                        onChange={(e) => setSearchTerm(e.target.value)}
-                        placeholder="Rechercher par partenaire, code ou N° BC..."
-                        className="w-full px-4 py-2.5 pl-10 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-sm focus:outline-none focus:ring-2 focus:ring-sage-500"
-                    />
-                    <div className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400">
-                        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path
-                                strokeLinecap="round"
-                                strokeLinejoin="round"
-                                strokeWidth={2}
-                                d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"
-                            />
+                {/* Filters */}
+                <div className="flex gap-3 items-center">
+                    <div className="relative flex-1 max-w-sm">
+                        <input
+                            type="text"
+                            value={searchTerm}
+                            onChange={(e) => setSearchTerm(e.target.value)}
+                            placeholder="Rechercher partenaire, code, N° facture..."
+                            className="w-full px-4 py-2 pl-9 rounded-lg border border-gray-300 bg-white text-sm focus:outline-none focus:ring-2 focus:ring-sage-500"
+                        />
+                        <svg className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
                         </svg>
                     </div>
+                    <label className="flex items-center gap-2 cursor-pointer">
+                        <input
+                            type="checkbox"
+                            checked={overdueOnly}
+                            onChange={(e) => setOverdueOnly(e.target.checked)}
+                            className="rounded border-gray-300 text-red-600 focus:ring-red-500"
+                        />
+                        <span className="text-sm text-gray-700 font-medium">Retards uniquement</span>
+                    </label>
                 </div>
             </div>
 
-            {/* Main Content */}
+            {/* Grid */}
             <div className="flex-1 p-6 overflow-hidden">
-                {loading && !echeancesList.length ? (
+                {loading && !invoices.length ? (
                     <div className="h-full flex items-center justify-center">
-                        <div className="text-center">
-                            <Loader2 className="w-8 h-8 animate-spin text-sage-500 mx-auto mb-3" />
-                            <p className="text-gray-500">Chargement des échéances...</p>
-                        </div>
+                        <Loader2 className="w-8 h-8 animate-spin text-sage-500 mr-3" />
+                        <p className="text-gray-500 text-sm">Chargement des échéances...</p>
                     </div>
                 ) : error ? (
                     <div className="h-full flex items-center justify-center">
                         <div className="text-center">
-                            <p className="text-red-500 mb-4">{error}</p>
-                            <button
-                                onClick={() => refetch()}
-                                className="px-4 py-2 bg-sage-600 hover:bg-sage-700 text-white rounded-lg"
-                            >
+                            <p className="text-red-500 mb-4 text-sm">{error}</p>
+                            <button onClick={refetch} className="px-4 py-2 bg-sage-600 hover:bg-sage-700 text-white rounded-lg text-sm font-medium">
                                 Réessayer
                             </button>
                         </div>
                     </div>
-                ) : filteredEcheances.length === 0 ? (
+                ) : filtered.length === 0 ? (
                     <div className="h-full flex items-center justify-center">
                         <div className="text-center text-gray-400">
-                            <Calendar className="w-16 h-16 mx-auto mb-4 text-gray-300" />
-                            <p className="text-lg font-medium">Aucune échéance en retard</p>
-                            <p className="text-sm mt-2">Tous les paiements sont à jour</p>
+                            <Calendar className="w-14 h-14 mx-auto mb-4 text-gray-200" />
+                            <p className="text-base font-medium text-gray-600">Aucune échéance trouvée</p>
+                            <p className="text-sm mt-1 text-gray-400">
+                                {searchTerm ? 'Modifiez votre recherche' : 'Tous les paiements sont à jour'}
+                            </p>
                         </div>
                     </div>
                 ) : (
-                    <div className="h-full bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 shadow-sm overflow-hidden ag-theme-alpine dark:ag-theme-alpine-dark">
+                    <div className="h-full bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden ag-theme-quartz">
                         <AgGridReact
-                            rowData={filteredEcheances}
+                            rowData={filtered}
                             columnDefs={columnDefs}
-                            defaultColDef={{
-                                sortable: true,
-                                filter: true,
-                                resizable: true,
-                            }}
+                            defaultColDef={{ sortable: true, filter: true, resizable: true }}
                             pagination={true}
                             paginationPageSize={20}
                             animateRows={true}
                             headerHeight={44}
-                            rowHeight={44}
+                            rowHeight={48}
                         />
                     </div>
                 )}
@@ -281,19 +291,18 @@ const AdvEcheancesContent = () => {
     );
 };
 
-export const AdvEcheancesPage = () => {
-    return (
-        <MasterLayout
-            leftContent={
-                <div className="bg-white dark:bg-black h-full p-6 border-r border-gray-100 dark:border-gray-800 flex items-center justify-center text-gray-400 text-sm italic">
-                    Filtres Date
-                </div>
-            }
-            mainContent={
-                <div className="h-full overflow-hidden">
-                    <AdvEcheancesContent />
-                </div>
-            }
-        />
-    );
-};
+export const AdvEcheancesPage = () => (
+    <MasterLayout
+        leftContent={
+            <div className="bg-white h-full p-5 border-r border-gray-100 space-y-4">
+                <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider">Filtres</p>
+                <p className="text-xs text-gray-400 italic">Sélectionnez une période pour filtrer</p>
+            </div>
+        }
+        mainContent={
+            <div className="h-full overflow-hidden">
+                <AdvEcheancesContent />
+            </div>
+        }
+    />
+);

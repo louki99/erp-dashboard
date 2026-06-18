@@ -241,12 +241,12 @@ export const MasterLayout: React.FC<MasterLayoutProps> = ({
     return (
         <div className={cn("h-screen w-full flex flex-col bg-background overflow-hidden font-sans", className)}>
             {/* Mega Menu Overlay */}
-            <MegaMenu 
-                isOpen={isMegaMenuOpen} 
+            <MegaMenu
+                isOpen={isMegaMenuOpen}
                 onClose={() => {
                     setIsMegaMenuOpen(false);
                     setSearchQuery('');
-                }} 
+                }}
                 initialSearchQuery={searchQuery}
                 onSearchQueryChange={setSearchQuery}
                 userId={user?.id?.toString()}
@@ -282,8 +282,8 @@ export const MasterLayout: React.FC<MasterLayoutProps> = ({
                     <div className="flex items-center gap-3 select-none">
                         <div className="flex flex-col">
                             <span className="font-bold text-xl leading-none tracking-tight">
-                                <span className="text-sage-500">Food</span>
-                                <span className="text-white ml-1">Solutions</span>
+                                <span className="text-sage-500">Omni</span>
+                                <span className="text-white ml-1">360</span>
                             </span>
                             <span className="text-[10px] text-gray-400 uppercase tracking-widest font-medium">Enterprise</span>
                         </div>
@@ -294,7 +294,7 @@ export const MasterLayout: React.FC<MasterLayoutProps> = ({
                     {/* Quick Access Toolbar */}
                     <nav className="hidden md:flex items-center gap-1">
                         <div className="relative">
-                            <button 
+                            <button
                                 onClick={() => setShowFavoritesMenu(!showFavoritesMenu)}
                                 className="flex items-center gap-2 px-3 py-1.5 rounded-md hover:bg-white/5 text-gray-300 hover:text-white transition-all text-sm font-medium group"
                             >
@@ -302,7 +302,7 @@ export const MasterLayout: React.FC<MasterLayoutProps> = ({
                                 <span>Favorites</span>
                                 <ChevronDown className="w-3 h-3 opacity-50" />
                             </button>
-                            
+
                             {/* Favorites Dropdown */}
                             {showFavoritesMenu && (
                                 <>

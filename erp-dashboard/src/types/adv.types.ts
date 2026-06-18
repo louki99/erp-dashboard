@@ -1,5 +1,5 @@
 // ADV Module TypeScript Type Definitions
-// Based on API Documentation v1.0
+// Aligned with API Documentation — base URL: /api/backend/adv
 
 // ========== Enums & Constants ==========
 
@@ -8,12 +8,11 @@ export type PartnerStatus = 'PENDING' | 'ACTIVE' | 'BLOCKED' | 'REJECTED';
 export type BcStatus =
     | 'draft'
     | 'submitted'
-    | 'adv_review'
-    | 'adv_on_hold'
-    | 'pending_credit_derogation'
-    | 'adv_approved'
-    | 'adv_rejected'
+    | 'in_review'
+    | 'on_hold'
+    | 'pending_derogation'
     | 'confirmed'
+    | 'rejected'
     | 'converted_to_bl'
     | 'in_preparation'
     | 'prepared'
@@ -22,11 +21,18 @@ export type BcStatus =
     | 'returned'
     | 'cancelled';
 
-export type ApprovalMode = 'standard' | 'manual' | 'forced' | 'derogation';
+export type BcDecision =
+    | 'finalize_sale'
+    | 'reject_sale'
+    | 'hold_order'
+    | 'resume_order'
+    | 'request_credit_derogation';
 
 export type DerogationStatus = 'pending' | 'approved' | 'rejected';
 
-export type DerogationType = 'credit_ceiling_exceeded' | 'payment_term_extension' | 'other';
+export type DerogationType = 'credit_limit_override';
+
+export type DataCompleteness = 'complete' | 'partial' | 'unavailable';
 
 // ========== Core Entities ==========
 
@@ -35,15 +41,15 @@ export interface Partner {
     code: string;
     name: string;
     email: string;
-    phone: string;
+    phone?: string;
     whatsapp?: string;
     status: PartnerStatus;
     credit_limit: string | number;
     credit_used: string | number;
-    credit_available: string | number;
+    credit_available?: string | number;
     credit_hold?: boolean;
-    partner_type: string;
-    channel: string;
+    partner_type?: string;
+    channel?: string;
     tax_number_ice?: string;
     tax_number_if?: string;
     address_line1?: string;
@@ -57,7 +63,6 @@ export interface Partner {
     paymentTerm?: PaymentTerm | null;
     workflowInstance?: WorkflowInstance;
     bonCommandes?: BonCommande[];
-    bonLivraisons?: any[];
 }
 
 export interface Product {
@@ -80,21 +85,54 @@ export interface ProductStock {
     available_quantity: string;
 }
 
+export interface LogisticsLine {
+    line_base_quantity: number;
+    share_of_product_quantity: number;
+    shipping_level?: string;
+    physical_packages_estimate?: number;
+    line_gross_weight_kg_estimate?: number | null;
+    line_volume_m3_estimate?: number | null;
+    packaging?: { label: string; units_per_package: number };
+    profile_flags?: {
+        temperature_profile_code: string;
+        load_category: string;
+    };
+    shipping_constraints: {
+        temperature_profile_code: string | null;
+        load_category: string | null;
+    };
+    missing_reason: string | null;
+}
+
+export interface LogisticsSummary {
+    total_weight_kg: number | null;
+    total_volume_m3: number | null;
+    data_completeness: DataCompleteness;
+    missing_issue_count: number;
+    weight_evaluable: boolean;
+    volume_evaluable: boolean;
+}
+
 export interface OrderProduct {
     id?: number;
     order_id: number;
     product_id: number;
     quantity: number;
     price: string | number;
+    unit_price?: string | number;
     total_price?: string | number;
-    unit: string;
+    unit?: string;
+    out_of_stock?: boolean;
+    available_stock_quantity?: number;
     product: Product;
+    packaging?: { id: number; name: string };
+    logistics_line?: LogisticsLine;
 }
 
 export interface BonCommande {
     id: number;
     bc_number?: string;
-    order_number: string;
+    order_number?: string;
     order_code?: string;
     partner_id: number;
     total_amount: string | number;
@@ -105,27 +143,41 @@ export interface BonCommande {
     bc_status: BcStatus;
     is_urgent?: boolean;
     is_overdue?: boolean;
+    is_credit_sale?: boolean;
     items_count?: number;
+    bc_notes?: string;
+    order_date?: string;
+    due_date?: string;
+    priority?: 'normal' | 'urgent';
     created_at: string;
     updated_at?: string;
+    approved_by?: number | null;
+    approved_at?: string | null;
+    rejected_by?: number | null;
+    rejected_at?: string | null;
+    reject_reason?: string | null;
     partner: Partner;
     order_products: OrderProduct[];
     orderProducts?: OrderProduct[];
     paymentTerm?: PaymentTerm;
+    payment_term?: PaymentTerm;
     workflowInstance?: WorkflowInstance;
+    workflow_instance?: WorkflowInstance;
+    logistics_summary?: LogisticsSummary;
 }
 
 export interface PaymentTerm {
     id: number;
     name: string;
     code?: string;
-    days_number: number;
+    days?: number;
+    days_number?: number;
     description?: string;
 }
 
 export interface GeoArea {
     id?: number;
-    code: string;
+    code?: string;
     name: string;
     description?: string;
 }
@@ -133,14 +185,14 @@ export interface GeoArea {
 export interface User {
     id: number;
     name: string;
-    email: string;
+    email?: string;
     role?: string;
 }
 
 export interface WorkflowInstance {
     id: number;
-    status: string;
-    current_step?: string;
+    status?: string;
+    current_step?: string | { name: string; label: string };
     currentStep?: WorkflowStep;
     created_at?: string;
     updated_at?: string;
@@ -150,18 +202,22 @@ export interface WorkflowInstance {
 
 export interface WorkflowStep {
     id?: number;
-    code: string;
+    code?: string;
     name: string;
+    label?: string;
     description?: string;
 }
 
 export interface WorkflowTransition {
     id: number;
-    workflow_instance_id: number;
-    from_step: string;
-    to_step: string;
-    performed_by: number;
-    performed_at: string;
+    workflow_instance_id?: number;
+    from_step?: string;
+    from_state?: string;
+    to_step?: string;
+    to_state?: string;
+    performed_by: number | { id: number; name: string };
+    performed_at?: string;
+    created_at?: string;
     comment?: string;
     performedBy?: User;
 }
@@ -192,7 +248,7 @@ export interface PaymentHistory {
 export interface CreditDerogation {
     id: number;
     order_id: number;
-    partner_id: number;
+    partner_id?: number;
     partner_credit_limit: number;
     partner_credit_used: number;
     order_amount: number;
@@ -201,15 +257,15 @@ export interface CreditDerogation {
     justification: string;
     derogation_type: DerogationType;
     status: DerogationStatus;
-    requested_by: number;
+    requested_by: number | { id: number; name: string };
     reviewed_by?: number | null;
     reviewed_at?: string | null;
     review_comment?: string | null;
     metadata?: Record<string, any>;
     created_at: string;
     updated_at?: string;
-    order?: BonCommande;
-    partner?: Partner;
+    order?: BonCommande & { order_code?: string };
+    partner?: Pick<Partner, 'id' | 'name' | 'code'>;
     requestedBy?: User;
     reviewedBy?: User | null;
 }
@@ -218,11 +274,11 @@ export interface CreditDerogation {
 
 export interface DashboardStats {
     pending_partners: number;
-    pending_credit_approvals: number;
+    pending_review: number;
+    on_hold: number;
     pending_derogations: number;
+    confirmed_today: number;
     blocked_partners: number;
-    overdue_payments: number;
-    pending_bc: number;
     total_credit_exposure: number | string;
     available_credit: number | string;
 }
@@ -239,7 +295,7 @@ export interface BCStats {
     pending_review: number;
     on_hold: number;
     pending_derogation: number;
-    approved_today: number;
+    confirmed_today: number;
     overdue: number;
 }
 
@@ -259,19 +315,23 @@ export interface CreditOverview {
     utilizationRate: number;
 }
 
-// ========== Echeances (Due Dates) ==========
+// ========== Écheances (Due Dates / Invoices) ==========
 
-export interface Echeance {
+export interface Invoice {
     id: number;
-    order_number: string;
-    partner_name: string;
-    partner_code: string;
-    payment_term: string;
-    total_amount: number;
-    bc_status: string;
-    created_at: string;
+    invoice_number: string;
+    amount: number;
+    remaining_amount: number;
+    status: 'pending' | 'partially_paid' | 'overdue';
     due_date: string;
-    days_overdue: number;
+    partner: Pick<Partner, 'id' | 'name' | 'code'>;
+    order: { id: number; order_code: string };
+}
+
+export interface EcheancesStats {
+    total_overdue: number;
+    total_due_this_week: number;
+    overdue_count: number;
 }
 
 // ========== Partner Stats ==========
@@ -280,50 +340,68 @@ export interface PartnerStats {
     total_orders: number;
     pending_bcs: number;
     avg_order_value: number;
-    overdue_payments: number;
+    overdue_payments?: number;
+}
+
+// ========== Workflow Execution ==========
+
+export interface WorkflowExecuteRequest {
+    decision: BcDecision;
+    comment?: string;
+    reason?: string;
+    justification?: string;
+}
+
+export interface WorkflowConstraint {
+    name: string;
+    reason: string;
+    context?: Record<string, unknown>;
+}
+
+export interface WorkflowExecuteResponse {
+    success: boolean;
+    message: string;
+    data?: Record<string, unknown>;
+    constraints?: WorkflowConstraint[];
 }
 
 // ========== API Request Types ==========
 
 export interface PartnerValidationRequest {
-    credit_limit: number;
-    payment_term_id: number;
-    notes?: string;
+    comment?: string;
 }
 
 export interface PartnerRejectionRequest {
-    rejection_reason: string;
+    reason: string;
 }
 
 export interface CreditLimitUpdateRequest {
-    new_credit_limit: number;
-    justification: string;
+    credit_limit: number;
+    reason: string;
 }
 
 export interface PartnerBlockRequest {
-    block_reason: string;
-    blocked_until?: string;
+    reason: string;
 }
 
 export interface BCApprovalRequest {
+    decision: 'finalize_sale';
     comment?: string;
-    approval_mode?: ApprovalMode;
-    quantities?: Record<number, number>;
-    auto_adjust_stock?: boolean;
-    responsable_id?: number;
 }
 
 export interface BCRejectionRequest {
+    decision: 'reject_sale';
     reason: string;
 }
 
 export interface BCHoldRequest {
+    decision: 'hold_order';
     reason: string;
 }
 
-export interface BCRequestInfoRequest {
-    info_needed: string;
-    put_on_hold?: boolean;
+export interface BCResumeRequest {
+    decision: 'resume_order';
+    comment?: string;
 }
 
 export interface BCBatchApprovalRequest {
@@ -355,26 +433,28 @@ export interface ApiErrorResponse {
     success: false;
     message: string;
     errors?: Record<string, string[]>;
+    constraints?: WorkflowConstraint[];
 }
 
 export interface PaginatedResponse<T> {
     current_page: number;
     data: T[];
-    first_page_url: string;
-    from: number;
-    last_page: number;
-    last_page_url: string;
-    next_page_url: string | null;
-    path: string;
+    first_page_url?: string;
+    from?: number;
+    last_page?: number;
+    last_page_url?: string;
+    next_page_url?: string | null;
+    path?: string;
     per_page: number;
-    prev_page_url: string | null;
-    to: number;
+    prev_page_url?: string | null;
+    to?: number;
     total: number;
 }
 
 export interface BCListResponse {
     bcs: PaginatedResponse<BonCommande>;
     stats: BCStats;
+    partners?: Pick<Partner, 'id' | 'name' | 'code'>[];
 }
 
 export interface BCDetailResponse {
@@ -385,108 +465,132 @@ export interface BCDetailResponse {
     excessAmount?: number;
     pendingDerogation?: CreditDerogation | null;
     partnerStats?: PartnerStats;
-}
-
-export interface PartnerDetailResponse {
-    partner: Partner;
-    creditHistory: CreditHistory[];
-    paymentHistory: PaymentHistory[];
-}
-
-export interface DerogationsListResponse {
-    derogations: PaginatedResponse<CreditDerogation>;
-    stats: DerogationStats;
-}
-
-export interface DerogationDetailResponse {
-    success: boolean;
-    derogation: CreditDerogation;
-}
-
-export interface CreditListResponse {
-    partners: PaginatedResponse<Partner>;
-    totalExposure: number;
-    totalLimit: number;
-    utilizationRate: number;
-}
-
-export interface BalanceCheckItem {
-    product_id: number;
-    product_name: string;
-    requested_quantity: number;
-    available_stock: number;
-    shortage?: number;
-    status: 'ok' | 'shortage';
+    logistics_aggregate?: LogisticsSummary & { per_product: Record<string, unknown> };
 }
 
 export interface BalanceCheckResponse {
-    success: boolean;
-    message: string;
-    data: {
-        success: boolean;
-        all_ok: boolean;
-        items: BalanceCheckItem[];
+    stock_ok: boolean;
+    credit_ok: boolean;
+    details: {
+        credit_limit: number;
+        credit_used: number;
+        order_amount: number;
+        total_exposure: number;
+        credit_exceeded_by: number;
     };
+}
+
+export interface PartnerDetailResponse {
+    partner?: Partner;
+    id?: number;
+    code?: string;
+    name?: string;
+    email?: string;
+    status?: PartnerStatus;
+    creditHistory?: CreditHistory[];
+    paymentHistory?: PaymentHistory[];
+    geo_area?: GeoArea;
+    payment_terms?: PaymentTerm[];
+    [key: string]: any;
+}
+
+export interface DerogationsListResponse {
+    current_page?: number;
+    per_page?: number;
+    total?: number;
+    data: CreditDerogation[];
+    stats?: DerogationStats;
+}
+
+export interface DerogationDetailResponse {
+    success?: boolean;
+    derogation?: CreditDerogation;
+    id?: number;
+    [key: string]: any;
+}
+
+export interface CreditListResponse {
+    current_page?: number;
+    per_page?: number;
+    total?: number;
+    data: Partner[];
+    partners?: PaginatedResponse<Partner>;
+    totalExposure?: number;
+    totalLimit?: number;
+    utilizationRate?: number;
+}
+
+export interface EcheancesResponse {
+    echeances: PaginatedResponse<Invoice>;
+    stats: EcheancesStats;
 }
 
 export interface DerogationRequestResponse {
     success: boolean;
     message: string;
-    derogation: CreditDerogation;
+    derogation?: CreditDerogation;
+    data?: any;
 }
 
 // ========== Filter & Query Types ==========
 
 export interface BCFilters {
-    status?: BcStatus | BcStatus[];
+    status?: BcStatus | BcStatus[] | 'all';
     search?: string;
-    partner?: string;
-    bc_number?: string;
+    partner_id?: number;
+    date_from?: string;
+    date_to?: string;
+    amount_min?: number;
+    amount_max?: number;
     page?: number;
     per_page?: number;
 }
 
 export interface PartnerFilters {
     status?: PartnerStatus;
+    search?: string;
     page?: number;
     per_page?: number;
 }
 
 export interface DerogationFilters {
     status?: DerogationStatus;
+    search?: string;
     page?: number;
     per_page?: number;
 }
 
 export interface EcheanceFilters {
-    page?: number;
-    per_page?: number;
-    partner?: string;
+    partner_id?: number;
+    status?: 'pending' | 'partially_paid' | 'overdue';
     date_from?: string;
     date_to?: string;
+    overdue_only?: boolean;
+    page?: number;
+    per_page?: number;
 }
 
 export interface CreditFilters {
+    search?: string;
+    credit_status?: 'exceeded' | 'warning';
     page?: number;
     per_page?: number;
-    min_utilization?: number;
-    max_utilization?: number;
 }
 
-// ========== BC Detail Context ==========
+// ========== BC Detail Context (legacy compat) ==========
 
 export interface BC {
     id: number;
-    bc_number: string;
-    order_code: string;
+    bc_number?: string;
+    order_code?: string;
     created_at: string;
     total_amount: string;
-    payment_status: string;
-    order_status: string;
+    payment_status?: string;
+    order_status?: string;
     bc_status: BcStatus;
-    is_urgent: boolean;
-    is_overdue: boolean;
-    items_count: number;
+    is_urgent?: boolean;
+    is_overdue?: boolean;
+    items_count?: number;
     partner: Partner;
     order_products: OrderProduct[];
 }

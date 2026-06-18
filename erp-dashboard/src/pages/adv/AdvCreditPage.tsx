@@ -366,8 +366,8 @@ const AdvCreditContent = () => {
         updateCreditLimit.mutate({
             partnerId: selectedPartnerId,
             data: {
-                new_credit_limit: limitValue,
-                justification: updateNotes.trim() || 'Mise à jour du plafond de crédit',
+                credit_limit: limitValue,
+                reason: updateNotes.trim() || 'Mise à jour du plafond de crédit',
             },
         });
     };
@@ -377,7 +377,7 @@ const AdvCreditContent = () => {
 
         blockPartner.mutate({
             partnerId: selectedPartnerId,
-            data: { block_reason: blockReason },
+            data: { reason: blockReason },
         });
     };
 

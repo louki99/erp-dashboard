@@ -1,1417 +1,1175 @@
-import { useState, useEffect, useMemo, useRef } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import apiClient from '@/services/api/client';
 import toast from 'react-hot-toast';
-import { usePermissions } from '@/hooks/usePermissions';
 import { PERMISSIONS } from '@/lib/rbac/permissions';
-import { Can } from '@/components/rbac';
+import { usePermissions } from '@/hooks/usePermissions';
 import { useSearchParams } from 'react-router-dom';
 import { BCWorkflowActions } from '@/components/adv/BCWorkflowActions';
 import { WorkflowHistory } from '@/components/workflow/WorkflowHistory';
 import { useAdvWorkflow } from '@/hooks/adv/useAdvWorkflow';
 import {
-    Calendar,
-    User,
-    Building,
-    CheckCircle,
-    XCircle,
-    Clock,
-    AlertTriangle,
-    CreditCard,
-    FileText,
-    Package,
-    Loader2,
-    Settings,
-    Printer,
-    Download,
-    Share2,
-    MapPin,
-    History,
-    Info
+    Calendar, User, Building, CheckCircle, XCircle, Clock,
+    AlertTriangle, CreditCard, FileText, Package, Loader2,
+    Settings, Printer, Download, Share2, History,
+    ShieldAlert, TrendingUp, Truck, DollarSign,
+    Tag, Layers, Weight, Box, AlertCircle,
+    Search, RefreshCw, BarChart3, Star,
+    Receipt, Warehouse,
 } from 'lucide-react';
-import { AgGridReact } from 'ag-grid-react';
-import { type ColDef, ModuleRegistry, ClientSideRowModelModule, ValidationModule } from 'ag-grid-community';
+import type { ColDef } from 'ag-grid-community';
 import { MasterLayout } from '@/components/layout/MasterLayout';
-import { SageTabs, type TabItem } from '@/components/common/SageTabs';
 import { DataGrid } from '@/components/common/DataGrid';
-import { SageCollapsible } from '@/components/common/SageCollapsible';
+import { ActionPanel } from '@/components/layout/ActionPanel';
 import { cn } from '@/lib/utils';
+import { advApi } from '@/services/api/advApi';
 
-// Register Ag-Grid Modules
-ModuleRegistry.registerModules([ClientSideRowModelModule, ValidationModule]);
+// ─── Types ────────────────────────────────────────────────────────────────────
 
-// --- Types ---
-interface Partner {
-    id: number;
-    name: string;
-    code: string;
-    credit_limit: string;
-    credit_used: string;
-    credit_available: string;
-    credit_hold: boolean;
-    tax_number_ice: string;
-    city: string | null;
-    payment_term?: {
-        id: number;
-        name: string;
-        code?: string;
-        days_number: number;
-        description?: string;
-    };
-}
+interface Product { id: number; name: string; code: string; thumbnail: string | null }
+interface LogisticsFlags { stackable: boolean; fragile: boolean; keep_upright: boolean; requires_separation: boolean; temperature_controlled: boolean; temperature_profile_code: string | null }
+interface LogisticsLine { line_base_quantity: number; shipping_level: string; physical_packages_estimate: number; line_gross_weight_kg_estimate: number | null; line_volume_m3_estimate: number | null; missing_reason: string | null; profile_flags: LogisticsFlags }
+interface OrderProduct { id: number; order_id: number; product_id: number; quantity: string; price: string; total_price: string; unit: string | null; tax_rate: string; unit_price_ht: string; line_tax_amount: string; line_total_ht: string; out_of_stock: boolean; available_stock_quantity: number; sales_group_code: string; logistics_line: LogisticsLine; product: Product }
+interface Partner { id: number; code: string; name: string; credit_limit: string; credit_used: string; credit_available: string; credit_hold: boolean; credit_hold_reason: string | null; tax_number_ice: string | null; tax_number_if: string | null; city: string | null; region: string | null; country: string | null; address_line1: string | null; phone: string | null; email: string | null; website: string | null; partner_type: string; channel: string; risk_score: number; payment_behavior_score: number; total_orders_count: number; total_orders_value: string; status: string; payment_term_id: number | null }
+interface FinancialMetadata { is_credit_sale: boolean; payment_term_id: number | null; balance_checked: boolean; balance_checked_at: string | null; payment_method: string; stamp_duty: string }
+interface WorkflowStep { id: number; code: string; name: string; allowed_transitions: string[]; is_final: boolean }
+interface WorkflowTransitionRecord { id: number; action: string; performed_by: { id: number; name: string; email: string } | null; performed_at: string; comment: string | null; metadata: any; from_step_id: number | null; to_step_id: number }
+interface WorkflowInstance { id: number; status: string; current_step: WorkflowStep; transitions: WorkflowTransitionRecord[] }
+interface LogisticsAggregate { total_weight_kg: number; total_volume_m3: number; weight_evaluable: boolean; volume_evaluable: boolean; data_completeness: 'complete' | 'partial' | 'missing'; missing_product_logistics: { product_id: number; reason: string }[]; per_product: Record<string, { product_id: number; product_name: string; base_quantity: number; shipping_level: string; physical_packages: number; line_gross_weight_kg: number | null; line_volume_m3: number | null; weight_evaluable: boolean; volume_evaluable: boolean; profile_flags: LogisticsFlags }>; handling_flags: { fragile_present: boolean; all_stackable: boolean; requires_separation_present: boolean; temperature_profile_codes: string[]; load_categories: string[] }; constraint_warnings: string[]; notes: string[] }
+interface PartnerStats { total_orders: number; pending_bcs: number; avg_order_value: number }
+interface BC { id: number; order_code: string; bc_status: string; total_amount: string; sub_total: string; tax_amount: string; payment_status: string; order_status: string; created_at: string; order_date: string; due_date: string | null; canal: string; document_type: string; bc_notes: string | null; is_preorder: boolean; branch_id: number; partner: Partner; order_products: OrderProduct[]; financial_metadata: FinancialMetadata | null; workflow_instance: WorkflowInstance | null; payment_term: any | null; delivery_notes: any[] }
+interface BcDetailData { bc: BC; stockAvailable: boolean; creditOk: boolean; creditExceeded: boolean; excessAmount: number; pendingDerogation: any | null; partnerStats: PartnerStats; logistics_aggregate: LogisticsAggregate }
 
-interface Product {
-    id: number;
-    name: string;
-    code: string;
-    stock?: number;
-    quantity: number;
-    thumbnail?: string;
-    stocks?: {
-        branch_code: string;
-        quantity: string;
-        reserved_quantity: string;
-        available_quantity: string;
-    }[];
-}
+// ─── Utils ────────────────────────────────────────────────────────────────────
 
-interface OrderProduct {
-    order_id: number;
-    product_id: number;
-    quantity: number;
-    price: string;
-    total_price: string;
-    unit: string;
-    product: Product;
-}
+const n = (v: string | number | null | undefined) => Number(v ?? 0);
+const fmt = (v: string | number | null | undefined, d = 2) => n(v).toLocaleString('fr-FR', { minimumFractionDigits: d, maximumFractionDigits: d });
+const fmtDate = (d: string | null | undefined, time = false) =>
+    d ? new Date(d).toLocaleDateString('fr-FR', time ? { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' } : { day: '2-digit', month: 'short', year: 'numeric' }) : '—';
 
-interface BC {
-    id: number;
-    bc_number: string;
-    order_code: string;
-    created_at: string;
-    total_amount: string;
-    payment_status: string;
-    order_status: string;
-    bc_status: string;
-    is_urgent: boolean;
-    is_overdue: boolean;
-    items_count: number;
-    partner: Partner;
-    order_products: OrderProduct[];
-}
+const STATUS: Record<string, { label: string; dot: string; row: string; badge: string }> = {
+    submitted:          { label: 'Soumis',       dot: 'bg-blue-500',   row: 'border-l-blue-400',   badge: 'bg-blue-50 text-blue-700 ring-blue-200' },
+    in_review:          { label: 'En révision',  dot: 'bg-indigo-500', row: 'border-l-indigo-400', badge: 'bg-indigo-50 text-indigo-700 ring-indigo-200' },
+    on_hold:            { label: 'En attente',   dot: 'bg-amber-500',  row: 'border-l-amber-400',  badge: 'bg-amber-50 text-amber-700 ring-amber-200' },
+    pending_derogation: { label: 'Dérogation',   dot: 'bg-purple-500', row: 'border-l-purple-400', badge: 'bg-purple-50 text-purple-700 ring-purple-200' },
+    confirmed:          { label: 'Confirmé',     dot: 'bg-emerald-500',row: 'border-l-emerald-400',badge: 'bg-emerald-50 text-emerald-700 ring-emerald-200' },
+    rejected:           { label: 'Rejeté',       dot: 'bg-red-500',    row: 'border-l-red-400',    badge: 'bg-red-50 text-red-700 ring-red-200' },
+    cancelled:          { label: 'Annulé',       dot: 'bg-gray-400',   row: 'border-l-gray-300',   badge: 'bg-gray-50 text-gray-600 ring-gray-200' },
+};
 
-interface ApiResponse {
-    bcs?: {
-        data: BC[];
-        current_page: number;
-        total: number;
-    };
-    bc?: BC;
-    stats?: {
-        pending_review: number;
-    };
-}
+const getCfg = (s: string) => STATUS[s] ?? { label: s, dot: 'bg-gray-400', row: 'border-l-gray-300', badge: 'bg-gray-50 text-gray-600 ring-gray-200' };
 
-// --- Action Panel Component ---
+// ─── Shared atoms ─────────────────────────────────────────────────────────────
 
-interface User {
-    id: number;
-    name: string;
-    email: string;
-}
+const Pill = ({ children, className }: { children: React.ReactNode; className?: string }) => (
+    <span className={cn('inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium ring-1', className)}>{children}</span>
+);
 
-interface DerogationModalProps {
-    isOpen: boolean;
-    onClose: () => void;
-    onSubmit: (responsableId: number, message: string) => void;
-    responsables: User[];
-    isLoading: boolean;
-}
+const Divider = () => <div className="border-t border-gray-100 my-4" />;
 
-const DerogationModal = ({ isOpen, onClose, onSubmit, responsables, isLoading }: DerogationModalProps) => {
-    const [selectedResponsable, setSelectedResponsable] = useState<string>('');
-    const [message, setMessage] = useState('');
+const Field = ({ label, value, className }: { label: string; value: React.ReactNode; className?: string }) => (
+    <div className={cn('', className)}>
+        <dt className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider mb-0.5">{label}</dt>
+        <dd className="text-sm font-semibold text-gray-900">{value ?? <span className="text-gray-300 font-normal">—</span>}</dd>
+    </div>
+);
 
-    if (!isOpen) return null;
+const Card = ({ children, className }: { children: React.ReactNode; className?: string }) => (
+    <div className={cn('bg-white rounded-2xl border border-gray-100 shadow-sm', className)}>{children}</div>
+);
 
+const CardHeader = ({ icon: Icon, title, action }: { icon?: React.ElementType; title: string; action?: React.ReactNode }) => (
+    <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100">
+        <div className="flex items-center gap-2.5">
+            {Icon && <div className="w-7 h-7 rounded-lg bg-gray-50 flex items-center justify-center"><Icon className="w-3.5 h-3.5 text-gray-500" /></div>}
+            <h3 className="text-sm font-bold text-gray-800">{title}</h3>
+        </div>
+        {action}
+    </div>
+);
+
+const Stat = ({ label, value, sub, color = 'gray' }: { label: string; value: React.ReactNode; sub?: string; color?: string }) => {
+    const colors: Record<string, string> = { gray: 'text-gray-900', sage: 'text-sage-700', blue: 'text-blue-700', amber: 'text-amber-700', emerald: 'text-emerald-700', red: 'text-red-700' };
     return (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
-            <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl w-full max-w-md overflow-hidden border border-gray-200 dark:border-gray-700">
-                <div className="p-6">
-                    <div className="flex items-center gap-3 mb-4 text-amber-600">
-                        <AlertTriangle className="w-6 h-6" />
-                        <h3 className="text-lg font-semibold">Demande de Dérogation</h3>
-                    </div>
-
-                    <p className="text-sm text-gray-600 dark:text-gray-300 mb-6">
-                        Le plafond de crédit est dépassé. Veuillez sélectionner un responsable pour demander une dérogation.
-                    </p>
-
-                    <div className="space-y-4">
-                        <div>
-                            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                                Responsable
-                            </label>
-                            <select
-                                value={selectedResponsable}
-                                onChange={(e) => setSelectedResponsable(e.target.value)}
-                                className="w-full rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-sage-500"
-                            >
-                                <option value="">Sélectionner un responsable</option>
-                                {responsables.map(user => (
-                                    <option key={user.id} value={user.id}>{user.name}</option>
-                                ))}
-                            </select>
-                        </div>
-
-                        <div>
-                            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                                Message
-                            </label>
-                            <textarea
-                                value={message}
-                                onChange={(e) => setMessage(e.target.value)}
-                                rows={3}
-                                className="w-full rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-sage-500"
-                                placeholder="Motif de la dérogation..."
-                            />
-                        </div>
-                    </div>
-
-                    <div className="mt-6 flex justify-end gap-3">
-                        <button
-                            onClick={onClose}
-                            disabled={isLoading}
-                            className="px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors disabled:opacity-50"
-                        >
-                            Annuler
-                        </button>
-                        <button
-                            onClick={() => onSubmit(parseInt(selectedResponsable), message)}
-                            disabled={!selectedResponsable || !message || isLoading}
-                            className="px-4 py-2 text-sm font-medium text-white bg-amber-600 hover:bg-amber-700 rounded-lg shadow-sm focus:ring-2 focus:ring-amber-500 transition-colors disabled:opacity-50 flex items-center gap-2"
-                        >
-                            {isLoading && <Loader2 className="w-4 h-4 animate-spin" />}
-                            Envoyer Demande
-                        </button>
-                    </div>
-                </div>
-            </div>
+        <div>
+            <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider">{label}</p>
+            <p className={cn('text-xl font-black mt-0.5 leading-none', colors[color] ?? 'text-gray-900')}>{value}</p>
+            {sub && <p className="text-[10px] text-gray-400 mt-0.5">{sub}</p>}
         </div>
     );
 };
 
-const ActionGroup = ({ children }: { children: React.ReactNode }) => (
-    <div className="flex flex-col gap-2 py-3 border-b border-gray-100 dark:border-gray-800 last:border-0 relative">
-        {children}
-    </div>
-);
-
-interface ActionItemProps {
-    icon: React.ElementType;
-    label: string;
-    onClick?: () => void;
-    variant?: 'default' | 'danger' | 'primary' | 'sage' | 'warning';
-    disabled?: boolean;
-}
-
-const ActionItem = ({ icon: Icon, label, onClick, variant = 'default', disabled = false }: ActionItemProps) => {
-    const variants = {
-        default: "text-gray-400 hover:text-gray-700 dark:text-gray-500 dark:hover:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800",
-        danger: "text-gray-400 hover:text-red-600 dark:hover:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/10",
-        primary: "text-gray-400 hover:text-blue-600 dark:hover:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/10",
-        sage: "text-sage-500 hover:text-sage-700 dark:text-sage-400 dark:hover:text-sage-200 hover:bg-sage-50 dark:hover:bg-sage-900/20",
-        warning: "text-amber-500 hover:text-amber-700 dark:text-amber-400 dark:hover:text-amber-200 hover:bg-amber-50 dark:hover:bg-amber-900/20"
-    };
-
+const Bar = ({ pct, color = 'emerald' }: { pct: number; color?: string }) => {
+    const colors: Record<string, string> = { emerald: 'bg-emerald-500', amber: 'bg-amber-500', red: 'bg-red-500', blue: 'bg-blue-500', sage: 'bg-sage-500' };
     return (
-        <button
-            onClick={onClick}
-            disabled={disabled}
+        <div className="w-full h-1.5 rounded-full bg-gray-100 overflow-hidden">
+            <div className={cn('h-full rounded-full transition-all duration-500', colors[color] ?? 'bg-gray-400')} style={{ width: `${Math.min(Math.max(pct, 0), 100)}%` }} />
+        </div>
+    );
+};
+
+// ─── Sidebar BC list ──────────────────────────────────────────────────────────
+
+interface BcRowProps { bc: any; selected: boolean; onClick: () => void }
+const BcRow = ({ bc, selected, onClick }: BcRowProps) => {
+    const cfg = getCfg(bc.bc_status);
+    return (
+        <button onClick={onClick}
             className={cn(
-                "group relative w-8 h-8 flex items-center justify-center rounded-lg transition-all duration-200 mx-auto",
-                disabled ? "opacity-30 cursor-not-allowed" : variants[variant]
+                'w-full text-left px-4 py-3 border-l-[3px] transition-all duration-150',
+                selected
+                    ? cn('bg-sage-50 border-l-sage-500', cfg.row.replace('border-l-', 'border-l-sage-'))
+                    : cn('hover:bg-gray-50/80 border-l-transparent', 'hover:' + cfg.row),
+                'border-b border-gray-100/80 last:border-b-0 focus:outline-none focus:bg-sage-50/60'
             )}
         >
-            <Icon className="w-4 h-4 transition-transform group-hover:scale-110" />
-            <span className="absolute right-full mr-2 top-1/2 -translate-y-1/2 px-2 py-1 bg-gray-900 text-white text-[10px] font-medium rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none z-50 shadow-lg translate-x-1 group-hover:translate-x-0">
-                {label}
-                <span className="absolute top-1/2 -translate-y-1/2 -right-1 border-4 border-transparent border-l-gray-900"></span>
-            </span>
+            <div className="flex items-start justify-between gap-2">
+                <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-1.5 mb-0.5">
+                        <span className={cn('w-1.5 h-1.5 rounded-full shrink-0 mt-px', cfg.dot)} />
+                        <span className="text-xs font-bold text-gray-800 font-mono truncate">{bc.order_code}</span>
+                    </div>
+                    <p className="text-[11px] text-gray-500 truncate pl-3">{bc.partner?.name ?? '—'}</p>
+                </div>
+                <div className="text-right shrink-0">
+                    <p className="text-xs font-black text-gray-900">{fmt(bc.total_amount, 0)} <span className="font-normal text-gray-400">Dh</span></p>
+                    <p className="text-[10px] text-gray-400 mt-0.5">{fmtDate(bc.created_at)}</p>
+                </div>
+            </div>
+            <div className="flex items-center justify-between mt-1.5 pl-3">
+                <Pill className={cn(cfg.badge, 'text-[10px]')}>{cfg.label}</Pill>
+                <span className="text-[10px] text-gray-400">{bc.canal}</span>
+            </div>
         </button>
     );
 };
 
-interface AdvActionPanelProps {
-    onApprove: () => void;
-    onReject: () => void;
-    onHold: () => void;
-    hasSelection: boolean;
-}
-
-const AdvActionPanel = ({ onApprove, onReject, onHold, hasSelection }: AdvActionPanelProps) => {
-    const { has } = usePermissions();
+const BcSidebar = ({ bcs, loading, selectedId, onSelect, onRefresh }: { bcs: any[]; loading: boolean; selectedId: number | null; onSelect: (id: number) => void; onRefresh: () => void }) => {
+    const [search, setSearch] = useState('');
+    const filtered = useMemo(() => {
+        if (!search.trim()) return bcs;
+        const q = search.toLowerCase();
+        return bcs.filter(b =>
+            b.order_code?.toLowerCase().includes(q) ||
+            b.partner?.name?.toLowerCase().includes(q) ||
+            b.bc_status?.toLowerCase().includes(q)
+        );
+    }, [bcs, search]);
 
     return (
-        <div className="flex flex-col h-full bg-white dark:bg-black border-l border-gray-200 dark:border-gray-800 w-11 shrink-0 shadow-[0_0_15px_rgba(0,0,0,0.05)] z-40 transition-all duration-300">
-            <ActionGroup>
-                <div className="w-full flex justify-center mb-1">
-                    <div className="w-6 h-0.5 bg-sage-500 rounded-full opacity-50"></div>
+        <div className="flex flex-col h-full bg-white border-r border-gray-200">
+            {/* Header */}
+            <div className="px-4 pt-4 pb-3 border-b border-gray-100 shrink-0 space-y-3">
+                <div className="flex items-center justify-between">
+                    <div>
+                        <p className="text-xs font-bold text-gray-900">Commandes ADV</p>
+                        <p className="text-[10px] text-gray-400 mt-0.5">{bcs.length} bon{bcs.length > 1 ? 's' : ''} de commande</p>
+                    </div>
+                    <button onClick={onRefresh} disabled={loading}
+                        className="p-1.5 rounded-lg text-gray-400 hover:text-gray-600 hover:bg-gray-100 transition-colors disabled:opacity-40">
+                        <RefreshCw className={cn('w-3.5 h-3.5', loading && 'animate-spin')} />
+                    </button>
                 </div>
-                <Can permission={PERMISSIONS.ADV.BC_APPROVE}>
-                    <ActionItem
-                        icon={CheckCircle}
-                        label="Valider BC"
-                        variant="sage"
-                        onClick={onApprove}
-                        disabled={!hasSelection}
-                    />
-                </Can>
-                <Can permission={PERMISSIONS.ADV.BC_REJECT}>
-                    <ActionItem
-                        icon={XCircle}
-                        label="Rejeter"
-                        variant="danger"
-                        onClick={onReject}
-                        disabled={!hasSelection}
-                    />
-                </Can>
-                <Can permission={PERMISSIONS.ADV.BC_HOLD}>
-                    <ActionItem
-                        icon={Clock}
-                        label="Mettre en attente"
-                        variant="warning"
-                        onClick={onHold}
-                        disabled={!hasSelection}
-                    />
-                </Can>
-            </ActionGroup>
-
-            <ActionGroup>
-                <ActionItem icon={Printer} label="Imprimer" variant="default" disabled={!hasSelection} />
-                <Can permission={PERMISSIONS.ADV.BC_EXPORT}>
-                    <ActionItem icon={Download} label="Exporter PDF" variant="default" disabled={!hasSelection} />
-                </Can>
-                <ActionItem icon={Share2} label="Partager" variant="primary" disabled={!hasSelection} />
-            </ActionGroup>
-
-            <div className="mt-auto pb-4">
-                <ActionGroup>
-                    <ActionItem icon={Settings} label="Paramètres" variant="default" />
-                </ActionGroup>
-            </div>
-        </div>
-    );
-};
-
-// --- Detail Components ---
-
-const OrderLinesContent = ({ lines }: { lines: OrderProduct[] }) => {
-    // Calculate totals and stock status
-    const totalItems = lines.reduce((sum, line) => sum + line.quantity, 0);
-    const totalValue = lines.reduce((sum, line) => sum + (line.quantity * parseFloat(line.price)), 0);
-    const outOfStockItems = lines.filter(line => {
-        const stocks = line.product.stocks || [];
-        const stock = stocks[0];
-        const availableQty = stock ? parseFloat(stock.available_quantity) : 0;
-        return availableQty < line.quantity;
-    }).length;
-
-    const columnDefs: ColDef[] = [
-        {
-            headerName: 'Image',
-            field: 'product.thumbnail',
-            width: 70,
-            cellRenderer: (params: any) => (
-                <div className="flex items-center justify-center h-full py-1">
-                    {params.value ? (
-                        <img
-                            src={params.value}
-                            alt={params.data.product.name}
-                            className="h-8 w-8 object-cover rounded border border-gray-200 dark:border-gray-700"
-                            onError={(e) => { (e.target as HTMLImageElement).src = 'https://placehold.co/40x40?text=No+Img'; }}
-                        />
-                    ) : (
-                        <div className="h-8 w-8 bg-gray-100 dark:bg-gray-800 rounded flex items-center justify-center text-[10px] text-gray-400">
-                            No Img
-                        </div>
+                <div className="relative">
+                    <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400 pointer-events-none" />
+                    <input value={search} onChange={e => setSearch(e.target.value)}
+                        placeholder="Rechercher..."
+                        className="w-full pl-8 pr-3 py-2 text-xs bg-gray-50 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-sage-400/50 focus:border-sage-400 transition-colors placeholder:text-gray-400" />
+                </div>
+                {/* Status summary */}
+                <div className="flex gap-1 flex-wrap">
+                    {Object.entries(STATUS).slice(0, 5).map(([s, cfg]) => {
+                        const count = bcs.filter(b => b.bc_status === s).length;
+                        if (!count) return null;
+                        return (
+                            <button key={s} onClick={() => setSearch(s)}
+                                className={cn('flex items-center gap-1 px-1.5 py-0.5 rounded-md text-[10px] font-semibold ring-1 transition-colors hover:opacity-80', cfg.badge)}>
+                                <span className={cn('w-1.5 h-1.5 rounded-full', cfg.dot)} />{count}
+                            </button>
+                        );
+                    })}
+                    {search && (
+                        <button onClick={() => setSearch('')}
+                            className="px-1.5 py-0.5 rounded-md text-[10px] font-semibold bg-gray-100 text-gray-500 hover:bg-gray-200 ring-1 ring-gray-200">
+                            ×
+                        </button>
                     )}
                 </div>
-            )
-        },
-        {
-            headerName: 'Code',
-            field: 'product.code',
-            width: 120,
-            cellRenderer: (params: any) => (
-                <div className="flex items-center h-full">
-                    <span className="font-medium text-gray-500 text-xs">{params.value}</span>
-                </div>
-            )
-        },
-        {
-            headerName: 'Article',
-            field: 'product.name',
-            flex: 2,
-            minWidth: 200,
-            cellRenderer: (params: any) => (
-                <div className="flex items-center h-full min-w-0 pr-2">
-                    <span className="font-medium text-gray-900 dark:text-gray-100 text-sm truncate" title={params.value}>{params.value}</span>
-                </div>
-            )
-        },
-        {
-            headerName: 'Qté',
-            field: 'quantity',
-            width: 90,
-            cellClass: 'text-right font-medium',
-            valueFormatter: (params: any) => `${params.value} ${params.data.unit}`
-        },
-        {
-            field: 'price',
-            headerName: 'Prix Unit.',
-            width: 110,
-            cellRenderer: (params: any) => (
-                <div className="flex items-center justify-end h-full">
-                    <span className="text-sm font-semibold text-gray-700 dark:text-gray-300">{parseFloat(params.value).toLocaleString()} DH</span>
-                </div>
-            )
-        },
-        {
-            field: 'total_price',
-            headerName: 'Total Ligne',
-            width: 130,
-            cellRenderer: (params: any) => {
-                const qty = params.data.quantity;
-                const price = parseFloat(params.data.price);
-                const total = qty * price;
-                return (
-                    <div className="flex items-center justify-end h-full">
-                        <span className="text-sm font-black text-sage-700 dark:text-sage-400">{total.toLocaleString()} DH</span>
-                    </div>
-                );
-            }
-        },
-        {
-            headerName: 'Disponibilité',
-            width: 120,
-            cellRenderer: (params: any) => {
-                const stocks = params.data.product.stocks || [];
-                const stock = stocks[0];
-                const availableQty = stock ? parseFloat(stock.available_quantity) : 0;
-                const requestedQty = params.data.quantity;
-                const isAvailable = availableQty >= requestedQty;
-
-                return (
-                    <div className="flex items-center justify-center h-full">
-                        <span className={`inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-semibold ${isAvailable
-                            ? 'bg-emerald-100 text-emerald-700'
-                            : 'bg-red-100 text-red-700'
-                            }`}>
-                            {isAvailable ? (
-                                <><CheckCircle className="w-3 h-3" /> EN STOCK</>
-                            ) : (
-                                <><XCircle className="w-3 h-3" /> RUPTURE</>
-                            )}
-                        </span>
-                    </div>
-                );
-            }
-        }
-    ];
-
-    return (
-        <div className="space-y-4">
-            {/* Data Grid */}
-            <div className="h-96 bg-white dark:bg-gray-800 rounded-xl border-2 border-gray-200 dark:border-gray-700 overflow-hidden shadow-lg ag-theme-quartz">
-                <AgGridReact
-                    rowData={lines}
-                    columnDefs={columnDefs}
-                    defaultColDef={{
-                        sortable: true,
-                        filter: true,
-                        resizable: true,
-                    }}
-                    pagination={true}
-                    paginationPageSize={10}
-                />
-            </div>
-        </div>
-    );
-};
-
-const ClientInfoContent = ({ partner, bcAmount }: { partner: Partner; bcAmount: string }) => {
-    const creditLimit = parseFloat(partner.credit_limit || '0');
-    const creditUsed = parseFloat(partner.credit_used || '0');
-    const creditAvailable = parseFloat(partner.credit_available || '0');
-    const creditUtilization = creditLimit > 0 ? (creditUsed / creditLimit) * 100 : 0;
-
-    // Credit impact calculation
-    const orderAmount = parseFloat(bcAmount || '0');
-    const newBalance = creditUsed + orderAmount;
-    const newUtilization = creditLimit > 0 ? (newBalance / creditLimit) * 100 : 0;
-    const willExceedLimit = newBalance > creditLimit;
-
-    return (
-        <div className="grid grid-cols-1 gap-6 p-6">
-            {/* Credit Impact Warning */}
-            {willExceedLimit && (
-                <div className="bg-red-50 dark:bg-red-900/20 border-2 border-red-200 dark:border-red-800 rounded-xl p-5 shadow-sm">
-                    <div className="flex items-start gap-3 mb-4">
-                        <div className="p-2 bg-red-100 dark:bg-red-900/50 rounded-lg mt-0.5">
-                            <AlertTriangle className="w-5 h-5 text-red-600 dark:text-red-400" />
-                        </div>
-                        <div className="flex-1">
-                            <h4 className="text-base font-bold text-red-800 dark:text-red-300 mb-1">⚠️ Dépassement du Plafond Crédit</h4>
-                            <p className="text-sm text-red-700 dark:text-red-400">
-                                L'approbation de ce bon de commande dépassera la limite de crédit autorisée.
-                            </p>
-                        </div>
-                    </div>
-
-                    <div className="grid grid-cols-2 gap-4 mt-4">
-                        <div className="bg-white/50 dark:bg-gray-800/50 p-3 rounded-lg border border-red-100 dark:border-red-900">
-                            <div className="text-xs font-medium text-red-600 dark:text-red-400 uppercase tracking-wide mb-1">Crédit Actuel</div>
-                            <div className="text-lg font-bold text-red-900 dark:text-red-300">{creditUsed.toLocaleString()} Dh</div>
-                        </div>
-                        <div className="bg-white/50 dark:bg-gray-800/50 p-3 rounded-lg border border-red-100 dark:border-red-900">
-                            <div className="text-xs font-medium text-red-600 dark:text-red-400 uppercase tracking-wide mb-1">Montant BC</div>
-                            <div className="text-lg font-bold text-red-900 dark:text-red-300">+ {orderAmount.toLocaleString()} Dh</div>
-                        </div>
-                        <div className="bg-white/50 dark:bg-gray-800/50 p-3 rounded-lg border border-red-100 dark:border-red-900">
-                            <div className="text-xs font-medium text-red-600 dark:text-red-400 uppercase tracking-wide mb-1">Nouveau Solde</div>
-                            <div className="text-xl font-black text-red-700 dark:text-red-300">{newBalance.toLocaleString()} Dh</div>
-                        </div>
-                        <div className="bg-white/50 dark:bg-gray-800/50 p-3 rounded-lg border border-red-100 dark:border-red-900">
-                            <div className="text-xs font-medium text-red-600 dark:text-red-400 uppercase tracking-wide mb-1">Plafond</div>
-                            <div className="text-xl font-black text-red-700 dark:text-red-300">{creditLimit.toLocaleString()} Dh</div>
-                        </div>
-                    </div>
-
-                    <div className="mt-4 pt-4 border-t border-red-200 dark:border-red-800">
-                        <div className="flex justify-between items-center text-sm">
-                            <span className="font-medium text-red-700 dark:text-red-400">Dépassement</span>
-                            <span className="font-bold text-red-800 dark:text-red-300 text-lg">
-                                + {(newBalance - creditLimit).toLocaleString()} Dh
-                            </span>
-                        </div>
-                        <div className="text-xs text-red-600 dark:text-red-400 mt-2">
-                            Une dérogation sera nécessaire pour valider cette commande.
-                        </div>
-                    </div>
-                </div>
-            )}
-
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                <div className="space-y-4">
-                    <div className="bg-white dark:bg-gray-800 p-6 rounded-xl border border-gray-200 dark:border-gray-700 shadow-sm h-full">
-                        <div className="flex items-center gap-3 mb-6 pb-4 border-b border-gray-100 dark:border-gray-700">
-                            <div className="p-2 bg-blue-50 dark:bg-blue-900/20 rounded-lg">
-                                <User className="w-5 h-5 text-blue-600 dark:text-blue-400" />
-                            </div>
-                            <h3 className="text-base font-semibold text-gray-900 dark:text-gray-100">Informations Client</h3>
-                        </div>
-
-                        <div className="grid grid-cols-1 gap-5">
-                            <div className="flex items-start gap-4">
-                                <div className="p-2 bg-gray-50 dark:bg-gray-700/50 rounded-lg mt-0.5">
-                                    <FileText className="w-4 h-4 text-gray-500 dark:text-gray-400" />
-                                </div>
-                                <div>
-                                    <p className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-1">Code Client</p>
-                                    <p className="text-sm font-bold text-gray-900 dark:text-gray-100 font-mono tracking-tight">{partner.code}</p>
-                                </div>
-                            </div>
-
-                            <div className="flex items-start gap-4">
-                                <div className="p-2 bg-gray-50 dark:bg-gray-700/50 rounded-lg mt-0.5">
-                                    <Building className="w-4 h-4 text-gray-500 dark:text-gray-400" />
-                                </div>
-                                <div>
-                                    <p className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-1">Raison Sociale</p>
-                                    <p className="text-sm font-bold text-gray-900 dark:text-gray-100">{partner.name}</p>
-                                </div>
-                            </div>
-
-                            <div className="flex items-start gap-4">
-                                <div className="p-2 bg-gray-50 dark:bg-gray-700/50 rounded-lg mt-0.5">
-                                    <FileText className="w-4 h-4 text-gray-500 dark:text-gray-400" />
-                                </div>
-                                <div>
-                                    <p className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-1">ICE</p>
-                                    <p className="text-sm font-bold text-gray-900 dark:text-gray-100 font-mono tracking-tight">{partner.tax_number_ice || '-'}</p>
-                                </div>
-                            </div>
-
-                            <div className="flex items-start gap-4">
-                                <div className="p-2 bg-gray-50 dark:bg-gray-700/50 rounded-lg mt-0.5">
-                                    <MapPin className="w-4 h-4 text-gray-500 dark:text-gray-400" />
-                                </div>
-                                <div>
-                                    <p className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-1">Ville</p>
-                                    <p className="text-sm font-bold text-gray-900 dark:text-gray-100">{partner.city || '-'}</p>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-
-                <div className="space-y-4">
-                    <div className="bg-white dark:bg-gray-800 p-6 rounded-xl border border-gray-200 dark:border-gray-700 shadow-sm h-full">
-                        <div className="flex items-center gap-3 mb-6 pb-4 border-b border-gray-100 dark:border-gray-700">
-                            <div className="p-2 bg-emerald-50 dark:bg-emerald-900/20 rounded-lg">
-                                <CreditCard className="w-5 h-5 text-emerald-600 dark:text-emerald-400" />
-                            </div>
-                            <h3 className="text-base font-semibold text-gray-900 dark:text-gray-100">Situation Financière</h3>
-                        </div>
-
-                        <div className="mb-8">
-                            <div className="flex justify-between text-sm mb-2">
-                                <span className="font-medium text-gray-700 dark:text-gray-300">Utilisation Crédit</span>
-                                <span className="font-bold text-gray-900 dark:text-gray-100">{creditUtilization.toFixed(1)}%</span>
-                            </div>
-                            <div className="w-full bg-gray-100 dark:bg-gray-700 rounded-full h-3 overflow-hidden mb-2">
-                                <div
-                                    className={`h-full transition-all duration-500 ${creditUtilization > 100 ? 'bg-red-500' : creditUtilization > 80 ? 'bg-amber-500' : 'bg-emerald-500'}`}
-                                    style={{ width: `${Math.min(creditUtilization, 100)}%` }}
-                                />
-                            </div>
-                            <div className="flex justify-between text-xs font-medium">
-                                <span className={creditUtilization > 100 ? 'text-red-600' : 'text-emerald-600'}>
-                                    {creditUsed.toLocaleString()} Dh Utilisés
-                                </span>
-                                <span className="text-gray-400">
-                                    Plafond: {creditLimit.toLocaleString()} Dh
-                                </span>
-                            </div>
-                        </div>
-
-                        <div className="grid grid-cols-2 gap-4">
-                            <div className="p-4 bg-gray-50 dark:bg-gray-900 rounded-lg border border-gray-100 dark:border-gray-800">
-                                <div className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-1">Crédit Disponible</div>
-                                <div className="text-xl font-bold text-emerald-600 dark:text-emerald-400">{creditAvailable.toLocaleString()} Dh</div>
-                            </div>
-                            <div className="p-4 bg-gray-50 dark:bg-gray-900 rounded-lg border border-gray-100 dark:border-gray-800">
-                                <div className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-1">Statut</div>
-                                <div className={`text-xl font-bold ${partner.credit_hold ? 'text-red-600' : 'text-emerald-600 dark:text-emerald-400'}`}>
-                                    {partner.credit_hold ? 'Bloqué' : 'Normal'}
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            </div>
-        </div>
-    );
-};
-
-const StockAnalysisContent = ({ bc }: { bc: BC }) => {
-    // Helper to get available stock
-    const getStock = (p: Product) => {
-        return p.stocks?.[0] ? parseFloat(p.stocks[0].available_quantity) : (p.quantity || 0);
-    };
-
-    // Calculate stock statistics
-    const totalItems = bc.order_products.length;
-    const availableItems = bc.order_products.filter(p => getStock(p.product) >= p.quantity).length;
-    const partialItems = bc.order_products.filter(p => {
-        const stock = getStock(p.product);
-        return stock > 0 && stock < p.quantity;
-    }).length;
-    const outOfStockItems = totalItems - availableItems - partialItems;
-
-    return (
-        <div className="p-4">
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
-                <div className="bg-emerald-50 dark:bg-emerald-900/20 p-4 rounded-lg border border-emerald-100 dark:border-emerald-900/30">
-                    <div className="flex items-center gap-3">
-                        <div className="p-2 bg-emerald-100 dark:bg-emerald-900/50 rounded-full text-emerald-600 dark:text-emerald-400">
-                            <CheckCircle className="w-5 h-5" />
-                        </div>
-                        <div>
-                            <div className="text-2xl font-bold text-emerald-700 dark:text-emerald-400">{availableItems}</div>
-                            <div className="text-xs text-emerald-600 dark:text-emerald-500">Articles Disponibles</div>
-                        </div>
-                    </div>
-                </div>
-
-                <div className="bg-amber-50 dark:bg-amber-900/20 p-4 rounded-lg border border-amber-100 dark:border-amber-900/30">
-                    <div className="flex items-center gap-3">
-                        <div className="p-2 bg-amber-100 dark:bg-amber-900/50 rounded-full text-amber-600 dark:text-amber-400">
-                            <AlertTriangle className="w-5 h-5" />
-                        </div>
-                        <div>
-                            <div className="text-2xl font-bold text-amber-700 dark:text-amber-400">{partialItems}</div>
-                            <div className="text-xs text-amber-600 dark:text-amber-500">Disponibilité Partielle</div>
-                        </div>
-                    </div>
-                </div>
-
-                <div className="bg-red-50 dark:bg-red-900/20 p-4 rounded-lg border border-red-100 dark:border-red-900/30">
-                    <div className="flex items-center gap-3">
-                        <div className="p-2 bg-red-100 dark:bg-red-900/50 rounded-full text-red-600 dark:text-red-400">
-                            <XCircle className="w-5 h-5" />
-                        </div>
-                        <div>
-                            <div className="text-2xl font-bold text-red-700 dark:text-red-400">{outOfStockItems}</div>
-                            <div className="text-xs text-red-600 dark:text-red-500">Rupture de Stock</div>
-                        </div>
-                    </div>
-                </div>
             </div>
 
-            <div className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-4">
-                <h3 className="text-sm font-semibold mb-3">Détail des ruptures</h3>
-                {outOfStockItems === 0 && partialItems === 0 ? (
-                    <div className="text-center py-8 text-gray-400">
-                        <CheckCircle className="w-8 h-8 mx-auto mb-2 text-emerald-500" />
-                        <p>Tous les articles sont disponibles</p>
+            {/* List */}
+            <div className="flex-1 overflow-y-auto">
+                {loading ? (
+                    <div className="flex items-center justify-center h-32 text-gray-400">
+                        <Loader2 className="w-5 h-5 animate-spin" />
+                    </div>
+                ) : filtered.length === 0 ? (
+                    <div className="flex flex-col items-center justify-center h-32 text-gray-400">
+                        <FileText className="w-8 h-8 mb-2 text-gray-200" />
+                        <p className="text-xs">Aucun résultat</p>
                     </div>
                 ) : (
-                    <div className="space-y-2">
-                        {bc.order_products.filter(p => getStock(p.product) < p.quantity).map(item => (
-                            <div key={item.product_id} className="flex items-center justify-between p-3 bg-gray-50 dark:bg-gray-900 rounded border border-gray-100 dark:border-gray-800">
-                                <div className="flex items-center gap-3">
-                                    <div className="w-8 h-8 bg-gray-200 dark:bg-gray-700 rounded flex items-center justify-center text-xs font-bold">
-                                        {item.product.code.substring(0, 2)}
-                                    </div>
-                                    <div>
-                                        <div className="font-medium text-sm">{item.product.name}</div>
-                                        <div className="text-xs text-gray-500">{item.product.code}</div>
-                                    </div>
-                                </div>
-                                <div className="text-right">
-                                    <div className="text-sm font-bold text-red-600">
-                                        {getStock(item.product)} / {item.quantity}
-                                    </div>
-                                    <div className="text-xs text-gray-400">En stock / Demandé</div>
-                                </div>
-                            </div>
-                        ))}
-                    </div>
+                    filtered.map(bc => (
+                        <BcRow key={bc.id} bc={bc} selected={bc.id === selectedId}
+                            onClick={() => onSelect(bc.id)} />
+                    ))
                 )}
             </div>
         </div>
     );
 };
 
-const PaymentTermContent = ({ partner }: { partner: Partner }) => {
-    const paymentTerm = partner.payment_term;
+// ─── Derogation modal ─────────────────────────────────────────────────────────
+
+const DerogationModal = ({ isOpen, bcId, onClose, onSuccess }: { isOpen: boolean; bcId: number | null; onClose: () => void; onSuccess: () => void }) => {
+    const [justification, setJustification] = useState('');
+    const [loading, setLoading] = useState(false);
+
+    const handleSubmit = async () => {
+        if (!bcId || justification.trim().length < 20) { toast.error('Justification : 20 caractères minimum.'); return; }
+        setLoading(true);
+        try {
+            await advApi.derogations.request(bcId, { justification });
+            toast.success('Demande de dérogation soumise');
+            setJustification(''); onSuccess(); onClose();
+        } catch (err: any) { toast.error(err?.response?.data?.message || 'Erreur'); }
+        finally { setLoading(false); }
+    };
+
+    if (!isOpen) return null;
+    return (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm">
+            <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md border border-gray-200">
+                <div className="p-6">
+                    <div className="w-10 h-10 rounded-xl bg-amber-100 flex items-center justify-center mb-4">
+                        <ShieldAlert className="w-5 h-5 text-amber-600" />
+                    </div>
+                    <h3 className="text-base font-bold text-gray-900 mb-1">Demande de Dérogation Crédit</h3>
+                    <p className="text-sm text-gray-500 mb-5">Le plafond de crédit sera dépassé. Une justification est requise pour cette dérogation exceptionnelle.</p>
+                    <textarea value={justification} onChange={e => setJustification(e.target.value)} rows={4} maxLength={1000}
+                        className="w-full rounded-xl border border-gray-200 px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400 resize-none bg-gray-50 placeholder:text-gray-400"
+                        placeholder="Décrivez le contexte commercial qui justifie cette dérogation..." />
+                    <div className="flex justify-between items-center mt-1 mb-5">
+                        <span className={cn('text-xs', justification.length < 20 ? 'text-red-400' : 'text-gray-400')}>{justification.length < 20 ? `${20 - justification.length} car. manquants` : `${justification.length}/1000`}</span>
+                    </div>
+                    <div className="flex gap-3">
+                        <button onClick={onClose} disabled={loading} className="flex-1 px-4 py-2.5 text-sm font-medium text-gray-600 bg-gray-100 rounded-xl hover:bg-gray-200 transition-colors disabled:opacity-50">Annuler</button>
+                        <button onClick={handleSubmit} disabled={loading || justification.trim().length < 20}
+                            className="flex-1 px-4 py-2.5 text-sm font-semibold text-white bg-amber-600 hover:bg-amber-700 rounded-xl transition-colors disabled:opacity-40 flex items-center justify-center gap-2">
+                            {loading && <Loader2 className="w-4 h-4 animate-spin" />}
+                            Soumettre
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    );
+};
+
+// ─── Detail: Document Header ──────────────────────────────────────────────────
+
+const DetailHeader = ({ data }: { data: BcDetailData }) => {
+    const { bc, stockAvailable, creditOk, creditExceeded, excessAmount } = data;
+    const cfg = getCfg(bc.bc_status);
 
     return (
-        <div className="p-6">
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                {/* Payment Term Card */}
-                <div className="bg-white dark:bg-gray-800 p-6 rounded-xl border border-gray-200 dark:border-gray-700 shadow-sm">
-                    <div className="flex items-center gap-3 mb-6 pb-4 border-b border-gray-100 dark:border-gray-700">
-                        <div className="p-2 bg-purple-50 dark:bg-purple-900/20 rounded-lg">
-                            <Clock className="w-5 h-5 text-purple-600 dark:text-purple-400" />
+        <div className="bg-white border-b border-gray-100 shrink-0">
+            {/* Top stripe with status color */}
+            <div className={cn('h-1 w-full rounded-t-none', cfg.dot.replace('bg-', 'bg-'))} />
+
+            <div className="px-6 py-5">
+                {/* Row 1: ID + Status + Amount */}
+                <div className="flex items-start justify-between gap-4 mb-4">
+                    <div>
+                        <div className="flex items-center gap-2.5 mb-1.5">
+                            <h1 className="text-xl font-black text-gray-900 font-mono tracking-tight">{bc.order_code}</h1>
+                            <Pill className={cfg.badge}><span className={cn('w-1.5 h-1.5 rounded-full', cfg.dot)} />{cfg.label}</Pill>
+                            {bc.is_preorder && <Pill className="bg-blue-50 text-blue-700 ring-blue-200">Pré-commande</Pill>}
                         </div>
-                        <h3 className="text-base font-semibold text-gray-900 dark:text-gray-100">Conditions de Paiement</h3>
+                        <div className="flex items-center gap-2 text-sm text-gray-500">
+                            <Building className="w-3.5 h-3.5 text-gray-400" />
+                            <span className="font-semibold text-gray-700">{bc.partner.name}</span>
+                            <span className="text-gray-300">·</span>
+                            <span className="font-mono text-gray-400 text-xs">{bc.partner.code}</span>
+                        </div>
                     </div>
 
-                    {paymentTerm ? (
-                        <div className="space-y-4">
-                            <div className="p-4 bg-purple-50 dark:bg-purple-900/20 rounded-lg border border-purple-100 dark:border-purple-900/30">
-                                <div className="text-xs font-medium text-purple-600 dark:text-purple-400 uppercase tracking-wide mb-2">Terme Actuel</div>
-                                <div className="text-2xl font-bold text-purple-700 dark:text-purple-300">{paymentTerm.name}</div>
-                                {paymentTerm.code && (
-                                    <div className="text-xs text-purple-600 dark:text-purple-500 mt-1 font-mono">{paymentTerm.code}</div>
-                                )}
-                            </div>
+                    <div className="text-right shrink-0">
+                        <p className="text-2xl font-black text-gray-900">{fmt(bc.total_amount)} <span className="text-sm font-normal text-gray-400">Dh</span></p>
+                        <div className="flex items-center justify-end gap-3 text-xs text-gray-400 mt-0.5">
+                            <span>HT {fmt(bc.sub_total)} Dh</span>
+                            <span className="text-gray-200">|</span>
+                            <span>TVA {fmt(bc.tax_amount)} Dh</span>
+                        </div>
+                    </div>
+                </div>
 
-                            <div className="grid grid-cols-2 gap-4">
-                                <div className="p-4 bg-gray-50 dark:bg-gray-900 rounded-lg border border-gray-100 dark:border-gray-800">
-                                    <div className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-1">Nombre de Jours</div>
-                                    <div className="text-xl font-bold text-gray-900 dark:text-gray-100">{paymentTerm.days_number} jours</div>
+                {/* Row 2: Meta chips */}
+                <div className="flex items-center gap-2 flex-wrap mb-3">
+                    <div className="flex items-center gap-1.5 px-2.5 py-1 bg-gray-50 rounded-lg border border-gray-100 text-xs text-gray-600">
+                        <Calendar className="w-3 h-3 text-gray-400" />
+                        {fmtDate(bc.order_date, true)}
+                    </div>
+                    {bc.due_date && (
+                        <div className="flex items-center gap-1.5 px-2.5 py-1 bg-gray-50 rounded-lg border border-gray-100 text-xs text-gray-600">
+                            <Clock className="w-3 h-3 text-gray-400" />
+                            Échéance : {fmtDate(bc.due_date)}
+                        </div>
+                    )}
+                    <div className="flex items-center gap-1.5 px-2.5 py-1 bg-gray-50 rounded-lg border border-gray-100 text-xs text-gray-600">
+                        <Tag className="w-3 h-3 text-gray-400" />{bc.canal}
+                    </div>
+                    <div className="flex items-center gap-1.5 px-2.5 py-1 bg-gray-50 rounded-lg border border-gray-100 text-xs text-gray-600">
+                        <FileText className="w-3 h-3 text-gray-400" />{bc.document_type}
+                    </div>
+                    <div className="flex items-center gap-1.5 px-2.5 py-1 bg-gray-50 rounded-lg border border-gray-100 text-xs text-gray-600">
+                        <Package className="w-3 h-3 text-gray-400" />{bc.order_products.length} article{bc.order_products.length > 1 ? 's' : ''}
+                    </div>
+                </div>
+
+                {/* Row 3: Check indicators */}
+                <div className="flex items-center gap-2 flex-wrap">
+                    {[
+                        { ok: creditOk, okLabel: 'Crédit OK', koLabel: creditExceeded ? `Dépassement ${fmt(excessAmount, 0)} Dh` : 'Crédit KO', icon: CreditCard },
+                        { ok: stockAvailable, okLabel: 'Stock OK', koLabel: 'Stock insuffisant', icon: Warehouse },
+                        { ok: bc.financial_metadata?.balance_checked ?? false, okLabel: 'Solde vérifié', koLabel: 'Solde non vérifié', icon: CheckCircle },
+                        { ok: !data.pendingDerogation, okLabel: 'Sans dérogation', koLabel: 'Dérogation en cours', icon: ShieldAlert },
+                    ].map(({ ok, okLabel, koLabel, icon: Icon }) => (
+                        <div key={okLabel} className={cn('flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-semibold',
+                            ok ? 'bg-emerald-50 text-emerald-700 border border-emerald-100' : 'bg-red-50 text-red-700 border border-red-100')}>
+                            {ok ? <CheckCircle className="w-3 h-3" /> : <XCircle className="w-3 h-3" />}
+                            {ok ? okLabel : koLabel}
+                        </div>
+                    ))}
+                </div>
+
+                {/* Alert banners */}
+                {(creditExceeded || !stockAvailable) && (
+                    <div className="mt-3 space-y-2">
+                        {creditExceeded && (
+                            <div className="flex items-center gap-3 px-4 py-2.5 bg-red-50 border border-red-200 rounded-xl">
+                                <AlertTriangle className="w-4 h-4 text-red-500 shrink-0" />
+                                <p className="text-xs font-semibold text-red-700">Plafond de crédit dépassé de <span className="font-black">{fmt(excessAmount)} Dh</span> — une dérogation est nécessaire pour valider cette commande.</p>
+                            </div>
+                        )}
+                        {!stockAvailable && (
+                            <div className="flex items-center gap-3 px-4 py-2.5 bg-amber-50 border border-amber-200 rounded-xl">
+                                <Package className="w-4 h-4 text-amber-500 shrink-0" />
+                                <p className="text-xs font-semibold text-amber-700">Certains articles présentent un stock insuffisant par rapport à la quantité commandée.</p>
+                            </div>
+                        )}
+                    </div>
+                )}
+            </div>
+
+            {/* Tab bar */}
+            <div className="px-6 border-t border-gray-100" id="detail-tab-anchor" />
+        </div>
+    );
+};
+
+// ─── Tab nav ──────────────────────────────────────────────────────────────────
+
+const TABS = [
+    { id: 'resume',     label: 'Résumé',      icon: BarChart3 },
+    { id: 'lignes',     label: 'Lignes',       icon: Receipt },
+    { id: 'client',     label: 'Client',       icon: User },
+    { id: 'stock',      label: 'Stock',        icon: Warehouse },
+    { id: 'logistique', label: 'Logistique',   icon: Truck },
+    { id: 'historique', label: 'Historique',   icon: History },
+] as const;
+type TabId = typeof TABS[number]['id'];
+
+const TabBar = ({ active, onChange }: { active: TabId; onChange: (t: TabId) => void }) => (
+    <div className="flex items-center gap-0.5 px-6 bg-white border-b border-gray-100 shrink-0 overflow-x-auto">
+        {TABS.map(({ id, label, icon: Icon }) => (
+            <button key={id} onClick={() => onChange(id)}
+                className={cn('flex items-center gap-1.5 px-3 py-3 text-xs font-semibold border-b-2 transition-all whitespace-nowrap',
+                    active === id
+                        ? 'border-sage-500 text-sage-700'
+                        : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-200'
+                )}>
+                <Icon className="w-3.5 h-3.5" />
+                {label}
+            </button>
+        ))}
+    </div>
+);
+
+// ─── Tab: Résumé ──────────────────────────────────────────────────────────────
+
+const TabResume = ({ data, onRefresh }: { data: BcDetailData; onRefresh: () => void }) => {
+    const { bc, partnerStats } = data;
+    const wi = bc.workflow_instance;
+
+    return (
+        <div className="grid grid-cols-3 gap-5">
+            {/* Left col: Workflow + stats */}
+            <div className="col-span-2 space-y-5">
+                {/* Workflow actions */}
+                <Card>
+                    <CardHeader icon={Settings} title="Actions Workflow" />
+                    <div className="p-5">
+                        <BCWorkflowActions orderId={bc.id} onSuccess={onRefresh} />
+                    </div>
+                </Card>
+
+                {/* BC details */}
+                <Card>
+                    <CardHeader icon={FileText} title="Détails de la Commande" />
+                    <div className="p-5">
+                        <dl className="grid grid-cols-2 gap-x-8 gap-y-4">
+                            <Field label="N° Commande"    value={<span className="font-mono">{bc.order_code}</span>} />
+                            <Field label="Statut BC"      value={<Pill className={getCfg(bc.bc_status).badge}><span className={cn('w-1.5 h-1.5 rounded-full', getCfg(bc.bc_status).dot)} />{getCfg(bc.bc_status).label}</Pill>} />
+                            <Field label="Canal"          value={bc.canal} />
+                            <Field label="Type document"  value={bc.document_type} />
+                            <Field label="Date commande"  value={fmtDate(bc.order_date, true)} />
+                            <Field label="Date échéance"  value={fmtDate(bc.due_date)} />
+                            <Field label="Statut paiement" value={bc.payment_status} />
+                            <Field label="Branche"        value={`#${bc.branch_id}`} />
+                        </dl>
+                        {bc.bc_notes && (
+                            <>
+                                <Divider />
+                                <div className="p-3 bg-amber-50 border border-amber-100 rounded-xl">
+                                    <p className="text-[10px] font-semibold text-amber-500 uppercase tracking-wider mb-1">Notes</p>
+                                    <p className="text-sm text-amber-800">{bc.bc_notes}</p>
                                 </div>
-                                <div className="p-4 bg-gray-50 dark:bg-gray-900 rounded-lg border border-gray-100 dark:border-gray-800">
-                                    <div className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-1">Type</div>
-                                    <div className="text-xl font-bold text-gray-900 dark:text-gray-100">
-                                        {paymentTerm.days_number === 0 ? 'Comptant' : 'Crédit'}
+                            </>
+                        )}
+                    </div>
+                </Card>
+
+                {/* Workflow state */}
+                {wi?.current_step && (
+                    <Card>
+                        <CardHeader icon={Clock} title="État Workflow" />
+                        <div className="p-5">
+                            <div className="flex items-start gap-4 mb-4">
+                                <div className="flex-1 p-3 bg-indigo-50 border border-indigo-100 rounded-xl">
+                                    <p className="text-[10px] text-indigo-400 font-semibold uppercase tracking-wider">Étape actuelle</p>
+                                    <p className="text-sm font-bold text-indigo-800 mt-0.5">{wi.current_step.name}</p>
+                                    <p className="text-xs text-indigo-500 font-mono mt-0.5">{wi.current_step.code}</p>
+                                </div>
+                                <div className="px-3 py-2 bg-gray-50 border border-gray-100 rounded-xl text-center">
+                                    <p className="text-[10px] text-gray-400 font-semibold uppercase">Statut</p>
+                                    <p className="text-xs font-bold text-gray-700 mt-0.5 capitalize">{wi.status.replace('_', ' ')}</p>
+                                </div>
+                            </div>
+                            {wi.current_step.allowed_transitions.length > 0 && (
+                                <div>
+                                    <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider mb-2">Transitions autorisées</p>
+                                    <div className="flex flex-wrap gap-1.5">
+                                        {wi.current_step.allowed_transitions.map(t => (
+                                            <span key={t} className="px-2 py-0.5 bg-slate-100 text-slate-600 border border-slate-200 rounded-lg text-[10px] font-mono">{t}</span>
+                                        ))}
                                     </div>
-                                </div>
-                            </div>
-
-                            {paymentTerm.description && (
-                                <div className="p-4 bg-blue-50 dark:bg-blue-900/20 rounded-lg border border-blue-100 dark:border-blue-900/30">
-                                    <div className="text-xs font-medium text-blue-600 dark:text-blue-400 uppercase tracking-wide mb-2">Description</div>
-                                    <div className="text-sm text-blue-700 dark:text-blue-300">{paymentTerm.description}</div>
                                 </div>
                             )}
                         </div>
+                    </Card>
+                )}
+            </div>
+
+            {/* Right col: Partner quick + Financial summary */}
+            <div className="space-y-5">
+                {/* Financial summary */}
+                <Card>
+                    <CardHeader icon={DollarSign} title="Synthèse Financière" />
+                    <div className="p-5 space-y-3">
+                        <div className="p-4 bg-gradient-to-br from-sage-500 to-sage-700 rounded-xl text-white">
+                            <p className="text-[10px] font-semibold uppercase tracking-wider opacity-80 mb-1">Total TTC</p>
+                            <p className="text-2xl font-black">{fmt(bc.total_amount)} <span className="text-sm font-normal opacity-70">Dh</span></p>
+                        </div>
+                        <div className="grid grid-cols-2 gap-2">
+                            <div className="p-3 bg-blue-50 border border-blue-100 rounded-xl">
+                                <p className="text-[10px] text-blue-400 font-semibold uppercase">HT</p>
+                                <p className="text-sm font-black text-blue-800 mt-0.5">{fmt(bc.sub_total)} Dh</p>
+                            </div>
+                            <div className="p-3 bg-amber-50 border border-amber-100 rounded-xl">
+                                <p className="text-[10px] text-amber-400 font-semibold uppercase">TVA</p>
+                                <p className="text-sm font-black text-amber-800 mt-0.5">{fmt(bc.tax_amount)} Dh</p>
+                            </div>
+                        </div>
+                        <Divider />
+                        <div className="space-y-2.5">
+                            <div className="flex justify-between text-xs">
+                                <span className="text-gray-500">Mode paiement</span>
+                                <span className="font-semibold text-gray-800">{bc.financial_metadata?.payment_method ?? '—'}</span>
+                            </div>
+                            <div className="flex justify-between text-xs">
+                                <span className="text-gray-500">Vente crédit</span>
+                                <Pill className={bc.financial_metadata?.is_credit_sale ? 'bg-indigo-50 text-indigo-700 ring-indigo-200' : 'bg-gray-50 text-gray-600 ring-gray-200'}>
+                                    {bc.financial_metadata?.is_credit_sale ? 'Oui' : 'Non'}
+                                </Pill>
+                            </div>
+                            <div className="flex justify-between text-xs">
+                                <span className="text-gray-500">Solde vérifié</span>
+                                <Pill className={bc.financial_metadata?.balance_checked ? 'bg-emerald-50 text-emerald-700 ring-emerald-200' : 'bg-red-50 text-red-700 ring-red-200'}>
+                                    {bc.financial_metadata?.balance_checked ? 'Oui' : 'Non'}
+                                </Pill>
+                            </div>
+                        </div>
+                    </div>
+                </Card>
+
+                {/* Partner stats */}
+                {partnerStats && (
+                    <Card>
+                        <CardHeader icon={TrendingUp} title="Stats Partenaire" />
+                        <div className="p-5 space-y-4">
+                            {[
+                                { label: 'Commandes totales', value: partnerStats.total_orders, color: 'sage' as const },
+                                { label: 'BCs en attente',    value: partnerStats.pending_bcs,  color: 'amber' as const },
+                            ].map(s => (
+                                <div key={s.label}>
+                                    <div className="flex justify-between items-center mb-1.5">
+                                        <span className="text-xs text-gray-500">{s.label}</span>
+                                        <Stat label="" value={s.value} color={s.color} />
+                                    </div>
+                                </div>
+                            ))}
+                            <Divider />
+                            <div className="flex justify-between text-xs">
+                                <span className="text-gray-500">Valeur moy. commande</span>
+                                <span className="font-black text-gray-900">{fmt(partnerStats.avg_order_value, 0)} Dh</span>
+                            </div>
+                        </div>
+                    </Card>
+                )}
+
+                {/* Credit quick view */}
+                <Card>
+                    <CardHeader icon={CreditCard} title="Crédit Client" />
+                    <div className="p-5">
+                        <div className="mb-3">
+                            <div className="flex justify-between text-xs mb-1.5">
+                                <span className="text-gray-500">Utilisation</span>
+                                <span className="font-bold text-gray-700">
+                                    {n(bc.partner.credit_limit) > 0 ? ((n(bc.partner.credit_used) / n(bc.partner.credit_limit)) * 100).toFixed(1) : '0'}%
+                                </span>
+                            </div>
+                            <Bar pct={n(bc.partner.credit_limit) > 0 ? (n(bc.partner.credit_used) / n(bc.partner.credit_limit)) * 100 : 0}
+                                color={(n(bc.partner.credit_used) / n(bc.partner.credit_limit)) > 0.9 ? 'red' : (n(bc.partner.credit_used) / n(bc.partner.credit_limit)) > 0.75 ? 'amber' : 'emerald'} />
+                        </div>
+                        <div className="space-y-2">
+                            <div className="flex justify-between text-xs"><span className="text-gray-400">Plafond</span><span className="font-bold">{fmt(bc.partner.credit_limit, 0)} Dh</span></div>
+                            <div className="flex justify-between text-xs"><span className="text-gray-400">Utilisé</span><span className="font-bold text-amber-600">{fmt(bc.partner.credit_used, 0)} Dh</span></div>
+                            <div className="flex justify-between text-xs"><span className="text-gray-400">Disponible</span><span className="font-bold text-emerald-600">{fmt(bc.partner.credit_available, 0)} Dh</span></div>
+                        </div>
+                        <div className="mt-3 pt-3 border-t border-gray-100">
+                            <div className="flex justify-between items-center">
+                                <span className="text-xs text-gray-500">Statut</span>
+                                <Pill className={bc.partner.credit_hold ? 'bg-red-50 text-red-700 ring-red-200' : 'bg-emerald-50 text-emerald-700 ring-emerald-200'}>
+                                    {bc.partner.credit_hold ? 'Bloqué' : 'Normal'}
+                                </Pill>
+                            </div>
+                        </div>
+                    </div>
+                </Card>
+            </div>
+        </div>
+    );
+};
+
+// ─── Tab: Lignes ──────────────────────────────────────────────────────────────
+
+const TabLignes = ({ bc }: { bc: BC }) => {
+    const totals = bc.order_products.reduce((a, p) => ({
+        ht: a.ht + n(p.line_total_ht), tva: a.tva + n(p.line_tax_amount), ttc: a.ttc + n(p.total_price),
+    }), { ht: 0, tva: 0, ttc: 0 });
+
+    const colDefs: ColDef<OrderProduct>[] = [
+        {
+            headerName: '', field: 'product.thumbnail' as any, width: 48, pinned: 'left', resizable: false, sortable: false,
+            cellRenderer: (p: any) => (
+                <div className="flex items-center justify-center h-full">
+                    {p.data.product.thumbnail
+                        ? <img src={p.data.product.thumbnail} alt="" className="w-7 h-7 rounded-lg object-cover border border-gray-100" />
+                        : <div className="w-7 h-7 rounded-lg bg-gray-100 flex items-center justify-center text-[8px] font-bold text-gray-400">{p.data.product.code?.slice(-3)}</div>}
+                </div>
+            ),
+        },
+        {
+            headerName: 'Article', flex: 2, minWidth: 220, pinned: 'left',
+            cellRenderer: (p: any) => (
+                <div className="flex flex-col justify-center h-full py-1">
+                    <p className="text-xs font-bold text-gray-900 leading-tight truncate">{p.data.product.name}</p>
+                    <div className="flex items-center gap-1.5 mt-0.5">
+                        <span className="text-[10px] font-mono text-gray-400">{p.data.product.code}</span>
+                        {p.data.sales_group_code && <span className="text-[9px] px-1 bg-slate-100 text-slate-500 rounded font-semibold">{p.data.sales_group_code}</span>}
+                    </div>
+                </div>
+            ),
+        },
+        {
+            headerName: 'Qté', field: 'quantity', width: 72,
+            cellClass: 'font-black text-right text-sm text-gray-900',
+            valueFormatter: p => parseFloat(p.value).toLocaleString('fr-FR'),
+        },
+        {
+            headerName: 'TVA', field: 'tax_rate', width: 60,
+            cellClass: 'text-center text-xs text-gray-500',
+            valueFormatter: p => `${parseFloat(p.value).toFixed(0)}%`,
+        },
+        {
+            headerName: 'PU HT', field: 'unit_price_ht', width: 100,
+            cellClass: 'text-right text-xs text-gray-500',
+            valueFormatter: p => `${fmt(p.value)} Dh`,
+        },
+        {
+            headerName: 'PU TTC', field: 'price', width: 100,
+            cellClass: 'text-right text-xs font-semibold text-gray-700',
+            valueFormatter: p => `${fmt(p.value)} Dh`,
+        },
+        {
+            headerName: 'Total HT', field: 'line_total_ht', width: 110,
+            cellClass: 'text-right text-xs text-gray-500',
+            valueFormatter: p => `${fmt(p.value)} Dh`,
+        },
+        {
+            headerName: 'TVA Ligne', field: 'line_tax_amount', width: 100,
+            cellClass: 'text-right text-xs text-amber-600',
+            valueFormatter: p => `${fmt(p.value)} Dh`,
+        },
+        {
+            headerName: 'Total TTC', field: 'total_price', width: 115, pinned: 'right',
+            cellRenderer: (p: any) => (
+                <div className="flex items-center justify-end h-full">
+                    <span className="font-black text-sm text-sage-700">{fmt(p.value)} Dh</span>
+                </div>
+            ),
+        },
+        {
+            headerName: 'Stock', field: 'available_stock_quantity', width: 90, pinned: 'right',
+            cellRenderer: (p: any) => {
+                const ok = p.value >= parseFloat(p.data.quantity);
+                return (
+                    <div className="flex items-center justify-center h-full">
+                        <span className={cn('text-[10px] font-bold px-2 py-0.5 rounded-full', ok ? 'bg-emerald-100 text-emerald-700' : 'bg-red-100 text-red-700')}>
+                            {p.value}
+                        </span>
+                    </div>
+                );
+            },
+        },
+    ];
+
+    return (
+        <div className="space-y-4">
+            {/* Totals bar */}
+            <div className="grid grid-cols-3 gap-3">
+                {[
+                    { label: 'Total HT',  value: totals.ht,  color: 'blue' },
+                    { label: 'Total TVA', value: totals.tva, color: 'amber' },
+                    { label: 'Total TTC', value: totals.ttc, color: 'sage' },
+                ].map(t => (
+                    <Card key={t.label} className="p-4 flex items-center gap-3">
+                        <div className={cn('w-1 h-8 rounded-full shrink-0', t.color === 'blue' ? 'bg-blue-400' : t.color === 'amber' ? 'bg-amber-400' : 'bg-sage-500')} />
+                        <div>
+                            <p className="text-[10px] text-gray-400 font-semibold uppercase">{t.label}</p>
+                            <p className="text-lg font-black text-gray-900 mt-0.5">{fmt(t.value)} <span className="text-xs font-normal text-gray-400">Dh</span></p>
+                        </div>
+                    </Card>
+                ))}
+            </div>
+
+            {/* Grid */}
+            <Card>
+                <div className="h-[420px] overflow-hidden rounded-2xl">
+                    <DataGrid rowData={bc.order_products} columnDefs={colDefs} rowHeight={52} />
+                </div>
+            </Card>
+        </div>
+    );
+};
+
+// ─── Tab: Client ──────────────────────────────────────────────────────────────
+
+const TabClient = ({ bc }: { bc: BC }) => {
+    const p = bc.partner;
+    const limit = n(p.credit_limit), used = n(p.credit_used), avail = n(p.credit_available);
+    const util = limit > 0 ? (used / limit) * 100 : 0;
+    const newBalance = used + n(bc.total_amount);
+    const willExceed = newBalance > limit;
+
+    return (
+        <div className="grid grid-cols-3 gap-5">
+            {/* Identity */}
+            <Card className="col-span-2">
+                <CardHeader icon={User} title="Identité & Coordonnées" />
+                <div className="p-5 grid grid-cols-2 gap-x-10 gap-y-4">
+                    <div className="space-y-4">
+                        <Field label="Code client"    value={<span className="font-mono">{p.code}</span>} />
+                        <Field label="Raison sociale" value={p.name} />
+                        <Field label="Type"           value={p.partner_type} />
+                        <Field label="Canal"          value={p.channel} />
+                        <Field label="ICE"            value={p.tax_number_ice} />
+                        <Field label="IF"             value={p.tax_number_if} />
+                        <Field label="Statut"         value={<Pill className={p.status === 'ACTIVE' ? 'bg-emerald-50 text-emerald-700 ring-emerald-200' : 'bg-red-50 text-red-700 ring-red-200'}>{p.status}</Pill>} />
+                    </div>
+                    <div className="space-y-4">
+                        <Field label="Adresse"    value={p.address_line1} />
+                        <Field label="Ville"      value={p.city} />
+                        <Field label="Région"     value={p.region} />
+                        <Field label="Pays"       value={p.country} />
+                        <Field label="Téléphone"  value={p.phone} />
+                        <Field label="Email"      value={p.email} />
+                        <Field label="Site web"   value={p.website} />
+                    </div>
+                </div>
+            </Card>
+
+            {/* Scores */}
+            <div className="space-y-4">
+                <Card>
+                    <CardHeader icon={Star} title="Scores" />
+                    <div className="p-5 space-y-5">
+                        {[
+                            { label: 'Comportement paiement', value: p.payment_behavior_score, invert: false },
+                            { label: 'Score de risque',       value: p.risk_score,             invert: true },
+                        ].map(s => {
+                            const pct = s.value;
+                            const color = s.invert
+                                ? (pct >= 70 ? 'red' : pct >= 40 ? 'amber' : 'emerald') as any
+                                : (pct >= 70 ? 'emerald' : pct >= 40 ? 'amber' : 'red') as any;
+                            return (
+                                <div key={s.label}>
+                                    <div className="flex justify-between text-xs mb-1.5">
+                                        <span className="text-gray-500">{s.label}</span>
+                                        <span className="font-black text-gray-900">{pct}<span className="text-gray-400 font-normal">/100</span></span>
+                                    </div>
+                                    <Bar pct={pct} color={color} />
+                                </div>
+                            );
+                        })}
+                        <Divider />
+                        <div className="grid grid-cols-2 gap-3">
+                            <div className="text-center p-2 bg-gray-50 rounded-xl">
+                                <p className="text-xl font-black text-gray-900">{p.total_orders_count}</p>
+                                <p className="text-[10px] text-gray-400">commandes</p>
+                            </div>
+                            <div className="text-center p-2 bg-gray-50 rounded-xl">
+                                <p className="text-sm font-black text-gray-900">{fmt(p.total_orders_value, 0)}</p>
+                                <p className="text-[10px] text-gray-400">Dh total</p>
+                            </div>
+                        </div>
+                    </div>
+                </Card>
+            </div>
+
+            {/* Credit full */}
+            <Card className="col-span-3">
+                <CardHeader icon={CreditCard} title="Situation Crédit" />
+                <div className="p-5">
+                    {willExceed && (
+                        <div className="mb-5 flex items-start gap-3 p-4 bg-red-50 border border-red-200 rounded-xl">
+                            <AlertTriangle className="w-4 h-4 text-red-500 shrink-0 mt-0.5" />
+                            <div className="text-sm">
+                                <p className="font-bold text-red-800">Ce BC dépasserait le plafond de crédit</p>
+                                <p className="text-red-600 text-xs mt-0.5">Nouveau solde après BC : <b>{fmt(newBalance)} Dh</b> — Plafond : <b>{fmt(limit)} Dh</b> — Excédent : <b>{fmt(newBalance - limit)} Dh</b></p>
+                            </div>
+                        </div>
+                    )}
+                    <div className="grid grid-cols-4 gap-5">
+                        <div className="col-span-3">
+                            <div className="flex justify-between text-sm mb-2">
+                                <span className="text-gray-500 font-medium">Taux d'utilisation</span>
+                                <span className="font-black">{util.toFixed(1)}%</span>
+                            </div>
+                            <div className="w-full h-3 rounded-full bg-gray-100 overflow-hidden mb-4">
+                                <div className={cn('h-full rounded-full transition-all', util > 100 ? 'bg-red-500' : util > 80 ? 'bg-amber-500' : 'bg-emerald-500')}
+                                    style={{ width: `${Math.min(util, 100)}%` }} />
+                            </div>
+                            <div className="grid grid-cols-3 gap-4">
+                                {[{ l: 'Plafond', v: limit, c: 'text-gray-900' }, { l: 'Utilisé', v: used, c: 'text-amber-700' }, { l: 'Disponible', v: avail, c: 'text-emerald-700' }].map(i => (
+                                    <div key={i.l} className="p-3 bg-gray-50 rounded-xl border border-gray-100">
+                                        <p className="text-[10px] text-gray-400 uppercase font-semibold">{i.l}</p>
+                                        <p className={cn('text-lg font-black mt-0.5', i.c)}>{fmt(i.v, 0)} <span className="text-xs font-normal text-gray-400">Dh</span></p>
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+                        <div className="space-y-3">
+                            <Field label="Statut crédit" value={<Pill className={p.credit_hold ? 'bg-red-50 text-red-700 ring-red-200' : 'bg-emerald-50 text-emerald-700 ring-emerald-200'}>{p.credit_hold ? '● Bloqué' : '● Normal'}</Pill>} />
+                            {p.credit_hold_reason && <Field label="Raison" value={p.credit_hold_reason} />}
+                            <Field label="Mode paiement" value={bc.financial_metadata?.payment_method} />
+                            <Field label="Solde vérifié" value={bc.financial_metadata?.balance_checked ? 'Oui' : 'Non'} />
+                        </div>
+                    </div>
+                </div>
+            </Card>
+        </div>
+    );
+};
+
+// ─── Tab: Stock ───────────────────────────────────────────────────────────────
+
+const TabStock = ({ bc }: { bc: BC }) => {
+    const items = bc.order_products;
+    const ok = items.filter(p => p.available_stock_quantity >= parseFloat(p.quantity)).length;
+    const partial = items.filter(p => p.available_stock_quantity > 0 && p.available_stock_quantity < parseFloat(p.quantity)).length;
+    const out = items.length - ok - partial;
+
+    return (
+        <div className="space-y-5">
+            {/* KPIs */}
+            <div className="grid grid-cols-3 gap-4">
+                {[
+                    { label: 'Disponible', n: ok,      icon: CheckCircle, c: { bg: 'bg-emerald-50', border: 'border-emerald-200', text: 'text-emerald-700', icon: 'text-emerald-500' } },
+                    { label: 'Partiel',    n: partial,  icon: AlertTriangle, c: { bg: 'bg-amber-50', border: 'border-amber-200', text: 'text-amber-700', icon: 'text-amber-500' } },
+                    { label: 'Rupture',    n: out,      icon: XCircle, c: { bg: 'bg-red-50', border: 'border-red-200', text: 'text-red-700', icon: 'text-red-500' } },
+                ].map(({ label, n: count, icon: Icon, c }) => (
+                    <div key={label} className={cn('rounded-2xl border p-5 flex items-center gap-4', c.bg, c.border)}>
+                        <div className={cn('w-10 h-10 rounded-xl bg-white/60 flex items-center justify-center shrink-0')}>
+                            <Icon className={cn('w-5 h-5', c.icon)} />
+                        </div>
+                        <div>
+                            <p className={cn('text-3xl font-black leading-none', c.text)}>{count}</p>
+                            <p className={cn('text-xs mt-1', c.text, 'opacity-70')}>{label}</p>
+                        </div>
+                    </div>
+                ))}
+            </div>
+
+            {/* Per article */}
+            <Card>
+                <CardHeader icon={Package} title="Stock par Article" />
+                <div className="divide-y divide-gray-50">
+                    {items.map(item => {
+                        const qty = parseFloat(item.quantity);
+                        const avail = item.available_stock_quantity;
+                        const pct = qty > 0 ? Math.min(avail / qty, 1) * 100 : 100;
+                        const okLine = avail >= qty;
+                        const partLine = avail > 0 && !okLine;
+                        const color = okLine ? 'emerald' : partLine ? 'amber' : 'red';
+                        return (
+                            <div key={item.id} className="px-5 py-4">
+                                <div className="flex items-center justify-between mb-2">
+                                    <div className="flex items-center gap-2.5 min-w-0">
+                                        <span className={cn('w-2 h-2 rounded-full shrink-0', okLine ? 'bg-emerald-500' : partLine ? 'bg-amber-500' : 'bg-red-500')} />
+                                        <div className="min-w-0">
+                                            <p className="text-xs font-bold text-gray-900 truncate">{item.product.name}</p>
+                                            <p className="text-[10px] text-gray-400 font-mono">{item.product.code}</p>
+                                        </div>
+                                    </div>
+                                    <div className="flex items-center gap-3 shrink-0 ml-4">
+                                        <span className="text-xs text-gray-500"><span className="font-black text-gray-900">{avail}</span> / {qty} unités</span>
+                                        <Pill className={okLine ? 'bg-emerald-50 text-emerald-700 ring-emerald-200' : partLine ? 'bg-amber-50 text-amber-700 ring-amber-200' : 'bg-red-50 text-red-700 ring-red-200'}>
+                                            {okLine ? 'OK' : partLine ? 'Partiel' : 'Rupture'}
+                                        </Pill>
+                                    </div>
+                                </div>
+                                <Bar pct={pct} color={color} />
+                            </div>
+                        );
+                    })}
+                </div>
+            </Card>
+        </div>
+    );
+};
+
+// ─── Tab: Logistique ──────────────────────────────────────────────────────────
+
+const TabLogistique = ({ logistics }: { logistics?: LogisticsAggregate }) => {
+    if (!logistics) return <div className="flex items-center justify-center h-40 text-gray-400 text-sm">Données logistiques non disponibles</div>;
+    const products = Object.values(logistics.per_product);
+    const cmpColor = { complete: 'emerald', partial: 'amber', missing: 'red' }[logistics.data_completeness] as any;
+    const cmpLabel = { complete: 'Complète', partial: 'Partielle', missing: 'Manquante' }[logistics.data_completeness];
+
+    return (
+        <div className="space-y-5">
+            {/* KPIs */}
+            <div className="grid grid-cols-4 gap-4">
+                {[
+                    { icon: Weight, label: 'Poids total',  value: logistics.weight_evaluable ? `${fmt(logistics.total_weight_kg)} kg` : 'N/A' },
+                    { icon: Box,    label: 'Volume total',  value: logistics.volume_evaluable ? `${fmt(logistics.total_volume_m3, 3)} m³` : 'N/A' },
+                    { icon: Package, label: 'Colis',       value: products.reduce((s, p) => s + (p.physical_packages || 0), 0) },
+                    { icon: Layers, label: 'Complétude',   value: <Pill className={`bg-${cmpColor}-50 text-${cmpColor}-700 ring-${cmpColor}-200`}>{cmpLabel}</Pill> },
+                ].map(k => (
+                    <Card key={k.label} className="p-4 flex items-center gap-3">
+                        <div className="w-9 h-9 rounded-xl bg-gray-50 flex items-center justify-center shrink-0">
+                            <k.icon className="w-4 h-4 text-gray-400" />
+                        </div>
+                        <div>
+                            <p className="text-[10px] text-gray-400 font-semibold uppercase">{k.label}</p>
+                            <p className="text-sm font-black text-gray-900 mt-0.5">{k.value}</p>
+                        </div>
+                    </Card>
+                ))}
+            </div>
+
+            {/* Handling flags */}
+            <Card>
+                <CardHeader icon={Truck} title="Contraintes de Manutention" />
+                <div className="p-5 flex flex-wrap gap-2">
+                    {[
+                        { flag: logistics.handling_flags.fragile_present,           label: 'Fragile',            ok: false },
+                        { flag: logistics.handling_flags.all_stackable,             label: 'Tout empilable',     ok: true },
+                        { flag: logistics.handling_flags.requires_separation_present, label: 'Séparation requise', ok: false },
+                        { flag: (logistics.handling_flags.temperature_profile_codes?.length ?? 0) > 0, label: 'Chaîne du froid', ok: false },
+                    ].map(f => (
+                        <div key={f.label} className={cn('flex items-center gap-1.5 px-3 py-1.5 rounded-xl border text-xs font-semibold',
+                            f.flag
+                                ? f.ok ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-amber-50 text-amber-700 border-amber-200'
+                                : 'bg-gray-50 text-gray-400 border-gray-200')}>
+                            {f.flag
+                                ? f.ok ? <CheckCircle className="w-3.5 h-3.5" /> : <AlertTriangle className="w-3.5 h-3.5" />
+                                : <XCircle className="w-3.5 h-3.5" />}
+                            {f.label}
+                        </div>
+                    ))}
+                </div>
+            </Card>
+
+            {/* Per product */}
+            <Card>
+                <CardHeader icon={Package} title="Détail Logistique par Article" />
+                <div className="divide-y divide-gray-50">
+                    {products.map(prod => (
+                        <div key={prod.product_id} className="px-5 py-4">
+                            <div className="flex items-start justify-between mb-3">
+                                <div>
+                                    <p className="text-sm font-bold text-gray-900">{prod.product_name}</p>
+                                    <p className="text-[10px] text-gray-400 font-mono mt-0.5">#{prod.product_id}</p>
+                                </div>
+                                <Pill className="bg-slate-100 text-slate-600 ring-slate-200 font-mono text-[10px]">{prod.shipping_level}</Pill>
+                            </div>
+                            <div className="grid grid-cols-4 gap-3">
+                                {[
+                                    { label: 'Qté', value: prod.base_quantity },
+                                    { label: 'Colis', value: prod.physical_packages },
+                                    { label: 'Poids', value: prod.line_gross_weight_kg != null ? `${prod.line_gross_weight_kg} kg` : '—' },
+                                    { label: 'Volume', value: prod.line_volume_m3 != null ? `${prod.line_volume_m3} m³` : '—' },
+                                ].map(f => (
+                                    <div key={f.label} className="text-center p-2 bg-gray-50 rounded-xl">
+                                        <p className="text-[10px] text-gray-400">{f.label}</p>
+                                        <p className="text-sm font-black text-gray-900 mt-0.5">{f.value}</p>
+                                    </div>
+                                ))}
+                            </div>
+                            <div className="flex flex-wrap gap-1.5 mt-3">
+                                {prod.profile_flags.stackable && <span className="text-[10px] px-2 py-0.5 bg-blue-50 text-blue-600 border border-blue-100 rounded-lg">Empilable</span>}
+                                {prod.profile_flags.fragile && <span className="text-[10px] px-2 py-0.5 bg-red-50 text-red-600 border border-red-100 rounded-lg">Fragile</span>}
+                                {prod.profile_flags.keep_upright && <span className="text-[10px] px-2 py-0.5 bg-slate-50 text-slate-600 border border-slate-100 rounded-lg">À l'endroit</span>}
+                                {prod.profile_flags.temperature_controlled && <span className="text-[10px] px-2 py-0.5 bg-cyan-50 text-cyan-600 border border-cyan-100 rounded-lg">Tempéré</span>}
+                            </div>
+                        </div>
+                    ))}
+                </div>
+            </Card>
+
+            {/* Missing + notes */}
+            {logistics.missing_product_logistics.length > 0 && (
+                <Card>
+                    <CardHeader icon={AlertCircle} title="Données Manquantes" />
+                    <div className="p-5 space-y-2">
+                        {logistics.missing_product_logistics.map((m, i) => (
+                            <div key={i} className="flex items-center gap-2.5 p-3 bg-amber-50 border border-amber-100 rounded-xl">
+                                <AlertTriangle className="w-4 h-4 text-amber-500 shrink-0" />
+                                <span className="text-xs text-amber-800">Produit <span className="font-mono font-bold">#{m.product_id}</span> — <span className="font-mono">{m.reason.replace(/_/g, ' ')}</span></span>
+                            </div>
+                        ))}
+                    </div>
+                </Card>
+            )}
+            {logistics.notes?.length > 0 && (
+                <div className="p-4 bg-blue-50 border border-blue-100 rounded-xl">
+                    {logistics.notes.map((note, i) => <p key={i} className="text-xs text-blue-700">{note}</p>)}
+                </div>
+            )}
+        </div>
+    );
+};
+
+// ─── Tab: Historique ──────────────────────────────────────────────────────────
+
+const TabHistorique = ({ bc, orderId }: { bc: BC; orderId: number }) => {
+    const { workflowHistory, isLoadingHistory } = useAdvWorkflow(orderId);
+    const transitions = bc.workflow_instance?.transitions ?? [];
+
+    return (
+        <div className="grid grid-cols-2 gap-5">
+            {/* Transitions from BC detail */}
+            <Card>
+                <CardHeader icon={Clock} title="Transitions de la Commande" />
+                <div className="p-5">
+                    {transitions.length === 0 ? (
+                        <p className="text-sm text-gray-400 text-center py-4">Aucune transition</p>
                     ) : (
-                        <div className="text-center py-8 text-gray-400">
-                            <Clock className="w-8 h-8 mx-auto mb-2 text-gray-300" />
-                            <p>Aucune condition de paiement définie</p>
+                        <div className="relative">
+                            <div className="absolute left-4 top-0 bottom-0 w-px bg-gray-100" />
+                            <div className="space-y-4">
+                                {transitions.map(t => (
+                                    <div key={t.id} className="relative pl-10">
+                                        <div className={cn('absolute left-3 top-1.5 w-2.5 h-2.5 rounded-full border-2 border-white ring-2', t.action === 'submit_order' ? 'bg-blue-500 ring-blue-200' : t.action === 'initialized' ? 'bg-gray-400 ring-gray-200' : 'bg-sage-500 ring-sage-200')} />
+                                        <div className="bg-gray-50 border border-gray-100 rounded-xl p-3.5">
+                                            <div className="flex items-center justify-between mb-1.5">
+                                                <span className="text-[10px] font-mono font-bold text-gray-700 px-1.5 py-0.5 bg-white border border-gray-200 rounded-md">{t.action}</span>
+                                                <span className="text-[10px] text-gray-400">{fmtDate(t.performed_at, true)}</span>
+                                            </div>
+                                            {t.performed_by && (
+                                                <div className="flex items-center gap-1.5 mt-1">
+                                                    <div className="w-4 h-4 rounded-full bg-sage-100 flex items-center justify-center shrink-0">
+                                                        <User className="w-2.5 h-2.5 text-sage-600" />
+                                                    </div>
+                                                    <span className="text-xs font-semibold text-gray-700">{t.performed_by.name}</span>
+                                                </div>
+                                            )}
+                                            {t.comment && <p className="text-xs italic text-gray-500 mt-1.5 pt-1.5 border-t border-gray-100">"{t.comment}"</p>}
+                                            {t.metadata && Object.keys(t.metadata).length > 0 && (
+                                                <div className="mt-2 flex flex-wrap gap-1">
+                                                    {Object.entries(t.metadata).map(([k, v]) => (
+                                                        <span key={k} className="text-[9px] px-1.5 py-0.5 bg-white border border-gray-200 rounded font-mono text-gray-400">{k}: {String(v)}</span>
+                                                    ))}
+                                                </div>
+                                            )}
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
                         </div>
                     )}
                 </div>
+            </Card>
 
-                {/* Payment Information Card */}
-                <div className="bg-white dark:bg-gray-800 p-6 rounded-xl border border-gray-200 dark:border-gray-700 shadow-sm">
-                    <div className="flex items-center gap-3 mb-6 pb-4 border-b border-gray-100 dark:border-gray-700">
-                        <div className="p-2 bg-blue-50 dark:bg-blue-900/20 rounded-lg">
-                            <CreditCard className="w-5 h-5 text-blue-600 dark:text-blue-400" />
+            {/* Workflow API history */}
+            <Card>
+                <CardHeader icon={History} title="Historique Workflow" />
+                <div className="p-5">
+                    {isLoadingHistory ? (
+                        <div className="flex items-center justify-center h-20 text-gray-400">
+                            <Loader2 className="w-5 h-5 animate-spin mr-2" /><span className="text-sm">Chargement...</span>
                         </div>
-                        <h3 className="text-base font-semibold text-gray-900 dark:text-gray-100">Informations Paiement</h3>
-                    </div>
-
-                    <div className="space-y-4">
-                        <div className="p-4 bg-gray-50 dark:bg-gray-900 rounded-lg border border-gray-100 dark:border-gray-800">
-                            <div className="flex items-center justify-between mb-2">
-                                <span className="text-xs font-medium text-gray-500 uppercase tracking-wide">Plafond de Crédit</span>
-                                <span className="text-lg font-bold text-gray-900 dark:text-gray-100">
-                                    {parseFloat(partner.credit_limit).toLocaleString()} DH
-                                </span>
-                            </div>
-                        </div>
-
-                        <div className="p-4 bg-gray-50 dark:bg-gray-900 rounded-lg border border-gray-100 dark:border-gray-800">
-                            <div className="flex items-center justify-between mb-2">
-                                <span className="text-xs font-medium text-gray-500 uppercase tracking-wide">Crédit Utilisé</span>
-                                <span className="text-lg font-bold text-amber-600 dark:text-amber-400">
-                                    {parseFloat(partner.credit_used).toLocaleString()} DH
-                                </span>
-                            </div>
-                        </div>
-
-                        <div className="p-4 bg-emerald-50 dark:bg-emerald-900/20 rounded-lg border border-emerald-100 dark:border-emerald-900/30">
-                            <div className="flex items-center justify-between mb-2">
-                                <span className="text-xs font-medium text-emerald-600 dark:text-emerald-400 uppercase tracking-wide">Crédit Disponible</span>
-                                <span className="text-lg font-bold text-emerald-700 dark:text-emerald-300">
-                                    {parseFloat(partner.credit_available).toLocaleString()} DH
-                                </span>
-                            </div>
-                        </div>
-
-                        {partner.credit_hold && (
-                            <div className="p-4 bg-red-50 dark:bg-red-900/20 rounded-lg border border-red-100 dark:border-red-900/30">
-                                <div className="flex items-center gap-2">
-                                    <AlertTriangle className="w-5 h-5 text-red-600 dark:text-red-400" />
-                                    <span className="text-sm font-semibold text-red-700 dark:text-red-300">Crédit Bloqué</span>
-                                </div>
-                            </div>
-                        )}
-                    </div>
+                    ) : (
+                        <WorkflowHistory history={workflowHistory} isLoading={isLoadingHistory} />
+                    )}
                 </div>
-            </div>
+            </Card>
         </div>
     );
 };
 
-const BcDetailView = ({ bc, onRefresh }: { bc: BC; onRefresh: () => void }) => {
-    const { workflowHistory, isLoadingHistory } = useAdvWorkflow(bc.id);
+// ─── Detail view ──────────────────────────────────────────────────────────────
 
-    const tabs: TabItem[] = [
-        { id: 'info', label: 'Informations', icon: Info },
-        { id: 'lines', label: 'Lignes de Commande', icon: FileText },
-        { id: 'client', label: 'Info Client & Crédit', icon: User },
-        { id: 'stock', label: 'Analyse Stock', icon: Package },
-        { id: 'payment', label: 'Conditions de Paiement', icon: CreditCard },
-        { id: 'history', label: 'Historique Workflow', icon: History },
-    ];
-
-    const [activeTab, setActiveTab] = useState('info');
-    const [openSections, setOpenSections] = useState<Record<string, boolean>>({
-        info: true,
-        lines: true,
-        client: true,
-        stock: true,
-        payment: true,
-        history: true
-    });
-
-    const sectionRefs = useRef<Record<string, HTMLDivElement | null>>({});
-    const containerRef = useRef<HTMLDivElement>(null);
-    const isScrollingRef = useRef(false);
-
-    // Scroll Spy Logic
-    useEffect(() => {
-        const container = containerRef.current;
-        if (!container) return;
-
-        const handleScroll = () => {
-            if (isScrollingRef.current) return;
-
-            const containerTop = container.scrollTop;
-            for (const tab of tabs) {
-                const el = sectionRefs.current[tab.id];
-                if (!el || !openSections[tab.id]) continue;
-
-                const elTop = el.offsetTop;
-                const elBottom = elTop + el.clientHeight;
-
-                if (elTop <= containerTop + 100 && elBottom > containerTop + 50) {
-                    if (activeTab !== tab.id) {
-                        setActiveTab(tab.id);
-                    }
-                    break;
-                }
-            }
-        };
-
-        container.addEventListener('scroll', handleScroll);
-        return () => container.removeEventListener('scroll', handleScroll);
-    }, [openSections, tabs, activeTab]);
-
-    const handleTabChange = (id: string) => {
-        setActiveTab(id);
-        isScrollingRef.current = true;
-
-        if (!openSections[id]) {
-            setOpenSections(prev => ({ ...prev, [id]: true }));
-        }
-
-        setTimeout(() => {
-            const el = sectionRefs.current[id];
-            const container = containerRef.current;
-
-            if (el && container) {
-                const elementTop = el.offsetTop;
-                container.scrollTo({
-                    top: elementTop - container.offsetTop,
-                    behavior: 'smooth'
-                });
-            }
-            setTimeout(() => { isScrollingRef.current = false; }, 600);
-        }, 100);
-    };
-
-    const toggleSection = (id: string, isOpen: boolean) => {
-        setOpenSections(prev => ({ ...prev, [id]: isOpen }));
-    };
-
-    const handleExpandAll = () => {
-        const allOpen = tabs.reduce((acc, tab) => ({ ...acc, [tab.id]: true }), {});
-        setOpenSections(allOpen);
-    };
-
-    const handleCollapseAll = () => {
-        const allClosed = tabs.reduce((acc, tab) => ({ ...acc, [tab.id]: false }), {});
-        setOpenSections(allClosed);
-    };
-
-    if (!bc) return <div className="p-10 text-center text-gray-400">Sélectionnez une commande</div>;
+const DetailView = ({ detailData, onRefresh }: { detailData: BcDetailData; onRefresh: () => void }) => {
+    const [tab, setTab] = useState<TabId>('resume');
+    const { bc } = detailData;
 
     return (
-        <div className="flex flex-col h-full bg-slate-50 dark:bg-black/20 overflow-hidden">
-            {/* Compact Header */}
-            <div className="bg-gradient-to-br from-white to-gray-50 dark:from-gray-900 dark:to-gray-800 border-b-2 border-sage-200 dark:border-sage-800 sticky top-0 z-20 shadow-sm">
-                <div className="px-6 py-3 flex justify-between items-center">
-                    <div className="flex items-center gap-3">
-                        <h1 className="text-2xl font-black text-gray-900 dark:text-white">
-                            {bc.bc_number}
-                        </h1>
-                        <span className="text-sm text-gray-400 font-medium">#{bc.order_code}</span>
-                        {bc.is_urgent && (
-                            <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-red-500 text-white text-xs font-bold rounded-full animate-pulse">
-                                <AlertTriangle className="w-3 h-3" /> URGENT
-                            </span>
-                        )}
-                    </div>
-                    <div className="text-right">
-                        <div className="text-3xl font-black text-sage-600 dark:text-sage-400">
-                            {parseFloat(bc.total_amount).toLocaleString()}
-                            <span className="text-sm font-normal text-gray-500 ml-1">DH</span>
-                        </div>
-                    </div>
-                </div>
-            </div>
-
-            {/* Tabs */}
-            <div className="shrink-0 bg-white dark:bg-gray-900 border-b border-gray-200 dark:border-gray-800 z-10 min-w-0">
-                <SageTabs
-                    tabs={tabs}
-                    activeTabId={activeTab}
-                    onTabChange={handleTabChange}
-                    onExpandAll={handleExpandAll}
-                    onCollapseAll={handleCollapseAll}
-                    className="px-6 shadow-none"
-                />
-            </div>
-
-            {/* Content Area */}
-            <div ref={containerRef} className="flex-1 overflow-y-auto p-6 space-y-4 scroll-smooth">
-
-                <div ref={el => { sectionRefs.current['info'] = el; }}>
-                    <SageCollapsible
-                        title="Informations Commande"
-                        isOpen={openSections['info']}
-                        onOpenChange={(open) => toggleSection('info', open)}
-                    >
-                        <div className="p-6 space-y-6">
-                            {/* Order Details */}
-                            <div className="grid grid-cols-2 gap-6">
-                                <div className="space-y-4">
-                                    <div>
-                                        <label className="text-xs font-medium text-gray-500 uppercase tracking-wide">Date de Création</label>
-                                        <div className="flex items-center gap-2 mt-1">
-                                            <Calendar className="w-4 h-4 text-gray-400" />
-                                            <span className="text-sm font-medium text-gray-900 dark:text-white">
-                                                {new Date(bc.created_at).toLocaleDateString('fr-FR', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
-                                            </span>
-                                        </div>
-                                    </div>
-                                    <div>
-                                        <label className="text-xs font-medium text-gray-500 uppercase tracking-wide">Client</label>
-                                        <div className="flex items-center gap-2 mt-1">
-                                            <Building className="w-4 h-4 text-gray-400" />
-                                            <span className="text-sm font-semibold text-gray-900 dark:text-white">{bc.partner.name}</span>
-                                            <span className="text-xs bg-gray-200 dark:bg-gray-700 px-2 py-0.5 rounded font-mono">{bc.partner.code}</span>
-                                        </div>
-                                    </div>
-                                </div>
-                                <div className="space-y-4">
-                                    <div>
-                                        <label className="text-xs font-medium text-gray-500 uppercase tracking-wide">Montant Total</label>
-                                        <div className="text-2xl font-black text-sage-600 dark:text-sage-400 mt-1">
-                                            {parseFloat(bc.total_amount).toLocaleString()} DH
-                                        </div>
-                                    </div>
-                                    <div>
-                                        <label className="text-xs font-medium text-gray-500 uppercase tracking-wide">Nombre d'Articles</label>
-                                        <div className="text-lg font-bold text-gray-900 dark:text-white mt-1">
-                                            {bc.items_count} articles
-                                        </div>
-                                    </div>
-                                </div>
-                            </div>
-
-                            {/* Workflow Actions */}
-                            <div className="border-t border-gray-200 dark:border-gray-700 pt-6">
-                                <h3 className="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-4">Actions Workflow</h3>
-                                <BCWorkflowActions
-                                    orderId={bc.id}
-                                    onSuccess={onRefresh}
-                                />
-                            </div>
-                        </div>
-                    </SageCollapsible>
-                </div>
-
-                <div ref={el => { sectionRefs.current['lines'] = el; }}>
-                    <SageCollapsible
-                        title="Lignes de Commande"
-                        isOpen={openSections['lines']}
-                        onOpenChange={(open) => toggleSection('lines', open)}
-                    >
-                        <OrderLinesContent lines={bc.order_products} />
-                    </SageCollapsible>
-                </div>
-
-                <div ref={el => { sectionRefs.current['client'] = el; }}>
-                    <SageCollapsible
-                        title="Info Client & Crédit"
-                        isOpen={openSections['client']}
-                        onOpenChange={(open) => toggleSection('client', open)}
-                    >
-                        <ClientInfoContent partner={bc.partner} bcAmount={bc.total_amount} />
-                    </SageCollapsible>
-                </div>
-
-                <div ref={el => { sectionRefs.current['stock'] = el; }}>
-                    <SageCollapsible
-                        title="Analyse Stock"
-                        isOpen={openSections['stock']}
-                        onOpenChange={(open) => toggleSection('stock', open)}
-                    >
-                        <StockAnalysisContent bc={bc} />
-                    </SageCollapsible>
-                </div>
-
-                <div ref={el => { sectionRefs.current['payment'] = el; }}>
-                    <SageCollapsible
-                        title="Conditions de Paiement"
-                        isOpen={openSections['payment']}
-                        onOpenChange={(open) => toggleSection('payment', open)}
-                    >
-                        <PaymentTermContent partner={bc.partner} />
-                    </SageCollapsible>
-                </div>
-
-                <div ref={el => { sectionRefs.current['history'] = el; }}>
-                    <SageCollapsible
-                        title="Historique Workflow"
-                        isOpen={openSections['history']}
-                        onOpenChange={(open) => toggleSection('history', open)}
-                    >
-                        <div className="p-6">
-                            <WorkflowHistory
-                                history={workflowHistory}
-                                isLoading={isLoadingHistory}
-                            />
-                        </div>
-                    </SageCollapsible>
-                </div>
+        <div className="flex flex-col h-full overflow-hidden bg-slate-50/80">
+            <DetailHeader data={detailData} />
+            <TabBar active={tab} onChange={setTab} />
+            <div className="flex-1 overflow-y-auto p-5">
+                {tab === 'resume'     && <TabResume     data={detailData}   onRefresh={onRefresh} />}
+                {tab === 'lignes'     && <TabLignes     bc={bc} />}
+                {tab === 'client'     && <TabClient     bc={bc} />}
+                {tab === 'stock'      && <TabStock      bc={bc} />}
+                {tab === 'logistique' && <TabLogistique logistics={detailData.logistics_aggregate} />}
+                {tab === 'historique' && <TabHistorique bc={bc} orderId={bc.id} />}
             </div>
         </div>
     );
 };
 
+// ─── Main page ────────────────────────────────────────────────────────────────
+
 export const AdvValidationPage = () => {
-    const { has } = usePermissions();
+    const { can } = usePermissions();
     const [searchParams] = useSearchParams();
-    const [bcs, setBcs] = useState<BC[]>([]);
-    const [selectedBcId, setSelectedBcId] = useState<number | null>(null);
-    const [selectedBcDetails, setSelectedBcDetails] = useState<BC | null>(null);
-    const [loading, setLoading] = useState<boolean>(true);
-    const [detailLoading, setDetailLoading] = useState<boolean>(false);
+    const [bcs, setBcs] = useState<any[]>([]);
+    const [selectedId, setSelectedId] = useState<number | null>(null);
+    const [detailData, setDetailData] = useState<BcDetailData | null>(null);
+    const [loading, setLoading] = useState(true);
+    const [detailLoading, setDetailLoading] = useState(false);
+    const [showDerogation, setShowDerogation] = useState(false);
 
-    // Modal State
-    // Modal State
-    const [modalConfig, setModalConfig] = useState<{
-        isOpen: boolean;
-        type: 'approve' | 'reject' | 'hold' | null;
-        title: string;
-        description: string;
-        variant: 'sage' | 'danger' | 'warning';
-    }>({
-        isOpen: false,
-        type: null,
-        title: '',
-        description: '',
-        variant: 'sage'
-    });
-
-    // Form State
-    const [approvalMode, setApprovalMode] = useState<'standard' | 'manual' | 'forced'>('standard');
-    const [autoAdjustStock, setAutoAdjustStock] = useState(true);
-    const [comment, setComment] = useState('');
-    const [reason, setReason] = useState('');
-    const [quantities, setQuantities] = useState<Record<number, number>>({});
-
-    // Derogation State
-    const [showDerogationModal, setShowDerogationModal] = useState(false);
-    const [responsables, setResponsables] = useState<User[]>([]);
-    const [isActionLoading, setIsActionLoading] = useState(false);
-
-    const fetchResponsables = async () => {
-        // Mock data for now
-        setResponsables([
-            { id: 1, name: 'Ahmed Manager', email: 'ahmed@example.com' },
-            { id: 2, name: 'Sarah Director', email: 'sarah@example.com' },
-            { id: 3, name: 'Karim Responsable ADV', email: 'karim@example.com' }
-        ]);
-    };
-
-    const handleAction = (action: 'approve' | 'reject' | 'hold') => {
-        if (!selectedBcId) return;
-
-        // Check permissions
-        const permissionMap = {
-            approve: PERMISSIONS.ADV.BC_APPROVE,
-            reject: PERMISSIONS.ADV.BC_REJECT,
-            hold: PERMISSIONS.ADV.BC_HOLD
-        };
-
-        if (!has(permissionMap[action])) {
-            toast.error('Vous n\'avez pas la permission pour cette action');
-            return;
-        }
-
-        // Reset form state
-        setApprovalMode('standard');
-        setAutoAdjustStock(true);
-        setComment('');
-        setReason('');
-        setQuantities({});
-
-        // Pre-fill quantities for manual mode if needed
-        if (action === 'approve' && selectedBcDetails?.order_products) {
-            const initialQtys: Record<number, number> = {};
-            selectedBcDetails.order_products.forEach(line => {
-                initialQtys[line.product_id] = line.quantity;
-            });
-            setQuantities(initialQtys);
-        }
-
-        const config = {
-            approve: {
-                title: 'Valider le Bon de Commande',
-                description: 'Voulez-vous valider ce bon de commande ?',
-                variant: 'sage' as const
-            },
-            reject: {
-                title: 'Rejeter le Bon de Commande',
-                description: 'Voulez-vous rejeter ce bon de commande ? Cette action est irréversible.',
-                variant: 'danger' as const
-            },
-            hold: {
-                title: 'Mettre en Attente',
-                description: 'Voulez-vous mettre ce bon de commande en attente ?',
-                variant: 'warning' as const
-            }
-        }[action];
-
-        setModalConfig({
-            isOpen: true,
-            type: action,
-            ...config
-        });
-    };
-
-    const confirmAction = async () => {
-        if (!selectedBcId || !modalConfig.type) return;
-        setIsActionLoading(true);
-
-        try {
-            let payload: any = {};
-            let endpoint = '';
-
-            if (modalConfig.type === 'approve') {
-                endpoint = `approve`;
-                payload = {
-                    approval_mode: approvalMode,
-                    comment: comment
-                };
-                if (approvalMode === 'standard') {
-                    payload.auto_adjust_stock = autoAdjustStock;
-                } else if (approvalMode === 'manual') {
-                    payload.quantities = quantities;
-                }
-            } else if (modalConfig.type === 'reject') {
-                endpoint = `reject`;
-                if (!reason) {
-                    toast.error("Le motif est obligatoire pour le rejet.");
-                    setIsActionLoading(false);
-                    return;
-                }
-                payload = { reason };
-            } else if (modalConfig.type === 'hold') {
-                endpoint = `hold`;
-                if (!reason) {
-                    toast.error("Le motif est obligatoire pour la mise en attente.");
-                    setIsActionLoading(false);
-                    return;
-                }
-                payload = { reason };
-            }
-
-            await apiClient.post(`/api/backend/adv/bc/${selectedBcId}/${endpoint}`, payload);
-
-            // Refresh data
-            fetchData();
-            if (selectedBcId) fetchBcDetails(String(selectedBcId));
-            setModalConfig(prev => ({ ...prev, isOpen: false }));
-            toast.success(`Commande ${modalConfig.type === 'approve' ? 'validée' : modalConfig.type === 'reject' ? 'rejetée' : 'mise en attente'} avec succès`);
-
-        } catch (error: any) {
-            console.error(`Failed to ${modalConfig.type} BC`, error);
-            const errorMessage = error.response?.data?.message || "Erreur inconnue";
-
-            if (modalConfig.type === 'approve' && errorMessage.includes("Credit limit exceeded")) {
-                setModalConfig(prev => ({ ...prev, isOpen: false }));
-                setShowDerogationModal(true);
-                fetchResponsables();
-                toast.error("Plafond de crédit dépassé. Veuillez demander une dérogation.");
-            } else {
-                toast.error(`Erreur: ${errorMessage}`);
-            }
-        } finally {
-            setIsActionLoading(false);
-        }
-    };
-
-    const handleDerogationSubmit = async (responsableId: number, message: string) => {
-        if (!selectedBcId) return;
-        setIsActionLoading(true);
-        try {
-            await apiClient.post(`/api/backend/adv/bc/${selectedBcId}/approve`, {
-                approval_mode: 'derogation',
-                responsable_id: responsableId,
-                comment: message
-            });
-            setShowDerogationModal(false);
-            fetchData();
-            if (selectedBcId) fetchBcDetails(String(selectedBcId));
-            toast.success("Demande de dérogation envoyée avec succès");
-        } catch (error: any) {
-            console.error("Failed to submit derogation", error);
-            toast.error(error.response?.data?.message || "Erreur lors de l'envoi de la dérogation");
-        } finally {
-            setIsActionLoading(false);
-        }
-    };
-
-    const fetchBcDetails = async (id: string) => {
+    const fetchDetail = async (id: number) => {
         setDetailLoading(true);
         try {
-            const response = await apiClient.get<ApiResponse>(`/api/backend/adv/bc/${id}`);
-            if (response.data?.bc) {
-                setSelectedBcDetails(response.data.bc);
-            }
-        } catch (error) {
-            console.error("Failed to fetch BC details", error);
-            setSelectedBcDetails(null);
-        } finally {
-            setDetailLoading(false);
-        }
+            const res = await apiClient.get(`/api/backend/adv/bc/${id}`);
+            setDetailData(res.data as BcDetailData);
+        } catch { setDetailData(null); }
+        finally { setDetailLoading(false); }
     };
 
-    const fetchData = async () => {
+    const fetchList = async () => {
         setLoading(true);
         try {
-            const response = await apiClient.get<ApiResponse>('/api/backend/adv/bc');
-            if (response.data?.bcs?.data) {
-                setBcs(response.data.bcs.data);
-
-                // Check if bcId is in URL query params
-                const bcIdParam = searchParams.get('bcId');
-                if (bcIdParam) {
-                    const bcId = parseInt(bcIdParam);
-                    setSelectedBcId(bcId);
-                    fetchBcDetails(String(bcId));
-                } else if (response.data.bcs.data.length > 0 && !selectedBcId) {
-                    // Optionally select the first one if none selected
-                    const firstId = response.data.bcs.data[0].id;
-                    setSelectedBcId(firstId);
-                    fetchBcDetails(String(firstId));
-                }
-            }
-        } catch (error) {
-            console.error("Failed to fetch BCs", error);
-        } finally {
-            setLoading(false);
-        }
+            const res = await apiClient.get('/api/backend/adv/bc');
+            const list = res.data?.bcs?.data ?? [];
+            setBcs(list);
+            const pid = searchParams.get('bcId');
+            const firstId = pid ? parseInt(pid) : (list[0]?.id ?? null);
+            if (firstId && !selectedId) { setSelectedId(firstId); fetchDetail(firstId); }
+        } catch { /* handled */ }
+        finally { setLoading(false); }
     };
 
-    useEffect(() => {
-        fetchData();
-    }, []);
+    useEffect(() => { fetchList(); }, []);
 
-    // DataGrid Definitions
-    const colDefs: ColDef<BC>[] = useMemo(() => [
-        {
-            field: 'bc_number',
-            headerName: 'N° BC',
-            width: 160,
-            pinned: 'left',
-            cellRenderer: (params: any) => (
-                <div className="flex items-center h-full">
-                    <span className="font-bold text-gray-900 dark:text-gray-100">{params.value}</span>
-                </div>
-            )
-        },
-        {
-            field: 'created_at',
-            headerName: 'Date',
-            width: 130,
-            cellRenderer: (params: any) => (
-                <div className="flex items-center h-full">
-                    <span className="text-sm text-gray-600 dark:text-gray-400">
-                        {new Date(params.value).toLocaleDateString('fr-FR', {
-                            day: '2-digit',
-                            month: 'short',
-                            year: 'numeric'
-                        })}
-                    </span>
-                </div>
-            )
-        },
-        {
-            field: 'partner.name',
-            headerName: 'Client',
-            flex: 1,
-            minWidth: 200,
-            cellRenderer: (params: any) => (
-                <div className="flex items-center h-full text-gray-700 dark:text-gray-300 min-w-0">
-                    <span className="truncate font-medium" title={params.value}>{params.value}</span>
-                </div>
-            )
-        },
-        {
-            field: 'total_amount',
-            headerName: 'Montant',
-            width: 130,
-            cellRenderer: (params: any) => (
-                <div className="flex items-center justify-end h-full">
-                    <span className="font-bold text-sage-600 dark:text-sage-400">
-                        {parseFloat(params.value).toLocaleString()} Dh
-                    </span>
-                </div>
-            )
-        },
-    ], []);
-
-    // Left Sidebar: Ag-Grid List
-    const SidebarContent = (
-        <div className="flex flex-col h-full bg-white dark:bg-gray-900 border-r border-gray-200 dark:border-gray-800 w-full">
-            <div className="p-4 border-b border-gray-200 dark:border-gray-800 flex justify-between items-center bg-gray-50/50">
-                <h2 className="font-bold text-gray-900 dark:text-white">Commandes (ADV)</h2>
-                <div className="text-xs px-2 py-1 bg-sage-100 text-sage-700 rounded-full font-medium">
-                    {bcs.length} à valider
-                </div>
-            </div>
-
-            <div className="flex-1 w-full overflow-hidden">
-                <DataGrid
-                    rowData={bcs}
-                    columnDefs={colDefs}
-                    loading={loading}
-                    pagination={true}
-                    paginationPageSize={15}
-                    onRowSelected={(data) => {
-                        setSelectedBcId(data.id);
-                        fetchBcDetails(String(data.id));
-                    }}
-                    onRowDoubleClicked={(data) => {
-                        document.body.style.cursor = 'wait';
-                        setSelectedBcId(data.id);
-                        fetchBcDetails(String(data.id));
-                        setTimeout(() => {
-                            document.body.style.cursor = 'default';
-                        }, 500);
-                    }}
-                />
-            </div>
-        </div>
-    );
+    const handleSelect = (id: number) => { setSelectedId(id); fetchDetail(id); };
+    const handleRefresh = () => { fetchList(); if (selectedId) fetchDetail(selectedId); };
 
     return (
         <>
             <MasterLayout
-                leftContent={<div className="h-full w-full overflow-hidden flex flex-col">{SidebarContent}</div>}
+                leftContent={
+                    <BcSidebar bcs={bcs} loading={loading} selectedId={selectedId}
+                        onSelect={handleSelect} onRefresh={fetchList} />
+                }
                 mainContent={
                     <div className="h-full overflow-hidden flex flex-col">
                         {detailLoading ? (
-                            <div className="h-full flex flex-col items-center justify-center text-gray-400">
-                                <Loader2 className="w-8 h-8 animate-spin mb-2 text-sage-500" />
-                                <p>Chargement du détail...</p>
+                            <div className="h-full flex flex-col items-center justify-center text-gray-400 gap-3">
+                                <Loader2 className="w-7 h-7 animate-spin text-sage-500" />
+                                <p className="text-sm">Chargement de la commande...</p>
                             </div>
-                        ) : selectedBcDetails ? (
-                            <BcDetailView
-                                bc={selectedBcDetails}
-                                onRefresh={() => {
-                                    fetchData();
-                                    if (selectedBcId) fetchBcDetails(String(selectedBcId));
-                                }}
-                            />
+                        ) : detailData ? (
+                            <DetailView detailData={detailData} onRefresh={handleRefresh} />
                         ) : (
-                            <div className="h-full flex items-center justify-center text-gray-400">Sélectionnez une commande à traiter</div>
+                            <div className="h-full flex flex-col items-center justify-center text-gray-300 gap-3">
+                                <div className="w-16 h-16 rounded-2xl bg-gray-50 border border-gray-100 flex items-center justify-center">
+                                    <FileText className="w-7 h-7 text-gray-300" />
+                                </div>
+                                <div className="text-center">
+                                    <p className="text-sm font-semibold text-gray-500">Aucune commande sélectionnée</p>
+                                    <p className="text-xs text-gray-400 mt-1">Sélectionnez un BC dans la liste</p>
+                                </div>
+                            </div>
                         )}
                     </div>
                 }
                 rightContent={
-                    <div className="flex flex-col h-full bg-white dark:bg-black border-l border-gray-200 dark:border-gray-800 w-11 shrink-0 shadow-[0_0_15px_rgba(0,0,0,0.05)] z-40">
-                        <ActionGroup>
-                            <div className="w-full flex justify-center mb-1">
-                                <div className="w-6 h-0.5 bg-sage-500 rounded-full opacity-50"></div>
-                            </div>
-                            <ActionItem icon={Printer} label="Imprimer" variant="default" disabled={!selectedBcId} />
-                            <Can permission={PERMISSIONS.ADV.BC_EXPORT}>
-                                <ActionItem icon={Download} label="Exporter PDF" variant="default" disabled={!selectedBcId} />
-                            </Can>
-                            <ActionItem icon={Share2} label="Partager" variant="primary" disabled={!selectedBcId} />
-                        </ActionGroup>
-                        <div className="mt-auto pb-4">
-                            <ActionGroup>
-                                <ActionItem icon={Settings} label="Paramètres" variant="default" />
-                            </ActionGroup>
-                        </div>
-                    </div>
+                    <ActionPanel
+                        groups={[
+                            ...(can(PERMISSIONS.ADV.CREDIT_UPDATE_LIMIT)
+                                ? [{
+                                    items: [{
+                                        icon: ShieldAlert,
+                                        label: 'Demander Dérogation',
+                                        variant: 'sage' as const,
+                                        onClick: () => setShowDerogation(true),
+                                        disabled: !selectedId || detailData?.bc.bc_status === 'pending_derogation',
+                                    }],
+                                }]
+                                : []),
+                            {
+                                items: [
+                                    { icon: Printer, label: 'Imprimer', disabled: !selectedId },
+                                    ...(can(PERMISSIONS.ADV.BC_EXPORT)
+                                        ? [{ icon: Download, label: 'Exporter PDF', disabled: !selectedId }]
+                                        : []),
+                                    { icon: Share2, label: 'Partager', variant: 'primary' as const, disabled: !selectedId },
+                                ],
+                            },
+                            { items: [{ icon: Settings, label: 'Paramètres' }] },
+                        ]}
+                    />
                 }
             />
+            <DerogationModal isOpen={showDerogation} bcId={selectedId}
+                onClose={() => setShowDerogation(false)} onSuccess={handleRefresh} />
         </>
     );
 };

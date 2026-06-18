@@ -1,35 +1,33 @@
 import { useState, useEffect } from 'react';
 import { advApi } from '@/services/api/advApi';
-import type { PaginatedResponse, Echeance, EcheanceFilters } from '@/types/adv.types';
+import type { EcheancesResponse, EcheancesStats, Invoice, EcheanceFilters } from '@/types/adv.types';
 
-/**
- * Custom hook to fetch echeances (due dates) list
- * @param filters - Optional filters for echeances list
- * @returns Echeances list, loading state, error, and refetch function
- */
 export const useAdvEcheances = (filters?: EcheanceFilters) => {
-  const [data, setData] = useState<PaginatedResponse<Echeance> | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+    const [data, setData] = useState<EcheancesResponse | null>(null);
+    const [loading, setLoading] = useState(true);
+    const [error, setError] = useState<string | null>(null);
 
-  const fetchEcheances = async () => {
-    setLoading(true);
-    setError(null);
-    
-    try {
-      const echeancesData = await advApi.echeances.getList(filters);
-      setData(echeancesData);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to fetch echeances');
-      console.error('Failed to fetch echeances:', err);
-    } finally {
-      setLoading(false);
-    }
-  };
+    const fetchEcheances = async () => {
+        setLoading(true);
+        setError(null);
 
-  useEffect(() => {
-    fetchEcheances();
-  }, [filters?.page, filters?.partner, filters?.date_from, filters?.date_to]);
+        try {
+            const response = await advApi.echeances.getList(filters);
+            setData(response);
+        } catch (err) {
+            setError(err instanceof Error ? err.message : 'Échec du chargement des échéances');
+            console.error('Failed to fetch echeances:', err);
+        } finally {
+            setLoading(false);
+        }
+    };
 
-  return { echeances: data, loading, error, refetch: fetchEcheances };
+    useEffect(() => {
+        fetchEcheances();
+    }, [filters?.page, filters?.partner_id, filters?.date_from, filters?.date_to, filters?.overdue_only]);
+
+    const invoices: Invoice[] = data?.echeances?.data ?? [];
+    const stats: EcheancesStats = data?.stats ?? { total_overdue: 0, total_due_this_week: 0, overdue_count: 0 };
+
+    return { invoices, stats, loading, error, refetch: fetchEcheances };
 };

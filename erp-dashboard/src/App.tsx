@@ -20,9 +20,15 @@ import { AdvDerogationsPage } from '@/pages/adv/AdvDerogationsPage';
 import { DispatcherDashboard } from '@/pages/dispatcher/DispatcherDashboard';
 import { DispatcherOrdersPage } from '@/pages/dispatcher/DispatcherOrdersPage';
 import { DispatcherBonLivraisonsPage } from '@/pages/dispatcher/DispatcherBonLivraisonsPage';
-import { DispatcherCreateBonChargementPage } from '@/pages/dispatcher/DispatcherCreateBonChargementPage';
 import { DispatcherBonChargementsPage } from '@/pages/dispatcher/DispatcherBonChargementsPage';
+import { DispatcherShortageQueuePage } from '@/pages/dispatcher/DispatcherShortageQueuePage';
+import { DispatcherDeliveryOrdersPage } from '@/pages/dispatcher/DispatcherDeliveryOrdersPage';
 import { DispatcherDechargesPage } from '@/pages/dispatcher/DispatcherDechargesPage';
+import { DispatcherPlanningWorkspacePage } from '@/pages/dispatcher/DispatcherPlanningWorkspacePage';
+import { DispatcherLoadingWorkspacePage } from '@/pages/dispatcher/DispatcherLoadingWorkspacePage';
+import { DispatcherMonitorPage } from '@/pages/dispatcher/DispatcherMonitorPage';
+import { DispatcherWarehouseTransfersPage } from '@/pages/dispatcher/DispatcherWarehouseTransfersPage';
+import { DispatcherFleetPage } from '@/pages/dispatcher/DispatcherFleetPage';
 import { MagasinierDashboard } from '@/pages/magasinier/MagasinierDashboard';
 import { MagasinierPreparationsPage } from '@/pages/magasinier/MagasinierPreparationsPage';
 import { MagasinierOrdersPage } from '@/pages/magasinier/MagasinierOrdersPage';
@@ -155,52 +161,86 @@ function AppRoutes() {
         </ProtectedRoute>
       } />
 
-      {/* Dispatcher Module Routes */}
+      {/* Dispatcher Module Routes — gated by role, not permission slugs. Confirmed by backend
+          2026-06-17: /dispatcher/* auth is role-based only (auth:sanctum + role
+          dispatcher/root/admin); none of the PERMISSIONS.DISPATCHER.* slugs below actually exist
+          on the backend's permission table, so requiredPermission silently blocked every
+          non-admin dispatcher user (hasAny() only auto-passes for admin role). */}
       <Route path="/dispatcher" element={
-        <ProtectedRoute requiredPermission={PERMISSIONS.DISPATCHER.DASHBOARD}>
+        <ProtectedRoute requiredRole={['dispatcher', 'root', 'admin']}>
           <DispatcherDashboard />
         </ProtectedRoute>
       } />
 
       <Route path="/dispatcher/dashboard" element={
-        <ProtectedRoute requiredPermission={PERMISSIONS.DISPATCHER.DASHBOARD}>
+        <ProtectedRoute requiredRole={['dispatcher', 'root', 'admin']}>
           <DispatcherDashboard />
         </ProtectedRoute>
       } />
 
       <Route path="/dispatcher/orders" element={
-        <ProtectedRoute requiredPermission={PERMISSIONS.DISPATCHER.ORDERS_PENDING}>
+        <ProtectedRoute requiredRole={['dispatcher', 'root', 'admin']}>
           <DispatcherOrdersPage />
         </ProtectedRoute>
       } />
 
-      <Route path="/dispatcher/bon-livraisons/draft" element={
-        <ProtectedRoute requiredPermission={PERMISSIONS.DISPATCHER.BON_LIVRAISONS_DRAFT}>
+      <Route path="/dispatcher/bons-livraisons" element={
+        <ProtectedRoute requiredRole={['dispatcher', 'root', 'admin']}>
           <DispatcherBonLivraisonsPage />
         </ProtectedRoute>
       } />
 
-      <Route path="/dispatcher/bon-livraisons" element={
-        <ProtectedRoute requiredPermission={PERMISSIONS.DISPATCHER.BON_LIVRAISONS_INDEX}>
-          <DispatcherBonLivraisonsPage />
-        </ProtectedRoute>
-      } />
-
-      <Route path="/dispatcher/bon-chargements/create" element={
-        <ProtectedRoute requiredPermission={PERMISSIONS.DISPATCHER.BON_CHARGEMENTS_CREATE}>
-          <DispatcherCreateBonChargementPage />
-        </ProtectedRoute>
-      } />
-
-      <Route path="/dispatcher/bon-chargements" element={
-        <ProtectedRoute requiredPermission={PERMISSIONS.DISPATCHER.BON_CHARGEMENTS_INDEX}>
+      <Route path="/dispatcher/bons-chargements" element={
+        <ProtectedRoute requiredRole={['dispatcher', 'root', 'admin']}>
           <DispatcherBonChargementsPage />
         </ProtectedRoute>
       } />
 
+      <Route path="/dispatcher/shortage-queue" element={
+        <ProtectedRoute requiredRole={['dispatcher', 'root', 'admin']}>
+          <DispatcherShortageQueuePage />
+        </ProtectedRoute>
+      } />
+
+      <Route path="/dispatcher/workspace/planning" element={
+        <ProtectedRoute requiredRole={['dispatcher', 'root', 'admin']}>
+          <DispatcherPlanningWorkspacePage />
+        </ProtectedRoute>
+      } />
+
+      <Route path="/dispatcher/workspace/loading" element={
+        <ProtectedRoute requiredRole={['dispatcher', 'root', 'admin']}>
+          <DispatcherLoadingWorkspacePage />
+        </ProtectedRoute>
+      } />
+
+      <Route path="/dispatcher/monitor" element={
+        <ProtectedRoute requiredRole={['dispatcher', 'root', 'admin']}>
+          <DispatcherMonitorPage />
+        </ProtectedRoute>
+      } />
+
+      <Route path="/dispatcher/delivery-orders" element={
+        <ProtectedRoute requiredRole={['dispatcher', 'root', 'admin']}>
+          <DispatcherDeliveryOrdersPage />
+        </ProtectedRoute>
+      } />
+
       <Route path="/dispatcher/decharges" element={
-        <ProtectedRoute requiredPermission={PERMISSIONS.DISPATCHER.DECHARGES_INDEX}>
+        <ProtectedRoute requiredRole={['dispatcher', 'root', 'admin']}>
           <DispatcherDechargesPage />
+        </ProtectedRoute>
+      } />
+
+      <Route path="/dispatcher/warehouse-transfers" element={
+        <ProtectedRoute requiredRole={['dispatcher', 'root', 'admin']}>
+          <DispatcherWarehouseTransfersPage />
+        </ProtectedRoute>
+      } />
+
+      <Route path="/dispatcher/fleet" element={
+        <ProtectedRoute requiredRole={['dispatcher', 'root', 'admin']}>
+          <DispatcherFleetPage />
         </ProtectedRoute>
       } />
 

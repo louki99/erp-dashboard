@@ -20,21 +20,13 @@ import { SageTabs, type TabItem } from '@/components/common/SageTabs';
 import { ConfirmationModal } from '@/components/common/ConfirmationModal';
 import { useAdvPartners, useAdvPartnerDetail } from '@/hooks/adv/useAdvPartners';
 import { useValidatePartner, useRejectPartner } from '@/hooks/adv/useAdvActions';
-import type { Partner, PaymentTerm } from '@/types/adv.types';
+import type { Partner } from '@/types/adv.types';
 import { cn } from '@/lib/utils';
 import { PERMISSIONS } from '@/lib/rbac/permissions';
 import { Can } from '@/components/rbac';
 
 // Register AG Grid modules
 ModuleRegistry.registerModules([ClientSideRowModelModule, ValidationModule]);
-
-// Mock payment terms - replace with actual API call
-const PAYMENT_TERMS: PaymentTerm[] = [
-    { id: 1, name: 'Net 15', code: 'NET15', days_number: 15 },
-    { id: 2, name: 'Net 30', code: 'NET30', days_number: 30 },
-    { id: 3, name: 'Net 45', code: 'NET45', days_number: 45 },
-    { id: 4, name: 'Net 60', code: 'NET60', days_number: 60 },
-];
 
 // --- Action Panel Component ---
 interface PartnerActionPanelProps {
@@ -304,9 +296,7 @@ const AdvPartnersContent = () => {
     const [showRejectModal, setShowRejectModal] = useState(false);
 
     // Validation form state
-    const [creditLimit, setCreditLimit] = useState('');
-    const [paymentTermId, setPaymentTermId] = useState('');
-    const [notes, setNotes] = useState('');
+    const [validationComment, setValidationComment] = useState('');
     const [rejectionReason, setRejectionReason] = useState('');
 
     // Data fetching hooks
@@ -319,9 +309,7 @@ const AdvPartnersContent = () => {
         onSuccess: () => {
             setShowValidateModal(false);
             setSelectedPartnerId(null);
-            setCreditLimit('');
-            setPaymentTermId('');
-            setNotes('');
+            setValidationComment('');
             refetch();
         },
     });
@@ -387,33 +375,17 @@ const AdvPartnersContent = () => {
 
     const handleValidate = () => {
         if (!selectedPartnerId) return;
-        
-        const limitValue = parseFloat(creditLimit);
-        const termId = parseInt(paymentTermId);
-
-        if (!creditLimit || isNaN(limitValue) || limitValue < 0) {
-            return;
-        }
-        if (!paymentTermId) {
-            return;
-        }
-
         validatePartner.mutate({
             partnerId: selectedPartnerId,
-            data: {
-                credit_limit: limitValue,
-                payment_term_id: termId,
-                notes: notes.trim() || undefined,
-            },
+            data: { comment: validationComment.trim() || undefined },
         });
     };
 
     const handleReject = () => {
         if (!selectedPartnerId || !rejectionReason.trim()) return;
-
         rejectPartner.mutate({
             partnerId: selectedPartnerId,
-            data: { rejection_reason: rejectionReason },
+            data: { reason: rejectionReason },
         });
     };
 
@@ -479,7 +451,7 @@ const AdvPartnersContent = () => {
             {/* Validate Modal */}
             <ConfirmationModal
                 isOpen={showValidateModal}
-                onClose={() => setShowValidateModal(false)}
+                onClose={() => { setShowValidateModal(false); setValidationComment(''); }}
                 onConfirm={handleValidate}
                 title="Valider le Partenaire"
                 description={`Confirmer la validation du partenaire ${selectedPartner?.name} (${selectedPartner?.code})`}
@@ -487,51 +459,18 @@ const AdvPartnersContent = () => {
                 confirmText="Valider"
                 isLoading={validatePartner.isLoading}
             >
-                <div className="space-y-4 mt-4">
-                    <div>
-                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                            Plafond de Crédit (Dh) <span className="text-red-500">*</span>
-                        </label>
-                        <input
-                            type="number"
-                            value={creditLimit}
-                            onChange={(e) => setCreditLimit(e.target.value)}
-                            className="w-full px-4 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700"
-                            placeholder="Ex: 50000"
-                        />
-                    </div>
-
-                    <div>
-                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                            Conditions de Paiement <span className="text-red-500">*</span>
-                        </label>
-                        <select
-                            value={paymentTermId}
-                            onChange={(e) => setPaymentTermId(e.target.value)}
-                            className="w-full px-4 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700"
-                        >
-                            <option value="">Sélectionner...</option>
-                            {PAYMENT_TERMS.map(term => (
-                                <option key={term.id} value={term.id}>
-                                    {term.name} ({term.days_number} jours)
-                                </option>
-                            ))}
-                        </select>
-                    </div>
-
-                    <div>
-                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                            Notes (Optionnel)
-                        </label>
-                        <textarea
-                            value={notes}
-                            onChange={(e) => setNotes(e.target.value)}
-                            rows={3}
-                            className="w-full px-4 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 resize-none text-sm"
-                            placeholder="Commentaires additionnels..."
-                            maxLength={500}
-                        />
-                    </div>
+                <div className="mt-4">
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                        Commentaire (optionnel)
+                    </label>
+                    <textarea
+                        value={validationComment}
+                        onChange={(e) => setValidationComment(e.target.value)}
+                        rows={3}
+                        className="w-full px-4 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 resize-none text-sm"
+                        placeholder="Commentaires additionnels sur la validation..."
+                        maxLength={500}
+                    />
                 </div>
             </ConfirmationModal>
 

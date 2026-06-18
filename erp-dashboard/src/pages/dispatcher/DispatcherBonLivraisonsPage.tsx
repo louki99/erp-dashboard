@@ -1,975 +1,574 @@
-import { useMemo, useState, useRef, useEffect } from 'react';
+import { useMemo, useState } from 'react';
 import type { ColDef } from 'ag-grid-community';
-import { FileText, Loader2, Package, PackagePlus, RefreshCw, Save, Truck, User, X, CheckSquare, Scissors, History } from 'lucide-react';
+import {
+  Loader2, Search, RefreshCw, FileText, User, Package, Truck, CheckCircle2,
+  XCircle, Scissors, ChevronRight, AlertCircle, Clock, Send, RotateCcw,
+} from 'lucide-react';
 import toast from 'react-hot-toast';
 
 import { MasterLayout } from '@/components/layout/MasterLayout';
 import { DataGrid } from '@/components/common/DataGrid';
-import { ActionPanel } from '@/components/layout/ActionPanel';
 import { SageTabs, type TabItem } from '@/components/common/SageTabs';
 import { SageCollapsible } from '@/components/common/SageCollapsible';
-import {
-    useDispatcherDraftBonLivraisons,
-    useDispatcherBonLivraisonEdit,
-    useDispatcherUpdateBonLivraison,
-    useDispatcherSplitBonLivraison,
-} from '@/hooks/dispatcher/useDispatcherBonLivraisons';
+import { ConfirmModal } from '@/components/common/Modal';
 import { SplitBlModal } from '@/components/dispatcher/SplitBlModal';
-import { useDispatcherCreateBch } from '@/hooks/dispatcher/useDispatcherBonChargements';
-import { useRiders } from '@/hooks/useRiders';
-import { useDispatcherBLWorkflow } from '@/hooks/dispatcher/useDispatcherWorkflow';
-import { WorkflowHistory } from '@/components/workflow/WorkflowHistory';
-import { BLWorkflowActions } from '@/components/dispatcher/BLWorkflowActions';
-import type { BonLivraison } from '@/types/dispatcher.types';
-import type { Rider } from '@/services/api/ridersApi';
+import {
+  useDispatcherBonLivraisonsList,
+  useDispatcherBonLivraisonDetail,
+  useDispatcherUpdateBonLivraison,
+  useDispatcherBlDecision,
+  useDispatcherSplitBonLivraison,
+  useDispatcherCancelBonLivraison,
+} from '@/hooks/dispatcher/useDispatcherBonLivraisons';
+import type { DeliveryNote, BlStatus } from '@/types/dispatcher.types';
 
-const BLHistorySection = ({ blId }: { blId?: number }) => {
-    const { workflowHistory, isLoadingHistory } = useDispatcherBLWorkflow(blId || 0);
-    const sectionRefs = useRef<Record<string, HTMLDivElement | null>>({});
-    const [openSections, setOpenSections] = useState<Record<string, boolean>>({ history: true });
+// ─── Status config ─────────────────────────────────────────────────────────────
 
-    const toggleSection = (id: string, isOpen: boolean) => {
-        setOpenSections(prev => ({ ...prev, [id]: isOpen }));
-    };
-
-    if (!blId) return null;
-
-    return (
-        <div ref={el => { sectionRefs.current['history'] = el; }}>
-            <SageCollapsible
-                title="Historique Workflow"
-                isOpen={openSections['history']}
-                onOpenChange={(open) => toggleSection('history', open)}
-            >
-                <div className="p-4">
-                    <WorkflowHistory 
-                        history={workflowHistory} 
-                        isLoading={isLoadingHistory}
-                    />
-                </div>
-            </SageCollapsible>
-        </div>
-    );
+const BL_STATUS: Record<BlStatus, { label: string; color: string; dot: string }> = {
+  draft:                  { label: 'Brouillon',        color: 'bg-gray-100 text-gray-700 border-gray-200',    dot: 'bg-gray-400' },
+  confirmed:              { label: 'Confirmé',          color: 'bg-blue-100 text-blue-700 border-blue-200',    dot: 'bg-blue-500' },
+  batched:                { label: 'En lot',            color: 'bg-indigo-100 text-indigo-700 border-indigo-200', dot: 'bg-indigo-500' },
+  submitted_to_magasinier:{ label: 'Au magasinier',    color: 'bg-purple-100 text-purple-700 border-purple-200', dot: 'bg-purple-500' },
+  in_preparation:         { label: 'En préparation',   color: 'bg-yellow-100 text-yellow-700 border-yellow-200', dot: 'bg-yellow-500' },
+  ready:                  { label: 'Prêt',             color: 'bg-teal-100 text-teal-700 border-teal-200',    dot: 'bg-teal-500' },
+  loaded:                 { label: 'Chargé',           color: 'bg-cyan-100 text-cyan-700 border-cyan-200',    dot: 'bg-cyan-500' },
+  in_transit:             { label: 'En transit',       color: 'bg-orange-100 text-orange-700 border-orange-200', dot: 'bg-orange-500' },
+  delivered:              { label: 'Livré',            color: 'bg-green-100 text-green-700 border-green-200', dot: 'bg-green-500' },
+  partially_delivered:    { label: 'Livraison partielle', color: 'bg-lime-100 text-lime-700 border-lime-200', dot: 'bg-lime-500' },
+  returned:               { label: 'Retourné',         color: 'bg-amber-100 text-amber-700 border-amber-200', dot: 'bg-amber-500' },
+  cancelled:              { label: 'Annulé',           color: 'bg-red-100 text-red-700 border-red-200',       dot: 'bg-red-500' },
 };
 
-export const DispatcherBonLivraisonsPage = () => {
-    const [selected, setSelected] = useState<BonLivraison | null>(null);
-    const [selectedBls, setSelectedBls] = useState<BonLivraison[]>([]);
-    const [selectedLivreurId, setSelectedLivreurId] = useState<number | ''>('');
-    const [bulkLivreurId, setBulkLivreurId] = useState<number | ''>('');
-    const [deliveryDate, setDeliveryDate] = useState<string>('');
-    const [notes, setNotes] = useState<string>('');
-    const [activeTab, setActiveTab] = useState<string>('bl');
-    const [showDetailPanel, setShowDetailPanel] = useState<boolean>(false);
-    const [showSplitModal, setShowSplitModal] = useState(false);
-    const [openSections, setOpenSections] = useState<Record<string, boolean>>({
-        bl: true,
-        commande: true,
-        client: true,
-        lignes: true,
-        history: true
-    });
+const StatusBadge = ({ status }: { status: BlStatus }) => {
+  const cfg = BL_STATUS[status] ?? { label: status, color: 'bg-gray-100 text-gray-700 border-gray-200', dot: 'bg-gray-400' };
+  return (
+    <span className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-xs font-medium border ${cfg.color}`}>
+      <span className={`w-1.5 h-1.5 rounded-full ${cfg.dot}`} />
+      {cfg.label}
+    </span>
+  );
+};
 
-    const sectionRefs = useRef<Record<string, HTMLDivElement | null>>({});
-    const containerRef = useRef<HTMLDivElement>(null);
-    const isScrollingRef = useRef(false);
+const STATUS_FILTER_TABS: Array<{ id: string; label: string }> = [
+  { id: '', label: 'Tous' },
+  { id: 'draft', label: 'Brouillons' },
+  { id: 'confirmed', label: 'Confirmés' },
+  { id: 'in_preparation', label: 'En prép.' },
+  { id: 'ready', label: 'Prêts' },
+  { id: 'in_transit', label: 'En transit' },
+  { id: 'cancelled', label: 'Annulés' },
+];
 
-    const { data, loading, error, refetch } = useDispatcherDraftBonLivraisons();
-    const draftBls = data?.draftBls || [];
-    
-    // Fetch riders/livreurs from dedicated API
-    const { riders: livreurs, loading: livreursLoading } = useRiders();
+// ─── Detail panel ──────────────────────────────────────────────────────────────
 
-    // Summary stats
-    const stats = useMemo(() => {
-        const byVille: Record<string, number> = {};
-        const byClient: Record<string, number> = {};
-        let totalAmount = 0;
-        
-        draftBls.forEach(bl => {
-            const ville = bl.partner?.city || bl.partner?.postal_code || 'Non spécifié';
-            const client = bl.partner?.name || 'Inconnu';
-            byVille[ville] = (byVille[ville] || 0) + 1;
-            byClient[client] = (byClient[client] || 0) + 1;
-            totalAmount += parseFloat(bl.total_amount || '0');
-        });
-        
-        return { byVille, byClient, totalAmount, totalBls: draftBls.length };
-    }, [draftBls]);
+const DetailPanel = ({
+  bl,
+  onClose,
+  onRefresh,
+}: {
+  bl: DeliveryNote;
+  onClose: () => void;
+  onRefresh: () => void;
+}) => {
+  const { data: detail, loading: detailLoading, refetch: refetchDetail } = useDispatcherBonLivraisonDetail(bl.id);
+  const { execute, loading: executing } = useDispatcherBlDecision();
+  const { update, loading: updating } = useDispatcherUpdateBonLivraison();
+  const { split, loading: splitting } = useDispatcherSplitBonLivraison();
+  const { cancel, loading: cancelling } = useDispatcherCancelBonLivraison();
 
-    const { data: editData, loading: editLoading, error: editError, refetch: refetchEdit } = useDispatcherBonLivraisonEdit(selected?.id ?? null);
-    const { update, loading: saving } = useDispatcherUpdateBonLivraison();
-    const { split, loading: splitting } = useDispatcherSplitBonLivraison();
-    const { create: createBch, loading: creatingBch } = useDispatcherCreateBch();
+  const [showCancelModal, setShowCancelModal] = useState(false);
+  const [cancelReason, setCancelReason] = useState('');
+  const [showSplitModal, setShowSplitModal] = useState(false);
+  const [activeTab, setActiveTab] = useState('info');
+  const [openSections, setOpenSections] = useState<Record<string, boolean>>({ info: true, order: true, items: true });
 
-    const columnDefs = useMemo<ColDef[]>(
-        () => [
-            { 
-                field: 'bl_number', 
-                headerName: 'BL', 
-                width: 190,
-                cellRenderer: (params: any) => {
-                    const bl = params.data;
-                    if (!bl) return params.value;
-                    
-                    let badgeText = '';
-                    if (bl.parent_bl_id) {
-                        badgeText = ' [Enfant]';
-                    } else if (bl.status === 'split') {
-                        badgeText = ' [Divisé]';
-                    }
-                    
-                    return (params.value || '') + badgeText;
-                }
-            },
-            { field: 'bon_commande.bc_number', headerName: 'BC', width: 150 },
-            { field: 'partner.name', headerName: 'Client', flex: 1, minWidth: 200 },
-            { 
-                field: 'partner.city', 
-                headerName: 'Ville', 
-                width: 140,
-                valueGetter: (params: any) => params.data?.partner?.city || params.data?.partner?.postal_code || '-'
-            },
-            { 
-                field: 'total_amount', 
-                headerName: 'Total', 
-                width: 110,
-                valueFormatter: (params: any) => `${parseFloat(params.value || 0).toLocaleString()} Dh`
-            },
-            { field: 'delivery_date', headerName: 'Livraison', width: 120 },
-        ],
-        []
-    );
+  const d = detail ?? bl;
+  const status = d.status as BlStatus;
+  const canConfirm = status === 'draft';
+  const canUpdate  = status === 'draft' || status === 'confirmed';
+  const canSplit   = status === 'draft' && (d.items?.length ?? 0) >= 2;
+  const canCancel  = status === 'draft' || status === 'confirmed';
 
-    const detailsBl = editData?.bl || selected;
-    
-    // Debug: Log button state
-    console.log('Button state check:', {
-        selected: !!selected,
-        editLoading,
-        status: detailsBl?.status,
-        itemsLength: detailsBl?.items?.length,
-        diviserDisabled: !selected || editLoading || detailsBl?.status !== 'draft' || (detailsBl?.items?.length ?? 0) < 2,
-        creerBchDisabled: !selected || editLoading || creatingBch
-    });
-    const tabs: TabItem[] = useMemo(
-        () => [
-            { id: 'bl', label: 'BL', icon: FileText },
-            { id: 'commande', label: 'Bon de commande', icon: Package },
-            { id: 'client', label: 'Client', icon: User },
-            { id: 'lignes', label: `Lignes (${detailsBl?.items?.length || 0})`, icon: Truck },
-            { id: 'history', label: 'Historique Workflow', icon: History },
-        ],
-        [detailsBl?.items?.length]
-    );
+  const tabs: TabItem[] = useMemo(() => [
+    { id: 'info',  label: 'Informations', icon: FileText },
+    { id: 'order', label: 'Commande',     icon: Package },
+    { id: 'items', label: `Lignes (${d.items?.length ?? 0})`, icon: Truck },
+  ], [d.items?.length]);
 
-    const onSelect = (row: BonLivraison) => {
-        // Only show detail panel on explicit row double-click, not checkbox selection
-        setSelected(row);
-        setSelectedLivreurId(row.livreur_id ?? '');
-        setDeliveryDate(row.delivery_date ?? '');
-        setNotes(row.notes ?? '');
-        setActiveTab('bl');
-        setShowDetailPanel(true);
-    };
+  const runDecision = async (decision: string, extra?: Record<string, unknown>) => {
+    try {
+      const res = await execute(bl.id, decision, extra);
+      if (res.success) {
+        toast.success(res.message || 'Action effectuée');
+        refetchDetail();
+        onRefresh();
+      } else {
+        toast.error(res.message || 'Échec');
+      }
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Erreur');
+    }
+  };
 
-    const onSelectionChanged = (rows: BonLivraison[]) => {
-        setSelectedBls(rows);
-        // Don't interfere with multi-selection by showing detail panel
-    };
+  const handleConfirm = () => runDecision('confirm_delivery');
 
-    // Scroll Spy Logic
-    useEffect(() => {
-        const container = containerRef.current;
-        if (!container) return;
+  const handleCancel = async () => {
+    if (cancelReason.trim().length < 10) {
+      toast.error('Motif trop court (min 10 caractères)');
+      return;
+    }
+    setShowCancelModal(false);
+    try {
+      const res = await cancel(bl.id, { decision: 'cancel_delivery', reason: cancelReason });
+      if (res.success) {
+        toast.success(res.message || 'BL annulé');
+        refetchDetail();
+        onRefresh();
+      } else {
+        toast.error(res.message || 'Échec annulation');
+      }
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Erreur annulation');
+    }
+  };
 
-        const handleScroll = () => {
-            if (isScrollingRef.current) return;
+  const handleSplit = async (splits: Array<{ items: number[]; notes?: string }>) => {
+    try {
+      const res = await split(bl.id, {
+        decision: 'split_delivery',
+        splits: splits.map((s) => ({ item_ids: s.items, label: s.notes })),
+      });
+      if (res.success) {
+        toast.success(res.message || 'BL divisé avec succès');
+        setShowSplitModal(false);
+        onRefresh();
+        onClose();
+      } else {
+        toast.error(res.message || 'Échec division');
+      }
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Erreur division');
+    }
+  };
 
-            const containerTop = container.scrollTop;
-            for (const tab of tabs) {
-                const el = sectionRefs.current[tab.id];
-                if (!el || !openSections[tab.id]) continue;
+  return (
+    <>
+      <div className="h-full flex flex-col bg-white">
+        {/* Header */}
+        <div className="px-5 py-4 border-b border-gray-100 shrink-0">
+          <div className="flex items-start justify-between gap-3">
+            <div className="flex items-center gap-2 min-w-0">
+              <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-gray-100 transition-colors shrink-0">
+                <ChevronRight className="w-4 h-4 text-gray-500 rotate-180" />
+              </button>
+              <div className="min-w-0">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <h2 className="text-base font-bold text-gray-900 truncate">{d.delivery_number}</h2>
+                  <StatusBadge status={status} />
+                </div>
+                <p className="text-xs text-gray-500 mt-0.5 truncate">{d.partner?.name}</p>
+              </div>
+            </div>
+            <div className="text-right shrink-0">
+              <div className="text-lg font-bold text-gray-900">
+                {Number(d.total_amount).toLocaleString('fr-MA')}
+                <span className="text-xs font-normal text-gray-400 ml-1">Dh</span>
+              </div>
+              {(detailLoading || executing || updating) && (
+                <div className="flex items-center justify-end gap-1 text-xs text-gray-400 mt-0.5">
+                  <Loader2 className="w-3 h-3 animate-spin" /> En cours…
+                </div>
+              )}
+            </div>
+          </div>
 
-                const elTop = el.offsetTop;
-                const elBottom = elTop + el.clientHeight;
+          {/* Workflow actions bar */}
+          <div className="flex flex-wrap gap-2 mt-3">
+            {canConfirm && (
+              <button
+                onClick={handleConfirm}
+                disabled={executing}
+                className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 transition-colors"
+              >
+                <CheckCircle2 className="w-3.5 h-3.5" />
+                Confirmer
+              </button>
+            )}
+            {canSplit && (
+              <button
+                onClick={() => setShowSplitModal(true)}
+                disabled={splitting}
+                className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium bg-purple-600 text-white rounded-lg hover:bg-purple-700 disabled:opacity-50 transition-colors"
+              >
+                <Scissors className="w-3.5 h-3.5" />
+                Diviser
+              </button>
+            )}
+            {canCancel && (
+              <button
+                onClick={() => setShowCancelModal(true)}
+                disabled={cancelling}
+                className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium bg-white text-red-600 border border-red-200 rounded-lg hover:bg-red-50 disabled:opacity-50 transition-colors"
+              >
+                <XCircle className="w-3.5 h-3.5" />
+                Annuler
+              </button>
+            )}
+            {!canConfirm && !canCancel && !canSplit && (
+              <div className="flex items-center gap-1.5 text-xs text-gray-400">
+                <AlertCircle className="w-3.5 h-3.5" />
+                Aucune action disponible dans cet état
+              </div>
+            )}
+          </div>
+        </div>
 
-                if (elTop <= containerTop + 100 && elBottom > containerTop + 50) {
-                    if (activeTab !== tab.id) {
-                        setActiveTab(tab.id);
-                    }
-                    break;
-                }
-            }
-        };
+        {/* Tabs */}
+        <div className="border-b border-gray-100 shrink-0">
+          <SageTabs
+            tabs={tabs}
+            activeTabId={activeTab}
+            onTabChange={setActiveTab}
+            className="px-4 shadow-none"
+          />
+        </div>
 
-        container.addEventListener('scroll', handleScroll);
-        return () => container.removeEventListener('scroll', handleScroll);
-    }, [openSections, tabs, activeTab]);
+        {/* Content */}
+        <div className="flex-1 overflow-y-auto p-4 space-y-3 bg-slate-50">
+          {/* Info section */}
+          {activeTab === 'info' && (
+            <SageCollapsible
+              title="Informations BL"
+              isOpen={openSections.info}
+              onOpenChange={(v) => setOpenSections((p) => ({ ...p, info: v }))}
+            >
+              <div className="grid grid-cols-2 gap-3 p-1">
+                {[
+                  { label: 'Numéro', value: d.delivery_number },
+                  { label: 'Branche', value: d.branch_code },
+                  { label: 'Date livraison', value: d.delivery_date ?? '—' },
+                  { label: 'Livreur', value: d.rider?.name ?? 'Non assigné' },
+                  { label: 'Dispatcher', value: d.dispatcher?.name ?? '—' },
+                  { label: 'Quantité verrouillée', value: d.is_quantity_locked ? 'Oui' : 'Non' },
+                ].map(({ label, value }) => (
+                  <div key={label} className="p-3 rounded-lg bg-white border border-gray-100">
+                    <div className="text-xs text-gray-500">{label}</div>
+                    <div className="text-sm font-semibold text-gray-900 mt-0.5 truncate">{value}</div>
+                  </div>
+                ))}
+                {d.notes && (
+                  <div className="col-span-2 p-3 rounded-lg bg-amber-50 border border-amber-100">
+                    <div className="text-xs text-amber-600 font-medium mb-1">Notes</div>
+                    <div className="text-sm text-amber-800">{d.notes}</div>
+                  </div>
+                )}
+                {d.bon_chargement && (
+                  <div className="col-span-2 p-3 rounded-lg bg-purple-50 border border-purple-100">
+                    <div className="text-xs text-purple-600 font-medium mb-1">BCH associé</div>
+                    <div className="text-sm font-semibold text-purple-800">{d.bon_chargement.shipment_number}</div>
+                  </div>
+                )}
+              </div>
+            </SageCollapsible>
+          )}
 
-    const handleTabChange = (id: string) => {
-        setActiveTab(id);
-        isScrollingRef.current = true;
-
-        if (!openSections[id]) {
-            setOpenSections(prev => ({ ...prev, [id]: true }));
-        }
-
-        setTimeout(() => {
-            const el = sectionRefs.current[id];
-            const container = containerRef.current;
-
-            if (el && container) {
-                const elementTop = el.offsetTop;
-                container.scrollTo({
-                    top: elementTop - container.offsetTop,
-                    behavior: 'smooth'
-                });
-            }
-            setTimeout(() => { isScrollingRef.current = false; }, 600);
-        }, 100);
-    };
-
-    const toggleSection = (id: string, isOpen: boolean) => {
-        setOpenSections(prev => ({ ...prev, [id]: isOpen }));
-    };
-
-    const handleExpandAll = () => {
-        const allOpen = tabs.reduce((acc, tab) => ({ ...acc, [tab.id]: true }), {});
-        setOpenSections(allOpen);
-    };
-
-    const handleCollapseAll = () => {
-        const allClosed = tabs.reduce((acc, tab) => ({ ...acc, [tab.id]: false }), {});
-        setOpenSections(allClosed);
-    };
-
-    const saveBl = async () => {
-        if (!selected?.id) return;
-        try {
-            const payload = {
-                delivery_date: deliveryDate || undefined,
-                livreur_id: selectedLivreurId === '' ? undefined : Number(selectedLivreurId),
-                notes: notes || undefined,
-                items: editData?.bl?.items?.map((it) => ({
-                    id: it.id,
-                    allocated_quantity: it.allocated_quantity ?? 0,
-                    unit_price: it.unit_price,
-                })),
-            };
-
-            const res = await update(selected.id, payload);
-            if (res.success) toast.success(res.message || 'BL mis à jour');
-            else toast.error(res.message || 'Échec mise à jour');
-
-            await refetch();
-            await refetchEdit();
-        } catch (e) {
-            toast.error(e instanceof Error ? e.message : 'Échec mise à jour');
-        }
-    };
-
-    const createBchFromSelected = async () => {
-        if (!selected?.id) return;
-        if (selectedLivreurId === '') {
-            toast.error('Sélectionne un livreur avant de créer un BCH');
-            return;
-        }
-        try {
-            const res = await createBch({
-                bl_ids: String(selected.id),
-                livreur_id: Number(selectedLivreurId),
-                notes: notes || undefined,
-            });
-
-            if (res.success) toast.success(res.message || 'BCH créé');
-            else toast.error(res.message || 'Échec création BCH');
-        } catch (e) {
-            toast.error(e instanceof Error ? e.message : 'Échec création BCH');
-        }
-    };
-
-    const handleSplitBl = async (splits: Array<{ items: number[]; notes?: string }>) => {
-        if (!selected?.id) return;
-
-        const toastId = toast.loading('Division du BL en cours...');
-
-        try {
-            const res = await split(selected.id, { splits });
-            toast.dismiss(toastId);
-
-            if (res.success && res.data) {
-                toast.success(
-                    `BL divisé avec succès en ${res.data.child_bls.length} BLs`,
-                    { duration: 4000 }
-                );
-                setShowSplitModal(false);
-                setSelected(null);
-                await refetch();
-            } else {
-                toast.error(res.message || 'Échec de la division');
-            }
-        } catch (e) {
-            toast.dismiss(toastId);
-            toast.error(e instanceof Error ? e.message : 'Échec de la division');
-        }
-    };
-
-    const bulkAssignLivreur = async () => {
-        if (selectedBls.length === 0) {
-            toast.error('Sélectionnez au moins un BL');
-            return;
-        }
-        if (bulkLivreurId === '') {
-            toast.error('Sélectionnez un livreur');
-            return;
-        }
-
-        const selectedRider = livreurs.find(l => l.id === Number(bulkLivreurId));
-        const riderName = selectedRider?.name || 'livreur';
-
-        try {
-            toast.loading(`Affectation de ${selectedBls.length} BL(s) à ${riderName}...`);
-            
-            const promises = selectedBls.map(bl => 
-                update(bl.id, {
-                    livreur_id: Number(bulkLivreurId),
-                    delivery_date: deliveryDate || undefined,
-                })
-            );
-            
-            await Promise.all(promises);
-            toast.dismiss();
-            toast.success(`✓ ${selectedBls.length} BL(s) affecté(s) à ${riderName}`);
-            await refetch();
-            setSelectedBls([]);
-        } catch (e) {
-            toast.dismiss();
-            console.error('Bulk assign error:', e);
-            toast.error(e instanceof Error ? e.message : 'Échec de l\'affectation');
-        }
-    };
-
-
-    const createBchFromMultiple = async () => {
-        if (selectedBls.length === 0) {
-            toast.error('Sélectionnez au moins un BL');
-            return;
-        }
-        if (bulkLivreurId === '') {
-            toast.error('Sélectionnez un livreur pour le BCH');
-            return;
-        }
-
-        const selectedRider = livreurs.find(l => l.id === Number(bulkLivreurId));
-        const riderName = selectedRider?.name || 'livreur';
-
-        try {
-            toast.loading(`Création du BCH pour ${riderName} avec ${selectedBls.length} BL(s)...`);
-            
-            // Use workflow transition for the first BL to create BCH
-            const firstBlId = selectedBls[0].id;
-            const blIds = selectedBls.map(bl => bl.id.toString());
-            
-            // Import workflowStateApi to use transition
-            const { workflowStateApi } = await import('@/services/api/workflowStateApi');
-            
-            const transitionResult = await workflowStateApi.bonLivraison.transition(firstBlId, {
-                action: 'grouped',
-                comment: `BCH créé pour ${riderName} avec ${selectedBls.length} BL(s)`,
-                metadata: {
-                    bch_id: null,
-                    create_new_bch: true,
-                    bl_ids: blIds,
-                    livreur_id: Number(bulkLivreurId),
-                },
-            });
-
-            toast.dismiss();
-            
-            if (transitionResult.success) {
-                const bchNumber = transitionResult.metadata?.bch_creation?.bch?.bch_number || 'BCH';
-                toast.success(`✓ ${bchNumber} créé avec ${selectedBls.length} BL(s) pour ${riderName}`);
-                await refetch();
-                setSelectedBls([]);
-                setBulkLivreurId('');
-                setNotes('');
-            } else {
-                toast.error(transitionResult.message || 'Échec de la création du BCH');
-            }
-        } catch (e) {
-            toast.dismiss();
-            console.error('Create BCH error:', e);
-            toast.error(e instanceof Error ? e.message : 'Échec de la création du BCH');
-        }
-    };
-
-    return (
-        <>
-        <MasterLayout
-            leftContent={
-                <div className="h-full bg-white border-r border-gray-100 flex flex-col">
-                    {/* Header */}
-                    <div className="p-3 border-b border-gray-100 shrink-0">
-                        <h1 className="text-sm font-semibold text-gray-900 mb-2">Gestion BL Dispatcher</h1>
-                        
-                        {/* Summary Stats */}
-                        <div className="grid grid-cols-3 gap-2 mt-2">
-                            <div className="bg-sage-50 rounded p-1.5">
-                                <div className="text-xs text-gray-500">BLs</div>
-                                <div className="text-base font-bold text-sage-700">{stats.totalBls}</div>
-                            </div>
-                            <div className="bg-blue-50 rounded p-1.5">
-                                <div className="text-xs text-gray-500">Villes</div>
-                                <div className="text-base font-bold text-blue-700">{Object.keys(stats.byVille).length}</div>
-                            </div>
-                            <div className="bg-emerald-50 rounded p-1.5">
-                                <div className="text-xs text-gray-500">Total</div>
-                                <div className="text-xs font-bold text-emerald-700">{stats.totalAmount.toLocaleString()} Dh</div>
-                            </div>
-                        </div>
-
+          {/* Order section */}
+          {activeTab === 'order' && (
+            <SageCollapsible
+              title="Bon de commande"
+              isOpen={openSections.order}
+              onOpenChange={(v) => setOpenSections((p) => ({ ...p, order: v }))}
+            >
+              {d.order ? (
+                <div className="grid grid-cols-2 gap-3 p-1">
+                  {[
+                    { label: 'Code BC', value: d.order.order_code },
+                    { label: 'Statut BC', value: d.order.bc_status },
+                    { label: 'Partenaire', value: d.partner?.name },
+                    { label: 'Code partenaire', value: d.partner?.code },
+                  ].map(({ label, value }) => (
+                    <div key={label} className="p-3 rounded-lg bg-white border border-gray-100">
+                      <div className="text-xs text-gray-500">{label}</div>
+                      <div className="text-sm font-semibold text-gray-900 mt-0.5 truncate">{value ?? '—'}</div>
                     </div>
+                  ))}
+                </div>
+              ) : (
+                <p className="text-sm text-gray-400 p-3">Aucune commande associée</p>
+              )}
+            </SageCollapsible>
+          )}
 
-                    {error && <div className="px-4 py-2 text-sm text-red-600 border-b border-gray-100 bg-red-50">{error}</div>}
-
-                    {/* DataGrid */}
-                    <div className="flex-1 min-h-0 p-2">
-                        <div className="bg-white rounded-lg border border-gray-200 shadow-sm h-full">
-                            {loading ? (
-                                <div className="h-full flex items-center justify-center text-gray-400">
-                                    <Loader2 className="w-6 h-6 animate-spin mr-2" /> Chargement...
-                                </div>
+          {/* Items section */}
+          {activeTab === 'items' && (
+            <SageCollapsible
+              title={`Lignes produits (${d.items?.length ?? 0})`}
+              isOpen={openSections.items}
+              onOpenChange={(v) => setOpenSections((p) => ({ ...p, items: v }))}
+            >
+              {d.items && d.items.length > 0 ? (
+                <div className="overflow-hidden rounded-lg border border-gray-200">
+                  <table className="min-w-full divide-y divide-gray-100 text-sm">
+                    <thead className="bg-gray-50">
+                      <tr>
+                        <th className="px-3 py-2.5 text-left text-xs font-semibold text-gray-600">Produit</th>
+                        <th className="px-3 py-2.5 text-right text-xs font-semibold text-gray-600">Qté</th>
+                        <th className="px-3 py-2.5 text-right text-xs font-semibold text-gray-600">Alloué</th>
+                        <th className="px-3 py-2.5 text-right text-xs font-semibold text-gray-600">Préparé</th>
+                        <th className="px-3 py-2.5 text-right text-xs font-semibold text-gray-600">P.U</th>
+                        <th className="px-3 py-2.5 text-right text-xs font-semibold text-gray-600">Total</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-gray-50 bg-white">
+                      {d.items.map((item) => (
+                        <tr key={item.id} className="hover:bg-gray-50">
+                          <td className="px-3 py-2.5">
+                            <div className="font-medium text-gray-900 text-xs">{item.product?.name ?? `#${item.product_id}`}</div>
+                            <div className="text-gray-400 text-xs">{item.product?.sku}</div>
+                          </td>
+                          <td className="px-3 py-2.5 text-right text-xs text-gray-700">{item.quantity}</td>
+                          <td className="px-3 py-2.5 text-right text-xs text-gray-700">{item.allocated_qty}</td>
+                          <td className="px-3 py-2.5 text-right text-xs">
+                            {item.prepared_quantity != null ? (
+                              <span className={item.prepared_quantity < item.quantity ? 'text-orange-600 font-semibold' : 'text-green-600'}>
+                                {item.prepared_quantity}
+                              </span>
                             ) : (
-                                <DataGrid 
-                                    rowData={draftBls} 
-                                    columnDefs={columnDefs} 
-                                    loading={loading} 
-                                    onRowSelected={undefined}
-                                    onSelectionChanged={onSelectionChanged}
-                                    rowSelection="multiple"
-                                    onRowDoubleClicked={onSelect}
-                                />
+                              <span className="text-gray-400">—</span>
                             )}
-                        </div>
-                    </div>
+                          </td>
+                          <td className="px-3 py-2.5 text-right text-xs text-gray-700">{Number(item.unit_price).toLocaleString()} Dh</td>
+                          <td className="px-3 py-2.5 text-right text-xs font-semibold text-gray-900">{Number(item.total_price).toLocaleString()} Dh</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
                 </div>
-            }
-            mainContent={
-                <div className="flex h-full bg-slate-50 overflow-hidden">
-                    {/* Main area - shows when detail panel is open */}
-                    {showDetailPanel && selected ? (
-                        <div className="flex-1 flex flex-col bg-white overflow-hidden">
-                            {/* Header Sticky */}
-                            <div className="bg-white border-b border-gray-200 p-4 shrink-0">
-                                <div className="flex justify-between items-start">
-                                    <div className="flex items-center gap-2">
-                                        <button
-                                            onClick={() => setShowDetailPanel(false)}
-                                            className="p-1.5 rounded-md hover:bg-gray-100 transition-colors"
-                                            title="Retour"
-                                        >
-                                            <X className="w-5 h-5 text-gray-600" />
-                                        </button>
-                                        <div>
-                                            <div className="flex items-center gap-2">
-                                                <h1 className="text-xl font-bold text-gray-900">
-                                                    {detailsBl?.bl_number || `BL #${selected?.id}`}
-                                                </h1>
-                                                {detailsBl?.parent_bl_id && (
-                                                    <span className="px-2 py-1 text-xs font-medium bg-purple-100 text-purple-700 rounded">
-                                                        BL Enfant
-                                                    </span>
-                                                )}
-                                                {detailsBl?.status === 'split' && (
-                                                    <span className="px-2 py-1 text-xs font-medium bg-gray-100 text-gray-700 rounded">
-                                                        BL Divisé
-                                                    </span>
-                                                )}
-                                            </div>
-                                            <div className="flex items-center gap-3 text-xs text-gray-500 mt-0.5">
-                                                <span className="font-medium">Statut: {detailsBl?.status || '-'}</span>
-                                                {detailsBl?.partner && <span>{detailsBl.partner.name}</span>}
-                                            </div>
-                                            {detailsBl?.parent_bl_id && detailsBl?.parent_bl && (
-                                                <div className="mt-2 p-2 bg-purple-50 border border-purple-200 rounded text-xs">
-                                                    <span className="text-purple-700">
-                                                        <strong>BL Parent:</strong> {detailsBl.parent_bl.bl_number}
-                                                    </span>
-                                                </div>
-                                            )}
-                                        </div>
-                                    </div>
-                                    <div className="text-right">
-                                        <div className="text-2xl font-bold text-sage-600">
-                                            {parseFloat(detailsBl?.total_amount || '0').toLocaleString()} <span className="text-xs font-normal text-gray-400">Dh</span>
-                                        </div>
-                                        {(editLoading || saving) && (
-                                            <div className="mt-1 text-xs text-gray-500 flex items-center gap-1 justify-end">
-                                                <Loader2 className="w-3 h-3 animate-spin" /> Traitement...
-                                            </div>
-                                        )}
-                                    </div>
-                                </div>
-                            </div>
+              ) : (
+                <p className="text-sm text-gray-400 p-3">Aucune ligne produit</p>
+              )}
+            </SageCollapsible>
+          )}
+        </div>
+      </div>
 
-                            {/* Tabs */}
-                            <div className="shrink-0 bg-white border-b border-gray-200">
-                                <SageTabs
-                                    tabs={tabs}
-                                    activeTabId={activeTab}
-                                    onTabChange={handleTabChange}
-                                    onExpandAll={handleExpandAll}
-                                    onCollapseAll={handleCollapseAll}
-                                    className="px-4 shadow-none"
-                                />
-                            </div>
+      {/* Cancel modal */}
+      <ConfirmModal
+        isOpen={showCancelModal}
+        onClose={() => setShowCancelModal(false)}
+        onConfirm={handleCancel}
+        title="Annuler le BL"
+        message={
+          <div className="space-y-3">
+            <p className="text-sm text-gray-600">
+              Êtes-vous sûr de vouloir annuler <strong>{d.delivery_number}</strong> ? Le stock réservé sera libéré.
+            </p>
+            <div>
+              <label className="block text-xs font-semibold text-gray-600 mb-1">Motif d'annulation (min 10 car.) *</label>
+              <textarea
+                value={cancelReason}
+                onChange={(e) => setCancelReason(e.target.value)}
+                rows={3}
+                className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:ring-2 focus:ring-red-300 focus:border-red-400"
+                placeholder="Indiquez la raison…"
+              />
+            </div>
+          </div>
+        }
+        confirmText="Annuler le BL"
+        cancelText="Retour"
+        variant="danger"
+        loading={cancelling}
+      />
 
-                            {editError && <div className="px-4 py-2 text-sm text-red-600 bg-red-50 border-b border-red-200">{editError}</div>}
+      {/* Split modal */}
+      <SplitBlModal
+        isOpen={showSplitModal}
+        onClose={() => setShowSplitModal(false)}
+        onConfirm={handleSplit}
+        items={d.items ?? []}
+        loading={splitting}
+      />
+    </>
+  );
+};
 
-                            {/* Content Area */}
-                            <div ref={containerRef} className="flex-1 overflow-y-auto p-4 space-y-3 scroll-smooth bg-slate-50">
+// ─── Page ──────────────────────────────────────────────────────────────────────
 
-                                <div ref={el => { sectionRefs.current['bl'] = el; }}>
-                                    <SageCollapsible
-                                        title="BL"
-                                        isOpen={openSections['bl']}
-                                        onOpenChange={(open) => toggleSection('bl', open)}
-                                    >
-                                        <div className="p-4 space-y-4">
-                                        {/* Workflow Actions */}
-                                        <div className="mb-4 pb-4 border-b border-gray-200">
-                                            <BLWorkflowActions 
-                                                blId={selected?.id || 0} 
-                                                onSuccess={() => {
-                                                    refetch();
-                                                    refetchEdit();
-                                                }}
-                                            />
-                                        </div>
+export const DispatcherBonLivraisonsPage = () => {
+  const [statusFilter, setStatusFilter] = useState('');
+  const [search, setSearch] = useState('');
+  const [page, setPage] = useState(1);
+  const [selected, setSelected] = useState<DeliveryNote | null>(null);
 
-                                        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                                            <div className="p-3 rounded border border-gray-100 bg-gray-50">
-                                                <div className="text-xs text-gray-500">BL</div>
-                                                <div className="font-semibold text-gray-900">{detailsBl?.bl_number || selected?.id}</div>
-                                            </div>
-                                            <div className="p-3 rounded border border-gray-100 bg-gray-50">
-                                                <div className="text-xs text-gray-500">Statut</div>
-                                                <div className="font-semibold text-gray-900">{detailsBl?.status || '-'}</div>
-                                            </div>
-                                        </div>
+  const filters = useMemo(() => ({
+    status: statusFilter || undefined,
+    search: search || undefined,
+    page,
+  }), [statusFilter, search, page]);
 
-                                        <div className="mt-4 grid grid-cols-1 md:grid-cols-2 gap-3">
-                                            <div>
-                                                <label className="block text-xs font-semibold text-gray-600">Date livraison</label>
-                                                <input
-                                                    type="date"
-                                                    value={deliveryDate}
-                                                    onChange={(e) => setDeliveryDate(e.target.value)}
-                                                    className="mt-1 w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm"
-                                                />
-                                            </div>
-                                            <div>
-                                                <label className="block text-xs font-semibold text-gray-600">Livreur</label>
-                                                <select
-                                                    value={selectedLivreurId}
-                                                    onChange={(e) => setSelectedLivreurId(e.target.value === '' ? '' : Number(e.target.value))}
-                                                    className="mt-1 w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm"
-                                                >
-                                                    <option value="">-- Non affecté --</option>
-                                                    {livreurs.map((l: Rider) => (
-                                                        <option key={l.id} value={l.id}>{l.name}</option>
-                                                    ))}
-                                                </select>
-                                            </div>
-                                        </div>
+  const { data, loading, error, refetch } = useDispatcherBonLivraisonsList(filters);
+  const bls = data?.data ?? [];
+  const total = data?.total ?? 0;
 
-                                        <div className="mt-4">
-                                            <label className="block text-xs font-semibold text-gray-600">Notes</label>
-                                            <textarea
-                                                value={notes}
-                                                onChange={(e) => setNotes(e.target.value)}
-                                                rows={3}
-                                                className="mt-1 w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm"
-                                            />
-                                        </div>
-                                        </div>
-                                    </SageCollapsible>
-                                </div>
+  const columnDefs = useMemo<ColDef[]>(() => [
+    {
+      field: 'delivery_number',
+      headerName: 'N° BL',
+      width: 180,
+      cellRenderer: (p: any) => (
+        <span className="font-mono text-xs font-semibold text-gray-800">{p.value}</span>
+      ),
+    },
+    {
+      field: 'status',
+      headerName: 'Statut',
+      width: 150,
+      cellRenderer: (p: any) => {
+        const cfg = BL_STATUS[p.value as BlStatus];
+        return cfg ? (
+          <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium border ${cfg.color}`}>
+            <span className={`w-1.5 h-1.5 rounded-full ${cfg.dot}`} />
+            {cfg.label}
+          </span>
+        ) : p.value;
+      },
+    },
+    { field: 'partner.name', headerName: 'Partenaire', flex: 1, minWidth: 150 },
+    { field: 'order.order_code', headerName: 'BC', width: 150 },
+    {
+      field: 'total_amount',
+      headerName: 'Montant',
+      width: 120,
+      valueFormatter: (p: any) => p.value ? `${Number(p.value).toLocaleString('fr-MA')} Dh` : '—',
+    },
+    {
+      field: 'delivery_date',
+      headerName: 'Livraison',
+      width: 110,
+      valueFormatter: (p: any) =>
+        p.value ? new Date(p.value).toLocaleDateString('fr-FR') : '—',
+    },
+    {
+      field: 'rider.name',
+      headerName: 'Livreur',
+      width: 130,
+      valueFormatter: (p: any) => p.value ?? '—',
+    },
+  ], []);
 
-                                <div ref={el => { sectionRefs.current['commande'] = el; }}>
-                                    <SageCollapsible
-                                        title="Bon de commande"
-                                        isOpen={openSections['commande']}
-                                        onOpenChange={(open) => toggleSection('commande', open)}
-                                    >
-                                        <div className="space-y-4">
-                                        {detailsBl?.bon_commande ? (
-                                            <>
-                                                <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
-                                                    <div className="p-3 rounded border border-gray-100 bg-gray-50">
-                                                        <div className="text-xs text-gray-500">BC</div>
-                                                        <div className="font-semibold text-gray-900">{detailsBl.bon_commande.bc_number}</div>
-                                                    </div>
-                                                    <div className="p-3 rounded border border-gray-100 bg-gray-50">
-                                                        <div className="text-xs text-gray-500">Commande</div>
-                                                        <div className="font-semibold text-gray-900">{detailsBl.bon_commande.order_code}</div>
-                                                    </div>
-                                                    <div className="p-3 rounded border border-gray-100 bg-gray-50">
-                                                        <div className="text-xs text-gray-500">Statut BC</div>
-                                                        <div className="font-semibold text-gray-900">{detailsBl.bon_commande.bc_status}</div>
-                                                    </div>
-                                                    <div className="p-3 rounded border border-gray-100 bg-gray-50">
-                                                        <div className="text-xs text-gray-500">Total</div>
-                                                        <div className="font-semibold text-gray-900">{parseFloat(detailsBl.bon_commande.total_amount).toLocaleString()} Dh</div>
-                                                    </div>
-                                                    <div className="p-3 rounded border border-gray-100 bg-gray-50">
-                                                        <div className="text-xs text-gray-500">Paiement</div>
-                                                        <div className="font-semibold text-gray-900">{detailsBl.bon_commande.payment_method}</div>
-                                                    </div>
-                                                    <div className="p-3 rounded border border-gray-100 bg-gray-50">
-                                                        <div className="text-xs text-gray-500">Date commande</div>
-                                                        <div className="font-semibold text-gray-900">{new Date(detailsBl.bon_commande.order_date).toLocaleDateString('fr-FR')}</div>
-                                                    </div>
-                                                </div>
-                                            </>
-                                        ) : (
-                                            <div className="text-sm text-gray-500">Aucune commande associée</div>
-                                        )}
-                                        </div>
-                                    </SageCollapsible>
-                                </div>
+  return (
+    <MasterLayout
+      leftContent={
+        <div className="h-full flex flex-col bg-white border-r border-gray-100">
+          {/* Header */}
+          <div className="px-4 pt-4 pb-3 border-b border-gray-100 shrink-0 space-y-3">
+            <div className="flex items-center justify-between">
+              <h1 className="text-sm font-bold text-gray-900">Bons de livraison</h1>
+              <div className="flex items-center gap-2 text-xs text-gray-500">
+                <span className="font-semibold text-gray-700">{total}</span> BL(s)
+                <button onClick={refetch} className="p-1 rounded hover:bg-gray-100 transition-colors">
+                  <RefreshCw className="w-3.5 h-3.5" />
+                </button>
+              </div>
+            </div>
 
-                                <div ref={el => { sectionRefs.current['client'] = el; }}>
-                                    <SageCollapsible
-                                        title="Client"
-                                        isOpen={openSections['client']}
-                                        onOpenChange={(open) => toggleSection('client', open)}
-                                    >
-                                        <div className="space-y-4">
-                                        {detailsBl?.partner ? (
-                                            <>
-                                                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                                                    <div className="p-3 rounded border border-gray-100 bg-gray-50">
-                                                        <div className="text-xs text-gray-500">Code</div>
-                                                        <div className="font-semibold text-gray-900">{detailsBl.partner.code}</div>
-                                                    </div>
-                                                    <div className="p-3 rounded border border-gray-100 bg-gray-50">
-                                                        <div className="text-xs text-gray-500">Nom</div>
-                                                        <div className="font-semibold text-gray-900">{detailsBl.partner.name}</div>
-                                                    </div>
-                                                    <div className="p-3 rounded border border-gray-100 bg-gray-50">
-                                                        <div className="text-xs text-gray-500">Téléphone</div>
-                                                        <div className="font-semibold text-gray-900">{detailsBl.partner.phone || '-'}</div>
-                                                    </div>
-                                                    <div className="p-3 rounded border border-gray-100 bg-gray-50">
-                                                        <div className="text-xs text-gray-500">Email</div>
-                                                        <div className="font-semibold text-gray-900 text-xs">{detailsBl.partner.email || '-'}</div>
-                                                    </div>
-                                                    <div className="p-3 rounded border border-gray-100 bg-gray-50">
-                                                        <div className="text-xs text-gray-500">Adresse</div>
-                                                        <div className="font-semibold text-gray-900 text-xs">{detailsBl.partner.address_line1}</div>
-                                                    </div>
-                                                    <div className="p-3 rounded border border-gray-100 bg-gray-50">
-                                                        <div className="text-xs text-gray-500">Ville</div>
-                                                        <div className="font-semibold text-gray-900">{detailsBl.partner.city || detailsBl.partner.postal_code || '-'}</div>
-                                                    </div>
-                                                    <div className="p-3 rounded border border-gray-100 bg-gray-50">
-                                                        <div className="text-xs text-gray-500">Crédit disponible</div>
-                                                        <div className="font-semibold text-gray-900">{parseFloat(detailsBl.partner.credit_available).toLocaleString()} Dh</div>
-                                                    </div>
-                                                    <div className="p-3 rounded border border-gray-100 bg-gray-50">
-                                                        <div className="text-xs text-gray-500">Statut</div>
-                                                        <div className="font-semibold text-gray-900">{detailsBl.partner.status}</div>
-                                                    </div>
-                                                </div>
-                                            </>
-                                        ) : (
-                                            <div className="text-sm text-gray-500">Aucun client associé</div>
-                                        )}
-                                        </div>
-                                    </SageCollapsible>
-                                </div>
+            {/* Search */}
+            <div className="relative">
+              <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400" />
+              <input
+                type="text"
+                value={search}
+                onChange={(e) => { setSearch(e.target.value); setPage(1); }}
+                placeholder="BL, partenaire…"
+                className="w-full pl-8 pr-3 py-2 text-xs border border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-300 focus:border-blue-400 bg-gray-50"
+              />
+            </div>
 
-                                <div ref={el => { sectionRefs.current['lignes'] = el; }}>
-                                    <SageCollapsible
-                                        title={`Lignes (${detailsBl?.items?.length || 0})`}
-                                        isOpen={openSections['lignes']}
-                                        onOpenChange={(open) => toggleSection('lignes', open)}
-                                    >
-                                        <div>
-                                        {detailsBl?.items && detailsBl.items.length > 0 ? (
-                                            <div className="border border-gray-200 rounded-lg overflow-hidden">
-                                                <table className="min-w-full divide-y divide-gray-200">
-                                                    <thead className="bg-gray-50">
-                                                        <tr>
-                                                            <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600">Produit</th>
-                                                            <th className="px-4 py-3 text-right text-xs font-semibold text-gray-600">Qté commandée</th>
-                                                            <th className="px-4 py-3 text-right text-xs font-semibold text-gray-600">Qté allouée</th>
-                                                            <th className="px-4 py-3 text-right text-xs font-semibold text-gray-600">Prix unitaire</th>
-                                                            <th className="px-4 py-3 text-right text-xs font-semibold text-gray-600">Total</th>
-                                                        </tr>
-                                                    </thead>
-                                                    <tbody className="bg-white divide-y divide-gray-200">
-                                                        {detailsBl.items.map((item: any) => (
-                                                            <tr key={item.id} className="hover:bg-gray-50">
-                                                                <td className="px-4 py-3 text-sm text-gray-900">Produit #{item.product_id}</td>
-                                                                <td className="px-4 py-3 text-sm text-gray-900 text-right">{parseFloat(item.ordered_quantity).toFixed(0)}</td>
-                                                                <td className="px-4 py-3 text-sm text-gray-900 text-right">{parseFloat(item.allocated_quantity).toFixed(0)}</td>
-                                                                <td className="px-4 py-3 text-sm text-gray-900 text-right">{parseFloat(item.unit_price).toFixed(2)} Dh</td>
-                                                                <td className="px-4 py-3 text-sm font-semibold text-gray-900 text-right">
-                                                                    {(parseFloat(item.allocated_quantity) * parseFloat(item.unit_price)).toFixed(2)} Dh
-                                                                </td>
-                                                            </tr>
-                                                        ))}
-                                                    </tbody>
-                                                </table>
-                                            </div>
-                                        ) : (
-                                            <div className="text-sm text-gray-500">Aucune ligne de commande</div>
-                                        )}
-                                        </div>
-                                    </SageCollapsible>
-                                </div>
+            {/* Status filter tabs */}
+            <div className="flex flex-wrap gap-1">
+              {STATUS_FILTER_TABS.map((tab) => (
+                <button
+                  key={tab.id}
+                  onClick={() => { setStatusFilter(tab.id); setPage(1); }}
+                  className={`px-2.5 py-1 rounded-full text-xs font-medium transition-colors ${
+                    statusFilter === tab.id
+                      ? 'bg-blue-600 text-white shadow-sm'
+                      : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                  }`}
+                >
+                  {tab.label}
+                </button>
+              ))}
+            </div>
+          </div>
 
-                                <BLHistorySection blId={selected?.id} />
-                            </div>
-                        </div>
-                    ) : null}
+          {error && (
+            <div className="px-4 py-2 text-xs text-red-600 bg-red-50 border-b border-red-100 flex items-center gap-2">
+              <AlertCircle className="w-3.5 h-3.5 shrink-0" /> {error}
+            </div>
+          )}
 
-                    {/* Right Drawer - Selection Panel */}
-                    {selectedBls.length > 0 && (
-                        <div className={`${showDetailPanel ? 'w-96' : 'flex-1'} bg-white border-l border-gray-200 flex flex-col`}>
-                            {/* Drawer Header */}
-                            <div className="bg-gradient-to-br from-green-600 via-green-700 to-emerald-700 p-3 shrink-0 shadow-lg">
-                                <div className="flex items-center justify-between mb-3">
-                                    <div className="flex items-center gap-2">
-                                        <div className="p-1.5 bg-white/20 backdrop-blur-sm rounded-lg">
-                                            <Package className="w-5 h-5 text-white" />
-                                        </div>
-                                        <h2 className="text-base font-bold text-white">Dispatcher BCH</h2>
-                                    </div>
-                                    <button
-                                        onClick={() => setSelectedBls([])}
-                                        className="p-1.5 bg-white/10 hover:bg-white/20 rounded-lg transition-all text-white backdrop-blur-sm"
-                                        title="Effacer la sélection"
-                                    >
-                                        <X className="w-4 h-4" />
-                                    </button>
-                                </div>
-                                
-                                {/* Livreur Selection */}
-                                <div className="bg-white/10 backdrop-blur-sm rounded-lg p-2.5 border border-white/20">
-                                    <label className="flex items-center gap-1.5 text-xs font-semibold text-white mb-2">
-                                        <User className="w-4 h-4" />
-                                        Livreur assigné
-                                    </label>
-                                    <select
-                                        value={bulkLivreurId}
-                                        onChange={(e) => setBulkLivreurId(e.target.value === '' ? '' : Number(e.target.value))}
-                                        className="w-full text-sm rounded-lg border-0 bg-white px-3 py-2 font-medium shadow-lg focus:ring-2 focus:ring-white/50 transition-all"
-                                        disabled={livreursLoading}
-                                    >
-                                        <option value="">{livreursLoading ? '⏳ Chargement...' : '👤 Sélectionner un livreur'}</option>
-                                        {livreurs.map((l: Rider) => (
-                                            <option key={l.id} value={l.id}>
-                                                🚚 {l.name} {l.branch ? `• ${l.branch.name}` : ''}
-                                            </option>
-                                        ))}
-                                    </select>
-                                </div>
-                            </div>
-
-                            {/* Selection Summary */}
-                            <div className="p-3 bg-gradient-to-br from-gray-50 to-white shrink-0 border-b-2 border-gray-100">
-                                {/* Summary Card */}
-                                <div className="mb-3 p-3 bg-white rounded-xl shadow-lg border-2 border-green-200">
-                                    <div className="flex items-center justify-between">
-                                        <div className="flex items-center gap-2">
-                                            <div className="p-2 bg-green-100 rounded-lg">
-                                                <CheckSquare className="w-5 h-5 text-green-700" />
-                                            </div>
-                                            <div>
-                                                <div className="text-xl font-bold text-gray-900">
-                                                    {selectedBls.length}
-                                                </div>
-                                                <div className="text-xs font-medium text-gray-600">BL{selectedBls.length > 1 ? 's' : ''} sélectionné{selectedBls.length > 1 ? 's' : ''}</div>
-                                            </div>
-                                        </div>
-                                        <div className="text-right">
-                                            <div className="text-xl font-bold text-green-700">
-                                                {selectedBls.reduce((sum, bl) => sum + parseFloat(bl.total_amount || '0'), 0).toLocaleString()}
-                                            </div>
-                                            <div className="text-xs font-medium text-gray-600">Dh Total</div>
-                                        </div>
-                                    </div>
-                                    {bulkLivreurId === '' && (
-                                        <div className="mt-2 p-2 bg-amber-50 border border-amber-200 rounded-lg flex items-start gap-2">
-                                            <span className="text-sm">⚠️</span>
-                                            <p className="text-xs text-amber-800 leading-relaxed">
-                                                <strong>Astuce:</strong> Sélectionnez le livreur pour activer les actions
-                                            </p>
-                                        </div>
-                                    )}
-                                </div>
-                                
-                                {/* Action Buttons - Inline */}
-                                <div className="flex gap-2">
-                                    <button
-                                        onClick={createBchFromMultiple}
-                                        disabled={creatingBch || bulkLivreurId === ''}
-                                        className="flex-1 text-sm bg-gradient-to-r from-blue-600 to-blue-700 text-white px-3 py-3 rounded-lg hover:from-blue-700 hover:to-blue-800 disabled:opacity-50 disabled:cursor-not-allowed disabled:grayscale flex items-center justify-center gap-2 font-bold transition-all shadow-lg hover:shadow-xl"
-                                    >
-                                        {creatingBch ? (
-                                            <>
-                                                <Loader2 className="w-4 h-4 animate-spin" />
-                                                <span className="hidden sm:inline">Création...</span>
-                                            </>
-                                        ) : (
-                                            <>
-                                                <PackagePlus className="w-4 h-4" />
-                                                <span>Créer BCH</span>
-                                            </>
-                                        )}
-                                    </button>
-                                    <button
-                                        onClick={bulkAssignLivreur}
-                                        disabled={saving || bulkLivreurId === ''}
-                                        className="flex-1 text-sm bg-white text-green-700 border-2 border-green-600 px-3 py-3 rounded-lg hover:bg-green-50 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 font-semibold transition-all shadow-md hover:shadow-lg"
-                                    >
-                                        {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckSquare className="w-4 h-4" />}
-                                        <span>Affecter</span>
-                                    </button>
-                                </div>
-                            </div>
-
-                            {/* Selected BLs List */}
-                            <div className="flex-1 overflow-y-auto p-4 space-y-3 bg-gray-50">
-                                {selectedBls.map((bl, index) => {
-                                    const currentLivreur = livreurs.find(l => l.id === bl.livreur_id);
-                                    return (
-                                        <div key={bl.id} className="bg-white border-2 border-gray-200 rounded-2xl p-4 hover:border-green-400 hover:shadow-xl transition-all group">
-                                            <div className="flex items-start gap-3">
-                                                {/* Number Badge */}
-                                                <div className="flex items-center justify-center w-10 h-10 rounded-xl bg-gradient-to-br from-green-500 to-green-600 text-white text-base font-bold shrink-0 shadow-md group-hover:scale-110 transition-transform">
-                                                    {index + 1}
-                                                </div>
-                                                
-                                                {/* BL Info */}
-                                                <div className="flex-1 min-w-0">
-                                                    <div className="flex items-start justify-between gap-2 mb-2">
-                                                        <div className="flex-1 min-w-0">
-                                                            <div className="text-sm font-bold text-gray-900 truncate">{bl.bl_number}</div>
-                                                            <div className="text-xs text-gray-600 mt-1 truncate flex items-center gap-1">
-                                                                <User className="w-3 h-3" />
-                                                                {bl.partner?.name}
-                                                            </div>
-                                                        </div>
-                                                        {/* Action Buttons */}
-                                                        <div className="flex gap-1 shrink-0">
-                                                            <button
-                                                                onClick={() => {
-                                                                    setSelected(bl);
-                                                                    setShowDetailPanel(true);
-                                                                }}
-                                                                className="p-2 rounded-lg bg-blue-50 hover:bg-blue-100 text-blue-600 hover:text-blue-800 transition-all hover:scale-110"
-                                                                title="Voir détails"
-                                                            >
-                                                                <FileText className="w-4 h-4" />
-                                                            </button>
-                                                            <button
-                                                                onClick={() => setSelectedBls(prev => prev.filter(b => b.id !== bl.id))}
-                                                                className="p-2 rounded-lg bg-red-50 hover:bg-red-100 text-red-600 hover:text-red-800 transition-all hover:scale-110"
-                                                                title="Retirer"
-                                                            >
-                                                                <X className="w-4 h-4" />
-                                                            </button>
-                                                        </div>
-                                                    </div>
-                                                    
-                                                    {/* Badges */}
-                                                    <div className="flex items-center gap-2 flex-wrap">
-                                                        <div className="px-3 py-1.5 bg-gradient-to-r from-emerald-50 to-green-50 border border-emerald-200 text-emerald-700 rounded-lg text-sm font-bold shadow-sm">
-                                                            💰 {parseFloat(bl.total_amount || '0').toLocaleString()} Dh
-                                                        </div>
-                                                        {currentLivreur && (
-                                                            <div className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-200 text-blue-700 rounded-lg text-xs font-semibold shadow-sm">
-                                                                <Truck className="w-3.5 h-3.5" />
-                                                                <span className="truncate max-w-[120px]">{currentLivreur.name}</span>
-                                                            </div>
-                                                        )}
-                                                    </div>
-                                                </div>
-                                            </div>
-                                        </div>
-                                    );
-                                })}
-                            </div>
-                        </div>
-                    )}
-
-                    {/* Empty State - when no selection and no detail */}
-                    {!showDetailPanel && selectedBls.length === 0 && (
-                        <div className="flex-1 flex flex-col items-center justify-center p-10 text-center">
-                            <Package className="w-16 h-16 text-gray-300 mb-4" />
-                            <h3 className="text-lg font-semibold text-gray-700 mb-2">Mode Dispatcher</h3>
-                            <p className="text-sm text-gray-500 max-w-md">
-                                Sélectionnez des BLs avec les cases à cocher.
-                                <br />Un panneau apparaîtra à droite pour gérer votre sélection.
-                            </p>
-                            <p className="text-xs text-gray-400 mt-4">
-                                Double-cliquez sur une ligne pour voir les détails.
-                            </p>
-                        </div>
-                    )}
+          {/* Grid */}
+          <div className="flex-1 min-h-0 p-2">
+            <div className="bg-white rounded-lg border border-gray-200 h-full">
+              {loading ? (
+                <div className="h-full flex items-center justify-center text-gray-400 text-sm gap-2">
+                  <Loader2 className="w-5 h-5 animate-spin" /> Chargement…
                 </div>
-            }
-            rightContent={
-                <ActionPanel
-                    groups={[
-                        {
-                            items: [
-                                {
-                                    icon: RefreshCw,
-                                    label: 'Rafraîchir',
-                                    variant: 'sage',
-                                    onClick: refetch,
-                                },
-                                {
-                                    icon: Save,
-                                    label: 'Enregistrer BL',
-                                    variant: 'primary',
-                                    onClick: saveBl,
-                                    disabled: !selected || saving,
-                                },
-                                {
-                                    icon: Scissors,
-                                    label: 'Diviser BL',
-                                    variant: 'default',
-                                    onClick: () => setShowSplitModal(true),
-                                    disabled: !selected || editLoading || detailsBl?.status !== 'draft' || (detailsBl?.items?.length ?? 0) < 2,
-                                },
-                                {
-                                    icon: PackagePlus,
-                                    label: 'Créer BCH',
-                                    variant: 'default',
-                                    onClick: createBchFromSelected,
-                                    disabled: !selected || editLoading || creatingBch,
-                                },
-                            ],
-                        },
-                    ]}
+              ) : (
+                <DataGrid
+                  rowData={bls}
+                  columnDefs={columnDefs}
+                  loading={false}
+                  onRowSelected={(row: DeliveryNote) => setSelected(row)}
                 />
-            }
-        />
+              )}
+            </div>
+          </div>
 
-        <SplitBlModal
-            isOpen={showSplitModal}
-            onClose={() => setShowSplitModal(false)}
-            onConfirm={handleSplitBl}
-            items={editData?.bl?.items || []}
-            loading={splitting}
-        />
-        </>
-    );
+          {/* Pagination */}
+          {data && data.last_page && data.last_page > 1 && (
+            <div className="px-4 py-2 border-t border-gray-100 flex items-center justify-between shrink-0">
+              <button
+                onClick={() => setPage((p) => Math.max(1, p - 1))}
+                disabled={page === 1}
+                className="px-3 py-1 text-xs font-medium text-gray-600 bg-white border border-gray-200 rounded-lg hover:bg-gray-50 disabled:opacity-40"
+              >
+                Préc.
+              </button>
+              <span className="text-xs text-gray-500">
+                Page {page} / {data.last_page}
+              </span>
+              <button
+                onClick={() => setPage((p) => p + 1)}
+                disabled={page >= (data.last_page ?? 1)}
+                className="px-3 py-1 text-xs font-medium text-gray-600 bg-white border border-gray-200 rounded-lg hover:bg-gray-50 disabled:opacity-40"
+              >
+                Suiv.
+              </button>
+            </div>
+          )}
+        </div>
+      }
+      mainContent={
+        selected ? (
+          <DetailPanel
+            key={selected.id}
+            bl={selected}
+            onClose={() => setSelected(null)}
+            onRefresh={refetch}
+          />
+        ) : (
+          <div className="h-full flex items-center justify-center bg-slate-50">
+            <div className="text-center space-y-3">
+              <FileText className="w-14 h-14 text-gray-200 mx-auto" />
+              <h3 className="text-base font-semibold text-gray-500">Aucun BL sélectionné</h3>
+              <p className="text-sm text-gray-400">Cliquez sur une ligne pour afficher les détails</p>
+            </div>
+          </div>
+        )
+      }
+    />
+  );
 };

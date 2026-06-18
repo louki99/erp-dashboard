@@ -11,27 +11,27 @@ export function useAdvWorkflow(orderId: number) {
     const [isTransitioning, setIsTransitioning] = useState(false);
 
     const { data: workflowState, isLoading: isLoadingState, refetch: refetchState } = useQuery({
-        queryKey: ['workflow', 'order', orderId, 'state'],
-        queryFn: () => workflowStateApi.order.getAllowedActions(orderId),
+        queryKey: ['workflow', 'bon-commande', orderId, 'state'],
+        queryFn: () => workflowStateApi.bonCommande.getDecisions(orderId),
         enabled: !!orderId && isAuthenticated,
         refetchInterval: isAuthenticated ? 5000 : false,
     });
 
     const { data: workflowHistory, isLoading: isLoadingHistory, refetch: refetchHistory } = useQuery({
-        queryKey: ['workflow', 'order', orderId, 'history'],
-        queryFn: () => workflowStateApi.order.getHistory(orderId),
+        queryKey: ['workflow', 'bon-commande', orderId, 'history'],
+        queryFn: () => workflowStateApi.bonCommande.getHistory(orderId),
         enabled: !!orderId,
     });
 
     const transitionMutation = useMutation({
-        mutationFn: (data: WorkflowTransitionRequest) => 
-            workflowStateApi.order.transition(orderId, data),
+        mutationFn: (data: WorkflowTransitionRequest) =>
+            workflowStateApi.bonCommande.execute(orderId, data),
         onMutate: () => {
             setIsTransitioning(true);
         },
         onSuccess: (response) => {
             toast.success(response.message || 'Transition successful');
-            queryClient.invalidateQueries({ queryKey: ['workflow', 'order', orderId] });
+            queryClient.invalidateQueries({ queryKey: ['workflow', 'bon-commande', orderId] });
             queryClient.invalidateQueries({ queryKey: ['adv', 'bc'] });
             queryClient.invalidateQueries({ queryKey: ['adv', 'dashboard'] });
             refetchState();
@@ -50,8 +50,8 @@ export function useAdvWorkflow(orderId: number) {
     });
 
     const validateTransitionMutation = useMutation({
-        mutationFn: (action: string) => 
-            workflowStateApi.order.validateTransition(orderId, action),
+        mutationFn: (action: string) =>
+            workflowStateApi.bonCommande.execute(orderId, { action }),
     });
 
     const sendToReview = useCallback((comment?: string) => {
@@ -137,9 +137,9 @@ export function useAdvBatchWorkflow() {
         mutationFn: async (orderIds: number[]) => {
             const results = await Promise.allSettled(
                 orderIds.map(orderId =>
-                    workflowStateApi.order.transition(orderId, {
-                        action: 'adv_approved',
-                        comment: 'Batch approval',
+                    workflowStateApi.bonCommande.execute(orderId, {
+                        action: 'finalize_sale',
+                        comment: 'Approbation par lot',
                     })
                 )
             );

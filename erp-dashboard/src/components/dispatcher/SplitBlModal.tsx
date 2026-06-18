@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo } from 'react';
 import { AlertCircle, CheckCircle2, Scissors, Plus, Trash2, Package, GripVertical, ArrowRight } from 'lucide-react';
 import { Modal } from '@/components/common/Modal';
-import type { BonLivraisonItem } from '@/types/dispatcher.types';
+import type { DeliveryNoteItem as BonLivraisonItem } from '@/types/dispatcher.types';
 import {
     DndContext,
     DragOverlay,
@@ -45,8 +45,8 @@ const DraggableItem = ({ item, splitId }: { item: BonLivraisonItem; splitId: str
         opacity: isDragging ? 0.5 : 1,
     };
 
-    const itemTotal = item.allocated_quantity && item.unit_price
-        ? (Number(item.allocated_quantity) * Number(item.unit_price)).toFixed(2)
+    const itemTotal = item.allocated_qty && item.unit_price
+        ? (Number(item.allocated_qty) * Number(item.unit_price)).toFixed(2)
         : '0.00';
 
     return (
@@ -67,13 +67,13 @@ const DraggableItem = ({ item, splitId }: { item: BonLivraisonItem; splitId: str
                 </div>
                 <div className="flex-1 min-w-0">
                     <div className="font-semibold text-gray-900 text-sm">
-                        {item.product?.name || item.product_name || 'Produit inconnu'}
+                        {item.product?.name || 'Produit inconnu'}
                     </div>
-                    {item.product?.code && (
-                        <div className="text-xs text-gray-500 mt-0.5">{item.product.code}</div>
+                    {item.product?.sku && (
+                        <div className="text-xs text-gray-500 mt-0.5">{item.product.sku}</div>
                     )}
                     <div className="text-xs text-gray-600 mt-1.5 flex items-center gap-2">
-                        <span className="bg-gray-100 px-2 py-0.5 rounded">Qté: {item.allocated_quantity}</span>
+                        <span className="bg-gray-100 px-2 py-0.5 rounded">Qté: {item.allocated_qty}</span>
                         <span className="text-gray-400">×</span>
                         <span className="bg-gray-100 px-2 py-0.5 rounded">{item.unit_price} MAD</span>
                     </div>
@@ -107,8 +107,8 @@ const DropZone = ({
 
     const splitItems = items.filter(item => split.items.includes(item.id));
     const splitTotal = splitItems.reduce((total, item) => {
-        if (item.allocated_quantity && item.unit_price) {
-            return total + (Number(item.allocated_quantity) * Number(item.unit_price));
+        if (item.allocated_qty && item.unit_price) {
+            return total + (Number(item.allocated_qty) * Number(item.unit_price));
         }
         return total;
     }, 0);
@@ -310,8 +310,8 @@ export const SplitBlModal = ({ isOpen, onClose, onConfirm, items, loading = fals
     const getSplitTotal = (split: Split): number => {
         return split.items.reduce((total, itemId) => {
             const item = items.find(i => i.id === itemId);
-            if (item && item.allocated_quantity && item.unit_price) {
-                return total + (parseFloat(item.allocated_quantity.toString()) * parseFloat(item.unit_price.toString()));
+            if (item && item.allocated_qty && item.unit_price) {
+                return total + (parseFloat(item.allocated_qty.toString()) * parseFloat(item.unit_price.toString()));
             }
             return total;
         }, 0);
@@ -530,10 +530,10 @@ export const SplitBlModal = ({ isOpen, onClose, onConfirm, items, loading = fals
                                 <GripVertical className="w-5 h-5 text-blue-500 mt-1" />
                                 <div className="flex-1">
                                     <div className="font-semibold text-gray-900 text-sm">
-                                        {activeItem.product?.name || activeItem.product_name || 'Produit inconnu'}
+                                        {activeItem.product?.name || 'Produit inconnu'}
                                     </div>
                                     <div className="text-xs text-gray-600 mt-1">
-                                        Qté: {activeItem.allocated_quantity}
+                                        Qté: {activeItem.allocated_qty}
                                     </div>
                                 </div>
                             </div>

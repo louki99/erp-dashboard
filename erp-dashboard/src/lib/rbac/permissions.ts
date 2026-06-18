@@ -112,6 +112,11 @@ export const PERMISSIONS = {
         DECHARGES_SHOW: 'admin.dispatcher.decharges.show',
         DECHARGES_APPROVE_RETURN: 'admin.dispatcher.decharges.approve-return',
         DECHARGES_REJECT: 'admin.dispatcher.decharges.reject',
+
+        // Warehouse Transfers has NO granular permission slug — confirmed by backend 2026-06-17:
+        // /dispatcher/* auth is role-based only (auth:sanctum + role dispatcher/root/admin), not
+        // permission-slug-based. Gate this screen with requiredRole, not requiredPermission — do
+        // not invent a slug here.
     },
 
     // Magasinier Module
@@ -343,12 +348,17 @@ export const PAGE_PERMISSIONS: Record<string, string | string[]> = {
     '/dispatcher': PERMISSIONS.DISPATCHER.DASHBOARD,
     '/dispatcher/dashboard': PERMISSIONS.DISPATCHER.DASHBOARD,
     '/dispatcher/orders': PERMISSIONS.DISPATCHER.ORDERS_PENDING,
+    '/dispatcher/workspace/planning': PERMISSIONS.DISPATCHER.ORDERS_PENDING,
+    '/dispatcher/workspace/loading': PERMISSIONS.DISPATCHER.BON_CHARGEMENTS_INDEX,
+    '/dispatcher/monitor': PERMISSIONS.DISPATCHER.BON_LIVRAISONS_INDEX,
     '/dispatcher/bon-livraisons/draft': PERMISSIONS.DISPATCHER.BON_LIVRAISONS_DRAFT,
     '/dispatcher/bon-livraisons': PERMISSIONS.DISPATCHER.BON_LIVRAISONS_INDEX,
     '/dispatcher/bon-chargements/create': PERMISSIONS.DISPATCHER.BON_CHARGEMENTS_CREATE,
     '/dispatcher/bon-chargements': PERMISSIONS.DISPATCHER.BON_CHARGEMENTS_INDEX,
     '/dispatcher/decharges': PERMISSIONS.DISPATCHER.DECHARGES_INDEX,
-    
+    // No permission slug for this route — role-based only (admin.dispatcher.* doesn't exist for
+    // warehouse-transfers, confirmed by backend). Gated via requiredRole on the route itself.
+
     // Magasinier Module
     '/magasinier': PERMISSIONS.MAGASINIER.DASHBOARD,
     '/magasinier/dashboard': PERMISSIONS.MAGASINIER.DASHBOARD,

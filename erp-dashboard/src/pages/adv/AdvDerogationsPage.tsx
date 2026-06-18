@@ -463,7 +463,7 @@ const AdvDerogationsContent = () => {
                 }}
                 onConfirm={handleApprove}
                 title="Approuver la Dérogation"
-                description={`Approuver la dérogation #{selectedDerogation?.id} et valider automatiquement le BC ?`}
+                description={`Approuver la dérogation #${selectedDerogation?.id} et valider automatiquement le BC ?`}
                 confirmText="Approuver"
                 variant="sage"
                 isLoading={approveDerogation.isLoading}
@@ -492,7 +492,7 @@ const AdvDerogationsContent = () => {
                 }}
                 onConfirm={handleReject}
                 title="Rejeter la Dérogation"
-                description={`Rejeter la dérogation #{selectedDerogation?.id} et rejeter automatiquement le BC ?`}
+                description={`Rejeter la dérogation #${selectedDerogation?.id} et rejeter automatiquement le BC ?`}
                 confirmText="Rejeter"
                 variant="danger"
                 isLoading={rejectDerogation.isLoading}
