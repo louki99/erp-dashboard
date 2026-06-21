@@ -84,7 +84,7 @@ export const ProfilePageLogic = () => {
                                     <Building className="w-5 h-5 text-gray-400 mt-0.5" />
                                     <div>
                                         <p className="text-xs text-gray-500 uppercase font-medium">Company</p>
-                                        <p className="text-gray-900">Food Solutions MA</p>
+                                        <p className="text-gray-900">Omni360 MA</p>
                                     </div>
                                 </div>
                                 <div className="flex items-start gap-3">
