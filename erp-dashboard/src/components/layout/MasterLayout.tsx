@@ -177,10 +177,8 @@ export const MasterLayout: React.FC<MasterLayoutProps> = ({
         // Dispatcher
         'Tableau de bord Dispatcher': '/dispatcher',
         'Commandes en attente': '/dispatcher/orders',
-        'BL brouillons': '/dispatcher/bon-livraisons/draft',
-        'BL (liste)': '/dispatcher/bon-livraisons',
-        'Créer BCH': '/dispatcher/bon-chargements/create',
-        'BCH (liste)': '/dispatcher/bon-chargements',
+        'BL (liste)': '/dispatcher/bons-livraisons',
+        'Workspace Missions': '/dispatcher/workspace/missions',
         'Décharges (liste)': '/dispatcher/decharges',
         // Magasinier
         'Tableau de bord Magasinier': '/magasinier',

@@ -50,18 +50,9 @@ export const useDispatcherWarehouseTransferDetail = (id: number | null) => {
   return { data, loading, error, refetch: fetch };
 };
 
-// Only real creation path — a WT is generated from a completed BCH, never authored manually
-// (docs §12c, corrected 2026-06-17).
-export const useCreateWarehouseTransferFromBch = () => {
-  const [loading, setLoading] = useState(false);
-  const createFromBch = async (bchId: number): Promise<ApiSuccessResponse> => {
-    setLoading(true);
-    try { return await dispatcherApi.warehouseTransfers.createFromBch(bchId); }
-    finally { setLoading(false); }
-  };
-  return { createFromBch, loading };
-};
-
+// 2026-06-20: there is no longer any creation hook at all — WT creation is fully automatic
+// (WarehouseTransferService::createFromMission(), fired by complete_preparation on a mission's
+// BP). The dispatcher only ever reads/accepts/rejects a WT now (docs §12c).
 export const useAcceptWarehouseTransfer = () => {
   const [loading, setLoading] = useState(false);
   const accept = async (id: number): Promise<ApiSuccessResponse> => {

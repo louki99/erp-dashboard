@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { dispatcherApi } from '@/services/api/dispatcherApi';
-import type { PaginatedResponse, DispatcherOrder, OrdersPendingFilters, CreateDoPayload } from '@/types/dispatcher.types';
+import type { PaginatedResponse, DispatcherOrder, OrdersPendingFilters } from '@/types/dispatcher.types';
 
 // Helpers to read either flat or meta-wrapped pagination
 const getTotal   = (r: PaginatedResponse<unknown>) => r.meta?.total    ?? r.total    ?? 0;
@@ -77,19 +77,4 @@ export const useDispatcherOrderDetail = (orderId: number | null) => {
     }, [orderId]);
 
     return { data, loading, error, refetch: fetchOrder };
-};
-
-export const useCreateDeliveryOrder = () => {
-    const [loading, setLoading] = useState(false);
-
-    const createDo = async (payload: CreateDoPayload) => {
-        setLoading(true);
-        try {
-            return await dispatcherApi.deliveryOrders.create(payload);
-        } finally {
-            setLoading(false);
-        }
-    };
-
-    return { createDo, loading };
 };

@@ -60,15 +60,6 @@ export const MagasinierDashboard = () => {
             bgColor: 'bg-red-50',
             onClick: () => navigate('/magasinier/stock'),
         },
-        {
-            title: 'Prêt à préparer',
-            value: stats?.readyToPrepare || 0,
-            icon: TrendingUp,
-            color: 'bg-purple-500',
-            textColor: 'text-purple-600',
-            bgColor: 'bg-purple-50',
-            onClick: () => navigate('/magasinier/orders'),
-        },
     ];
 
     if (loading) {
@@ -162,16 +153,6 @@ export const MagasinierDashboard = () => {
                             <div>
                                 <div className="font-medium text-gray-900">Voir les préparations</div>
                                 <div className="text-xs text-gray-600">Gérer les bons de préparation</div>
-                            </div>
-                        </button>
-                        <button
-                            onClick={() => navigate('/magasinier/orders')}
-                            className="w-full flex items-center gap-3 p-4 bg-purple-50 hover:bg-purple-100 rounded-lg transition-colors text-left"
-                        >
-                            <FileText className="w-5 h-5 text-purple-600" />
-                            <div>
-                                <div className="font-medium text-gray-900">Commandes approuvées</div>
-                                <div className="text-xs text-gray-600">Créer des bons de préparation</div>
                             </div>
                         </button>
                         <button

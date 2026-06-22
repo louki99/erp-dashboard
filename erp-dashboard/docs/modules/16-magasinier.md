@@ -23,18 +23,22 @@
    - [Reject Preparation](#66-reject-preparation)
    - [Report Shortage (explicit)](#67-report-shortage-explicit)
    - [Continue Preparation (Rework)](#68-continue-preparation-rework)
-7. [Batch Picking](#7-batch-picking)
+7. [Batch Picking](#7-batch-picking) ⚠️ orphaned/legacy — see warning in section
 8. [Stock Management](#8-stock-management)
    - [WMS Stock API (Epic 5/6/7)](#85-wms-stock-api-epic-567)
-9. [BC → BP Exception Flow (feature-flagged)](#9-bc--bp-exception-flow-feature-flagged)
-10. [Conventional Loading (SFA → Van)](#10-conventional-loading)
-11. [Conventional Décharge Reconciliation (EOD Van → Depot)](#11-conventional-décharge-reconciliation-eod-van--depot)
-12. [Décharge — Van → Depot Unloading](#12-décharge--van--depot-unloading)
-13. [Returns Processing](#13-returns-processing)
-14. [Generic Workflow Utility Endpoints](#14-generic-workflow-utility-endpoints)
-15. [Error Handling](#15-error-handling)
-16. [TypeScript Interfaces](#16-typescript-interfaces)
-17. [End-to-End Workflow Examples](#17-end-to-end-workflow-examples)
+9. [Conventional Loading (SFA → Van)](#9-conventional-loading)
+10. [Conventional Décharge Reconciliation (EOD Van → Depot)](#10-conventional-décharge-reconciliation-eod-van--depot)
+11. [Décharge — Van → Depot Unloading](#11-décharge--van--depot-unloading)
+12. [Returns Processing](#12-returns-processing)
+13. [Generic Workflow Utility Endpoints](#13-generic-workflow-utility-endpoints)
+14. [Error Handling](#14-error-handling)
+15. [TypeScript Interfaces](#15-typescript-interfaces)
+16. [End-to-End Workflow Examples](#16-end-to-end-workflow-examples)
+
+> **Removed 2026-06-22:** "BC → BP Exception Flow" (the old direct BC→BP shortcut,
+> `GET orders/approved` + `POST preparations/from-orders`) — deleted entirely along with the
+> `create_bp_from_orders` decision it depended on. Orders always flow through a Delivery
+> Mission now (Module 15).
 
 ---
 
@@ -55,26 +59,43 @@ The **Magasinier** (Warehouse Keeper) is the physical fulfillment role in FoodSo
 
 ## 2. Warehouse Pipeline Overview
 
+> **2026-06-22 — full architecture migration.** The old BC → DO → LOT (logistics batch) →
+> BP → BL → BCH (Shipment) pipeline is **gone**. `shipments`, `delivery_orders`,
+> `logistics_batches` and their pivot tables are **dropped**. Everything now flows through
+> **Delivery Mission** (see Module 15 — Dispatcher). The magasinier's role is unchanged in
+> spirit (pick a BP, report quantities, hand off shortages) but every BCH/Lot reference below
+> is replaced by the mission. See `docs/modules/planning_refactor_schema.md` for the full
+> migration rationale.
+
 ```
-Dispatcher submits BCH
+Dispatcher drags confirmed BCs into a Mission (create_delivery_mission)
          │
-         ▼ (Scenario B)
+         ▼
+  Mission: draft — BLs generated in draft, no stock touched yet
+         │
+   [Dispatcher: confirm_delivery_mission]  ◄── ATOMIC, one call:
+         │                                      1. auto-reserves stock for every BL
+         │                                      (shortage-tolerant — shortfall routed to a
+         │                                      backlog Order automatically, never blocks)
+         │                                      2. auto-generates ONE BP for the mission
+         ▼
+  Mission: in_preparation
   BP created — status: pending
          │
-   [Magasinier starts]
+   [Magasinier: start_preparation]
          │
          ▼
   BP: in_progress
-  BLs: in_preparation
+  Mission's BLs: in_preparation
          │
-   [update item quantities incrementally]
+   [update_preparation — item quantities incrementally]
          │
-   [complete preparation]
+   [complete_preparation]
          │
-         ├─── No shortage ──► BP: completed_full → BLs: ready → BCH: prepared
-         │
-         └─── Shortage ─────► BP: completed_partial → BCH: awaiting_shortage_review
-                                      │
+         ├─── No shortage ──► BP: completed_full  ─┐
+         │                                          ├─► Mission's BLs: ready
+         └─── Shortage ─────► BP: completed_partial ┘    Warehouse Transfer (CENTRAL→VAN)
+                                      │                   auto-created right here
                                [Dispatcher: accept_partial_preparation]
                                       │
                               BP: shortage_accepted ──[auto-chained, same call]──►
@@ -82,8 +103,20 @@ Dispatcher submits BCH
                               BP: shortage_split_done (backlog BC(s) re-injected for the
                                       │                 missing delta — see below)
                                       ▼
-                                BLs: ready → BCH: ready
+                                Mission: ready
 ```
+
+> **There is no more manual "generate BP" or "allocate stock" step.** Both used to be
+> separate dispatcher actions (`allocate_delivery_note` per BL, `generate_preparation_for_mission`
+> for the BP) — both are **removed entirely**, folded into `confirm_delivery_mission`'s atomic
+> execution. The magasinier's first touchpoint on a mission is always `start_preparation` on a
+> BP that already exists with stock already reserved — there is nothing to create or allocate
+> from the warehouse side anymore.
+>
+> **Warehouse Transfer is now automatic.** Until this migration, the dispatcher manually
+> triggered a CENTRAL→VAN transfer once the rider accepted the BCH. Now,
+> `complete_preparation` creates it itself the moment the BP finishes (via
+> `WarehouseTransferService::createFromMission()`) — see [§6.5](#65-complete-preparation).
 
 > **Added 2026-06-17 — shortage backlog re-injection (was previously a real gap):**
 > Before this date, `accept_partial_preparation` left the BP parked at `shortage_accepted`
@@ -109,8 +142,8 @@ Dispatcher submits BCH
 > `SplitRemainingQuantityDecision::doExecute()`. One backlog `Order` per distinct original
 > `order_id` (grouping multiple shorted BL lines from the same BC into a single backlog BC).
 > This lands directly in **`GET /backend/dispatcher/orders/pending` (Module 15 Workspace 1)** —
-> the same pool a normal salesperson order takes, ready for the dispatcher to plan into a new DO
-> on the next pass. No draft BL is created anymore for this path — **if your frontend was
+> the same pool a normal salesperson order takes, ready for the dispatcher to plan into a new
+> mission on the next pass. No draft BL is created anymore for this path — **if your frontend was
 > reading `accept_partial_preparation`'s `backlog.backorder_bls`/`backlog.backorder_bls_count`,
 > those keys are gone; use `backlog.backlog_orders`/`backlog.backlog_orders_count` instead**, and
 > each entry now has `id`/`order_code`/`parent_order_id`/`parent_order_code`/`items_count`/
@@ -132,12 +165,26 @@ Dispatcher submits BCH
 > `GET /magasinier/returns/{id}` were entirely broken** (`pendingReturns`/`showReturn` methods
 > referenced by the route did not exist anywhere in the codebase — calling them threw a fatal
 > error) — they are now implemented for real; see [§13](#13-returns-processing).
+>
+> **Superseded 2026-06-22** by the mission migration above — `logistics_batches` referenced in
+> this note no longer exists at all (dropped), and the `readyToPrepare` dashboard field
+> mentioned here has since been **removed entirely** (it measured "confirmed BCs not yet in a
+> BP", a concept that doesn't apply anymore now that orders always go through a mission first —
+> see [§5](#5-dashboard)).
+
+> **Known gap — `create_decharge` has no mission-based replacement (as of 2026-06-22).** The
+> décharge-creation flow below describes the **old** BCH-based trigger, which no longer exists
+> (`CreateDechargeDecision` was built entirely around `Shipment` and was deleted along with it,
+> not ported). `approve_decharge`/`reject_decharge` ([§12](#12-décharge--van--depot-unloading))
+> still work on any décharge created some other way, but nothing in the current API actually
+> *creates* one from a completed mission. Do not build a "create décharge" button against the
+> mission flow until this is built — ask backend first.
 
 **Décharge (van unload) flow — separate from BP preparation:**
 ```
-Rider finishes mission, BCH → completed/closed
+Rider finishes mission — mission: completed
     │
-    ▼ [Dispatcher: create_decharge]
+    ▼ [no current trigger — see gap note above]
 Décharge (UnloadOrder): pending — items = undelivered qty per product
     │
     ▼ [Magasinier: approve_decharge]
@@ -187,7 +234,7 @@ DechargeReconciliationRequest: approved — VAN→depot stock transfer executed
 | `awaiting_shortage_review` | Pending dispatcher decision (also reached via `report_shortage`) | Wait |
 | `shortage_split_done` | Shortage items released back into Workspace 1 as a backlog BC (`Order`, `bc_status: confirmed`) | Ready for loading — terminal state for an accepted shortage |
 | `shortage_accepted` | Dispatcher accepted shortage | Transient as of 2026-06-17 — immediately auto-chains to `shortage_split_done` in the same `accept_partial_preparation` call; only observable mid-transaction |
-| `rejected` | Rejected by Magasinier | Dispatcher resubmits BCH |
+| `rejected` | Rejected by Magasinier | Mission/BLs revert to `draft` — dispatcher re-runs `confirm_delivery_mission` once resolved |
 
 ### Décharge (UnloadOrder) statuses
 
@@ -274,13 +321,12 @@ curl https://api.omni360.cloud/api/backend/magasinier/dashboard \
   "inProgress": 1,
   "completedToday": 7,
   "lowStockItems": 12,
-  "readyToPrepare": 2,
   "pendingBps": [
     {
       "id": 88,
-      "bp_number": "BP-2026-00088",
+      "bp_number": "LODA000-A01-000088",
       "status": "pending",
-      "bonChargement": { "id": 22, "shipment_number": "BCH-2026-00022" },
+      "delivery_mission": { "id": 22, "mission_number": "MSN-20260622-0003", "rider": { "id": 9, "name": "Youssef Livreur" } },
       "created_at": "2026-06-15T11:30:00Z"
     }
   ]
@@ -289,21 +335,33 @@ curl https://api.omni360.cloud/api/backend/magasinier/dashboard \
 
 | Field | Description |
 |---|---|
-| `pendingPreparations` | BPs in `pending` status (branch-scoped) |
+| `pendingPreparations` | BPs in `pending` status (branch-scoped via `deliveryMission.branch_code`) |
 | `inProgress` | BPs in `in_progress` or `partial_rework_requested` |
 | `completedToday` | BPs completed today |
 | `lowStockItems` | Stock rows in this branch with `available_quantity < minimum_quantity` |
-| `readyToPrepare` | Confirmed BCs not yet assigned to a BP (direct flow, see [§9](#9-bc--bp-exception-flow-feature-flagged)) |
 
+> **Removed 2026-06-22 — `readyToPrepare`.** This used to count confirmed BCs not yet
+> assigned to a BP (the old direct BC→BP flow). That flow is gone — orders always go through a
+> delivery mission first, and that "not yet planned" view is the **dispatcher's** concern now
+> (`GET /backend/dispatcher/orders/pending`, Module 15), not the magasinier's. The field no
+> longer appears in the response — remove any frontend code reading it.
+>
 > **Response shape note:** the JSON keys are flat (`pendingPreparations`, not nested under a
 > `stats` object) — this matches the actual `compact(...)` call in
-> `MagasinierController::dashboard()`.
+> `MagasinierController::dashboard()`. `pendingBps` now eager-loads `deliveryMission.rider`
+> (not `bonChargement`, which no longer exists).
 
 ---
 
 ## 6. Préparations (BP)
 
-> Most BP mutations go through the workflow engine at `POST /backend/workflow/bon-preparation/{id}/execute` with a `decision` key. Direct PUT routes also exist as shortcuts that internally call the same decisions.
+> Most BP mutations go through the workflow engine at `POST /backend/workflow/bon-preparation/{id}/execute` with a `decision` key. Direct PUT routes also exist as shortcuts (`MagasinierController`) that internally call the same decisions and return their response unwrapped.
+>
+> **Response envelope:** every decision response (whether hit via the direct PUT/GET routes
+> below or the generic workflow route) has the shape
+> `{"success": bool, "message": string, "decision": string, "output": {...}}` — the decision's
+> actual return data is under **`output`**, not `data`. (`current_state`/`request_id` are also
+> present but rarely relevant to the UI.)
 
 ---
 
@@ -317,7 +375,7 @@ curl https://api.omni360.cloud/api/backend/magasinier/dashboard \
 |---|---|---|
 | `scope` | `string` | `active` (default): pending + in_progress + partial_rework_requested; `rupture_watch`: adds completed_partial; `history`: completed_full/shortage_split_done/shortage_accepted/awaiting_shortage_review/rejected; `all`: everything |
 | `status` | `string` | Override scope with exact status filter (comma-separated for multiple) |
-| `search` | `string` | Search by BP number, BCH number, or batch number |
+| `search` | `string` | Search by BP number or mission number |
 | `page` | `number` | Default 1, 20 per page |
 
 ```bash
@@ -325,7 +383,7 @@ curl "https://api.omni360.cloud/api/backend/magasinier/preparations/pending?scop
   -H "Authorization: Bearer {TOKEN}"
 ```
 
-**Response `200`:**
+**Response `200`:** (raw Laravel paginator — `MagasinierController::pendingPreparations()` returns `$paginator->toArray()` directly, not wrapped in `success`/`output`)
 ```json
 {
   "current_page": 1,
@@ -334,7 +392,7 @@ curl "https://api.omni360.cloud/api/backend/magasinier/preparations/pending?scop
   "data": [
     {
       "id": 88,
-      "bp_number": "BP-2026-00088",
+      "bp_number": "LODA000-A01-000088",
       "status": "pending",
       "total_items": 5,
       "prepared_items": 0,
@@ -342,8 +400,13 @@ curl "https://api.omni360.cloud/api/backend/magasinier/preparations/pending?scop
       "is_critical_shortage": false,
       "priority_level": "normal",
       "deadline": null,
-      "bonChargement": { "id": 22, "shipment_number": "BCH-2026-00022", "status": "in_preparation" },
-      "logisticsBatch": null,
+      "delivery_mission": {
+        "id": 22,
+        "mission_number": "MSN-20260622-0003",
+        "status": "in_preparation",
+        "rider": { "id": 9, "name": "Youssef Livreur" },
+        "delivery_notes": [ { "id": 501, "delivery_number": "BLA000-A01-000501", "status": "batched" } ]
+      },
       "created_at": "2026-06-15T11:30:00Z"
     }
   ],
@@ -374,7 +437,7 @@ curl https://api.omni360.cloud/api/backend/magasinier/preparations/88 \
 ```json
 {
   "id": 88,
-  "bp_number": "BP-2026-00088",
+  "bp_number": "LODA000-A01-000088",
   "status": "pending",
   "total_items": 5,
   "prepared_items": 0,
@@ -384,11 +447,14 @@ curl https://api.omni360.cloud/api/backend/magasinier/preparations/88 \
   "priority_level": "normal",
   "deadline": null,
   "shortage_acknowledged": false,
-  "bonChargement": {
+  "delivery_mission": {
     "id": 22,
-    "shipment_number": "BCH-2026-00022",
+    "mission_number": "MSN-20260622-0003",
     "status": "in_preparation",
-    "livreur": { "id": 9, "name": "Youssef Livreur", "phone": "+212 6 00 11 22 33" }
+    "rider": { "id": 9, "name": "Youssef Livreur" },
+    "delivery_notes": [
+      { "id": 501, "delivery_number": "BLA000-A01-000501", "status": "batched", "partner": { "id": 12, "name": "Supermarché Atlas" } }
+    ]
   },
   "magasinier": null,
   "items": [
@@ -414,7 +480,6 @@ curl https://api.omni360.cloud/api/backend/magasinier/preparations/88 \
       "product": { "id": 60, "name": "Sucre 50kg", "sku": "SUC-50K" }
     }
   ],
-  "logisticsBatch": null,
   "created_at": "2026-06-15T11:30:00Z"
 }
 ```
@@ -442,26 +507,32 @@ curl -X POST https://api.omni360.cloud/api/backend/workflow/bon-preparation/88/e
   -d '{"decision": "start_preparation"}'
 ```
 
-**Response `200`:**
+**Response `200`:** (verified live against `StartPreparationDecision::doExecute()`)
 ```json
 {
   "success": true,
-  "message": "Préparation démarrée",
-  "data": {
+  "message": "Decision executed successfully",
+  "decision": "start_preparation",
+  "output": {
     "bp_id": 88,
-    "bp_number": "BP-2026-00088",
+    "bp_number": "LODA000-A01-000088",
     "status": "in_progress",
-    "magasinier_id": 15,
-    "started_at": "2026-06-15T13:00:00Z"
+    "magasinier": "Hassan Magasinier",
+    "bl_count": 1,
+    "stock_warnings": []
   }
 }
 ```
 
+`stock_warnings` is populated (non-blocking) when the soft pre-picking stock check
+(`StockPrePickingValidationConstraint`) finds insufficient real stock for some line —
+each entry has `product_id`, `product_name`, `requested_qty`, `available_qty`, `shortage_qty`.
+
 **Side effects:**
-- BP status → `in_progress`
-- All linked BLs status → `in_preparation`
-- Logistics batch status → `in_preparation`
-- Soft stock pre-check runs (warnings only — does not block)
+- BP status → `in_progress`, `magasinier_id` assigned to the calling user
+- The mission's BLs status → `in_preparation`
+- Soft stock pre-check runs (warnings only — does not block), checked against the branch's
+  real sellable pick-face zone (e.g. `{branch}-PFZ0`), not a placeholder "DEPOT" location
 
 ---
 
@@ -492,23 +563,38 @@ curl -X PUT https://api.omni360.cloud/api/backend/magasinier/preparations/88/ite
 | `items[].product_id` | yes | `number` | Product ID |
 | `items[].prepared_quantity` | yes | `number` | Quantity picked so far (≤ requested_quantity, ≤ physical stock) |
 
-**Constraint:** `prepared_quantity` cannot exceed either the `requested_quantity` or the physically available stock in depot locations.
+**Constraint:** `prepared_quantity` cannot exceed either the `requested_quantity` or the
+physically available stock — checked against the branch's real sellable pick-face zone
+(e.g. `{branch}-PFZ0`, resolved via `App\Services\Delivery\DeliveryLocationResolver`), not a
+placeholder "DEPOT" location.
 
-**Response `200`:**
+**Response `200`:** (verified live against `UpdatePreparationDecision::doExecute()`)
 ```json
 {
   "success": true,
-  "message": "Quantités mises à jour",
-  "data": {
+  "message": "Decision executed successfully",
+  "decision": "update_preparation",
+  "output": {
     "bp_id": 88,
-    "progress_percentage": 60,
+    "bp_number": "LODA000-A01-000088",
+    "status": "in_progress",
     "updated_items": [
-      { "product_id": 55, "prepared_quantity": 25, "shortage_quantity": 15 },
-      { "product_id": 60, "prepared_quantity": 24, "shortage_quantity": 0 }
-    ]
+      { "product_id": 55, "product_name": "Huile Végétale 5L", "requested_quantity": 40, "prepared_quantity": 25, "available_quantity": 35, "shortage": 15 },
+      { "product_id": 60, "product_name": "Sucre 50kg", "requested_quantity": 24, "prepared_quantity": 24, "available_quantity": 24, "shortage": 0 }
+    ],
+    "statistics": {
+      "total_items": 2,
+      "total_requested": 64,
+      "total_prepared": 49,
+      "progress": 76.56,
+      "is_complete": false
+    }
   }
 }
 ```
+
+> `available_quantity` here is the real-time **physical** stock quantity (`stocks.quantity`),
+> shown for reference — it is not the same number as `requested_quantity`/`prepared_quantity`.
 
 ---
 
@@ -541,54 +627,85 @@ curl -X PUT https://api.omni360.cloud/api/backend/magasinier/preparations/88/sav
 
 **Constraint:** Each quantity must be ≥ 0 and ≤ `requested_quantity`. Total per item cannot exceed available stock.
 
-**Response `200` — No shortage:**
+**Response `200` — No shortage:** (verified live against `CompletePreparationDecision::doExecute()` — `prepared_quantities` keys are `bp_item_id`, the BP's own item IDs, not `delivery_note_item_id`)
 ```json
 {
   "success": true,
-  "message": "Préparation complète",
-  "data": {
+  "message": "Decision executed successfully",
+  "decision": "complete_preparation",
+  "output": {
     "bp_id": 88,
-    "bp_number": "BP-2026-00088",
+    "bp_number": "LODA000-A01-000088",
     "status": "completed_full",
-    "total_items": 5,
-    "prepared_items": 5,
-    "preparation_efficiency": 100.0,
-    "total_shortage_percentage": 0,
-    "prepared_at": "2026-06-15T14:30:00Z"
+    "is_fully_prepared": true,
+    "efficiency": 100,
+    "shortage_percentage": 0,
+    "stock_deducted": 0,
+    "total_prepared": 64,
+    "total_requested": 64,
+    "total_shortage": 0,
+    "generated_bls": [],
+    "mission_id": 22,
+    "warehouse_transfer": {
+      "id": 3,
+      "transfer_number": "WT-2026-00003",
+      "status": "pending",
+      "delivery_mission_id": 22,
+      "rider_id": 9,
+      "from_warehouse": "A0001-PFZ0",
+      "to_warehouse": "A0001-VAN-MERC-01",
+      "items": [
+        { "id": 5, "product_id": 55, "requested_quantity": "40.000", "transferred_quantity": "40.000", "product_name": "Huile Végétale 5L", "sales_group_code": "FDP" }
+      ]
+    }
   }
 }
 ```
+
+> **New since the mission migration:** `mission_id` and `warehouse_transfer` are now part of
+> this response — `complete_preparation` auto-creates the CENTRAL→VAN warehouse transfer the
+> moment the BP finishes (`WarehouseTransferService::createFromMission()`), so there is no
+> separate "create transfer" step for the dispatcher anymore. `stock_deducted` will be `0` for
+> every mission-based BP — no physical deduction happens at preparation time, the reservation
+> made by `confirm_delivery_mission` carries through to the warehouse transfer instead.
+> `generated_bls` is always `[]` in the mission flow (BLs already exist, created by
+> `create_delivery_mission`) — it's a leftover field from an older, now-unused code path
+> (`bl_from_bp` feature flag), kept for response-shape stability, don't build logic around it.
 
 **Response `200` — With shortage:**
 ```json
 {
   "success": true,
-  "message": "Préparation partielle enregistrée — rupture signalée",
-  "data": {
+  "message": "Decision executed successfully",
+  "decision": "complete_preparation",
+  "output": {
     "bp_id": 88,
-    "bp_number": "BP-2026-00088",
+    "bp_number": "LODA000-A01-000088",
     "status": "completed_partial",
-    "total_items": 5,
-    "prepared_items": 4,
-    "preparation_efficiency": 80.0,
-    "total_shortage_percentage": 25.0,
-    "is_critical_shortage": false,
-    "prepared_at": "2026-06-15T14:30:00Z"
+    "is_fully_prepared": false,
+    "efficiency": 80,
+    "shortage_percentage": 20,
+    "stock_deducted": 0,
+    "total_prepared": 51.2,
+    "total_requested": 64,
+    "total_shortage": 12.8,
+    "generated_bls": [],
+    "mission_id": 22,
+    "warehouse_transfer": null
   }
 }
 ```
 
 **Side effects (no shortage):**
 - BP → `completed_full`
-- All linked BLs → `ready`
-- BCH → `prepared`
-- Stock deducted via `DeductStockAction`
+- The mission's BLs → `ready`
+- Warehouse Transfer (CENTRAL → VAN) auto-created
 - `PreparationCompletedEvent` fired
 
 **Side effects (with shortage):**
-- BP → `completed_partial`
-- BCH → `awaiting_shortage_review`
-- Dispatcher must run balance analysis and approve/split quantities
+- BP → `completed_partial`, `warehouse_transfer` is `null` — no transfer is created until the
+  shortage is resolved
+- Dispatcher must run shortage review/balance actions (see Module 15) before a transfer can be generated
 
 ---
 
@@ -612,27 +729,33 @@ curl -X POST https://api.omni360.cloud/api/backend/magasinier/preparations/88/re
 
 | Field | Required | Type | Description |
 |---|---|---|---|
-| `rejection_reason` | yes | `string` | Detailed rejection reason |
+| `rejection_reason` | yes | `string` | Detailed rejection reason — send it top-level, exactly as shown above; `MagasinierController::rejectBp()` wraps it into `metadata.rejection_reason` internally before dispatching the decision |
 
-**Response `200`:**
+**Response `200`:** (verified live against `RejectPreparationDecision::doExecute()`)
 ```json
 {
   "success": true,
-  "message": "BP rejeté",
-  "data": {
+  "message": "Decision executed successfully",
+  "decision": "reject_preparation",
+  "output": {
     "bp_id": 88,
+    "bp_number": "LODA000-A01-000088",
     "status": "rejected",
     "rejected_at": "2026-06-15T14:00:00Z",
-    "rejection_reason": "Articles non conformes..."
+    "message": "Preparation rejected successfully"
   }
 }
 ```
 
-**Side effects:**
+**Side effects:** (changed with the mission migration — there is no more BCH to revert)
 - BP → `rejected`
-- BCH reverts → `pending`
-- Linked BCs revert → `confirmed`
-- Dispatcher can resubmit the BCH
+- The mission reverts → `draft`
+- The mission's BLs revert → `draft`
+- The orders that fed those BLs are **not** released back to "Commandes en attente" — they stay
+  tied to the mission/BLs. This is a resubmittable state, not a full rollback (compare
+  `cancel_delivery_mission`, Module 15, which does fully release orders) — the dispatcher can
+  re-run `confirm_delivery_mission` once the rejection issue is resolved, which re-allocates
+  stock and regenerates a fresh BP.
 
 ---
 
@@ -766,6 +889,18 @@ curl -X POST https://api.omni360.cloud/api/backend/workflow/bon-preparation/88/e
 ---
 
 ## 7. Batch Picking
+
+> ⚠️ **Orphaned/legacy feature — not part of the current mission pipeline.** This whole
+> subsystem (`GeneratePickingListDecision`/`CompleteBatchPickingDecision`, modelType
+> `batch-picking-session`, table `batch_picking_sessions`) operates **directly on raw
+> `DeliveryNote` status** (`DRAFT`/`GROUPED` — `GROUPED` is itself a deprecated `BlStatus`
+> value), completely bypassing the Delivery Mission / BP pipeline described in §2. It was
+> **not touched, fixed, or removed** in the 2026-06-22 mission-migration cleanup — it still
+> exists in code and is technically callable, but a BL that's actually tied to a mission will
+> be in status `draft`/`confirmed`/`batched`, not `DRAFT`/`GROUPED` as this flow expects, and
+> the `BatchPickingSession` it creates has **zero connection to `PreparationOrder` or
+> `DeliveryMission`** — completing one does not advance any mission or BP. Do not build new UI
+> against this without confirming with backend first; it may be removed in a future cleanup.
 
 Batch picking consolidates multiple BLs into a single picking pass, improving warehouse efficiency.
 
@@ -1166,47 +1301,7 @@ curl https://api.omni360.cloud/api/backend/stocks/scan/3760123456789 \
 
 ---
 
-## 9. BC → BP Exception Flow (feature-flagged)
-
-**Not previously documented.** Normally a BP is only created from BLs/a BCH via the Dispatcher (`POST /backend/dispatcher/preparations/from-bls` or `/from-bch/{bchId}`, Module 15). This is an **optional, disabled-by-default** shortcut that lets the Magasinier start preparation directly from a confirmed BC, bypassing the dispatcher.
-
-> ⚠️ Gated by `config('warehouse.direct_preparation_enabled')` (default `false`). If disabled,
-> `POST .../preparations/from-orders` returns `422` with `error_code: DIRECT_PREPARATION_DISABLED`.
-> Confirm with your backend lead whether this flag is on for your environment before building
-> against it — bypassing the dispatcher is a deliberate authority exception, not the default path.
-
-### `GET /backend/magasinier/orders/approved`
-
-List confirmed BCs in your branch not yet assigned to a BP.
-
-```bash
-curl "https://api.omni360.cloud/api/backend/magasinier/orders/approved?search=Atlas" \
-  -H "Authorization: Bearer {TOKEN}"
-```
-
-**Response `200`:** Paginated list of `Order` (BC) records with `partner` and `orderProducts.product` loaded, `bc_status: confirmed`, `bon_preparation_id: null`.
-
-### `POST /backend/magasinier/preparations/from-orders`
-
-```bash
-curl -X POST https://api.omni360.cloud/api/backend/magasinier/preparations/from-orders \
-  -H "Authorization: Bearer {TOKEN}" \
-  -H "Content-Type: application/json" \
-  -H "Idempotency-Key: bp:from-orders:$(date +%s)" \
-  -d '{ "order_ids": [501, 502] }'
-```
-
-**Request body:**
-
-| Field | Required | Type | Description |
-|---|---|---|---|
-| `order_ids` | yes | `number[]` | Must each `exist:orders,id` |
-
-Internally calls the `create_bp_from_orders` decision (`bon-preparation`, id `0`). Response shape matches other BP-creation decisions (`bp_id`, `bp_number`, `status: pending`).
-
----
-
-## 10. Conventional Loading
+## 9. Conventional Loading
 
 The conventional loading flow handles **SFA field salesperson** → **van stock loading**. The Magasinier fulfills loading requests after ADV approval.
 
@@ -1296,7 +1391,7 @@ curl -X POST https://api.omni360.cloud/api/backend/conventional-loading-requests
 
 ---
 
-## 11. Conventional Décharge Reconciliation (EOD Van → Depot)
+## 10. Conventional Décharge Reconciliation (EOD Van → Depot)
 
 **Not previously documented.** End-of-day reconciliation for **conventional sales** (Van_Vendeur model): the salesperson returns unsold stock from their van, and the Magasinier confirms the physical count before it's released back to depot stock. Gated by `config('conventional_sales.enabled')`.
 
@@ -1369,7 +1464,7 @@ curl -X POST https://api.omni360.cloud/api/backend/workflow/decharge-reconciliat
 
 ---
 
-## 12. Décharge — Van → Depot Unloading
+## 11. Décharge — Van → Depot Unloading
 
 **Not previously documented.** Separate from §11 — this is for goods that **stayed on the van undelivered** after a rider's mission ends (partner absent, route cancelled, etc.), not for end-of-day conventional sales reconciliation. The dispatcher creates the décharge (`create_decharge`); the Magasinier approves it to release the stock back to the depot.
 
@@ -1420,7 +1515,7 @@ curl -X POST https://api.omni360.cloud/api/backend/workflow/decharge/9/execute \
 
 ---
 
-## 13. Returns Processing
+## 12. Returns Processing
 
 > **Rewritten 2026-06-18 — two findings, both fixed/documented for real this time.**
 >
@@ -1572,7 +1667,7 @@ curl https://api.omni360.cloud/api/v2/returns/8/audit \
 
 ---
 
-## 14. Generic Workflow Utility Endpoints
+## 13. Generic Workflow Utility Endpoints
 
 **Not previously documented.** Useful for building a generic "what can I do with this record"
 UI instead of hardcoding decision names per screen.
@@ -1603,7 +1698,7 @@ specific field names.)
 
 ---
 
-## 15. Error Handling
+## 14. Error Handling
 
 | HTTP Status | Meaning | Common cause |
 |---|---|---|
@@ -1643,7 +1738,7 @@ specific field names.)
 
 ---
 
-## 16. TypeScript Interfaces
+## 15. TypeScript Interfaces
 
 ```typescript
 // ─── BP Status ────────────────────────────────────────────────────────────────
@@ -1705,6 +1800,14 @@ interface PreparationOrderItem {
   product: { id: number; name: string; sku: string };
 }
 
+interface DeliveryMissionRef {
+  id: number;
+  mission_number: string;
+  status: string;
+  rider?: { id: number; name: string } | null;
+  delivery_notes?: Array<{ id: number; delivery_number: string; status: string; partner?: { id: number; name: string } }>;
+}
+
 interface PreparationOrder {
   id: number;
   bp_number: string;
@@ -1722,15 +1825,31 @@ interface PreparationOrder {
   rejected_at?: string | null;
   prepared_at?: string | null;
   magasinier?: { id: number; name: string } | null;
-  bonChargement?: {
-    id: number;
-    shipment_number: string;
-    status: string;
-    livreur?: { id: number; name: string; phone?: string } | null;
-  } | null;
-  logisticsBatch?: { id: number; batch_number: string } | null;
+  delivery_mission?: DeliveryMissionRef | null;
   items?: PreparationOrderItem[];
   created_at: string;
+}
+
+// ─── Warehouse Transfer (auto-created by complete_preparation) ────────────────
+
+interface WarehouseTransferItem {
+  id: number;
+  product_id: number;
+  product_name?: string | null;
+  requested_quantity: number;
+  transferred_quantity: number;
+  sales_group_code?: string | null;
+}
+
+interface WarehouseTransfer {
+  id: number;
+  transfer_number: string;
+  status: 'pending' | 'accepted' | 'completed' | 'rejected' | 'validated';
+  delivery_mission_id: number;
+  rider_id: number;
+  from_warehouse: string;
+  to_warehouse: string;
+  items?: WarehouseTransferItem[];
 }
 
 // ─── Dashboard ────────────────────────────────────────────────────────────────
@@ -1740,12 +1859,11 @@ interface MagasinierDashboard {
   inProgress: number;
   completedToday: number;
   lowStockItems: number;
-  readyToPrepare: number;
   pendingBps: Array<{
     id: number;
     bp_number: string;
     status: BpStatus;
-    bonChargement?: { id: number; shipment_number: string } | null;
+    delivery_mission?: DeliveryMissionRef | null;
     created_at: string;
   }>;
 }
@@ -1967,15 +2085,20 @@ interface PartnerReturn {
 
 ---
 
-## 17. End-to-End Workflow Examples
+## 16. End-to-End Workflow Examples
 
 ### Example A — Standard Preparation (No Shortage)
+
+Upstream (Module 15 — Dispatcher, not repeated in depth here): a dispatcher drags confirmed
+BCs into a mission (`create_delivery_mission`) and confirms it (`confirm_delivery_mission`) —
+that single atomic call reserves stock for every BL and generates the BP the magasinier
+picks up below.
 
 ```bash
 # Step 1: Magasinier checks pending BPs
 curl "https://api.omni360.cloud/api/backend/magasinier/preparations/pending?scope=active" \
   -H "Authorization: Bearer {TOKEN}"
-# → bp_id: 88, status: "pending"
+# → bp_id: 88, status: "pending", delivery_mission: {id: 22, mission_number: "MSN-20260622-0003"}
 
 # Step 2: Magasinier reviews the BP
 curl "https://api.omni360.cloud/api/backend/magasinier/preparations/88" \
@@ -1988,7 +2111,7 @@ curl -X POST "https://api.omni360.cloud/api/backend/workflow/bon-preparation/88/
   -H "Content-Type: application/json" \
   -H "Idempotency-Key: bp:88:start:$(date +%s)" \
   -d '{"decision":"start_preparation"}'
-# → BP: "in_progress", BLs: "in_preparation"
+# → BP: "in_progress", mission's BLs: "in_preparation"
 
 # Step 4: Update quantities incrementally while picking
 curl -X PUT "https://api.omni360.cloud/api/backend/magasinier/preparations/88/items" \
@@ -2010,10 +2133,12 @@ curl -X PUT "https://api.omni360.cloud/api/backend/magasinier/preparations/88/sa
   -d '{
     "prepared_quantities": {"3001": 40, "3002": 24}
   }'
-# → BP: "completed_full"
-# → BLs: "ready"
-# → BCH: "prepared"
-# → Stock deducted
+# → output.status: "completed_full"
+# → mission's BLs: "ready"
+# → output.warehouse_transfer: {id: 3, transfer_number: "WT-2026-00003", from_warehouse: "A0001-PFZ0", to_warehouse: "A0001-VAN-MERC-01", ...}
+#   (auto-created CENTRAL→VAN transfer — no separate dispatcher step)
+# → output.stock_deducted: 0 — no physical deduction here, the reservation made when the
+#   mission was confirmed carries through to the warehouse transfer instead
 ```
 
 ---
@@ -2035,8 +2160,8 @@ curl -X PUT "https://api.omni360.cloud/api/backend/magasinier/preparations/88/sa
     },
     "notes": "Rupture Huile Végétale 5L — manque 10 cartons en stock central."
   }'
-# → BP: "completed_partial"
-# → BCH: "awaiting_shortage_review"
+# → output.status: "completed_partial"
+# → output.warehouse_transfer: null — no transfer until the shortage is resolved
 
 # Step 5: Dispatcher accepts and the shortage delta is auto-split into a backlog BC
 # (see Module 15 — Dispatcher shortage balance)
@@ -2055,6 +2180,9 @@ curl -X POST "https://api.omni360.cloud/api/backend/workflow/bon-preparation/88/
 ---
 
 ### Example C — Batch Picking
+
+> ⚠️ See the orphaned-feature warning in [§7](#7-batch-picking) — this example is kept for
+> reference but this flow is disconnected from the current mission/BP pipeline.
 
 ```bash
 # BLs 501, 502, 503 are in DRAFT — Magasinier wants to pick them all at once
@@ -2179,8 +2307,13 @@ curl -X POST "https://api.omni360.cloud/api/v2/returns/8/close" \
 
 ### Example G — Décharge (Van → Depot Unloading)
 
+> ⚠️ See the gap note in [§2](#2-warehouse-pipeline-overview) — there is currently no
+> mission-based trigger that *creates* a décharge. This example assumes one already exists
+> (created some other way) and shows the still-working approval side only.
+
 ```bash
-# Dispatcher already created décharge #9 after BCH completion (status: pending)
+# Assume décharge #9 already exists (status: pending) — see the gap note above for how it
+# would have been created in the old (now-removed) BCH-based flow
 
 curl "https://api.omni360.cloud/api/backend/dispatcher/decharges/9" \
   -H "Authorization: Bearer {TOKEN}"
@@ -2201,8 +2334,23 @@ curl -X POST "https://api.omni360.cloud/api/backend/workflow/decharge/9/execute"
 `app/Http/Controllers/Backend/DispatcherController.php` (décharge listing),
 `app/Http/Controllers/Backend/ConventionalDechargeReconciliationController.php`,
 `app/Decisions/Warehouse/`, `app/Decisions/Dispatcher/ApproveDechargeDecision.php`,
-`app/Decisions/Dispatcher/CreateDechargeDecision.php`, `config/decisions.php`,
+`config/decisions.php`,
 `routes/backend.php`, `routes/api.php`, `app/Models/PartnerReturn.php`,
 `app/Models/ReturnItem.php`, `app/Models/UnloadOrder.php`, `app/Models/Stock.php`,
-`database/migrations/2026_07_01_000003_drop_legacy_return_tables.php`*  
-*Last updated: 2026-06-18*
+`database/migrations/2026_07_01_000003_drop_legacy_return_tables.php`,
+`app/Models/PreparationOrder.php`, `app/Services/Dispatcher/BlAllocationService.php`,
+`app/Services/Dispatcher/MissionPreparationGeneratorService.php`,
+`app/Services/Delivery/DeliveryLocationResolver.php`,
+`app/Services/WarehouseTransferService.php`, `docs/modules/planning_refactor_schema.md`*  
+*Last updated: 2026-06-22 — full rewrite for the BC → DeliveryMission architecture migration.
+The old BC → DO → LOT → BP → BCH pipeline is removed; `shipments`, `delivery_orders`,
+`logistics_batches` are dropped. `start_preparation`/`update_preparation`/`complete_preparation`/
+`reject_preparation`/`continue_preparation` now operate against a mission-linked BP
+(`PreparationOrder.deliveryMission`, not the removed `bonChargement`/`logisticsBatch`
+relations) — several of these decisions had crashed on the dead relations until today's fix.
+`allocate_delivery_note` and `generate_preparation_for_mission` are removed entirely, folded
+into `confirm_delivery_mission`'s atomic execution (Module 15). `complete_preparation` now
+auto-creates the CENTRAL→VAN warehouse transfer. The "BC → BP Exception Flow" section is
+removed (feature deleted). Depot/stock lookups now correctly resolve the branch's real
+sellable PFZ0 zone instead of an empty placeholder "DEPOT" location. The "Batch Picking"
+section (§7) is flagged as an orphaned, pre-mission-pipeline feature.*

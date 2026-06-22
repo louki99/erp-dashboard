@@ -77,7 +77,7 @@ export const DispatcherDechargesPage = () => {
         }
     };
 
-    const details = detailData?.decharge || selected;
+    const details = detailData || selected;
 
     return (
         <MasterLayout
@@ -120,7 +120,7 @@ export const DispatcherDechargesPage = () => {
                                     <div className="flex items-center gap-4 mt-2 text-sm text-gray-500">
                                         <span className="font-medium">Type: {details?.type || '-'}</span>
                                         <span className="font-medium">Statut: {details?.status || '-'}</span>
-                                        <span>BL: {details?.bl_number || '-'}</span>
+                                        <span>BL: {details?.delivery_note?.delivery_number || '-'}</span>
                                     </div>
                                 </div>
 
@@ -139,11 +139,11 @@ export const DispatcherDechargesPage = () => {
                                             </div>
                                             <div className="p-4 rounded-lg border border-gray-100 bg-gray-50">
                                                 <div className="text-xs text-gray-500 mb-1">BL</div>
-                                                <div className="font-semibold text-gray-900">{details?.bl_number || '-'}</div>
+                                                <div className="font-semibold text-gray-900">{details?.delivery_note?.delivery_number || '-'}</div>
                                             </div>
                                             <div className="p-4 rounded-lg border border-gray-100 bg-gray-50">
                                                 <div className="text-xs text-gray-500 mb-1">Livreur</div>
-                                                <div className="font-semibold text-gray-900">{details?.livreur?.name || '-'}</div>
+                                                <div className="font-semibold text-gray-900">{details?.rider?.name || '-'}</div>
                                             </div>
                                         </div>
 

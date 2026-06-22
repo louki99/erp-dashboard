@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import {
-  Loader2, RefreshCw, ShoppingCart, FileText, Package, Truck, AlertTriangle,
+  Loader2, RefreshCw, ShoppingCart, Package, Truck, AlertTriangle,
   CheckCircle2, ArrowRight, Clock, TrendingUp, XCircle,
   Activity, Box, BarChart3, LayoutGrid, Boxes, Lock, Route, Sparkles, UserCircle2,
 } from 'lucide-react';
@@ -279,32 +279,32 @@ const DashboardContent = () => {
         </div>
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           <WorkspaceCard
-            title="Planification"
-            description="Regrouper les BC confirmés en DO, sceller le LOT et lancer la préparation."
+            title="Workspace Missions"
+            description="Regrouper les BC confirmés en mission (rider + véhicule), générer les BL et lancer la préparation."
             icon={Route}
             gradient="bg-blue-600"
             metric={pipeline.bc_confirmed}
             metricLabel="BC en attente"
             step="Étape 1"
-            onClick={() => navigate('/dispatcher/workspace/planning')}
+            onClick={() => navigate('/dispatcher/workspace/missions')}
           />
           <WorkspaceCard
-            title="Chargement"
-            description="Grouper les BL prêts en BCH, assigner livreur et véhicule."
+            title="Bons de livraison"
+            description="Allouer les BL confirmés (rupture tolérée, backlog automatique)."
             icon={Boxes}
             gradient="bg-purple-600"
-            metric={pipeline.bl_ready + pipeline.bl_confirmed}
-            metricLabel="BL à grouper"
+            metric={pipeline.bl_confirmed}
+            metricLabel="BL à allouer"
             step="Étape 2"
-            onClick={() => navigate('/dispatcher/workspace/loading')}
+            onClick={() => navigate('/dispatcher/bons-livraisons')}
           />
           <WorkspaceCard
             title="Moniteur Logistique"
-            description="Vue Kanban en lecture seule de tous les DO, tous pipelines confondus."
+            description="Vue Kanban en lecture seule de toutes les missions de livraison."
             icon={Activity}
             gradient="bg-emerald-600"
-            metric={pipeline.do_active}
-            metricLabel="DO actifs"
+            metric={pipeline.missions_draft + pipeline.missions_in_preparation + pipeline.missions_ready + pipeline.missions_in_transit}
+            metricLabel="Missions actives"
             step="Suivi"
             onClick={() => navigate('/dispatcher/monitor')}
           />
@@ -367,14 +367,11 @@ const DashboardContent = () => {
               <PipelineStage label="BC confirmés" count={pipeline.bc_confirmed} color="bg-blue-50 border-blue-200" textColor="text-blue-700" dotColor="bg-blue-500" urgent={pipeline.bc_confirmed > 0} />
             </PipelineGroup>
             <PipelineArrow />
-            <PipelineGroup label="DO">
-              <PipelineStage label="Actifs" count={pipeline.do_active} color="bg-indigo-50 border-indigo-200" textColor="text-indigo-700" dotColor="bg-indigo-500" />
-            </PipelineGroup>
-            <PipelineArrow />
-            <PipelineGroup label="LOT">
-              <PipelineStage label="Ouverts" count={pipeline.lot_open} color="bg-violet-50 border-violet-200" textColor="text-violet-700" dotColor="bg-violet-500" />
-              <PipelineStage label="Scellés" count={pipeline.lot_sealed} color="bg-purple-50 border-purple-200" textColor="text-purple-700" dotColor="bg-purple-500" />
-              <PipelineStage label="En prép." count={pipeline.lot_in_preparation} color="bg-fuchsia-50 border-fuchsia-200" textColor="text-fuchsia-700" dotColor="bg-fuchsia-500" />
+            <PipelineGroup label="Missions">
+              <PipelineStage label="Brouillon" count={pipeline.missions_draft} color="bg-indigo-50 border-indigo-200" textColor="text-indigo-700" dotColor="bg-indigo-500" />
+              <PipelineStage label="En prép." count={pipeline.missions_in_preparation} color="bg-violet-50 border-violet-200" textColor="text-violet-700" dotColor="bg-violet-500" />
+              <PipelineStage label="Prêtes" count={pipeline.missions_ready} color="bg-purple-50 border-purple-200" textColor="text-purple-700" dotColor="bg-purple-500" />
+              <PipelineStage label="En transit" count={pipeline.missions_in_transit} color="bg-fuchsia-50 border-fuchsia-200" textColor="text-fuchsia-700" dotColor="bg-fuchsia-500" />
             </PipelineGroup>
             <PipelineArrow />
             <PipelineGroup label="BP (magasinier)">
@@ -391,12 +388,6 @@ const DashboardContent = () => {
               <PipelineStage label="Brouillons" count={pipeline.bl_draft} color="bg-gray-50 border-gray-200" textColor="text-gray-700" dotColor="bg-gray-400" />
               <PipelineStage label="Confirmés" count={pipeline.bl_confirmed} color="bg-cyan-50 border-cyan-200" textColor="text-cyan-700" dotColor="bg-cyan-500" />
               <PipelineStage label="Prêts" count={pipeline.bl_ready} color="bg-teal-50 border-teal-200" textColor="text-teal-700" dotColor="bg-teal-500" />
-            </PipelineGroup>
-            <PipelineArrow />
-            <PipelineGroup label="BCH">
-              <PipelineStage label="En attente" count={pipeline.bch_pending} color="bg-purple-50 border-purple-200" textColor="text-purple-700" dotColor="bg-purple-500" />
-              <PipelineStage label="En prép." count={pipeline.bch_in_preparation} color="bg-violet-50 border-violet-200" textColor="text-violet-700" dotColor="bg-violet-500" />
-              <PipelineStage label="Préparés" count={pipeline.bch_prepared} color="bg-indigo-50 border-indigo-200" textColor="text-indigo-700" dotColor="bg-indigo-500" />
             </PipelineGroup>
             <PipelineArrow />
             <PipelineGroup label="Expédition">
@@ -468,8 +459,8 @@ const DashboardContent = () => {
               <div key={d.id} className="px-5 py-3 flex items-center gap-3 hover:bg-gray-50">
                 <Truck className="w-4 h-4 text-emerald-400 shrink-0" />
                 <div className="flex-1 min-w-0">
-                  <div className="text-sm font-semibold text-gray-800 truncate">{d.shipment_number ?? `#${d.id}`}</div>
-                  {d.rider && <div className="text-xs text-gray-400 mt-0.5">{d.rider.name}</div>}
+                  <div className="text-sm font-semibold text-gray-800 truncate">{d.delivery_number ?? `#${d.id}`}</div>
+                  {d.livreur && <div className="text-xs text-gray-400 mt-0.5">{d.livreur.name}</div>}
                 </div>
                 {d.status && (
                   <span className="text-xs font-medium px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-100">
@@ -501,7 +492,7 @@ const DashboardContent = () => {
                 <Box className="w-4 h-4 text-red-400 shrink-0" />
                 <div className="flex-1 min-w-0">
                   <div className="text-sm font-semibold text-gray-800 truncate">{s.bp_number ?? `BP #${s.id}`}</div>
-                  {s.shipment && <div className="text-xs text-gray-400 mt-0.5">{s.shipment.shipment_number}</div>}
+                  {s.deliveryMission && <div className="text-xs text-gray-400 mt-0.5">{s.deliveryMission.mission_number}</div>}
                 </div>
                 {s.status && (
                   <span className="text-xs font-medium px-2 py-0.5 rounded-full bg-red-50 text-red-700 border border-red-100">
@@ -517,7 +508,7 @@ const DashboardContent = () => {
       {/* Empty state when everything is zero */}
       {pipeline.bc_confirmed === 0 &&
         pipeline.bl_draft === 0 &&
-        pipeline.bch_pending === 0 &&
+        pipeline.missions_draft === 0 &&
         pipeline.bl_in_transit === 0 &&
         !hasAlerts && (
           <div className="text-center py-10 text-gray-400">
@@ -536,16 +527,13 @@ export const DispatcherDashboard = () => {
   const navigate = useNavigate();
 
   const navItems = [
-    { label: 'Workspace Planification', href: '/dispatcher/workspace/planning', icon: Route, color: 'text-blue-600 bg-blue-50', desc: 'BC → DO → LOT' },
-    { label: 'Workspace Chargement', href: '/dispatcher/workspace/loading', icon: Boxes, color: 'text-purple-600 bg-purple-50', desc: 'BL → BCH' },
+    { label: 'Workspace Missions', href: '/dispatcher/workspace/missions', icon: Route, color: 'text-blue-600 bg-blue-50', desc: 'BC → Mission → BL' },
     { label: 'Moniteur Logistique', href: '/dispatcher/monitor', icon: Activity, color: 'text-emerald-600 bg-emerald-50', desc: 'Kanban lecture seule' },
     { label: 'Commandes (BC)', href: '/dispatcher/orders', icon: ShoppingCart, color: 'text-sky-600 bg-sky-50', desc: 'BCs à dispatcher' },
-    { label: 'Delivery Orders', href: '/dispatcher/delivery-orders', icon: FileText, color: 'text-indigo-600 bg-indigo-50', desc: 'Détail & décisions' },
     { label: 'Bons de livraison', href: '/dispatcher/bons-livraisons', icon: Package, color: 'text-amber-600 bg-amber-50', desc: 'BLs actifs' },
-    { label: 'Bons de chargement', href: '/dispatcher/bons-chargements', icon: Truck, color: 'text-violet-600 bg-violet-50', desc: 'BCH & expéditions' },
     { label: 'File de ruptures', href: '/dispatcher/shortage-queue', icon: AlertTriangle, color: 'text-red-600 bg-red-50', desc: 'À résoudre' },
     { label: 'Décharges', href: '/dispatcher/decharges', icon: CheckCircle2, color: 'text-green-600 bg-green-50', desc: 'Retours & annulations' },
-    { label: 'Transferts entrepôt', href: '/dispatcher/warehouse-transfers', icon: Boxes, color: 'text-teal-600 bg-teal-50', desc: 'Depuis BCH terminé' },
+    { label: 'Transferts entrepôt', href: '/dispatcher/warehouse-transfers', icon: Boxes, color: 'text-teal-600 bg-teal-50', desc: 'Générés automatiquement' },
     { label: 'Flotte & Livreurs', href: '/dispatcher/fleet', icon: UserCircle2, color: 'text-rose-600 bg-rose-50', desc: 'Assignation véhicule' },
   ];
 

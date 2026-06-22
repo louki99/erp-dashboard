@@ -35,6 +35,8 @@ export const useDispatcherBonLivraisonsList = (filters?: {
   return { data, loading, error, refetch: fetch };
 };
 
+// §7.2/§7.3 (`/draft`, `/confirmed` sub-routes) are confirmed BROKEN — they reference the dropped
+// `shipments` table. Use the generic list with a status filter instead (§7.1, unaffected).
 export const useDispatcherDraftBonLivraisons = () => {
   const [data, setData] = useState<PaginatedResponse<DeliveryNote> | null>(null);
   const [loading, setLoading] = useState(true);
@@ -44,7 +46,7 @@ export const useDispatcherDraftBonLivraisons = () => {
     setLoading(true);
     setError(null);
     try {
-      setData(await dispatcherApi.bonLivraisons.getDraft());
+      setData(await dispatcherApi.bonLivraisons.getList({ status: 'draft' }));
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Erreur chargement BLs brouillon');
     } finally {
@@ -65,7 +67,7 @@ export const useDispatcherConfirmedBonLivraisons = () => {
     setLoading(true);
     setError(null);
     try {
-      setData(await dispatcherApi.bonLivraisons.getConfirmed());
+      setData(await dispatcherApi.bonLivraisons.getList({ status: 'confirmed' }));
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Erreur chargement BLs confirmés');
     } finally {

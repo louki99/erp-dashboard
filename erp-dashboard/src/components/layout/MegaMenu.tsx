@@ -83,7 +83,6 @@ const ITEM_PERMISSIONS: Record<string, string> = {
     // Magasinier
     'Tableau de bord Magasinier': 'admin.warehouse.dashboard',
     'Bons de préparation': 'admin.warehouse.picking',
-    'Commandes approuvées': 'admin.warehouse.orders',
     'Gestion stock': 'admin.warehouse.stock',
     'Mouvements stock': 'admin.warehouse.stock',
     'Préparation groupée': 'admin.warehouse.batch-picking',
@@ -215,19 +214,11 @@ const MENU_DATA: ModuleData[] = [
             },
             {
                 title: 'Workspaces',
-                items: ['Workspace Planification', 'Workspace Chargement', 'Moniteur Logistique']
-            },
-            {
-                title: 'Delivery Orders',
-                items: ['Delivery Orders']
+                items: ['Workspace Missions', 'Dispatcher Carte', 'Moniteur Logistique']
             },
             {
                 title: 'Bons de Livraison',
                 items: ['BL (liste)']
-            },
-            {
-                title: 'Bons de Chargement',
-                items: ['BCH (liste)']
             },
             {
                 title: 'Ruptures',
@@ -261,7 +252,7 @@ const MENU_DATA: ModuleData[] = [
             },
             {
                 title: 'Préparations',
-                items: ['Bons de préparation', 'Commandes approuvées']
+                items: ['Bons de préparation']
             },
             {
                 title: 'Stock',
@@ -656,14 +647,11 @@ export const MegaMenu: React.FC<MegaMenuProps> = ({ isOpen, onClose, initialSear
         // Dispatcher Module Routes
         'Tableau de bord Dispatcher': '/dispatcher',
         'Commandes en attente': '/dispatcher/orders',
-        'Workspace Planification': '/dispatcher/workspace/planning',
-        'Workspace Chargement': '/dispatcher/workspace/loading',
+        'Workspace Missions': '/dispatcher/workspace/missions',
+        'Dispatcher Carte': '/dispatcher/workspace/map',
         'Moniteur Logistique': '/dispatcher/monitor',
-        'Delivery Orders': '/dispatcher/delivery-orders',
         'BL brouillons': '/dispatcher/bons-livraisons',
         'BL (liste)': '/dispatcher/bons-livraisons',
-        'Créer BCH': '/dispatcher/bons-chargements',
-        'BCH (liste)': '/dispatcher/bons-chargements',
         'File de ruptures': '/dispatcher/shortage-queue',
         'Décharges (liste)': '/dispatcher/decharges',
         'Transferts entrepôt (liste)': '/dispatcher/warehouse-transfers',
@@ -672,7 +660,6 @@ export const MegaMenu: React.FC<MegaMenuProps> = ({ isOpen, onClose, initialSear
         // Magasinier Module Routes
         'Tableau de bord Magasinier': '/magasinier',
         'Bons de préparation': '/magasinier/preparations',
-        'Commandes approuvées': '/magasinier/orders',
         'Gestion stock': '/magasinier/stock',
         'Mouvements stock': '/magasinier/stock',
         'Préparation groupée': '/magasinier/batch-picking',

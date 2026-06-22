@@ -3,9 +3,15 @@ import { magasinierApi } from '@/services/api/magasinierApi';
 import type {
     PreparationsResponse,
     BonPreparationDetailResponse,
-    ApiSuccessResponse,
     SavePreparationRequest,
     RejectPreparationRequest,
+    ShortageItemPayload,
+    ReportShortageResponse,
+    AdditionalItemPayload,
+    ContinuePreparationResponse,
+    CompletePreparationResponse,
+    StartPreparationResponse,
+    RejectPreparationResponse,
 } from '@/types/magasinier.types';
 
 export const useMagasinierPreparationsList = (filters?: { status?: string; search?: string; page?: number }) => {
@@ -67,7 +73,7 @@ export const useMagasinierPreparationDetail = (id: number | null) => {
 export const useMagasinierPrepare = () => {
     const [loading, setLoading] = useState(false);
 
-    const prepare = async (id: number): Promise<BonPreparationDetailResponse> => {
+    const prepare = async (id: number): Promise<StartPreparationResponse> => {
         setLoading(true);
         try {
             return await magasinierApi.preparations.prepare(id);
@@ -82,7 +88,7 @@ export const useMagasinierPrepare = () => {
 export const useMagasinierSavePreparation = () => {
     const [loading, setLoading] = useState(false);
 
-    const save = async (id: number, data: SavePreparationRequest): Promise<ApiSuccessResponse> => {
+    const save = async (id: number, data: SavePreparationRequest): Promise<CompletePreparationResponse> => {
         setLoading(true);
         try {
             return await magasinierApi.preparations.save(id, data);
@@ -97,7 +103,7 @@ export const useMagasinierSavePreparation = () => {
 export const useMagasinierRejectPreparation = () => {
     const [loading, setLoading] = useState(false);
 
-    const reject = async (id: number, data: RejectPreparationRequest): Promise<ApiSuccessResponse> => {
+    const reject = async (id: number, data: RejectPreparationRequest): Promise<RejectPreparationResponse> => {
         setLoading(true);
         try {
             return await magasinierApi.preparations.reject(id, data);
@@ -107,4 +113,34 @@ export const useMagasinierRejectPreparation = () => {
     };
 
     return { reject, loading };
+};
+
+export const useMagasinierReportShortage = () => {
+    const [loading, setLoading] = useState(false);
+
+    const reportShortage = async (id: number, items: ShortageItemPayload[]): Promise<ReportShortageResponse> => {
+        setLoading(true);
+        try {
+            return await magasinierApi.preparations.reportShortage(id, items);
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    return { reportShortage, loading };
+};
+
+export const useMagasinierContinuePreparation = () => {
+    const [loading, setLoading] = useState(false);
+
+    const continuePreparation = async (id: number, items: AdditionalItemPayload[]): Promise<ContinuePreparationResponse> => {
+        setLoading(true);
+        try {
+            return await magasinierApi.preparations.continuePreparation(id, items);
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    return { continuePreparation, loading };
 };

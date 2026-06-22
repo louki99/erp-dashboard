@@ -2,12 +2,11 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { ColDef } from 'ag-grid-community';
 import {
     RefreshCw, Plus, Package2, Filter, X, Search, ChevronRight,
-    Calendar, User, MapPin, Loader2, ClipboardList, CheckCircle2,
+    Calendar, User, MapPin, Loader2,
     AlertCircle, Map, List, Route, Navigation, Phone, Clock,
     ArrowUpDown, ExternalLink, CreditCard, Banknote, ChevronDown,
     PanelRightClose, PanelRightOpen,
 } from 'lucide-react';
-import toast from 'react-hot-toast';
 import { useNavigate } from 'react-router-dom';
 
 import { MasterLayout } from '@/components/layout/MasterLayout';
@@ -17,7 +16,6 @@ import type { MapBbox } from '@/components/dispatcher/OrdersMapView';
 import {
     useDispatcherPendingOrders,
     useDispatcherOrderDetail,
-    useCreateDeliveryOrder,
     getTotal,
     getLastPage,
 } from '@/hooks/dispatcher/useDispatcherOrders';
@@ -41,7 +39,11 @@ const getZone = (o: DispatcherOrder): string => {
 const getItinerary = (o: DispatcherOrder) =>
     o.partner?.active_itineraries?.[0] ?? null;
 
-const isAssigned = (o: DispatcherOrder) => !!(o.logistics_details?.delivery_order_id);
+// Always false now — `logistics_details.delivery_order_id` referenced the removed DO concept
+// (docs §9 "REMOVED"). The "already assigned" idea doesn't apply the same way under missions:
+// once a BC joins a mission it moves from `confirmed` to `converted_to_bl` server-side and simply
+// stops appearing in GET /orders/pending — there's nothing left to flag client-side.
+const isAssigned = (_o: DispatcherOrder) => false;
 
 const fmtDate = (d?: string | null) =>
     d ? new Date(d).toLocaleDateString('fr-FR', { day: '2-digit', month: 'short', year: 'numeric' }) : '—';
@@ -77,138 +79,6 @@ const CanalBadge = ({ canal }: { canal?: string }) => {
     if (!canal) return null;
     const cls = canal === 'SFA' ? 'bg-violet-100 text-violet-700' : 'bg-blue-100 text-blue-700';
     return <span className={`inline-flex items-center px-1.5 py-0.5 rounded text-xs font-bold ${cls}`}>{canal}</span>;
-};
-
-// ─── Create DO Modal ──────────────────────────────────────────────────────────
-
-interface CreateDoModalProps {
-    selectedOrders: DispatcherOrder[];
-    onClose: () => void;
-    onSuccess: () => void;
-}
-
-const CreateDoModal = ({ selectedOrders, onClose, onSuccess }: CreateDoModalProps) => {
-    const { createDo, loading } = useCreateDeliveryOrder();
-    const navigate = useNavigate();
-    const [form, setForm] = useState({
-        delivery_zone: selectedOrders[0]?.partner?.delivery_zone ?? '',
-        planned_delivery_date: new Date().toISOString().split('T')[0],
-        notes: '',
-    });
-
-    const totalAmount = selectedOrders.reduce((s, o) => s + Number(o.total_amount ?? 0), 0);
-
-    const handleSubmit = async (e: React.FormEvent) => {
-        e.preventDefault();
-        if (!form.planned_delivery_date) { toast.error('Date de livraison requise.'); return; }
-        try {
-            const res = await createDo({
-                order_ids: selectedOrders.map((o) => o.id),
-                delivery_zone: form.delivery_zone || undefined,
-                planned_delivery_date: form.planned_delivery_date,
-                notes: form.notes || undefined,
-            });
-            if (res.success) {
-                toast.success(res.message || 'Delivery Order créé');
-                onSuccess();
-                navigate('/dispatcher/delivery-orders');
-            } else {
-                toast.error(res.message || 'Échec de la création');
-            }
-        } catch (err: any) {
-            if (err?.response?.status === 405) {
-                toast.error("La création de DO n'est pas encore disponible côté serveur (405). Contactez l'équipe backend.", { duration: 6000 });
-            } else {
-                toast.error(err?.response?.data?.message ?? (err instanceof Error ? err.message : 'Erreur lors de la création du DO'));
-            }
-        }
-    };
-
-    return (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm">
-            <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg mx-4 overflow-hidden">
-                <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100">
-                    <div className="flex items-center gap-3">
-                        <div className="p-2 bg-indigo-100 rounded-xl">
-                            <ClipboardList className="w-5 h-5 text-indigo-600" />
-                        </div>
-                        <div>
-                            <h2 className="text-base font-semibold text-gray-900">Créer un Delivery Order</h2>
-                            <p className="text-xs text-gray-500 mt-0.5">
-                                {selectedOrders.length} commande{selectedOrders.length > 1 ? 's' : ''} · {fmtAmount(totalAmount)}
-                            </p>
-                        </div>
-                    </div>
-                    <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-gray-100 text-gray-400">
-                        <X className="w-5 h-5" />
-                    </button>
-                </div>
-
-                {/* Orders summary */}
-                <div className="px-6 py-3 bg-indigo-50 border-b border-indigo-100 max-h-36 overflow-y-auto">
-                    <div className="space-y-1">
-                        {selectedOrders.map((o) => (
-                            <div key={o.id} className="flex items-center justify-between text-xs bg-white rounded-lg px-3 py-1.5 border border-indigo-100">
-                                <div className="flex items-center gap-2 min-w-0">
-                                    <span className="font-semibold text-indigo-800 shrink-0">{o.order_code}</span>
-                                    <span className="text-gray-500 truncate">{o.partner?.name}</span>
-                                    {o.partner?.city && <span className="text-gray-400 shrink-0">· {o.partner.city}</span>}
-                                </div>
-                                <span className="font-semibold text-gray-700 shrink-0 ml-2">{fmtAmount(o.total_amount)}</span>
-                            </div>
-                        ))}
-                    </div>
-                </div>
-
-                <form onSubmit={handleSubmit} className="px-6 py-5 space-y-4">
-                    <div>
-                        <label className="block text-xs font-medium text-gray-700 mb-1.5">
-                            Date de livraison planifiée <span className="text-red-500">*</span>
-                        </label>
-                        <div className="relative">
-                            <Calendar className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-                            <input
-                                type="date" required value={form.planned_delivery_date}
-                                onChange={(e) => setForm((f) => ({ ...f, planned_delivery_date: e.target.value }))}
-                                className="w-full pl-9 pr-3 py-2.5 text-sm border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none"
-                            />
-                        </div>
-                    </div>
-                    <div>
-                        <label className="block text-xs font-medium text-gray-700 mb-1.5">Zone de livraison</label>
-                        <div className="relative">
-                            <MapPin className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-                            <input
-                                type="text" placeholder="Ex: ZONE-SUD, Tournée Lundi…"
-                                value={form.delivery_zone}
-                                onChange={(e) => setForm((f) => ({ ...f, delivery_zone: e.target.value }))}
-                                className="w-full pl-9 pr-3 py-2.5 text-sm border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none"
-                            />
-                        </div>
-                    </div>
-                    <div>
-                        <label className="block text-xs font-medium text-gray-700 mb-1.5">Notes</label>
-                        <textarea rows={2} placeholder="Instructions supplémentaires…"
-                            value={form.notes}
-                            onChange={(e) => setForm((f) => ({ ...f, notes: e.target.value }))}
-                            className="w-full px-3 py-2.5 text-sm border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none resize-none"
-                        />
-                    </div>
-                    <div className="flex items-center gap-3 pt-1">
-                        <button type="button" onClick={onClose} disabled={loading}
-                            className="flex-1 py-2.5 text-sm font-medium text-gray-700 bg-gray-100 rounded-xl hover:bg-gray-200 transition-colors">
-                            Annuler
-                        </button>
-                        <button type="submit" disabled={loading}
-                            className="flex-1 flex items-center justify-center gap-2 py-2.5 text-sm font-semibold text-white bg-indigo-600 rounded-xl hover:bg-indigo-700 disabled:opacity-60 transition-colors">
-                            {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCircle2 className="w-4 h-4" />}
-                            Créer le DO
-                        </button>
-                    </div>
-                </form>
-            </div>
-        </div>
-    );
 };
 
 // ─── Filter Panel ─────────────────────────────────────────────────────────────
@@ -609,7 +479,7 @@ const OrderDetailPanel = ({ order, loading }: { order: DispatcherOrder | null; l
                 {assigned && (
                     <div className="mt-2 flex items-center gap-2 text-xs text-amber-700 bg-amber-50 px-3 py-2 rounded-xl border border-amber-100">
                         <Clock className="w-3.5 h-3.5 shrink-0" />
-                        Déjà assignée au DO #{order.logistics_details?.delivery_order_id}
+                        Déjà assignée
                     </div>
                 )}
             </div>
@@ -791,13 +661,13 @@ const loadFilterOpen = (): boolean => {
 };
 
 export const DispatcherOrdersPage = () => {
+    const navigate = useNavigate();
     const [filters, setFilters] = useState<OrdersPendingFilters>(loadFilters);
     const [search, setSearch] = useState<string>(loadSearch);
     const [viewMode, setViewMode] = useState<ViewMode>(loadViewMode);
     const [filterPanelOpen, setFilterPanelOpen] = useState<boolean>(loadFilterOpen);
     const [selectedId, setSelectedId] = useState<number | null>(null);
     const [selectedRows, setSelectedRows] = useState<DispatcherOrder[]>([]);
-    const [showCreateDo, setShowCreateDo] = useState(false);
     const searchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
     // Persist all UI preferences
@@ -928,7 +798,9 @@ export const DispatcherOrdersPage = () => {
 
     const handleRowClick = (row: DispatcherOrder) => setSelectedId(row.id);
     const handleSelectionChanged = useCallback((rows: DispatcherOrder[]) => setSelectedRows(rows), []);
-    const handleCreateDoSuccess = () => { setShowCreateDo(false); setSelectedRows([]); refetch(); };
+    // BC → Mission planning now happens in the dedicated workspace (drag&drop + rider/vehicle
+    // picker, docs §8.1) — this page just hands off the navigation, no inline creation anymore.
+    const goToMissionWorkspace = () => navigate('/dispatcher/workspace/missions');
 
     return (
         <>
@@ -986,9 +858,9 @@ export const DispatcherOrdersPage = () => {
                                 <span className="text-xs font-semibold text-white">
                                     {selectedRows.length} sélectionnée{selectedRows.length > 1 ? 's' : ''}
                                 </span>
-                                <button onClick={() => setShowCreateDo(true)}
+                                <button onClick={goToMissionWorkspace}
                                     className="flex items-center gap-1.5 px-3 py-1 bg-white text-indigo-700 text-xs font-bold rounded-lg hover:bg-indigo-50 transition-colors">
-                                    <Plus className="w-3.5 h-3.5" /> Créer DO
+                                    <Plus className="w-3.5 h-3.5" /> Planifier (Mission)
                                 </button>
                             </div>
                         )}
@@ -1083,10 +955,10 @@ export const DispatcherOrdersPage = () => {
                                     Cliquez sur une ligne ou un pin pour voir les détails
                                 </p>
                                 {selectedRows.length > 0 && (
-                                    <button onClick={() => setShowCreateDo(true)}
+                                    <button onClick={goToMissionWorkspace}
                                         className="mt-4 w-full flex items-center justify-center gap-2 py-2.5 px-4 bg-indigo-600 text-white text-sm font-semibold rounded-xl hover:bg-indigo-700 transition-colors">
                                         <Plus className="w-4 h-4" />
-                                        Créer un DO ({selectedRows.length})
+                                        Planifier une mission ({selectedRows.length})
                                         <ChevronRight className="w-4 h-4" />
                                     </button>
                                 )}
@@ -1113,14 +985,6 @@ export const DispatcherOrdersPage = () => {
                     )
                 }
             />
-
-            {showCreateDo && selectedRows.length > 0 && (
-                <CreateDoModal
-                    selectedOrders={selectedRows}
-                    onClose={() => setShowCreateDo(false)}
-                    onSuccess={handleCreateDoSuccess}
-                />
-            )}
         </>
     );
 };

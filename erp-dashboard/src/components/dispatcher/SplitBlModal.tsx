@@ -266,25 +266,6 @@ export const SplitBlModal = ({ isOpen, onClose, onConfirm, items, loading = fals
         setSplits(splits.filter(s => s.id !== splitId));
     };
 
-    const handleToggleItem = (splitId: string, itemId: number) => {
-        setSplits(splits.map(split => {
-            if (split.id === splitId) {
-                const hasItem = split.items.includes(itemId);
-                return {
-                    ...split,
-                    items: hasItem
-                        ? split.items.filter(id => id !== itemId)
-                        : [...split.items, itemId]
-                };
-            }
-            // Remove from other splits if exists
-            return {
-                ...split,
-                items: split.items.filter(id => id !== itemId)
-            };
-        }));
-    };
-
     const handleNotesChange = (splitId: string, notes: string) => {
         setSplits(splits.map(split =>
             split.id === splitId ? { ...split, notes } : split
@@ -305,16 +286,6 @@ export const SplitBlModal = ({ isOpen, onClose, onConfirm, items, loading = fals
         }));
 
         await onConfirm(payload);
-    };
-
-    const getSplitTotal = (split: Split): number => {
-        return split.items.reduce((total, itemId) => {
-            const item = items.find(i => i.id === itemId);
-            if (item && item.allocated_qty && item.unit_price) {
-                return total + (parseFloat(item.allocated_qty.toString()) * parseFloat(item.unit_price.toString()));
-            }
-            return total;
-        }, 0);
     };
 
     const handleDragStart = (event: DragStartEvent) => {

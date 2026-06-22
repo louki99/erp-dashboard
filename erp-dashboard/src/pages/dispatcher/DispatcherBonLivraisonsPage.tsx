@@ -1,8 +1,8 @@
 import { useMemo, useState } from 'react';
 import type { ColDef } from 'ag-grid-community';
 import {
-  Loader2, Search, RefreshCw, FileText, User, Package, Truck, CheckCircle2,
-  XCircle, Scissors, ChevronRight, AlertCircle, Clock, Send, RotateCcw,
+  Loader2, Search, RefreshCw, FileText, Package, Truck, CheckCircle2,
+  XCircle, Scissors, ChevronRight, AlertCircle,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 
@@ -15,7 +15,6 @@ import { SplitBlModal } from '@/components/dispatcher/SplitBlModal';
 import {
   useDispatcherBonLivraisonsList,
   useDispatcherBonLivraisonDetail,
-  useDispatcherUpdateBonLivraison,
   useDispatcherBlDecision,
   useDispatcherSplitBonLivraison,
   useDispatcherCancelBonLivraison,
@@ -72,7 +71,6 @@ const DetailPanel = ({
 }) => {
   const { data: detail, loading: detailLoading, refetch: refetchDetail } = useDispatcherBonLivraisonDetail(bl.id);
   const { execute, loading: executing } = useDispatcherBlDecision();
-  const { update, loading: updating } = useDispatcherUpdateBonLivraison();
   const { split, loading: splitting } = useDispatcherSplitBonLivraison();
   const { cancel, loading: cancelling } = useDispatcherCancelBonLivraison();
 
@@ -85,9 +83,13 @@ const DetailPanel = ({
   const d = detail ?? bl;
   const status = d.status as BlStatus;
   const canConfirm = status === 'draft';
-  const canUpdate  = status === 'draft' || status === 'confirmed';
   const canSplit   = status === 'draft' && (d.items?.length ?? 0) >= 2;
-  const canCancel  = status === 'draft' || status === 'confirmed';
+  // Backend breaking change 2026-06-22: once confirm_delivery_mission has run (mission →
+  // in_preparation), "Cancel Delivery" disappears too — a direct call now 422s with
+  // mission_not_draft. Guard on the mission's status, not just the BL's own, so this stays hidden
+  // even if the BL's own status field hasn't caught up yet.
+  const canCancel = (status === 'draft' || status === 'confirmed')
+    && (!d.delivery_mission || d.delivery_mission.status === 'draft');
 
   const tabs: TabItem[] = useMemo(() => [
     { id: 'info',  label: 'Informations', icon: FileText },
@@ -174,7 +176,7 @@ const DetailPanel = ({
                 {Number(d.total_amount).toLocaleString('fr-MA')}
                 <span className="text-xs font-normal text-gray-400 ml-1">Dh</span>
               </div>
-              {(detailLoading || executing || updating) && (
+              {(detailLoading || executing) && (
                 <div className="flex items-center justify-end gap-1 text-xs text-gray-400 mt-0.5">
                   <Loader2 className="w-3 h-3 animate-spin" /> En cours…
                 </div>
@@ -262,10 +264,10 @@ const DetailPanel = ({
                     <div className="text-sm text-amber-800">{d.notes}</div>
                   </div>
                 )}
-                {d.bon_chargement && (
+                {d.delivery_mission && (
                   <div className="col-span-2 p-3 rounded-lg bg-purple-50 border border-purple-100">
-                    <div className="text-xs text-purple-600 font-medium mb-1">BCH associé</div>
-                    <div className="text-sm font-semibold text-purple-800">{d.bon_chargement.shipment_number}</div>
+                    <div className="text-xs text-purple-600 font-medium mb-1">Mission associée</div>
+                    <div className="text-sm font-semibold text-purple-800">{d.delivery_mission.mission_number}</div>
                   </div>
                 )}
               </div>
@@ -326,11 +328,11 @@ const DetailPanel = ({
                             <div className="font-medium text-gray-900 text-xs">{item.product?.name ?? `#${item.product_id}`}</div>
                             <div className="text-gray-400 text-xs">{item.product?.sku}</div>
                           </td>
-                          <td className="px-3 py-2.5 text-right text-xs text-gray-700">{item.quantity}</td>
-                          <td className="px-3 py-2.5 text-right text-xs text-gray-700">{item.allocated_qty}</td>
+                          <td className="px-3 py-2.5 text-right text-xs text-gray-700">{item.ordered_quantity ?? item.quantity}</td>
+                          <td className="px-3 py-2.5 text-right text-xs text-gray-700">{item.allocated_quantity ?? item.allocated_qty}</td>
                           <td className="px-3 py-2.5 text-right text-xs">
                             {item.prepared_quantity != null ? (
-                              <span className={item.prepared_quantity < item.quantity ? 'text-orange-600 font-semibold' : 'text-green-600'}>
+                              <span className={item.prepared_quantity < (item.ordered_quantity ?? item.quantity ?? 0) ? 'text-orange-600 font-semibold' : 'text-green-600'}>
                                 {item.prepared_quantity}
                               </span>
                             ) : (

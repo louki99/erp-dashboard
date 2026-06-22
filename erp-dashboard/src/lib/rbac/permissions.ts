@@ -102,12 +102,6 @@ export const PERMISSIONS = {
         BON_LIVRAISONS_EDIT: 'admin.dispatcher.bon-livraisons.edit',
         BON_LIVRAISONS_UPDATE: 'admin.dispatcher.bon-livraisons.update',
 
-        BON_CHARGEMENTS_CREATE: 'admin.dispatcher.bon-chargements.create',
-        BON_CHARGEMENTS_INDEX: 'admin.dispatcher.bon-chargements.index',
-        BON_CHARGEMENTS_SHOW: 'admin.dispatcher.bon-chargements.show',
-        BON_CHARGEMENTS_VALIDATE: 'admin.dispatcher.bon-chargements.validate',
-        BON_CHARGEMENTS_BALANCE: 'admin.dispatcher.bon-chargements.balance',
-
         DECHARGES_INDEX: 'admin.dispatcher.decharges.index',
         DECHARGES_SHOW: 'admin.dispatcher.decharges.show',
         DECHARGES_APPROVE_RETURN: 'admin.dispatcher.decharges.approve-return',
@@ -348,13 +342,9 @@ export const PAGE_PERMISSIONS: Record<string, string | string[]> = {
     '/dispatcher': PERMISSIONS.DISPATCHER.DASHBOARD,
     '/dispatcher/dashboard': PERMISSIONS.DISPATCHER.DASHBOARD,
     '/dispatcher/orders': PERMISSIONS.DISPATCHER.ORDERS_PENDING,
-    '/dispatcher/workspace/planning': PERMISSIONS.DISPATCHER.ORDERS_PENDING,
-    '/dispatcher/workspace/loading': PERMISSIONS.DISPATCHER.BON_CHARGEMENTS_INDEX,
+    '/dispatcher/workspace/missions': PERMISSIONS.DISPATCHER.ORDERS_PENDING,
     '/dispatcher/monitor': PERMISSIONS.DISPATCHER.BON_LIVRAISONS_INDEX,
-    '/dispatcher/bon-livraisons/draft': PERMISSIONS.DISPATCHER.BON_LIVRAISONS_DRAFT,
-    '/dispatcher/bon-livraisons': PERMISSIONS.DISPATCHER.BON_LIVRAISONS_INDEX,
-    '/dispatcher/bon-chargements/create': PERMISSIONS.DISPATCHER.BON_CHARGEMENTS_CREATE,
-    '/dispatcher/bon-chargements': PERMISSIONS.DISPATCHER.BON_CHARGEMENTS_INDEX,
+    '/dispatcher/bons-livraisons': PERMISSIONS.DISPATCHER.BON_LIVRAISONS_INDEX,
     '/dispatcher/decharges': PERMISSIONS.DISPATCHER.DECHARGES_INDEX,
     // No permission slug for this route — role-based only (admin.dispatcher.* doesn't exist for
     // warehouse-transfers, confirmed by backend). Gated via requiredRole on the route itself.

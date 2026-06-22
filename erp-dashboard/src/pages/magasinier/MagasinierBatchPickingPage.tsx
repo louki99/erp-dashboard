@@ -1,6 +1,6 @@
 import { useMemo, useState, useEffect } from 'react';
 import type { ColDef } from 'ag-grid-community';
-import { Loader2, RefreshCw, Plus, Package, CheckCircle2 } from 'lucide-react';
+import { Loader2, RefreshCw, Plus, Package, CheckCircle2, AlertTriangle } from 'lucide-react';
 import toast from 'react-hot-toast';
 
 import { MasterLayout } from '@/components/layout/MasterLayout';
@@ -118,6 +118,18 @@ export const MagasinierBatchPickingPage = () => {
                 <p className="text-sm text-gray-600 mt-1">
                     Sélectionnez les BLs pour créer une session de préparation groupée
                 </p>
+                {/* docs §7: this subsystem operates on raw DeliveryNote DRAFT/GROUPED statuses and
+                    is fully disconnected from the Delivery Mission / BP pipeline — completing a
+                    session here does not advance any mission or BP. Not touched in the 2026-06-22
+                    mission migration; may be removed in a future cleanup. Do not extend this
+                    screen without confirming with backend first. */}
+                <div className="mt-3 flex items-start gap-2 p-2.5 rounded-lg bg-amber-50 border border-amber-200 text-xs text-amber-800">
+                    <AlertTriangle size={14} className="shrink-0 mt-0.5" />
+                    <span>
+                        Fonctionnalité orpheline — déconnectée du pipeline Delivery Mission / BP actuel.
+                        Une session créée ici n'avance aucune mission ni aucun BP. À ne pas étendre sans confirmation backend.
+                    </span>
+                </div>
             </div>
             <div className="flex-1 overflow-hidden">
                 {loading ? (

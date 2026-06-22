@@ -20,18 +20,15 @@ import { AdvDerogationsPage } from '@/pages/adv/AdvDerogationsPage';
 import { DispatcherDashboard } from '@/pages/dispatcher/DispatcherDashboard';
 import { DispatcherOrdersPage } from '@/pages/dispatcher/DispatcherOrdersPage';
 import { DispatcherBonLivraisonsPage } from '@/pages/dispatcher/DispatcherBonLivraisonsPage';
-import { DispatcherBonChargementsPage } from '@/pages/dispatcher/DispatcherBonChargementsPage';
 import { DispatcherShortageQueuePage } from '@/pages/dispatcher/DispatcherShortageQueuePage';
-import { DispatcherDeliveryOrdersPage } from '@/pages/dispatcher/DispatcherDeliveryOrdersPage';
 import { DispatcherDechargesPage } from '@/pages/dispatcher/DispatcherDechargesPage';
-import { DispatcherPlanningWorkspacePage } from '@/pages/dispatcher/DispatcherPlanningWorkspacePage';
-import { DispatcherLoadingWorkspacePage } from '@/pages/dispatcher/DispatcherLoadingWorkspacePage';
+import { DispatcherMissionWorkspacePage } from '@/pages/dispatcher/DispatcherMissionWorkspacePage';
+import { DispatcherMapWorkspacePage } from '@/pages/dispatcher/DispatcherMapWorkspacePage';
 import { DispatcherMonitorPage } from '@/pages/dispatcher/DispatcherMonitorPage';
 import { DispatcherWarehouseTransfersPage } from '@/pages/dispatcher/DispatcherWarehouseTransfersPage';
 import { DispatcherFleetPage } from '@/pages/dispatcher/DispatcherFleetPage';
 import { MagasinierDashboard } from '@/pages/magasinier/MagasinierDashboard';
 import { MagasinierPreparationsPage } from '@/pages/magasinier/MagasinierPreparationsPage';
-import { MagasinierOrdersPage } from '@/pages/magasinier/MagasinierOrdersPage';
 import { MagasinierStockPage } from '@/pages/magasinier/MagasinierStockPage';
 import { MagasinierBatchPickingPage } from '@/pages/magasinier/MagasinierBatchPickingPage';
 import { ProductsPage } from '@/pages/products/ProductsPage';
@@ -190,39 +187,27 @@ function AppRoutes() {
         </ProtectedRoute>
       } />
 
-      <Route path="/dispatcher/bons-chargements" element={
-        <ProtectedRoute requiredRole={['dispatcher', 'root', 'admin']}>
-          <DispatcherBonChargementsPage />
-        </ProtectedRoute>
-      } />
-
       <Route path="/dispatcher/shortage-queue" element={
         <ProtectedRoute requiredRole={['dispatcher', 'root', 'admin']}>
           <DispatcherShortageQueuePage />
         </ProtectedRoute>
       } />
 
-      <Route path="/dispatcher/workspace/planning" element={
+      <Route path="/dispatcher/workspace/missions" element={
         <ProtectedRoute requiredRole={['dispatcher', 'root', 'admin']}>
-          <DispatcherPlanningWorkspacePage />
+          <DispatcherMissionWorkspacePage />
         </ProtectedRoute>
       } />
 
-      <Route path="/dispatcher/workspace/loading" element={
+      <Route path="/dispatcher/workspace/map" element={
         <ProtectedRoute requiredRole={['dispatcher', 'root', 'admin']}>
-          <DispatcherLoadingWorkspacePage />
+          <DispatcherMapWorkspacePage />
         </ProtectedRoute>
       } />
 
       <Route path="/dispatcher/monitor" element={
         <ProtectedRoute requiredRole={['dispatcher', 'root', 'admin']}>
           <DispatcherMonitorPage />
-        </ProtectedRoute>
-      } />
-
-      <Route path="/dispatcher/delivery-orders" element={
-        <ProtectedRoute requiredRole={['dispatcher', 'root', 'admin']}>
-          <DispatcherDeliveryOrdersPage />
         </ProtectedRoute>
       } />
 
@@ -260,12 +245,6 @@ function AppRoutes() {
       <Route path="/magasinier/preparations" element={
         <ProtectedRoute requiredPermission={PERMISSIONS.MAGASINIER.PREPARATIONS_PENDING}>
           <MagasinierPreparationsPage />
-        </ProtectedRoute>
-      } />
-
-      <Route path="/magasinier/orders" element={
-        <ProtectedRoute requiredPermission={PERMISSIONS.MAGASINIER.PREPARATIONS_PENDING}>
-          <MagasinierOrdersPage />
         </ProtectedRoute>
       } />
 

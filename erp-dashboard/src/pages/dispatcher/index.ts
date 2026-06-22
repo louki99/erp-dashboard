@@ -1,9 +1,10 @@
 export { DispatcherDashboard } from './DispatcherDashboard';
 export { DispatcherOrdersPage } from './DispatcherOrdersPage';
 export { DispatcherBonLivraisonsPage } from './DispatcherBonLivraisonsPage';
-export { DispatcherBonChargementsPage } from './DispatcherBonChargementsPage';
 export { DispatcherShortageQueuePage } from './DispatcherShortageQueuePage';
-export { DispatcherDeliveryOrdersPage } from './DispatcherDeliveryOrdersPage';
 export { DispatcherDechargesPage } from './DispatcherDechargesPage';
 export { DispatcherWarehouseTransfersPage } from './DispatcherWarehouseTransfersPage';
 export { DispatcherFleetPage } from './DispatcherFleetPage';
+export { DispatcherMonitorPage } from './DispatcherMonitorPage';
+export { DispatcherMissionWorkspacePage } from './DispatcherMissionWorkspacePage';
+export { DispatcherMapWorkspacePage } from './DispatcherMapWorkspacePage';

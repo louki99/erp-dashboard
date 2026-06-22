@@ -1,6 +1,6 @@
 import { useMemo, useState, useEffect } from 'react';
 import type { ColDef } from 'ag-grid-community';
-import { Loader2, RefreshCw, AlertCircle, Package, TrendingDown, Search } from 'lucide-react';
+import { Loader2, RefreshCw, Package, TrendingDown, Search } from 'lucide-react';
 import toast from 'react-hot-toast';
 
 import { MasterLayout } from '@/components/layout/MasterLayout';
@@ -66,7 +66,7 @@ export const MagasinierStockPage = () => {
                 headerName: 'Disponible', 
                 width: 120,
                 valueFormatter: (params: any) => params.value || 0,
-                cellStyle: (params: any) => {
+                cellStyle: (params: any): { backgroundColor?: string; color: string; fontWeight: string } => {
                     const minStock = params.data?.min_stock_level || 0;
                     if (params.value <= minStock) {
                         return { backgroundColor: '#fee', color: '#c00', fontWeight: 'bold' };

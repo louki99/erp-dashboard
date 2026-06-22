@@ -4,16 +4,11 @@ import type {
   PaginatedResponse,
   DispatcherOrder,
   DeliveryNote,
-  BchIndexResponse,
-  Shipment,
-  BalanceAnalysis,
   PreparationOrder,
   Decharge,
-  LogisticsBatch,
-  DeliveryOrder,
-  DeliveryOrdersListEnvelope,
-  DeliveryOrderDetailEnvelope,
-  DoDecisionsResponse,
+  DeliveryMissionDetailResponse,
+  MissionBatchPreviewResponse,
+  CreateDeliveryMissionPayload,
   WarehouseTransfer,
   Rider,
   RiderFull,
@@ -21,15 +16,11 @@ import type {
   Branch,
   Vehicle,
   ApiSuccessResponse,
-  CreateBchPayload,
-  UpdateBchPayload,
-  CancelBchPayload,
-  SaveBalancePayload,
   SplitBlPayload,
   CancelBlPayload,
   UpdateBlPayload,
-  CreateDoPayload,
   OrdersPendingFilters,
+  DoDecisionsResponse,
 } from '@/types/dispatcher.types';
 
 const BASE = '/api/backend/dispatcher';
@@ -70,21 +61,21 @@ export const dispatcherApi = {
       rider_id?: number;
       search?: string;
       page?: number;
+      per_page?: number;
     }): Promise<PaginatedResponse<DeliveryNote>> => {
-      const r = await apiClient.get<PaginatedResponse<DeliveryNote>>(`${BASE}/bon-livraisons`, { params });
-      return r.data;
+      // Real response (verified live 2026-06-21) is wrapped: { success, data: { deliveryNotes:
+      // <paginator> } } — not a flat paginator. Support both shapes defensively.
+      const r = await apiClient.get<
+        { success: boolean; data: { deliveryNotes: PaginatedResponse<DeliveryNote> } } | PaginatedResponse<DeliveryNote>
+      >(`${BASE}/bon-livraisons`, { params });
+      const body = r.data as { success: boolean; data: { deliveryNotes: PaginatedResponse<DeliveryNote> } };
+      if (body?.data?.deliveryNotes) return body.data.deliveryNotes;
+      return r.data as PaginatedResponse<DeliveryNote>;
     },
 
-    getDraft: async (): Promise<PaginatedResponse<DeliveryNote>> => {
-      const r = await apiClient.get<PaginatedResponse<DeliveryNote>>(`${BASE}/bon-livraisons/draft`);
-      return r.data;
-    },
-
-    getConfirmed: async (): Promise<PaginatedResponse<DeliveryNote>> => {
-      const r = await apiClient.get<PaginatedResponse<DeliveryNote>>(`${BASE}/bon-livraisons/confirmed`);
-      return r.data;
-    },
-
+    // §7.2/§7.3 (`/draft`, `/confirmed`) are confirmed BROKEN — they reference the dropped
+    // `shipments`/`shipment_deliveries` tables and will throw a DB error. Use the generic list
+    // with a status filter instead (§7.1, unaffected by the 2026-06-20 migration).
     getById: async (id: number): Promise<DeliveryNote> => {
       const r = await apiClient.get<DeliveryNote>(`${BASE}/bon-livraisons/${id}`);
       return r.data;
@@ -111,6 +102,11 @@ export const dispatcherApi = {
       return r.data;
     },
 
+    // REMOVED 2026-06-22 (backend breaking change) — `POST /bon-livraisons/{id}/allocate` (and the
+    // `allocate_delivery_note` decision behind it) no longer exist. Allocation now happens
+    // automatically, atomically, as part of `confirm_delivery_mission` on the mission itself
+    // (deliveryMissions.executeDecision below) — there is no more per-BL allocate step.
+
     // Generic decision list for this BL — docs §16 "How to check available decisions for a record"
     getDecisions: async (id: number): Promise<DoDecisionsResponse> => {
       const r = await apiClient.get<DoDecisionsResponse>(`${WORKFLOW}/bon-livraison/${id}/decisions`);
@@ -135,126 +131,6 @@ export const dispatcherApi = {
     },
   },
 
-  // ─── Bon de Chargement (BCH) ─────────────────────────────────────────────
-  bonChargements: {
-    getList: async (params?: {
-      status?: string;
-      rider_id?: number;
-      search?: string;
-      page?: number;
-    }): Promise<BchIndexResponse> => {
-      const r = await apiClient.get<BchIndexResponse>(`${BASE}/bon-chargements`, { params });
-      return r.data;
-    },
-
-    getById: async (id: number): Promise<Shipment> => {
-      const r = await apiClient.get<Shipment>(`${BASE}/bon-chargements/${id}`);
-      return r.data;
-    },
-
-    create: async (payload: CreateBchPayload): Promise<ApiSuccessResponse> => {
-      const r = await apiClient.post<ApiSuccessResponse>(`${BASE}/bon-chargements`, payload, {
-        headers: { 'Idempotency-Key': mkKey(`bch:create:${payload.bl_ids.join('-')}`) },
-      });
-      return r.data;
-    },
-
-    update: async (id: number, payload: UpdateBchPayload): Promise<ApiSuccessResponse> => {
-      const r = await apiClient.put<ApiSuccessResponse>(`${BASE}/bon-chargements/${id}`, payload, {
-        headers: { 'Idempotency-Key': mkKey(`bch:${id}:update`) },
-      });
-      return r.data;
-    },
-
-    addBls: async (id: number, blIds: number[]): Promise<ApiSuccessResponse> => {
-      const r = await apiClient.post<ApiSuccessResponse>(
-        `${BASE}/bon-chargements/${id}/bls`,
-        { decision: 'update_bch', add_delivery_note_ids: blIds },
-        { headers: { 'Idempotency-Key': mkKey(`bch:${id}:add-bls`) } }
-      );
-      return r.data;
-    },
-
-    removeBl: async (id: number, blId: number): Promise<ApiSuccessResponse> => {
-      const r = await apiClient.delete<ApiSuccessResponse>(`${BASE}/bon-chargements/${id}/bls/${blId}`, {
-        data: { decision: 'update_bch', remove_delivery_note_ids: [blId] },
-        headers: { 'Idempotency-Key': mkKey(`bch:${id}:remove-bl:${blId}`) },
-      });
-      return r.data;
-    },
-
-    submit: async (id: number): Promise<ApiSuccessResponse> => {
-      const r = await apiClient.post<ApiSuccessResponse>(`${BASE}/bon-chargements/${id}/submit`, {}, {
-        headers: { 'Idempotency-Key': mkKey(`bch:${id}:submit`) },
-      });
-      return r.data;
-    },
-
-    resubmit: async (id: number): Promise<ApiSuccessResponse> => {
-      const r = await apiClient.post<ApiSuccessResponse>(
-        `${BASE}/bon-chargements/${id}/resubmit`,
-        { decision: 'resubmit_bch' },
-        { headers: { 'Idempotency-Key': mkKey(`bch:${id}:resubmit`) } }
-      );
-      return r.data;
-    },
-
-    cancel: async (id: number, reason: string): Promise<ApiSuccessResponse> => {
-      const payload: CancelBchPayload = { decision: 'cancel_bch', reason };
-      const r = await apiClient.post<ApiSuccessResponse>(`${BASE}/bon-chargements/${id}/cancel`, payload, {
-        headers: { 'Idempotency-Key': mkKey(`bch:${id}:cancel`) },
-      });
-      return r.data;
-    },
-
-    // Generic decision list for this BCH — docs §16 "How to check available decisions for a record"
-    getDecisions: async (id: number): Promise<DoDecisionsResponse> => {
-      const r = await apiClient.get<DoDecisionsResponse>(`${WORKFLOW}/bon-chargement/${id}/decisions`);
-      return r.data;
-    },
-
-    // BCH decisions, same `metadata` nesting requirement as BL/DO/LOT decisions — see comment on
-    // bonLivraisons.executeDecision above for the backend-confirmed convention.
-    executeDecision: async (
-      id: number,
-      decision: string,
-      extra?: Record<string, unknown>
-    ): Promise<ApiSuccessResponse> => {
-      const r = await apiClient.post<ApiSuccessResponse>(
-        `${WORKFLOW}/bon-chargement/${id}/execute`,
-        { decision, metadata: extra ?? {} },
-        { headers: { 'Idempotency-Key': mkKey(`bch:${id}:${decision}`) } }
-      );
-      return r.data;
-    },
-
-    validateShipment: async (id: number): Promise<ApiSuccessResponse> => {
-      const r = await apiClient.post<ApiSuccessResponse>(
-        `${WORKFLOW}/bon-chargement/${id}/execute`,
-        { decision: 'validate_shipment' },
-        { headers: { 'Idempotency-Key': mkKey(`bch:${id}:validate`) } }
-      );
-      return r.data;
-    },
-
-    print: async (id: number): Promise<unknown> => {
-      const r = await apiClient.get(`${BASE}/bon-chargements/${id}/print`);
-      return r.data;
-    },
-
-    getBalance: async (id: number): Promise<BalanceAnalysis> => {
-      const r = await apiClient.get<BalanceAnalysis>(`${BASE}/bon-chargements/${id}/balance`);
-      return r.data;
-    },
-
-    saveBalance: async (id: number, payload: SaveBalancePayload): Promise<ApiSuccessResponse> => {
-      const r = await apiClient.put<ApiSuccessResponse>(`${BASE}/bon-chargements/${id}/balance`, payload, {
-        headers: { 'Idempotency-Key': mkKey(`bch:${id}:balance:${payload.split_strategy}`) },
-      });
-      return r.data;
-    },
-  },
-
   // ─── Shortage Queue ──────────────────────────────────────────────────────
   preparations: {
     getShortageQueue: async (params?: { page?: number }): Promise<PaginatedResponse<PreparationOrder>> => {
@@ -267,6 +143,8 @@ export const dispatcherApi = {
   },
 
   // ─── Décharges ────────────────────────────────────────────────────────────
+  // §11: list/approve/reject still work; the `bonChargement` nested field on detail references a
+  // dropped table and may throw/be absent — render defensively, don't hard-depend on it.
   decharges: {
     getList: async (params?: { type?: string; status?: string; page?: number }): Promise<PaginatedResponse<Decharge>> => {
       const r = await apiClient.get<PaginatedResponse<Decharge>>(`${BASE}/decharges`, { params });
@@ -294,63 +172,54 @@ export const dispatcherApi = {
     },
   },
 
-  // ─── Delivery Orders (DO) ────────────────────────────────────────────────
-  deliveryOrders: {
-    // Docs §9 say flat Laravel paginator (like orders/pending); some responses were seen double-wrapped
-    // as { success, data: { deliveryOrders: <paginated> } } — support both.
-    getList: async (params?: {
-      status?: string;
-      search?: string;
-      page?: number;
-      per_page?: number;
-    }): Promise<PaginatedResponse<DeliveryOrder>> => {
-      const r = await apiClient.get<DeliveryOrdersListEnvelope | PaginatedResponse<DeliveryOrder>>(
-        `${BASE}/delivery-orders`,
-        { params }
-      );
-      const body = r.data as DeliveryOrdersListEnvelope;
-      if (body?.data?.deliveryOrders) return body.data.deliveryOrders;
-      return r.data as PaginatedResponse<DeliveryOrder>;
+  // ─── Delivery Missions — replaces DO + LOT + BCH/Shipment (docs §8, 2026-06-20) ─────────────
+  deliveryMissions: {
+    // Dedicated REST shortcut (docs §8.1) — thin wrapper around the `create_delivery_mission`
+    // workflow decision, same guards/idempotency. Drag&drop confirmed orders + rider/vehicle
+    // picked up front; generates one BL per partner in the same call.
+    create: async (payload: CreateDeliveryMissionPayload): Promise<ApiSuccessResponse> => {
+      const r = await apiClient.post<ApiSuccessResponse>(`${BASE}/delivery-missions`, payload, {
+        headers: { 'Idempotency-Key': mkKey('mission:create') },
+      });
+      return r.data;
     },
-    // Backend wraps the detail as { success, data: { deliveryOrder, batches, bchs } } (docs §9)
-    getById: async (id: number): Promise<DeliveryOrder> => {
-      const r = await apiClient.get<DeliveryOrderDetailEnvelope | DeliveryOrder>(`${BASE}/delivery-orders/${id}`);
-      const body = r.data as DeliveryOrderDetailEnvelope;
-      if (body?.data?.deliveryOrder) {
-        return { ...body.data.deliveryOrder, batches: body.data.batches, bchs: body.data.bchs };
-      }
-      // Fallback: some earlier responses returned the DO flat under data
-      const flatData = (r.data as { data?: unknown })?.data;
-      if (flatData && typeof flatData === 'object' && 'do_number' in flatData) {
-        return flatData as DeliveryOrder;
-      }
-      return r.data as DeliveryOrder;
-    },
-    create: async (payload: CreateDoPayload): Promise<ApiSuccessResponse & { data?: DeliveryOrder }> => {
-      const r = await apiClient.post<ApiSuccessResponse & { data?: DeliveryOrder }>(
-        `${BASE}/delivery-orders`,
-        payload,
-        { headers: { 'Idempotency-Key': mkKey(`do:create:${payload.order_ids.join('-')}`) } }
+
+    // Virtual, read-only — nothing persisted (docs §8.9). Replaces the old LogisticsBatch concept
+    // for "combined picking PDF" purposes.
+    getBatchPreview: async (missionIds: number[]): Promise<MissionBatchPreviewResponse> => {
+      const r = await apiClient.get<MissionBatchPreviewResponse>(
+        `${BASE}/delivery-missions/batch-preview`,
+        { params: { 'mission_ids[]': missionIds } }
       );
       return r.data;
     },
-    // DO workflow via engine (allocate_do, optimize_do, submit_do_to_warehouse, cancel_do)
+
+    // Full detail — wrapper keys are `mission`/`delivery_notes`/`preparation_order`, not `data`
+    // (docs §8.8). Different base (`/workflow/...`, not `/dispatcher/...`).
+    getDetail: async (id: number): Promise<DeliveryMissionDetailResponse> => {
+      const r = await apiClient.get<DeliveryMissionDetailResponse>(`${WORKFLOW}/delivery-mission/${id}`);
+      return r.data;
+    },
+
+    // Generic decision list — docs §16 "How to check available decisions for a record". Model
+    // type is `delivery-mission` (also accepted as `mission`, normalized server-side).
     getDecisions: async (id: number): Promise<DoDecisionsResponse> => {
-      const r = await apiClient.get<DoDecisionsResponse>(`${WORKFLOW}/delivery-order/${id}/decisions`);
+      const r = await apiClient.get<DoDecisionsResponse>(`${WORKFLOW}/delivery-mission/${id}/decisions`);
       return r.data;
     },
-    // DO decisions — fields must nest under `metadata`, confirmed by backend 2026-06-17 as the
-    // established convention (docs §16): every *Decision::validate()/doExecute() reads
-    // $context->data['metadata'], so a flat or `data`-nested payload is silently ignored.
+
+    // confirm_delivery_mission / start_delivery_mission / complete_delivery_mission /
+    // update_delivery_mission / cancel_delivery_mission all go through here. Same `metadata`
+    // nesting convention as every other module.
     executeDecision: async (
       id: number,
       decision: string,
       extra?: Record<string, unknown>
     ): Promise<ApiSuccessResponse> => {
       const r = await apiClient.post<ApiSuccessResponse>(
-        `${WORKFLOW}/delivery-order/${id}/execute`,
+        `${WORKFLOW}/delivery-mission/${id}/execute`,
         { decision, metadata: extra ?? {} },
-        { headers: { 'Idempotency-Key': mkKey(`do:${id}:${decision}`) } }
+        { headers: { 'Idempotency-Key': mkKey(`mission:${id}:${decision}`) } }
       );
       return r.data;
     },
@@ -358,9 +227,13 @@ export const dispatcherApi = {
 
   // ─── Riders ───────────────────────────────────────────────────────────────
   livreurs: {
+    // Docs (§12) give no response sample, only the curl example — observed live 2026-06-21 to be
+    // wrapped rather than a flat array (same undocumented-wrapping pattern as bon-livraisons).
+    // Defensive parsing covers flat array, { data: [...] }, and { riders: [...] } shapes.
     getList: async (): Promise<Rider[]> => {
-      const r = await apiClient.get<Rider[]>(`${BASE}/livreurs`);
-      return r.data;
+      const r = await apiClient.get<Rider[] | { data?: Rider[]; riders?: Rider[] }>(`${BASE}/livreurs`);
+      if (Array.isArray(r.data)) return r.data;
+      return r.data?.data ?? r.data?.riders ?? [];
     },
   },
 
@@ -374,7 +247,8 @@ export const dispatcherApi = {
     },
   },
 
-  // ─── Fleet & Rider Master Data (docs §12d, verified against real code 2026-06-17) ──────────
+  // ─── Fleet & Rider Master Data (docs §12d, verified against real code 2026-06-17; unaffected
+  // by the 2026-06-20 BCH/DO/LOT → Delivery Mission migration) ────────────────────────────────
   fleet: {
     // `index` — response wrapper key is `riders` (paginator), not `data`, plus a sibling
     // `branches` key for a branch-filter dropdown.
@@ -464,64 +338,13 @@ export const dispatcherApi = {
     },
   },
 
-  // ─── Logistics Batches (LOT) ─────────────────────────────────────────────
-  batches: {
-    // Query params per docs §12: status (open/sealed), search, per_page — no rider_id.
-    // Actual response (verified live, differs from doc's flat-paginator example):
-    // { success, data: { batches: PaginatedResponse<LogisticsBatch>, stats: {...} } }.
-    getList: async (params?: {
-      status?: string;
-      search?: string;
-      per_page?: number;
-    }): Promise<PaginatedResponse<LogisticsBatch>> => {
-      const r = await apiClient.get<
-        { success: boolean; data: { batches: PaginatedResponse<LogisticsBatch> } } | PaginatedResponse<LogisticsBatch>
-      >(`${BASE}/batches`, { params });
-      const body = r.data as { success: boolean; data: { batches: PaginatedResponse<LogisticsBatch> } };
-      if (body?.data?.batches) return body.data.batches;
-      return r.data as PaginatedResponse<LogisticsBatch>;
-    },
-    // Wrapped, not flat — { success, data: { batch } } (docs §12)
-    getById: async (id: number): Promise<LogisticsBatch> => {
-      const r = await apiClient.get<{ success: boolean; data: { batch: LogisticsBatch } } | LogisticsBatch>(
-        `${BASE}/batches/${id}`
-      );
-      const body = r.data as { success: boolean; data: { batch: LogisticsBatch } };
-      if (body?.data?.batch) return body.data.batch;
-      return r.data as LogisticsBatch;
-    },
-    // Generic decision list for this LOT — docs §16 "How to check available decisions for a record"
-    getDecisions: async (id: number): Promise<DoDecisionsResponse> => {
-      const r = await apiClient.get<DoDecisionsResponse>(`${WORKFLOW}/logistics-batch/${id}/decisions`);
-      return r.data;
-    },
-    // Logistics-batch decisions, same `metadata` nesting requirement — see comment on
-    // deliveryOrders.executeDecision above.
-    executeDecision: async (
-      id: number,
-      decision: string,
-      extra?: Record<string, unknown>
-    ): Promise<ApiSuccessResponse> => {
-      const r = await apiClient.post<ApiSuccessResponse>(
-        `${WORKFLOW}/logistics-batch/${id}/execute`,
-        { decision, metadata: extra ?? {} },
-        { headers: { 'Idempotency-Key': mkKey(`batch:${id}:${decision}`) } }
-      );
-      return r.data;
-    },
-  },
-
-  // ─── Delivery Missions (DM) ──────────────────────────────────────────────
-  // No controller, route, or decision exists for delivery-missions yet — schema only
-  // (docs §12b [LOOSE END / FUTURE TODO GAP]). Intentionally no API methods here; do not
-  // add calls against `${BASE}/delivery-missions` until the backend wires it up.
-
   // ─── Warehouse Transfers (WT) ─────────────────────────────────────────────
-  // Rewritten 2026-06-17 against backend's correction (docs §12c) — the previous `data`/`create`
-  // shapes were fabricated. A WT moves stock main-warehouse → rider's van, created only from a
-  // completed BCH; there is no manual/arbitrary branch-to-branch creation endpoint. accept/reject
-  // are direct `$model->update()` calls (no status guard, no Decision-engine replay semantics)
-  // unlike the rest of this API — confirmed by backend, not a frontend assumption.
+  // 2026-06-20: WT creation is now 100% automatic (WarehouseTransferService::createFromMission(),
+  // called by complete_preparation the moment a mission's BP completes) — there is no longer any
+  // dispatcher-triggered "create" endpoint at all (the old `from-bch/{bchId}` is gone, no
+  // `from-mission` replacement either). The dispatcher only ever reads/accepts/rejects a WT.
+  // accept/reject are direct `$model->update()` calls (no status guard, no Decision-engine replay
+  // semantics) unlike the rest of this API — confirmed by backend, not a frontend assumption.
   warehouseTransfers: {
     // Response wrapper key is `transfers`, not `data` (WarehouseTransferController::index()).
     getList: async (params?: {
@@ -537,16 +360,6 @@ export const dispatcherApi = {
     getById: async (id: number): Promise<WarehouseTransfer> => {
       const r = await apiClient.get<{ transfer: WarehouseTransfer }>(`${BASE}/warehouse-transfers/${id}`);
       return r.data.transfer;
-    },
-    // Only real creation path — derives items/quantities from a *completed* BCH automatically, no
-    // request body to author manually. 422 if the BCH isn't `completed`.
-    createFromBch: async (bchId: number): Promise<ApiSuccessResponse> => {
-      const r = await apiClient.post<ApiSuccessResponse>(
-        `${BASE}/warehouse-transfers/from-bch/${bchId}`,
-        {},
-        { headers: { 'Idempotency-Key': mkKey(`wt:create:${bchId}`) } }
-      );
-      return r.data;
     },
     accept: async (id: number): Promise<ApiSuccessResponse> => {
       const r = await apiClient.post<ApiSuccessResponse>(

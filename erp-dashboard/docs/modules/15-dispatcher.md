@@ -23,25 +23,20 @@
    - [Update BL](#75-update-bl)
    - [Split BL](#76-split-bl)
    - [Cancel BL](#77-cancel-bl)
-8. [Bon de Chargement (BCH)](#8-bon-de-chargement-bch)
-   - [List BCH](#81-list-bch)
-   - [BCH Detail](#82-bch-detail)
-   - [Create BCH](#83-create-bch)
-   - [Update BCH](#84-update-bch)
-   - [Add BLs to BCH](#85-add-bls-to-bch)
-   - [Remove BL from BCH](#86-remove-bl-from-bch)
-   - [Submit BCH to Warehouse](#87-submit-bch-to-warehouse)
-   - [Resubmit BCH](#88-resubmit-bch)
-   - [Cancel BCH](#89-cancel-bch)
-   - [Print BCH](#810-print-bch)
-   - [Shortage Balance](#811-shortage-balance)
-   - [Save Balance (Quantity Split)](#812-save-balance)
-9. [Delivery Orders (DO)](#9-delivery-orders-do)
+8. [Delivery Missions](#8-delivery-missions)
+   - [Create Delivery Mission](#81-create-delivery-mission)
+   - [Confirm Delivery Mission](#82-confirm-delivery-mission) — atomic allocate + generate BP (replaces `allocate_delivery_note` + `generate_preparation_for_mission`, removed 2026-06-21)
+   - [Start Delivery Mission](#83-start-delivery-mission)
+   - [Complete Delivery Mission](#84-complete-delivery-mission)
+   - [Update Delivery Mission](#85-update-delivery-mission) — now includes `add_order_ids`/`remove_order_ids`
+   - [Reopen Delivery Mission](#86-reopen-delivery-mission-new-2026-06-22) — new
+   - [Cancel Delivery Mission](#87-cancel-delivery-mission)
+   - [Mission Detail](#88-mission-detail)
+   - [Batch Preview (virtual, read-only)](#89-batch-preview-virtual-read-only)
+9. [Delivery Orders (DO) — REMOVED](#9-delivery-orders-do--removed)
 10. [Preparations — Shortage Queue](#10-preparations--shortage-queue)
 11. [Decharges (Returns & Cancellations)](#11-decharges)
-12. [Riders & Batches (LOT)](#12-riders--batches)
-    - [Logistics Batches](#get-backenddispatcherbatches)
-    - [Delivery Missions (unwired, schema only)](#12b-delivery-missions--not-yet-wired-schema-only)
+12. [Riders & Vehicles](#12-riders--vehicles)
     - [Warehouse Transfers](#12c-warehouse-transfers)
     - [Fleet & Rider Master Data](#12d-fleet--rider-master-data)
 13. [Error Handling](#13-error-handling)
@@ -57,133 +52,112 @@
 
 The **Dispatcher** is the logistics orchestration role in FoodSolution's B2B fulfillment pipeline. It sits between ADV (order validation) and the Magasinier (warehouse).
 
+> **2026-06-20 architecture migration:** the old BC → DO → LOT/BCH pipelines (and the
+> parallel "Dispatch V2" BC → DO → BP → BCH pipeline) have been fully replaced by a single
+> **Delivery Mission** pipeline. The `shipments`, `shipment_deliveries`,
+> `shipment_delivery_orders`, `delivery_orders`, `delivery_order_items`,
+> `delivery_order_orders`, `logistics_batches`, and `preparation_delivery_notes` tables are
+> **dropped** — see `docs/modules/planning_refactor_schema.md` for the full rationale. This
+> document only describes the current, live API surface.
+
 | Responsibility | Description |
 |---|---|
-| **Receive confirmed orders** | Pick up BCs approved by ADV and convert them into delivery notes (BL) |
-| **Plan deliveries** | Group BLs into shipments (BCH), assign riders and vehicles |
-| **Submit to warehouse** | Send BCH to Magasinier for physical preparation |
-| **Manage shortages** | Split prepared quantities between BLs when stock is partial |
-| **Handle cancellations** | Cancel BLs or BCH and release reserved stock |
-| **Monitor logistics** | Track batch picking, shortage queues, and return processing |
+| **Receive confirmed orders** | Pick up BCs approved by ADV |
+| **Plan deliveries** | Drag & drop confirmed BCs into a Delivery Mission — assigns rider + vehicle and generates one BL per partner |
+| **Allocate stock** | Run shortage-tolerant allocation per BL; uncovered demand becomes a backlog order automatically |
+| **Trigger preparation** | Generate one BP per mission for the Magasinier to pick |
+| **Manage shortages** | Split prepared quantities between BLs when stock is partial (Magasinier side, Module 16) |
+| **Handle cancellations** | Cancel a draft mission and release reserved stock |
+| **Monitor logistics** | Track mission status, shortage queues, and return processing |
 
 ---
 
 ## 2. Logistics Pipeline Overview
 
-> **Correction (2026-06-16, second pass):** an earlier version of this section collapsed
-> everything into "one pipeline" and placed `validate_delivery_order` *before* `create_batch`.
-> Both were wrong. The `routes/backend.php:913` comment reads `BC → DO → Lot → BP → Val.DO →
-> BL → BCH` — **`Val.DO` comes after `BP`**, not before `Lot`, and that comment doesn't mention
-> `optimize_do` at all. Tracing the actual status guards in code confirms there are **two
-> separate, non-intersecting pipelines** that both end at a BCH with BLs. A DO goes down
-> *one or the other* — never both, since they use mutually exclusive `DoStatus` values
-> (`OPTIMIZED`/`IN_PREPARATION`/`PREPARED` only exist on the V2 side; `VALIDATED` only exists
-> on the LOT side).
+> **2026-06-20 — architecture migration.** The old BC → DO → LOT → BP → BCH pipeline and the
+> parallel "Dispatch V2" BC → DO → BP → BCH pipeline are both **gone**. They have been replaced
+> by a single **Delivery Mission** pipeline: the dispatcher's drag & drop action now creates the
+> mission *and* its BLs directly, in one call, with no intermediate Delivery Order or Logistics
+> Batch layer. See `docs/modules/planning_refactor_schema.md` for the full migration rationale
+> and the list of dropped tables.
 
-### Pipeline 1 — LOT path (the `routes/backend.php:913` chain — bulk warehouse picking)
+### The Delivery Mission pipeline
+
+> **2026-06-21 — `allocate_delivery_note` and `generate_preparation_for_mission` REMOVED.**
+> Per-BL allocation and BP generation used to be two manual steps the dispatcher triggered
+> separately. They are now **one atomic decision** — `confirm_delivery_mission` — see §8.2. Both
+> old decisions are gone from `config/decisions.php`; calling them now returns `decision_not_found`.
+> **If your UI still calls `allocate_delivery_note` or `generate_preparation_for_mission`, it is
+> broken and must be updated** — see the message to the UI team in this doc's changelog.
 
 ```text
 ADV confirms order (BC)
          │
          ▼
-  create_delivery_order (creation, id=0; pass auto_allocate=true to allocate immediately)
-         │
+  create_delivery_mission  (dispatcher's Drag&Drop action — driver_id + vehicle_id required
+         │                  up front. Creates the DeliveryMission container AND, in the same
+         │                  call, generates one DeliveryNote (BL) per partner — merging
+         │                  multiple selected BCs for the same partner into a single BL.
+         │                  No stock is touched here.)
          ▼
-  DO: draft  ──[runAllocation, only runs if auto_allocate=true at creation]──►  DO: allocated / partially_allocated
+  Mission: draft, BL(s): draft
          │
-    [create_batch]  (logistics-batch decision — requires DO status allocated/partially_allocated/
-         │            validated; groups multiple DOs of the same branch into one LOT, status 'open')
+   [update_delivery_mission]  (optional, repeatable while draft — edit rider/vehicle/notes,
+         │                      add/remove whole BLs, or add_order_ids/remove_order_ids to
+         │                      attach/detach individual BCs — see §8.5.)
          ▼
-  LogisticsBatch (LOT) — open
-         │
-    [seal_batch]    (locks the LOT, aggregates every DO's items by product_id into ONE
-         │            PreparationOrder (BP) for the whole LOT — one bulk pick instead of
-         │            one pick per DO/customer)
+    confirm_delivery_mission  (ONE atomic call, ONE DB transaction — replaces the old
+         │                      allocate_delivery_note + generate_preparation_for_mission pair.
+         │                      For every BL on the mission: shortage-tolerant stock allocation
+         │                      (never throws — uncovered delta becomes a backlog Order via
+         │                      ShortageBacklogService). Then, in the SAME call, aggregates every
+         │                      BL's allocated_quantity by product_id into ONE PreparationOrder
+         │                      (BP) for the whole mission. If every line across every BL came
+         │                      back with 0 allocated (fully backlogged), NO BP is generated and
+         │                      the mission is left in 'draft' — output.fully_backlogged: true.)
          ▼
-  LOT: sealed, BP: pending
+  Mission: in_preparation, BP: pending   (or: still 'draft' if fully backlogged)
          │
-  [Magasinier completes BP — complete_preparation, bon-preparation decision]
+  [Magasinier executes the BP — start_preparation / complete_preparation, Module 16]
          │
-         ├─── Full ──► BP: completed_full ──► generateBlsFromBp() creates one BL per
-         │                                     partner from picked quantities (feature-
-         │                                     flagged: erp.workflow.bl_from_bp) — see
-         │             CompletePreparationDecision.php:303-345
-         └─── Partial (Shortage) ──► BP: completed_partial → [adjust_quantities] → shortage_accepted
-         │
-    [validate_delivery_order]  (Val.DO — requires DO already allocated/partially_allocated
-         │                       AND, if the DO has a LOT, that LOT's BP must already be
-         │                       completed_full/shortage_accepted; DOES NOT allocate stock
-         │                       itself, despite the name — see validate() guard at
-         │                       ValidateDeliveryOrderDecision.php:51,63-82)
+    [reopen_delivery_mission]  (dispatcher can pull the mission back to 'draft' at any point
+         │                       while the BP is still 'pending'/'in_progress' — e.g. a
+         │                       salesperson needs to edit a BC already inside the mission.
+         │                       Atomically cancels the BP (status: cancelled, kept for audit),
+         │                       releases the reserved stock, BLs → draft. See §8.6. Blocked
+         │                       once the BP is already completed/rejected — race-condition
+         │                       guard re-checked inside the transaction.)
          ▼
-  DO: validated
-         │
-    [create_bch]  (bon-chargement decision — groups the BLs generated above for a rider,
-         │          sets rider_id/vehicle_id at creation time; not a DO-layer field)
+  BP completed → BLs → ready → WarehouseTransfer (CENTRAL → VAN) auto-created by
+         │         WarehouseTransferService::createFromMission() — see §12c
          ▼
-  Shipment (BCH) — pending → [submit_to_warehouse] → [mark_bch_loaded] → [mark_bch_in_transit]
+  Mission: ready
+         │
+    [start_delivery_mission]  (rider departs — mission must be 'ready')
+         ▼
+  Mission: in_transit, BLs: in_transit
+         │
+  [Rider delivers — see the Rider/Livreur module]
+         │
+    [complete_delivery_mission]  (mission must be 'in_transit' — computes delivery stats)
+         ▼
+  Mission: completed
 ```
 
-### Pipeline 2 — "Dispatch V2" path (`config/decisions.php:577` comment — per-DO, skips LOT entirely)
+A mission can also be **cancelled** while still `draft` (`cancel_delivery_mission`) — see §8.7.
+There is no `adjust_quantities` (shortage-rebalancing across multiple BLs sharing one mission's
+BP) or `create_decharge` (van → depot unload after a mission) decision yet — both are explicitly
+deferred, see the note at the end of §8 and the comments in `config/decisions.php`.
 
-```text
-DO: draft
-         │
-    [optimize_do]  (consolidates delivery_zone + planned_delivery_date only — no
-         │           driver_id/vehicle_id at this layer; allowed from draft/allocated/
-         │           partially_allocated)
-         ▼
-  DO: optimized
-         │
-    [start_do_preparation]  (spawns a BP scoped to just this DO — NOT the LOT's aggregated BP)
-         ▼
-  DO: in_preparation
-         │
-    [complete_do_preparation]  (Magasinier marks this DO's own BP complete; handles its
-         │                       own shortage adjustments independently of §12's batch flow)
-         ▼
-  DO: prepared
-         │
-    [generate_bch_from_dos]  ("the ONLY place where BLs are generated in the new flow" per
-         │                     its own docblock — GenerateBchFromDosDecision.php:11-14;
-         │                     creates the BCH + BLs directly from one or more DOs, no
-         │                     LogisticsBatch/Val.DO step at all; requires DoStatus
-         │                     prepared/ready_for_loading — isReadyForDispatch())
-         ▼
-  DO: dispatched, Shipment (BCH) created with its BLs
-```
-
-> **`generate_bch_from_dos` is not a "shortcut off the LOT path"** — it is the terminal
-> decision of a fully separate pipeline with its own BP-per-DO mechanism and its own shortage
-> handling, never touching `LogisticsBatch`, `seal_batch`, or `validate_delivery_order`. Pick
-> Pipeline 1 for bulk warehouse picking across many DOs at once (one aggregated BP); pick
-> Pipeline 2 for a single DO dispatched on its own.
-
-> **Correction (2026-06-17):** the line below ("driver/vehicle assignment does not happen on
-> the DO") was true when last written but is now stale — commit `b932476` reintroduced
-> `driver_id`/`vehicle_id` fields on `optimize_do` (`OptimizeDeliveryOrderDecision.php:31-32`,
-> `DispatchService::optimizeDo()` persists them to `delivery_orders.driver_id`/`vehicle_id`).
-> Treat what `optimize_do` sets as a **proposed/planning-time** vehicle only — it is **not**
-> binding. The authoritative vehicle for an actual shipment is still resolved at
-> `generate_bch_from_dos` time (`options.vehicle_id` override, falling back to the first DO's
-> `vehicle_id` if not overridden) and is what gets written to `shipments.vehicle_id`. Multiple
-> DOs combined into one BCH call always ship on the single vehicle resolved for that call, even
-> if their individual `vehicle_id`s disagree — there's no per-DO truck assignment once they're
-> grouped into a BCH. The `assign_do_resources` decision is still removed from the
-> `delivery-order` model type — do not call it, it no longer exists in the registry; use
-> `optimize_do` for the planning-time proposal and `generate_bch_from_dos`/`create_bch` for the
-> binding assignment.
-
-> ⚠️ **[LOOSE END / FUTURE TODO GAP] — "Rider Accept" → automatic WHT trigger is not implemented.**
-> A `delivery_missions` table and `App\Models\DeliveryMission` exist (lifecycle `CREATED →
-> STARTED → CLOSED`, doc comment: "STARTED: WHT created (MAIN→VAN)"), but there is **no
-> registered decision, no controller, and no route** wired to this model anywhere in the
-> codebase (`config/decisions.php` has no `delivery-mission` entry; `grep` for
-> `DeliveryMission::` outside the model itself only turns up incidental relations on
-> `DeliveryNote`/`WarehouseTransfer`). `MarkBchInTransitDecision` (the real "rider departs"
-> step) does **not** create a `WarehouseTransfer`. Until this is built, inventory balancing
-> between the warehouse and a rider's mobile depot is a **manual** process — do not document
-> or build a frontend "Rider Accept" button against a backend trigger that doesn't exist yet.
+> **Known gap — not yet ported.** The old `bon-chargement` pipeline had two decisions that have
+> **no `delivery-mission` equivalent today**:
+> - `adjust_quantities` — manual/equal/fifo shortage-rebalancing across multiple BLs grouped in
+>   one shipment. Deferred; see `config/decisions.php`'s `delivery-mission` block comment.
+> - `create_decharge` — generating a van → depot unload record after a mission. The old
+>   `CreateDechargeDecision` was built entirely around `Shipment` (now dropped) and was not
+>   ported; `config/decisions.php`'s `decharge` block comment confirms no replacement exists yet.
+>
+> Do not build frontend screens against either of these — they do not exist on the backend.
 
 ---
 
@@ -193,31 +167,29 @@ DO: draft
 
 | Value | Meaning | Who drives it |
 |---|---|---|
-| `draft` | Freshly created | Dispatcher |
-| `confirmed` | Stock reserved, ready to group | Dispatcher |
-| `batched` | Assigned to a logistics batch | Dispatcher |
-| `submitted_to_magasinier` | Submitted with BCH | Dispatcher |
+| `draft` | Freshly created, in a draft mission | Dispatcher |
+| `confirmed` | Stock allocated by `confirm_delivery_mission` (was `allocate_delivery_note`, removed 2026-06-21) | Dispatcher |
+| `batched` | Integrated into a mission's BP picking run, same call as the allocation above (was a separate `generate_preparation_for_mission` step, removed 2026-06-21 — no more `logistics_batches` table) | Dispatcher |
+| `submitted_to_magasinier` | Reserved value, not currently set by the mission pipeline | — |
 | `in_preparation` | Magasinier is picking | Magasinier |
-| `ready` | Picked, awaiting loading | Magasinier |
+| `ready` | Picked, warehouse transfer generated | Magasinier |
 | `loaded` | On the vehicle | Livreur |
-| `in_transit` | En route to partner | Livreur |
+| `in_transit` | Mission started — rider departed | Livreur |
 | `delivered` | Successfully delivered | Livreur |
 | `partially_delivered` | Partial delivery confirmed | Livreur |
 | `returned` | Returned by partner | Livreur |
-| `cancelled` | Cancelled | Dispatcher |
+| `cancelled` | Cancelled (BL-level cancel, split, or mission-level `cancel_delivery_mission`) | Dispatcher |
 
-### BCH (Bon de Chargement) statuses
+### Delivery Mission statuses
 
-| Value | Meaning |
-|---|---|
-| `pending` | Created, awaiting submission |
-| `in_preparation` | BP being prepared by Magasinier |
-| `prepared` | Warehouse ready (Scenario A or BP completed) |
-| `validated` | Validated, awaiting loading |
-| `loaded` | Items loaded on vehicle |
-| `in_transit` | Shipment in transit |
-| `completed` | Delivery cycle complete |
-| `cancelled` | Cancelled |
+| Value | Meaning | Set by |
+|---|---|---|
+| `draft` | Created via Drag&Drop; BLs generated in draft, no stock touched. Also reachable FROM `in_preparation` via `reopen_delivery_mission` | `create_delivery_mission` / `reopen_delivery_mission` |
+| `in_preparation` | BLs allocated/confirmed, BP generated (atomically), Magasinier picking | `confirm_delivery_mission` |
+| `ready` | BP completed, warehouse transfer (depot → van) generated | auto, on BP completion (`CompletePreparationDecision` → `WarehouseTransferService::createFromMission()`) |
+| `in_transit` | Rider departed | `start_delivery_mission` |
+| `completed` | All deliveries done, stats computed | `complete_delivery_mission` |
+| `cancelled` | Abandoned before completion (only reachable from `draft`) | `cancel_delivery_mission` |
 
 ### BP (Bon de Préparation) statuses
 
@@ -230,6 +202,7 @@ DO: draft
 | `shortage_accepted` | Dispatcher accepted shortage |
 | `awaiting_shortage_review` | Pending dispatcher decision |
 | `rejected` | Rejected by Magasinier |
+| `cancelled` | Cancelled by `reopen_delivery_mission` (dispatcher pulled the mission back to draft to edit a BC) — kept for audit, never deleted |
 
 ---
 
@@ -264,34 +237,59 @@ curl https://api.omni360.cloud/api/backend/dispatcher/dashboard \
   -H "Authorization: Bearer {TOKEN}"
 ```
 
-**Response `200`:**
+**Response `200`:** (`DispatcherController::dashboard()` — reflects the mission-based pipeline; `missions_*` counters replaced the old `do_active`/`lot_open`/`lot_sealed`/`lot_in_preparation`/`bch_pending`/`bch_in_preparation`/`bch_prepared` fields)
 ```json
 {
-  "stats": {
-    "pending_orders": 6,
-    "draft_bls": 12,
-    "pending_bch": 3,
-    "in_transit": 5,
-    "shortage_queue": 1,
-    "confirmed_today": 4
+  "pipeline": {
+    "bc_confirmed": 6,
+
+    "missions_draft": 2,
+    "missions_in_preparation": 1,
+    "missions_ready": 1,
+    "missions_in_transit": 3,
+
+    "bp_pending": 1,
+    "bp_in_progress": 1,
+    "bp_shortage_queue": 1,
+    "bp_rejected": 0,
+
+    "bl_draft": 4,
+    "bl_confirmed": 5,
+    "bl_ready": 2,
+
+    "bl_loaded": 0,
+    "bl_in_transit": 5,
+    "delivered_today": 4
   },
-  "recentPreparations": [
-    {
-      "id": 88,
-      "bp_number": "BP-2026-00088",
-      "status": "pending",
-      "shipment": { "id": 22, "shipment_number": "BCH-2026-00022" },
-      "rider": { "id": 9, "name": "Youssef Livreur" }
-    }
-  ]
+  "alerts": {
+    "shortage_queue": 1,
+    "rejected_bps": 0,
+    "overdue_deliveries": 1
+  },
+  "activity": {
+    "recent_orders": [
+      { "id": 201, "order_code": "BC-2026-00201", "bc_status": "confirmed", "total_amount": 127500.00, "order_date": "2026-06-19", "partner": { "id": 12, "name": "Supermarché Atlas", "code": "PAR-00012" } }
+    ],
+    "active_deliveries": [
+      { "id": 501, "delivery_number": "BL-2026-00501", "status": "in_transit", "livreur": { "id": 9, "name": "Youssef Livreur" } }
+    ],
+    "recent_shortages": [
+      { "id": 88, "bp_number": "BP-2026-00088", "status": "completed_partial", "total_shortage_percentage": 25.0, "delivery_mission_id": 14, "deliveryMission": { "id": 14, "mission_number": "MSN-20260619-0001", "status": "in_preparation" } }
+    ]
+  }
 }
 ```
 
 | Field | Description |
 |---|---|
-| `pending_orders` | BCs confirmed by ADV, not yet dispatched |
-| `draft_bls` | BLs in DRAFT status |
-| `shortage_queue` | BPs in `completed_partial` awaiting quantity balancing |
+| `pipeline.bc_confirmed` | BCs confirmed by ADV, not yet dispatched into a mission |
+| `pipeline.missions_draft` / `missions_in_preparation` / `missions_ready` / `missions_in_transit` | Delivery missions by status (branch-scoped) |
+| `pipeline.bp_shortage_queue` | BPs in `completed_partial`/`awaiting_shortage_review` |
+| `pipeline.bl_draft` / `bl_confirmed` / `bl_ready` | BLs by status |
+| `alerts.overdue_deliveries` | BLs in `in_transit`/`loaded`/`confirmed` whose `delivery_date` has passed |
+
+> All counters are scoped to the authenticated dispatcher's `branch_id`/`branch_code` when set
+> (company-wide if the user has no branch assigned).
 
 ---
 
@@ -392,29 +390,30 @@ curl "https://api.omni360.cloud/api/backend/dispatcher/bon-livraisons?status=dra
 
 ---
 
-### 7.2 Draft BLs
+### 7.2 Draft BLs ⚠️ broken — references dropped tables
 
 `GET /backend/dispatcher/bon-livraisons/draft`
 
-Returns BLs in `draft`, `preparing`, or `prepared` status that are not yet assigned to a BCH. Used to populate the BCH creation screen.
-
-```bash
-curl https://api.omni360.cloud/api/backend/dispatcher/bon-livraisons/draft \
-  -H "Authorization: Bearer {TOKEN}"
-```
+> **Not migrated — calling this will error.** `DispatcherController::draftBls()` still filters
+> `->whereDoesntHave('bonChargements')`, and `DeliveryNote::bonChargements()` is still defined as
+> `belongsToMany(Shipment::class, 'shipment_deliveries')` — both `shipments` and
+> `shipment_deliveries` are dropped tables (§2). This endpoint was not updated as part of the
+> 2026-06-20 migration and will throw a DB error (`relation "shipments" does not exist` or
+> similar) if called. Do not build against it. There is no replacement endpoint yet — for the
+> mission-based flow, fetch draft BLs via `GET /backend/dispatcher/bon-livraisons?status=draft`
+> (§7.1) instead, which does not depend on the broken relation.
 
 ---
 
-### 7.3 Confirmed BLs
+### 7.3 Confirmed BLs ⚠️ broken — references dropped tables
 
 `GET /backend/dispatcher/bon-livraisons/confirmed`
 
-Returns BLs in `confirmed` status not yet in a batch. Used for grouping into BCH.
-
-```bash
-curl https://api.omni360.cloud/api/backend/dispatcher/bon-livraisons/confirmed \
-  -H "Authorization: Bearer {TOKEN}"
-```
+> **Not migrated — calling this will error.** `DispatcherController::confirmedBls()` filters
+> `->whereNull('logistics_batch_id')->whereDoesntHave('bonChargements')` — both
+> `delivery_notes.logistics_batch_id` and the `bonChargements` relation reference dropped tables
+> (`logistics_batches`, `shipments`/`shipment_deliveries`). Same gap as §7.2 — use
+> `GET /backend/dispatcher/bon-livraisons?status=confirmed` (§7.1) instead.
 
 ---
 
@@ -422,7 +421,9 @@ curl https://api.omni360.cloud/api/backend/dispatcher/bon-livraisons/confirmed \
 
 `GET /backend/dispatcher/bon-livraisons/{id}`
 
-Full BL detail including partner, order, items, rider, preparation, assets, tracking.
+Full BL detail including partner, order, items, rider, dispatcher, assets, tracking, preparation.
+(`DispatcherController::showBl()` returns the raw `DeliveryNote` model — not wrapped in
+`success`/`data`.)
 
 ```bash
 curl https://api.omni360.cloud/api/backend/dispatcher/bon-livraisons/501 \
@@ -435,6 +436,7 @@ curl https://api.omni360.cloud/api/backend/dispatcher/bon-livraisons/501 \
   "id": 501,
   "delivery_number": "BL-2026-00501",
   "status": "draft",
+  "delivery_mission_id": 14,
   "total_amount": 127500.00,
   "delivery_date": "2026-06-16",
   "notes": null,
@@ -450,28 +452,20 @@ curl https://api.omni360.cloud/api/backend/dispatcher/bon-livraisons/501 \
     "order_code": "BC-2026-00201",
     "bc_status": "confirmed"
   },
-  "rider": null,
+  "livreur": null,
   "dispatcher": { "id": 7, "name": "Karim Dispatcher" },
   "items": [
     {
       "id": 2001,
       "product_id": 55,
-      "quantity": 20,
-      "allocated_qty": 20,
+      "ordered_quantity": 20,
+      "allocated_quantity": 20,
       "prepared_quantity": null,
       "unit_price": 3500.00,
-      "total_price": 70000.00,
       "product": { "id": 55, "name": "Huile Végétale 5L", "sku": "HUI-VEG-5L" }
     }
   ],
-  "bon_chargement": null,
-  "preparation": null,
-  "assets": null,
-  "tracking": null,
-  "workflow_instance": {
-    "id": 90,
-    "current_step": { "name": "dispatch_confirmation", "label": "Confirmation Dispatcher" }
-  }
+  "preparation": null
 }
 ```
 
@@ -626,114 +620,46 @@ curl -X POST https://api.omni360.cloud/api/backend/dispatcher/bon-livraisons/501
 
 ---
 
-## 8. Bon de Chargement (BCH)
+## 8. Delivery Missions
 
-> BCH mutations go through dedicated dispatcher routes **and** the workflow engine depending on the action. Routes that require `Idempotency-Key` are marked with ⚡.
-
----
-
-### 8.1 List BCH
-
-`GET /backend/dispatcher/bon-chargements`
-
-**Query parameters:** `status`, `rider_id`, `search`, `page`
-
-```bash
-curl "https://api.omni360.cloud/api/backend/dispatcher/bon-chargements?status=pending" \
-  -H "Authorization: Bearer {TOKEN}"
-```
-
-**Response `200`:**
-```json
-{
-  "bch": {
-    "current_page": 1,
-    "per_page": 20,
-    "total": 3,
-    "data": [
-      {
-        "id": 22,
-        "shipment_number": "BCH-2026-00022",
-        "status": "pending",
-        "branch_code": "CASA-01",
-        "has_shortage": false,
-        "rider": { "id": 9, "name": "Youssef Livreur" },
-        "dispatcher": { "id": 7, "name": "Karim Dispatcher" },
-        "delivery_notes_count": 3,
-        "created_at": "2026-06-15T11:00:00Z"
-      }
-    ]
-  },
-  "stats": {
-    "total": 10,
-    "pending": 3,
-    "in_preparation": 2,
-    "prepared": 4,
-    "completed": 1
-  }
-}
-```
+> A **Delivery Mission** is the dispatcher's Drag&Drop container — one zone/tour, one driver,
+> one vehicle (`App\Models\DeliveryMission`, `app/Decisions/Dispatcher/*DeliveryMission*.php`).
+> It replaces Shipment/BCH **and** the BC→DO intermediate layer in one step: creating a mission
+> also generates its BLs directly from the selected confirmed orders. All 6 decisions below are
+> registered under the **`delivery-mission`** model type in `config/decisions.php`. Most are
+> executed through the generic workflow route:
+>
+> ```
+> POST /backend/workflow/delivery-mission/{id}/execute
+> ```
+>
+> `create_delivery_mission` is a **creation** decision (`id = 0`) and also has a dedicated REST
+> shortcut — a thin wrapper around `WorkflowController::executeDecision()`, same guards, same
+> idempotency requirement, same response shape as calling the generic route directly.
 
 ---
 
-### 8.2 BCH Detail
+### 8.1 Create Delivery Mission ⚡
 
-`GET /backend/dispatcher/bon-chargements/{id}`
+`POST /backend/dispatcher/delivery-missions`
 
-Full BCH with BLs, BP, rider, dispatcher info.
+(`DispatcherController::createDeliveryMission()` → `decision: "create_delivery_mission"`,
+modelType `delivery-mission`, `id = 0`.)
 
-```bash
-curl https://api.omni360.cloud/api/backend/dispatcher/bon-chargements/22 \
-  -H "Authorization: Bearer {TOKEN}"
-```
-
-**Response `200`:**
-```json
-{
-  "id": 22,
-  "shipment_number": "BCH-2026-00022",
-  "status": "pending",
-  "branch_code": "CASA-01",
-  "has_shortage": false,
-  "shortage_acknowledged": false,
-  "notes": null,
-  "estimated_departure": null,
-  "rider": { "id": 9, "name": "Youssef Livreur" },
-  "dispatcher": { "id": 7, "name": "Karim Dispatcher" },
-  "vehicle": { "id": 3, "plate": "12345-A-1" },
-  "delivery_notes": [
-    {
-      "id": 501,
-      "delivery_number": "BL-2026-00501",
-      "status": "confirmed",
-      "total_amount": 127500.00,
-      "partner": { "id": 12, "name": "Supermarché Atlas" }
-    }
-  ],
-  "preparation_order": null,
-  "created_at": "2026-06-15T11:00:00Z"
-}
-```
-
----
-
-### 8.3 Create BCH ⚡
-
-`POST /backend/dispatcher/bon-chargements`
-
-Group BLs into a new BCH and assign a rider.
+Drag & drop one or more **confirmed** orders into a new mission. Creates the
+`DeliveryMission` (driver + vehicle required up front) **and**, in the same call, generates one
+`DeliveryNote` (BL) per partner — orders for the same partner are merged into a single BL, with
+their line items summed by `product_id`. No stock is touched at this step; every BL lands in
+`draft` and the source orders move from `confirmed` to `converted_to_bl`.
 
 ```bash
-curl -X POST https://api.omni360.cloud/api/backend/dispatcher/bon-chargements \
-  -H "Authorization: Bearer {TOKEN}" \
-  -H "Content-Type: application/json" \
-  -H "Idempotency-Key: bch:create:bl-501-502:1718358300" \
+curl -X POST https://api.omni360.cloud/api/backend/dispatcher/delivery-missions \
+  -H "Authorization: Bearer {TOKEN}" -H "Content-Type: application/json" \
+  -H "Idempotency-Key: mission:create:$(date +%s)" \
   -d '{
-    "decision": "create_bch",
-    "bl_ids": [501, 502],
+    "order_ids": [201, 207, 212],
     "rider_id": 9,
     "vehicle_id": 3,
-    "planned_date": "2026-06-16",
     "notes": "Tournée matinale zone Centre"
   }'
 ```
@@ -742,579 +668,532 @@ curl -X POST https://api.omni360.cloud/api/backend/dispatcher/bon-chargements \
 
 | Field | Required | Type | Description |
 |---|---|---|---|
-| `decision` | yes | `string` | Must be `"create_bch"` |
-| `bl_ids` | yes | `number[]` | BL IDs to group (must all be same branch, status `confirmed` or `ready`) |
-| `rider_id` | no | `number` | Assign rider |
-| `vehicle_id` | no | `number` | Assign vehicle |
-| `planned_date` | no | `date` | Planned departure date |
-| `notes` | no | `string` | max 500 chars |
+| `order_ids` | yes | `number[]` | Confirmed BC IDs to drag into the mission. Must all share the same `branch_id` — a `mixed_branches` violation is returned otherwise |
+| `rider_id` | yes | `number` | Driver — must exist |
+| `vehicle_id` | yes | `number` | Vehicle — must exist |
+| `branch_code` | no | `string` | Derived from the selected orders' `branch_id` if omitted |
+| `notes` | no | `string` | Free text |
 
 **Response `200`:**
 ```json
 {
   "success": true,
-  "message": "BCH créé avec succès",
-  "data": {
-    "bch_id": 22,
-    "shipment_number": "BCH-2026-00022",
-    "status": "pending",
-    "bl_count": 2,
-    "attached_bls": [501, 502],
-    "rider_id": 9,
-    "planned_date": "2026-06-16"
-  }
-}
-```
-
----
-
-### 8.4 Update BCH ⚡
-
-`PUT /backend/dispatcher/bon-chargements/{id}`
-
-Update BCH header (rider, date, notes).
-
-```bash
-curl -X PUT https://api.omni360.cloud/api/backend/dispatcher/bon-chargements/22 \
-  -H "Authorization: Bearer {TOKEN}" \
-  -H "Content-Type: application/json" \
-  -H "Idempotency-Key: bch:22:update:1718358400" \
-  -d '{
-    "decision": "update_bch",
-    "rider_id": 10,
-    "planned_date": "2026-06-17",
-    "notes": "Report d'\''un jour — véhicule en maintenance"
-  }'
-```
-
-**Request body:**
-
-| Field | Required | Type | Description |
-|---|---|---|---|
-| `decision` | yes | `string` | Must be `"update_bch"` |
-| `rider_id` | no | `number` | Change rider (propagated to linked BLs) |
-| `planned_date` | no | `date` | New departure date |
-| `notes` | no | `string` | max 500 chars |
-
-**Constraint:** BCH must be in `pending`, `prepared`, or `validated`. Cannot update while BP is in progress.
-
-**Response `200`:**
-```json
-{
-  "success": true,
-  "message": "BCH mis à jour",
-  "data": {
-    "shipment_id": 22,
-    "shipment_number": "BCH-2026-00022",
-    "updates": { "rider_id": 10, "planned_date": "2026-06-17" },
-    "added_bls": [],
-    "removed_bls": [],
-    "current_bl_count": 2
-  }
-}
-```
-
----
-
-### 8.5 Add BLs to BCH ⚡
-
-`POST /backend/dispatcher/bon-chargements/{id}/bls`
-
-```bash
-curl -X POST https://api.omni360.cloud/api/backend/dispatcher/bon-chargements/22/bls \
-  -H "Authorization: Bearer {TOKEN}" \
-  -H "Content-Type: application/json" \
-  -H "Idempotency-Key: bch:22:add-bls:1718358500" \
-  -d '{
-    "decision": "update_bch",
-    "add_delivery_note_ids": [503, 504]
-  }'
-```
-
-**Request body:**
-
-| Field | Required | Type | Description |
-|---|---|---|---|
-| `decision` | yes | `string` | Must be `"update_bch"` |
-| `add_delivery_note_ids` | yes | `number[]` | BL IDs to add (must be same branch, status `draft`/`preparing`/`prepared`, not in another BCH) |
-
-**Response `200`:** Same shape as Update BCH with populated `added_bls`.
-
----
-
-### 8.6 Remove BL from BCH ⚡
-
-`DELETE /backend/dispatcher/bon-chargements/{id}/bls/{blId}`
-
-```bash
-curl -X DELETE https://api.omni360.cloud/api/backend/dispatcher/bon-chargements/22/bls/503 \
-  -H "Authorization: Bearer {TOKEN}" \
-  -H "Content-Type: application/json" \
-  -H "Idempotency-Key: bch:22:remove-bl-503:1718358600" \
-  -d '{
-    "decision": "update_bch",
-    "remove_delivery_note_ids": [503]
-  }'
-```
-
-The removed BL returns to `draft` status and can be added to a different BCH.
-
-**Response `200`:** Same shape as Update BCH with populated `removed_bls`.
-
----
-
-### 8.7 Submit BCH to Warehouse ⚡
-
-`POST /backend/dispatcher/bon-chargements/{id}/submit`
-
-Triggers the handoff to the Magasinier. Two scenarios are handled automatically:
-
-| Scenario | Condition | Result |
-|---|---|---|
-| **A** | All BLs are already `ready` | BCH → `prepared` (no BP created) |
-| **B** | BLs need preparation | BP created → BCH → `in_preparation` |
-
-**Requirement:** BCH must have a `rider_id` assigned.
-
-```bash
-curl -X POST https://api.omni360.cloud/api/backend/dispatcher/bon-chargements/22/submit \
-  -H "Authorization: Bearer {TOKEN}" \
-  -H "Content-Type: application/json" \
-  -H "Idempotency-Key: bch:22:submit:1718358700" \
-  -d '{}'
-```
-
-**Response `200` — Scenario B (most common):**
-```json
-{
-  "success": true,
-  "message": "BCH soumis au magasinier",
-  "data": {
-    "scenario": "B",
-    "shipment_id": 22,
-    "shipment_status": "in_preparation",
-    "bp_created": true,
-    "bp_id": 88,
-    "bp_number": "BP-2026-00088",
-    "updated_bls": [501, 502]
-  }
-}
-```
-
-**Response `200` — Scenario A:**
-```json
-{
-  "success": true,
-  "message": "BCH validé automatiquement (BLs déjà prêts)",
-  "data": {
-    "scenario": "A",
-    "shipment_id": 22,
-    "shipment_status": "prepared",
-    "bp_created": false
-  }
-}
-```
-
----
-
-### 8.8 Resubmit BCH ⚡
-
-`POST /backend/dispatcher/bon-chargements/{id}/resubmit`
-
-Resubmit a BCH after its BP was rejected by the Magasinier.
-
-```bash
-curl -X POST https://api.omni360.cloud/api/backend/dispatcher/bon-chargements/22/resubmit \
-  -H "Authorization: Bearer {TOKEN}" \
-  -H "Content-Type: application/json" \
-  -H "Idempotency-Key: bch:22:resubmit:1718360000" \
-  -d '{"decision": "resubmit_bch"}'
-```
-
-**Constraint:** BCH must have status `pending` and its BP must be `rejected`.
-
-**Response `200`:** New BP created, same structure as submit Scenario B.
-
----
-
-### 8.9 Cancel BCH ⚡
-
-`POST /backend/dispatcher/bon-chargements/{id}/cancel`
-
-Cancels a pending BCH, releases all stock reservations, and reverts BLs to `draft`.
-
-```bash
-curl -X POST https://api.omni360.cloud/api/backend/dispatcher/bon-chargements/22/cancel \
-  -H "Authorization: Bearer {TOKEN}" \
-  -H "Content-Type: application/json" \
-  -H "Idempotency-Key: bch:22:cancel:1718360100" \
-  -d '{
-    "decision": "cancel_bch",
-    "reason": "Livreur indisponible. BCH sera recréé demain."
-  }'
-```
-
-**Request body:**
-
-| Field | Required | Type | Description |
-|---|---|---|---|
-| `decision` | yes | `string` | Must be `"cancel_bch"` |
-| `reason` | yes | `string` | min 10 chars |
-
-**Constraint:** Only `pending` BCH can be cancelled (not once submitted to Magasinier).
-
-**Response `200`:**
-```json
-{
-  "success": true,
-  "message": "BCH annulé",
-  "data": {
-    "shipment_id": 22,
-    "shipment_number": "BCH-2026-00022",
-    "status": "cancelled",
-    "decharge_id": 15,
-    "reason": "Livreur indisponible. BCH sera recréé demain."
-  }
-}
-```
-
----
-
-### 8.10 Print BCH
-
-`GET /backend/dispatcher/bon-chargements/{id}/print`
-
-Returns structured data for generating a printable loading manifest.
-
-```bash
-curl https://api.omni360.cloud/api/backend/dispatcher/bon-chargements/22/print \
-  -H "Authorization: Bearer {TOKEN}"
-```
-
-**Response `200`:**
-```json
-{
-  "bch": {
-    "id": 22,
-    "shipment_number": "BCH-2026-00022",
-    "status": "prepared",
-    "planned_date": "2026-06-16"
-  },
-  "rider": { "id": 9, "name": "Youssef Livreur", "phone": "+212 6 00 11 22 33" },
-  "vehicle": { "id": 3, "plate": "12345-A-1", "capacity_kg": 5000 },
-  "delivery_notes": [
-    {
-      "id": 501,
-      "delivery_number": "BL-2026-00501",
-      "partner": { "id": 12, "name": "Supermarché Atlas", "address": "Bd Hassan II, Casablanca" },
-      "items": [
-        { "product_name": "Huile Végétale 5L", "sku": "HUI-VEG-5L", "quantity": 20, "prepared_quantity": 20 }
-      ]
-    }
-  ],
-  "preparation_items": [
-    { "product_id": 55, "product_name": "Huile Végétale 5L", "total_quantity": 20, "total_prepared": 20 }
-  ],
-  "totals": {
-    "bl_count": 2,
-    "item_count": 5,
-    "total_amount": 215000.00
-  }
-}
-```
-
----
-
-### 8.11 Shortage Balance
-
-`GET /backend/dispatcher/bon-chargements/{id}/balance`
-
-Analyze the shortage after a partial preparation. Returns current quantities per product per BL, along with suggested split strategies.
-
-```bash
-curl https://api.omni360.cloud/api/backend/dispatcher/bon-chargements/22/balance \
-  -H "Authorization: Bearer {TOKEN}"
-```
-
-**Response `200`:**
-```json
-{
-  "bch_id": 22,
-  "shipment_number": "BCH-2026-00022",
-  "products": [
-    {
-      "product_id": 55,
-      "product_name": "Huile Végétale 5L",
-      "sku": "HUI-VEG-5L",
-      "total_requested": 40,
-      "total_prepared": 30,
-      "shortage": 10,
-      "requesting_bls": [
-        {
-          "bl_id": 501,
-          "delivery_number": "BL-2026-00501",
-          "partner_name": "Supermarché Atlas",
-          "requested": 20,
-          "current_prepared": 20,
-          "suggested_equal": 15,
-          "suggested_fifo": 20
-        },
-        {
-          "bl_id": 502,
-          "delivery_number": "BL-2026-00502",
-          "partner_name": "Épicerie Al Wafa",
-          "requested": 20,
-          "current_prepared": 10,
-          "suggested_equal": 15,
-          "suggested_fifo": 10
-        }
-      ]
-    }
-  ]
-}
-```
-
----
-
-### 8.12 Save Balance ⚡
-
-`PUT /backend/dispatcher/bon-chargements/{id}/balance`
-
-Apply a quantity split strategy to resolve a shortage.
-
-**Three strategies:**
-
-#### Strategy 1 — Manual
-
-```bash
-curl -X PUT https://api.omni360.cloud/api/backend/dispatcher/bon-chargements/22/balance \
-  -H "Authorization: Bearer {TOKEN}" \
-  -H "Content-Type: application/json" \
-  -H "Idempotency-Key: bch:22:balance:manual:1718360200" \
-  -d '{
-    "decision": "adjust_quantities",
-    "split_strategy": "manual",
-    "adjustments": [
-      { "bl_item_id": 2001, "new_quantity": 18, "reason": "Priorité partenaire A" },
-      { "bl_item_id": 2002, "new_quantity": 12 }
-    ]
-  }'
-```
-
-#### Strategy 2 — Equal (server-computed)
-
-```bash
-curl -X PUT https://api.omni360.cloud/api/backend/dispatcher/bon-chargements/22/balance \
-  -H "Authorization: Bearer {TOKEN}" \
-  -H "Content-Type: application/json" \
-  -H "Idempotency-Key: bch:22:balance:equal:1718360200" \
-  -d '{
-    "decision": "adjust_quantities",
-    "split_strategy": "equal"
-  }'
-```
-
-#### Strategy 3 — FIFO (first-attached BL gets full allocation)
-
-```bash
-curl -X PUT https://api.omni360.cloud/api/backend/dispatcher/bon-chargements/22/balance \
-  -H "Authorization: Bearer {TOKEN}" \
-  -H "Content-Type: application/json" \
-  -H "Idempotency-Key: bch:22:balance:fifo:1718360200" \
-  -d '{
-    "decision": "adjust_quantities",
-    "split_strategy": "fifo"
-  }'
-```
-
-**Request body:**
-
-| Field | Required | Type | Description |
-|---|---|---|---|
-| `decision` | yes | `string` | Must be `"adjust_quantities"` |
-| `split_strategy` | yes | `string` | `manual`, `equal`, or `fifo` |
-| `adjustments` | if manual | `array` | `[{ bl_item_id, new_quantity, reason? }]` |
-
-**Constraint:** Per product, `sum(new_quantity)` must equal `total_prepared` — you cannot invent stock.
-
-**Response `200`:**
-```json
-{
-  "success": true,
-  "message": "Quantités rééquilibrées",
-  "data": {
-    "shipment_id": 22,
-    "shipment_number": "BCH-2026-00022",
-    "status": "ready",
-    "adjusted_items": 2,
-    "total_adjustments": 2
-  }
-}
-```
-
----
-
-## 9. Delivery Orders (DO)
-
-Delivery Orders are logistics planning units that group orders by delivery zone and date.
-
-There are **two ways to create a DO** — pick based on what you need:
-
-| Need | Use |
-|---|---|
-| Simple create, no extra ceremony | `POST /backend/dispatcher/delivery-orders` (REST) |
-| Auto-trigger allocation in the same call, full audit trail, idempotent retries | `POST /backend/workflow/delivery-order/0/execute` with `decision: "create_delivery_order"` |
-
-Both paths ultimately call the same `DeliveryOrderService::createFromOrders()`, which enforces the same safety rules regardless of entry point: every order must be `CONFIRMED`/`ADV_APPROVED`, and an order already linked to a DO (`bc_status = CONVERTED_TO_DO`) is rejected. The REST endpoint does **not** support `auto_allocate` and is not idempotency-key protected; the workflow decision does both (`create_delivery_order` is in `config('erp.idempotency.required_workflow_decisions')`, so an `Idempotency-Key` header is mandatory on that path).
-
-### `GET /backend/dispatcher/delivery-orders`
-
-**Query parameters:** `status` (see [DoStatus](#3-status-glossary)), `search`, `per_page`, `page` (standard Laravel pagination — `paginate()` resolves the current page from the `page` query string automatically, no extra backend code needed)
-
-```bash
-curl "https://api.omni360.cloud/api/backend/dispatcher/delivery-orders?status=optimized" \
-  -H "Authorization: Bearer {TOKEN}"
-```
-
-**Response `200`:** Flat Laravel paginator (same envelope shape as `GET /backend/dispatcher/orders/pending` — no `success`/`data` wrapper):
-```json
-{
-  "current_page": 1,
-  "data": [ { "id": 10, "do_number": "DO-2026-00010", "status": "optimized", "...": "..." } ],
-  "per_page": 20,
-  "total": 4,
-  "...": "(standard Laravel paginator fields)"
-}
-```
-
-### `POST /backend/dispatcher/delivery-orders`
-
-Consolidate confirmed BCs into a new DO (`DRAFT` status). All `order_ids` must currently be `CONFIRMED`/`ADV_APPROVED` and not already attached to another DO.
-
-```bash
-curl -X POST https://api.omni360.cloud/api/backend/dispatcher/delivery-orders \
-  -H "Authorization: Bearer {TOKEN}" -H "Content-Type: application/json" \
-  -d '{
-    "order_ids": [95, 102, 110],
-    "planned_delivery_date": "2026-06-18",
-    "delivery_zone": "ZONE-SUD",
-    "itinerary_id": 3,
-    "notes": "Tournée lundi secteur 5"
-  }'
-```
-
-**Body:** `order_ids` (array, required, must reference confirmed orders), `planned_delivery_date` (date, optional), `delivery_zone` (string, optional), `itinerary_id` (int, optional, must exist), `notes` (string, optional).
-
-**Response `201`:**
-```json
-{
-  "success": true,
-  "data": {
-    "id": 12,
-    "do_number": "DOA000-A01-000001",
+  "message": "Decision executed successfully",
+  "decision": "create_delivery_mission",
+  "output": {
+    "mission_id": 14,
+    "mission_number": "MSN-20260619-0001",
     "status": "draft",
-    "orders_count": 3,
-    "orders": [...],
-    "items": [...],
-    "itinerary": {...}
-  }
-}
-```
-
-**Response `422`:** order not confirmed, already in a DO, mixed ERP periods, or no branch on the authenticated user — body is `{"message": "..."}` (no `success` key).
-
-### `GET /backend/dispatcher/delivery-orders/{id}`
-
-Full DO detail with linked orders, BLs, and the BCH chain.
-
-```bash
-curl https://api.omni360.cloud/api/backend/dispatcher/delivery-orders/10 \
-  -H "Authorization: Bearer {TOKEN}"
-```
-
-**Response `200`:** wrapped, not flat — `{success, data: {deliveryOrder, batches, bchs}}`:
-```json
-{
-  "success": true,
-  "data": {
-    "deliveryOrder": {
-      "id": 10,
-      "do_number": "DO-2026-00010",
-      "status": "optimized",
-      "planned_delivery_date": "2026-06-16",
-      "delivery_zone": "Centre-Ville",
-      "driver_id": 9,
-      "vehicle_id": 3,
-      "driver": { "id": 9, "name": "Youssef Livreur", "phone": "+212..." },
-      "vehicle": { "id": 3, "plate_number": "12345-A-1", "internal_code": "VH-03", "type": "van", "make": "...", "model": "..." },
-      "items": [ { "...": "with .product" } ],
-      "orders": [ { "...": "with .partner" } ],
-      "delivery_notes": [ { "...": "with .partner, .items.product" } ],
-      "logistics_batch": { "...": "with .delivery_notes, .preparation_order.items.product" }
-    },
-    "batches": [ { "...": "the DO's logistics_batch, wrapped in an array (empty if none)" } ],
-    "bchs": [
+    "rider_id": 9,
+    "vehicle_id": 3,
+    "branch_code": "A0001",
+    "bl_count": 2,
+    "delivery_notes": [
       {
-        "id": 5,
-        "shipment_number": "BCH-...",
-        "livreur": { "id": 9, "name": "Youssef Livreur", "phone": "+212..." },
-        "dispatcher": { "id": 4, "name": "..." },
-        "vehicle": { "id": 3, "plate_number": "12345-A-1", "...": "..." },
-        "delivery_notes": [ { "...": "with .partner, .items.product" } ]
+        "id": 501,
+        "delivery_number": "BL-2026-00501",
+        "partner_id": 12,
+        "order_ids": [201, 207],
+        "items_count": 3
+      },
+      {
+        "id": 502,
+        "delivery_number": "BL-2026-00502",
+        "partner_id": 18,
+        "order_ids": [212],
+        "items_count": 1
       }
     ]
   }
 }
 ```
 
-`driver`/`vehicle` are eager-loaded directly on the DO (and `livreur`/`vehicle` on each BCH) — you do **not** need a separate `GET /backend/dispatcher/livreurs` lookup just to resolve who's assigned on a DO/BCH detail screen. Use `/dispatcher/livreurs` only for populating an assignment dropdown (list of available drivers).
+**Response `422` — validation failures:** `no_orders`, `driver_required`/`driver_not_found`,
+`vehicle_required`/`vehicle_not_found`, `orders_not_found`, `order_not_confirmed` (per-order, with
+`order_id`/`status` context), `mixed_branches` (with `branch_ids` context).
 
 ---
 
-## 10. Preparations — Shortage Queue
+### 8.2 Confirm Delivery Mission ⚡
 
-`GET /backend/dispatcher/preparations/shortage-queue`
+`POST /backend/workflow/delivery-mission/{id}/execute` with `decision: "confirm_delivery_mission"`
 
-Lists BPs in shortage states that require the dispatcher to take action: split quantities, accept shortages, or request rework.
+Mission-level, **one atomic call** (no dedicated REST shortcut — use the generic workflow route).
+**Replaces the old two-step `allocate_delivery_note` + `generate_preparation_for_mission` pair**
+(both removed 2026-06-21). In a single `DB::transaction()`:
+
+1. For every `draft` BL on the mission: shortage-tolerant stock allocation, identical semantics to
+   the old `allocate_delivery_note` — never throws on shortage, allocates whatever is really
+   available per line, re-injects the uncovered delta as a new backlog `Order`
+   (`bc_status: CONFIRMED`) via `ShortageBacklogService::createBacklogOrders()`. Every BL moves to
+   `confirmed` regardless of coverage — there is **no `partially_allocated` BL status**.
+2. Aggregates every BL's `allocated_quantity` (not `ordered_quantity`) by `product_id` into ONE
+   `PreparationOrder` (BP) for the whole mission. Mission → `in_preparation`, every BL → `batched`.
+3. **Edge case — fully backlogged:** if every line across every BL came back with 0 allocated
+   (zero stock anywhere), **no BP is generated** and the mission is left in `draft` —
+   `output.fully_backlogged: true`, `output.preparation: null`. This avoids creating a ghost BP
+   with zero items; the dispatcher can retry later once stock arrives, or cancel the mission.
 
 ```bash
-curl https://api.omni360.cloud/api/backend/dispatcher/preparations/shortage-queue \
+curl -X POST "https://api.omni360.cloud/api/backend/workflow/delivery-mission/14/execute" \
+  -H "Authorization: Bearer {TOKEN}" -H "Content-Type: application/json" \
+  -H "Idempotency-Key: mission:14:confirm:$(date +%s)" \
+  -d '{"decision": "confirm_delivery_mission"}'
+```
+
+**Constraint:** mission must be `draft` with ≥1 `draft` BL.
+
+**Response `200` — normal (stock found, BP generated):**
+```json
+{
+  "success": true,
+  "message": "Decision executed successfully",
+  "decision": "confirm_delivery_mission",
+  "output": {
+    "mission_id": 14,
+    "mission_number": "MSN-20260619-0001",
+    "status": "in_preparation",
+    "allocations": [
+      {
+        "delivery_note_id": 501,
+        "delivery_number": "BL-2026-00501",
+        "total_ordered": 40,
+        "total_allocated": 40,
+        "allocation_rate": 100.0,
+        "backlog_orders": [],
+        "backlog_orders_count": 0
+      }
+    ],
+    "preparation": {
+      "bp_id": 88,
+      "bp_number": "BP-2026-00088",
+      "status": "pending",
+      "bl_count": 2,
+      "items_count": 4
+    },
+    "fully_backlogged": false
+  }
+}
+```
+
+**Response `200` — fully backlogged (no stock anywhere, mission stays draft):**
+```json
+{
+  "success": true,
+  "decision": "confirm_delivery_mission",
+  "output": {
+    "mission_id": 14,
+    "status": "draft",
+    "allocations": [
+      { "delivery_note_id": 501, "total_ordered": 40, "total_allocated": 0, "allocation_rate": 0.0,
+        "backlog_orders": [{ "id": 318, "order_code": "BC-2026-00318" }], "backlog_orders_count": 1 }
+    ],
+    "preparation": null,
+    "fully_backlogged": true
+  }
+}
+```
+
+**Response `422`:** `invalid_status` (mission not `draft`), `no_draft_bls` (mission has no `draft`
+BLs to allocate).
+
+---
+
+### 8.3 Start Delivery Mission ⚡
+
+`POST /backend/workflow/delivery-mission/{id}/execute` with `decision: "start_delivery_mission"`
+
+Rider departs. Mission must be `ready` (BP completed, warehouse transfer already generated by
+`complete_preparation` — see §12c). Moves the mission to `in_transit` and every linked BL to
+`in_transit`.
+
+```bash
+curl -X POST "https://api.omni360.cloud/api/backend/workflow/delivery-mission/14/execute" \
+  -H "Authorization: Bearer {TOKEN}" -H "Content-Type: application/json" \
+  -H "Idempotency-Key: mission:14:start:$(date +%s)" \
+  -d '{"decision": "start_delivery_mission"}'
+```
+
+**Response `200`:**
+```json
+{
+  "success": true,
+  "message": "Decision executed successfully",
+  "decision": "start_delivery_mission",
+  "output": {
+    "mission_id": 14,
+    "mission_number": "MSN-20260619-0001",
+    "status": "in_transit",
+    "started_at": "2026-06-19T08:30:00+00:00"
+  }
+}
+```
+
+**Response `422`:** `invalid_status` — mission must be `ready`.
+
+---
+
+### 8.4 Complete Delivery Mission ⚡
+
+`POST /backend/workflow/delivery-mission/{id}/execute` with `decision: "complete_delivery_mission"`
+
+All deliveries done — mission must be `in_transit`. Lightweight version: does not yet enforce
+full BL-by-BL delivery reconciliation (`DeliveryMission::isFullyReconciled()` exists for a future
+guard, not currently checked here). Computes delivery stats via `DeliveryMission::computeStats()`
+and persists them on the mission.
+
+```bash
+curl -X POST "https://api.omni360.cloud/api/backend/workflow/delivery-mission/14/execute" \
+  -H "Authorization: Bearer {TOKEN}" -H "Content-Type: application/json" \
+  -H "Idempotency-Key: mission:14:complete:$(date +%s)" \
+  -d '{"decision": "complete_delivery_mission", "close_notes": "RAS"}'
+```
+
+**Request body:** `close_notes` (string, optional).
+
+**Response `200`:**
+```json
+{
+  "success": true,
+  "message": "Decision executed successfully",
+  "decision": "complete_delivery_mission",
+  "output": {
+    "mission_id": 14,
+    "mission_number": "MSN-20260619-0001",
+    "status": "completed",
+    "closed_at": "2026-06-19T17:05:00+00:00",
+    "total_bls": 2,
+    "delivered_bls": 2,
+    "failed_bls": 0,
+    "total_returns": 0,
+    "total_cod_collected": 0,
+    "delivery_rate": 100.0
+  }
+}
+```
+
+**Response `422`:** `invalid_status` — mission must be `in_transit`.
+
+---
+
+### 8.5 Update Delivery Mission ⚡
+
+`POST /backend/workflow/delivery-mission/{id}/execute` with `decision: "update_delivery_mission"`
+
+Edit rider/vehicle/notes, add/remove whole BLs, or add/remove individual BCs (orders). All of this
+is **only** available while the mission is still `draft` — once a BP has been generated
+(`in_preparation`+), use `reopen_delivery_mission` (§8.6) first.
+
+```bash
+curl -X POST "https://api.omni360.cloud/api/backend/workflow/delivery-mission/14/execute" \
+  -H "Authorization: Bearer {TOKEN}" -H "Content-Type: application/json" \
+  -H "Idempotency-Key: mission:14:update:$(date +%s)" \
+  -d '{
+    "decision": "update_delivery_mission",
+    "rider_id": 11,
+    "add_delivery_note_ids": [504],
+    "remove_delivery_note_ids": [502],
+    "remove_order_ids": [318],
+    "add_order_ids": [318]
+  }'
+```
+
+**Request body:**
+
+| Field | Required | Type | Description |
+|---|---|---|---|
+| `rider_id` | no | `number` | Change driver |
+| `vehicle_id` | no | `number` | Change vehicle |
+| `notes` | no | `string` | Free text |
+| `add_delivery_note_ids` | no | `number[]` | BLs to attach (must be `draft`-only mission, same `branch_code`) |
+| `remove_delivery_note_ids` | no | `number[]` | BLs to detach — reverts them to `draft` with `delivery_mission_id: null` |
+| `add_order_ids` | no | `number[]` | **New 2026-06-22.** Confirmed BC IDs to attach. Merges into an existing draft BL for that partner if one already exists on this mission, otherwise creates a new one — same logic `create_delivery_mission` uses |
+| `remove_order_ids` | no | `number[]` | **New 2026-06-22.** BC IDs to detach from this mission. The order reverts to a standalone `confirmed` BC (`delivery_mission_id: null`), free to be edited by a salesperson. If it was merged into a BL with sibling BCs (same partner), the BL's items are recomputed from the remaining BCs; if it was the only BC behind that BL, the BL is deleted entirely. **Use this — not `remove_delivery_note_ids` — when you only need to pull one BC out of a multi-BC BL**, since `remove_delivery_note_ids` detaches the whole BL (and every BC behind it) at once. To put the BC back after editing it, call `update_delivery_mission` again with `add_order_ids` |
+
+**Response `200`:**
+```json
+{
+  "success": true,
+  "message": "Decision executed successfully",
+  "decision": "update_delivery_mission",
+  "output": {
+    "mission_id": 14,
+    "mission_number": "MSN-20260619-0001",
+    "updates": { "rider_id": 11 },
+    "added_bls": [{ "id": 504, "delivery_number": "BL-2026-00504" }],
+    "removed_bls": [{ "id": 502, "delivery_number": "BL-2026-00502" }],
+    "added_from_orders": [
+      { "id": 501, "delivery_number": "BL-2026-00501", "partner_id": 12, "order_ids": [318], "items_count": 2, "merged_into_existing": true }
+    ],
+    "removed_orders": [
+      { "order_id": 318, "order_code": "BC-2026-00318", "bl_deleted": false, "bl_id": 501, "remaining_order_ids": [201] }
+    ],
+    "current_bl_count": 2
+  }
+}
+```
+
+`removed_orders[].bl_deleted: true` and `bl_id: null` when the detached BC was the only one behind
+its BL (whole BL removed). `removed_orders[].remaining_order_ids` lists the sibling BCs still
+behind that BL after the recompute.
+
+**Response `422`:** `mission_not_draft` (mission isn't `draft`), `driver_not_found`,
+`vehicle_not_found`, `orders_not_in_mission` (a `remove_order_ids` entry isn't currently linked to
+this mission), `order_not_confirmed`/`mixed_branches` (same `add_order_ids` checks as
+`create_delivery_mission`, §8.1).
+
+---
+
+### 8.6 Reopen Delivery Mission ⚡ **(new 2026-06-22)**
+
+`POST /backend/workflow/delivery-mission/{id}/execute` with `decision: "reopen_delivery_mission"`
+
+Atomic rollback from `in_preparation` back to `draft` — the mission-edit equivalent for a
+**confirmed mission**, used when a salesperson needs to change a BC that's already inside it (the
+BL set is normally locked once a BP exists). One call, one `DB::transaction()`, all-or-nothing:
+
+1. The mission's current BP is marked `status: cancelled` — **never deleted**, kept for audit.
+2. Any stock reservation already allocated to the mission's BLs is released back to available
+   stock (same mechanism `cancel_delivery_mission` uses).
+3. The mission's BLs revert to `draft`, every item's `allocated_quantity` reset to `0`.
+4. Mission → `draft`.
+
+After reopening, use `update_delivery_mission`'s `remove_order_ids`/`add_order_ids` (§8.5) to
+detach the BC, let the salesperson edit it, and re-attach it — then call
+`confirm_delivery_mission` (§8.2) again to re-allocate and generate a fresh BP.
+
+```bash
+curl -X POST "https://api.omni360.cloud/api/backend/workflow/delivery-mission/14/execute" \
+  -H "Authorization: Bearer {TOKEN}" -H "Content-Type: application/json" \
+  -H "Idempotency-Key: mission:14:reopen:$(date +%s)" \
+  -d '{"decision": "reopen_delivery_mission", "reason": "BC 318 needs a quantity correction"}'
+```
+
+**Request body:** `reason` (string, optional — used as the stock-release audit reason).
+
+**Constraint:** mission must be `in_preparation` **and** its BP must still be `pending` or
+`in_progress`. **Race condition guard:** if the magasinier has already run `complete_preparation`
+or `reject_preparation` on the BP (status no longer `pending`/`in_progress`) — even if that
+happened concurrently, between this request being validated and the row lock being acquired — the
+call is rejected with `bp_already_finalized`. **Do not let the UI silently retry this error** —
+surface it to the dispatcher so they know the magasinier got there first.
+
+**Response `200`:**
+```json
+{
+  "success": true,
+  "message": "Decision executed successfully",
+  "decision": "reopen_delivery_mission",
+  "output": {
+    "mission_id": 14,
+    "mission_number": "MSN-20260619-0001",
+    "status": "draft",
+    "cancelled_bp_id": 88,
+    "cancelled_bp_number": "BP-2026-00088",
+    "reopened_bls": [{ "id": 501, "delivery_number": "BL-2026-00501" }]
+  }
+}
+```
+
+**Response `422`:** `invalid_status` (mission not `in_preparation`), `no_preparation_order` (no BP
+to cancel), `bp_already_finalized` (BP status is no longer `pending`/`in_progress` — see the race
+condition note above).
+
+---
+
+### 8.7 Cancel Delivery Mission ⚡
+
+`POST /backend/workflow/delivery-mission/{id}/execute` with `decision: "cancel_delivery_mission"`
+
+Only a `draft` mission can be cancelled (no BP generated yet — for an `in_preparation` mission, use
+`reopen_delivery_mission` §8.6 first, then `update_delivery_mission` to detach the BLs/BCs you no
+longer want before re-confirming, or simply leave the mission in `draft` un-confirmed). Releases
+the BL-level stock reservation made by `confirm_delivery_mission` for every linked BL, reverts each
+BL to `cancelled`, and marks the mission `cancelled`. Simplified versus the old `cancel_bch`: **no
+décharge record is generated** — a draft mission never had goods physically picked or loaded, so
+there is nothing to unload.
+
+```bash
+curl -X POST "https://api.omni360.cloud/api/backend/workflow/delivery-mission/14/execute" \
+  -H "Authorization: Bearer {TOKEN}" -H "Content-Type: application/json" \
+  -H "Idempotency-Key: mission:14:cancel:$(date +%s)" \
+  -d '{
+    "decision": "cancel_delivery_mission",
+    "reason": "Livreur indisponible. Mission sera recréée demain."
+  }'
+```
+
+**Request body:** `reason` (string, required, min 10 chars).
+
+**Constraint:** Only `draft` missions can be cancelled.
+
+**Response `200`:**
+```json
+{
+  "success": true,
+  "message": "Decision executed successfully",
+  "decision": "cancel_delivery_mission",
+  "output": {
+    "mission_id": 14,
+    "mission_number": "MSN-20260619-0001",
+    "status": "cancelled",
+    "cancelled_bls": [
+      { "id": 501, "delivery_number": "BL-2026-00501" },
+      { "id": 502, "delivery_number": "BL-2026-00502" }
+    ],
+    "reason": "Livreur indisponible. Mission sera recréée demain."
+  }
+}
+```
+
+**Response `422`:** `invalid_status` (mission not `draft`), `reason_required`.
+
+---
+
+### 8.8 Mission Detail
+
+`GET /backend/workflow/delivery-mission/{id}`
+
+(`WorkflowController::showDeliveryMission()`.) Full mission detail with BLs, BP, rider,
+dispatcher, vehicle.
+
+```bash
+curl "https://api.omni360.cloud/api/backend/workflow/delivery-mission/14" \
   -H "Authorization: Bearer {TOKEN}"
 ```
 
-**Response `200`:** Paginated list of `PreparationOrder` with `shipment`, `delivery_notes`, `items`.
-
+**Response `200`:**
 ```json
 {
-  "current_page": 1,
-  "per_page": 20,
-  "total": 1,
-  "data": [
+  "success": true,
+  "mission": {
+    "id": 14,
+    "mission_number": "MSN-20260619-0001",
+    "branch_code": "A0001",
+    "dispatcher_id": 7,
+    "rider_id": 9,
+    "vehicle_id": 3,
+    "rider": { "id": 9, "name": "Youssef Livreur" },
+    "dispatcher": { "id": 7, "name": "Karim Dispatcher" },
+    "status": "in_preparation",
+    "started_at": null,
+    "closed_at": null,
+    "notes": "Tournée matinale zone Centre",
+    "created_at": "2026-06-19T07:00:00+00:00"
+  },
+  "delivery_notes": [
     {
-      "id": 88,
-      "bp_number": "BP-2026-00088",
-      "status": "completed_partial",
-      "total_shortage_percentage": 25.0,
-      "is_critical_shortage": false,
-      "shipment": {
-        "id": 22,
-        "shipment_number": "BCH-2026-00022",
-        "has_shortage": true
-      },
-      "items": [
-        {
-          "id": 3001,
-          "product_id": 55,
-          "requested_quantity": 40,
-          "prepared_quantity": 30,
-          "shortage_quantity": 10,
-          "shortage_reason": "Rupture de stock temporaire"
-        }
+      "id": 501,
+      "delivery_number": "BL-2026-00501",
+      "status": "batched",
+      "partner": { "id": 12, "name": "Supermarché Atlas" },
+      "items": [ { "id": 2001, "product_id": 55, "ordered_quantity": 20, "allocated_quantity": 20, "product": { "id": 55, "name": "Huile Végétale 5L" } } ]
+    }
+  ],
+  "preparation_order": {
+    "id": 88,
+    "bp_number": "BP-2026-00088",
+    "status": "pending",
+    "items": [ { "id": 3001, "product_id": 55, "requested_quantity": 20, "prepared_quantity": 0 } ]
+  }
+}
+```
+
+`GET /backend/workflow/delivery-mission/{id}/decisions` and `.../history` work the same way as
+for other model types — see §16.
+
+---
+
+### 8.9 Batch Preview (virtual, read-only)
+
+`GET /backend/dispatcher/delivery-missions/batch-preview`
+
+(`DispatcherController::missionsBatchPreview()`.) The replacement for the old `LogisticsBatch`
+concept — **purely virtual**, nothing is persisted. Aggregates `SUM(requested_quantity)` and
+`SUM(prepared_quantity)` **GROUP BY `product_id`** across the `preparation_order_items` of the
+given missions' BPs, so the Magasinier can get a combined picking PDF without a `logistics_batches`
+row ever existing in the database. Per `planning_refactor_schema.md` §4, this is a deliberate
+trade-off — no DB-level audit trail of "what was picked together," only application logs.
+
+**Query parameters:** `mission_ids[]` (required, 1+ — pass 2+ for an actual cross-mission
+aggregation).
+
+```bash
+curl "https://api.omni360.cloud/api/backend/dispatcher/delivery-missions/batch-preview?mission_ids[]=14&mission_ids[]=15" \
+  -H "Authorization: Bearer {TOKEN}"
+```
+
+**Response `200`:**
+```json
+{
+  "success": true,
+  "missions": [
+    {
+      "id": 14,
+      "mission_number": "MSN-20260619-0001",
+      "status": "in_preparation",
+      "rider": { "id": 9, "name": "Youssef Livreur" },
+      "vehicle": { "id": 3, "plate_number": "12345-A-1" },
+      "bp_id": 88,
+      "bp_number": "BP-2026-00088"
+    },
+    {
+      "id": 15,
+      "mission_number": "MSN-20260619-0002",
+      "status": "in_preparation",
+      "rider": { "id": 10, "name": "Hicham Livreur" },
+      "vehicle": { "id": 4, "plate_number": "67890-B-2" },
+      "bp_id": 89,
+      "bp_number": "BP-2026-00089"
+    }
+  ],
+  "products": [
+    {
+      "product_id": 55,
+      "product_name": "Huile Végétale 5L",
+      "total_requested": 60,
+      "total_prepared": 0,
+      "missions": [
+        { "mission_id": 14, "bp_id": 88, "quantity": 20 },
+        { "mission_id": 15, "bp_id": 89, "quantity": 40 }
       ]
     }
   ]
 }
 ```
+
+**Response `422`:** `{"success": false, "message": "mission_ids is required."}` if no
+`mission_ids` are passed. Missions with no BP yet (`preparationOrder` null) are silently skipped
+from the `products` aggregation but still listed in `missions`.
+
+---
+
+## 9. Delivery Orders (DO) — REMOVED
+
+> **2026-06-20** — Delivery Orders are gone. The whole BC → DO intermediate layer (both the old
+> LOT bulk-picking pipeline and the "Dispatch V2" per-DO pipeline) has been removed —
+> `create_delivery_mission` (§8.1) now generates `DeliveryNote`s (BLs) directly from confirmed
+> orders, grouped by partner, in a single call. The `delivery_orders`, `delivery_order_items`,
+> and `delivery_order_orders` tables are dropped (`database/migrations/2026_07_17_130000_drop_shipment_delivery_order_logistics_batch_tables.php`).
+> `GET/POST /backend/dispatcher/delivery-orders*` and the `delivery-order`/`do` workflow model
+> type no longer exist — do not build against them. See [Delivery Missions](#8-delivery-missions).
+
+---
+
+## 10. Preparations — Shortage Queue ⚠️ broken — references dropped relations
+
+`GET /backend/dispatcher/preparations/shortage-queue`
+
+> **Not migrated — calling this will error.** `DispatcherController::preparationsShortageQueue()`
+> still calls `->whereHas('logisticsBatch', ...)` and `->whereHas('bonChargement', ...)` on
+> `PreparationOrder` — both relations were **explicitly removed** from the model on 2026-06-20
+> (see `App\Models\PreparationOrder`'s own docblock comment: `shipment() / deliveryOrder() /
+> bonChargement() REMOVED 2026-06-20 — ... Use deliveryMission()`). Calling either relation name
+> now throws `BadMethodCallException`. This endpoint was not updated as part of the migration —
+> do not build against it until it's fixed to scope by `deliveryMission` instead. Flag to backend.
+>
+> Intended behavior (once fixed): lists BPs in shortage states (`completed_partial`,
+> `awaiting_shortage_review`, `shortage_accepted`) that require the dispatcher to take action.
 
 ---
 
@@ -1333,7 +1212,17 @@ curl "https://api.omni360.cloud/api/backend/dispatcher/decharges?status=pending"
 
 ### `GET /backend/dispatcher/decharges/{id}`
 
-Full décharge detail including items, related BL, BCH, and partner.
+Full décharge detail (`App\Models\UnloadOrder`) including items, related BL, and partner.
+
+> **Partially broken — `bonChargement` relation references a dropped table.**
+> `dechargesIndex()`/`showDecharge()` eager-load `UnloadOrder::bonChargement()`, defined as
+> `belongsTo(Shipment::class, 'shipment_id')` — `Shipment`/`shipments` is dropped. Per
+> `planning_refactor_schema.md` §2, `unload_orders.shipment_id` was supposed to be migrated to
+> `delivery_mission_id`, but that satellite-table cleanup has not happened yet — `shipment_id`
+> still exists on `unload_orders` but always points at rows that no longer exist (the
+> `shipments` table itself is gone), and the `bonChargement()` relation will throw on access.
+> List/detail calls may still partially succeed (Eloquent eager-loads lazily per relation), but
+> don't rely on the `bonChargement`/`bon_chargement` key in the response. Flag to backend.
 
 ### `POST /backend/dispatcher/decharges/{id}/approve-return` ⚡
 
@@ -1361,7 +1250,7 @@ curl -X POST https://api.omni360.cloud/api/backend/dispatcher/decharges/15/rejec
 
 ---
 
-## 12. Riders & Batches
+## 12. Riders & Vehicles
 
 ### `GET /backend/dispatcher/livreurs`
 
@@ -1375,9 +1264,9 @@ curl https://api.omni360.cloud/api/backend/dispatcher/livreurs \
 ### `GET /backend/dispatcher/vehicles`
 
 List active vehicles for the dispatcher's branch — use this to populate dropdowns wherever
-`vehicle_id` is requested (`create_bch`, `optimize_do`, `generate_bch_from_dos`), instead of
-asking the user to type a raw numeric ID. Scoped by `Auth::user()->branch_code` when set
-(unscoped — returns all active vehicles — if the authenticated user has no `branch_code`).
+`vehicle_id` is requested (`create_delivery_mission`, §8.1), instead of asking the user to type a
+raw numeric ID. Scoped by `Auth::user()->branch_code` when set (unscoped — returns all active
+vehicles — if the authenticated user has no `branch_code`).
 
 ```bash
 curl https://api.omni360.cloud/api/backend/dispatcher/vehicles \
@@ -1426,154 +1315,27 @@ curl https://api.omni360.cloud/api/backend/dispatcher/vehicles \
 `capacity_volume` is in **m³**, `capacity_weight`/`payload_kg`/`capacity_length`/`width`/`height`
 are in **kg**/**m** respectively (see §17 `vehicles` schema below for the full column list).
 This endpoint does not currently expose a real-time availability flag (e.g. "already assigned to
-an active BCH today") — only `status = active/maintenance/retired`. Flag to backend if the
+an active mission today") — only `status = active/maintenance/retired`. Flag to backend if the
 frontend needs live availability.
-
-### `GET /backend/dispatcher/batches`
-
-List logistics batches (LOTs), scoped to the authenticated dispatcher's `branch_id`.
-
-**Query parameters:** `status` (`open`/`sealed`), `search` (matches `batch_number`), `per_page`
-
-```bash
-curl "https://api.omni360.cloud/api/backend/dispatcher/batches?status=open" \
-  -H "Authorization: Bearer {TOKEN}"
-```
-
-**Response `200`:** Paginated `LogisticsBatch[]` plus open/sealed counts (`DispatcherController::batchesIndex()`).
-
-```json
-{
-  "current_page": 1,
-  "per_page": 20,
-  "total": 5,
-  "data": [
-    {
-      "id": 3,
-      "batch_number": "BATCH-2026-00003",
-      "status": "open",
-      "branch_code": "CASA-01",
-      "dispatcher": { "id": 7, "name": "Karim Dispatcher" },
-      "delivery_notes": [],
-      "preparation_order": null,
-      "created_at": "2026-06-15T11:00:00Z"
-    }
-  ]
-}
-```
-
-> Top-level stats (sibling to the paginator, not shown above) are `{"open": N, "sealed": N}` — there is no `ready`/`in_progress`/`completed` bucket; those statuses don't exist on `LogisticsBatch`.
-
-### `GET /backend/dispatcher/batches/{id}`
-
-Batch detail with linked BLs (`deliveryNotes`), preparation order, dispatcher. **Wrapped, not flat** — `{success, data: {batch}}` (`DispatcherController::showBatch()`).
-
-```bash
-curl "https://api.omni360.cloud/api/backend/dispatcher/batches/3" \
-  -H "Authorization: Bearer {TOKEN}"
-```
-
-**Response `200`:**
-```json
-{
-  "success": true,
-  "data": {
-    "batch": {
-      "id": 3,
-      "batch_number": "BATCH-2026-00003",
-      "status": "sealed",
-      "branch_code": "CASA-01",
-      "sealed_at": "2026-06-15T12:00:00Z",
-      "preparation_order_id": 88,
-      "dispatcher": { "id": 7, "name": "Karim Dispatcher" },
-      "delivery_notes": [
-        { "id": 501, "delivery_number": "BL-2026-00501", "partner": { "id": 12, "name": "Supermarché Atlas" }, "items": [] }
-      ],
-      "preparation_order": {
-        "id": 88,
-        "bp_number": "BP-2026-00088",
-        "status": "pending",
-        "items": [
-          { "id": 3001, "product_id": 55, "requested_quantity": 40, "prepared_quantity": 0 }
-        ],
-        "shipment": { "id": 22, "shipment_number": "BCH-2026-00022", "rider": { "id": 9, "name": "Youssef Livreur" } }
-      }
-    }
-  }
-}
-```
-
-> Note: `delivery_notes` on the batch detail is populated once the BP has been completed and BLs generated from it — a freshly-`open` batch has DOs attached (via `delivery_orders.logistics_batch_id`), not yet BLs.
-
-### Batch Status Lifecycle
-
-The real `logistics-batch` decisions, from `config/decisions.php` and the decision classes in `app/Decisions/Dispatcher/`:
-
-```
-LOT created from DOs (create_batch)
-       │
-       ▼
-     open ──[update_batch]──► open  (add/remove DOs, edit notes — only while open)
-       │
-   [seal_batch]   (aggregates every DO's items by product_id into ONE BP for the whole LOT)
-       │
-       ▼
-    sealed
-```
-
-`delete_batch` removes an `open` batch (and detaches its DOs) — there is no `cancel_batch`/`validate_batch`/`start_delivery`/`complete_batch` decision; those keys do not exist anywhere in `config/decisions.php`.
-
-| Status | Meaning | Set by |
-|---|---|---|
-| `open` | Batch created, DOs can still be added/removed | `create_batch` |
-| `sealed` | Locked, BP generated, DOs frozen | `seal_batch` |
-
----
-
-## 12b. Delivery Missions — not yet wired (schema only)
-
-> ⚠️ **[LOOSE END / FUTURE TODO GAP]** A `delivery_missions` table and `App\Models\DeliveryMission`
-> exist in the codebase, but **no controller, no route, and no decision** currently uses them.
-> `config/decisions.php` has no `delivery-mission` model-type entry at all. Do not build a
-> frontend screen against `GET /backend/dispatcher/delivery-missions` — it does not exist.
-
-The model's own docblock describes the *intended* (not yet implemented) semantics, which are
-different from what was previously documented here — a `DeliveryMission` is **one rider session
-per BCH** (not one stop per BL):
-
-```
-DeliveryMission lifecycle (per App\Models\DeliveryMission docblock — aspirational, unwired):
-  CREATED  — Rider accepted BCH, inspecting goods
-  STARTED  — WarehouseTransfer created (MAIN → VAN), rider en route delivering BLs
-  CLOSED   — All deliveries done, reconciliation passed, stock balanced
-```
-
-Real columns on `delivery_missions` (from the migration, not currently populated by any code path): `mission_number`, `rider_id`, `shipment_id`, `vehicle_id`, `branch_code`, `status`, `started_at`, `closed_at`, `van_stock_reconciled`, `cod_reconciled`, `returns_reconciled`, `total_bls`, `delivered_bls`, `failed_bls`, `total_returns`, `total_cod_collected`.
-
-This is the same gap called out in §2: until a decision/controller is built against this model, the rider-accept → WHT trigger is manual.
 
 ---
 
 ## 12c. Warehouse Transfers
 
-> **Correction (2026-06-17):** every endpoint, request body, response shape, and status value
-> previously documented in this section was fabricated — none of it matches the real
-> `WarehouseTransferController`/`WarehouseTransferService`/`warehouse_transfers` schema. This
-> rewrite is verified directly against the controller, service, and `Schema::getColumnListing()`
-> on the live DB. The routes below did not exist under the `dispatcher` prefix until this date —
-> they've been wired to the controller's pre-existing (previously unrouted) `index`/`show`
-> methods, so list/detail are now live; `create-from-bch`/`accept`/`reject` were added the same
-> way against the controller's existing methods.
+> **2026-06-20 — mission-driven creation.** Warehouse Transfers are no longer created via a
+> dispatcher-triggered endpoint. There is **no more `POST .../warehouse-transfers/from-bch/{bchId}`**
+> (BCH is gone) and **no equivalent `from-mission` endpoint either** — WT creation is now fully
+> internal: `WarehouseTransferService::createFromMission()` is called automatically by
+> `CompletePreparationDecision` the moment the mission's BP is completed (see §8.2/§2). The
+> dispatcher only ever **reads** WTs (list/detail) and can **accept**/**reject** one; they never
+> "create" one through the API.
 
-A **Warehouse Transfer** (WT) moves stock from the **main warehouse to a rider's van** —
-created automatically when a dispatcher accepts a completed BCH (`createFromBch`), not a
-manual branch-to-branch request form. There is **no generic "create an arbitrary transfer
-between two branches" endpoint or service method anywhere in the codebase** — every WT is tied
-to a source document: a BCH (`createFromShipment`), a loading request, or a décharge
-reconciliation. If your screen needs a freeform "pick source branch, destination branch, and
-products" creation flow, **that capability does not exist on the backend** — talk to backend/product
-before building it; the request body documented here previously (`source_branch_id`,
-`destination_branch_id`, `items[]`) was invented, not derived from real code.
+A **Warehouse Transfer** (WT) moves stock from the **depot to a rider's van** (CENTRAL → VAN),
+one per mission, keyed by `delivery_mission_id` (not `shipment_id` anymore — that column still
+exists on the table for historical rows but new transfers are mission-scoped). There is still
+**no generic "create an arbitrary transfer between two branches" endpoint or service method**
+anywhere in the codebase — every WT is tied to a source document: a delivery mission
+(`createFromMission`), a loading request, or a décharge reconciliation.
 
 ### `GET /backend/dispatcher/warehouse-transfers`
 
@@ -1597,16 +1359,16 @@ curl "https://api.omni360.cloud/api/backend/dispatcher/warehouse-transfers" \
         "id": 5,
         "transfer_number": "WT-2026-00005",
         "status": "pending",
-        "shipment_id": 22,
+        "delivery_mission_id": 14,
         "rider_id": 9,
-        "from_warehouse": "MAIN-CASA-01",
+        "from_warehouse": "MAIN-A0001",
         "to_warehouse": "VAN-9",
-        "transfer_type": "bch_to_van",
+        "transfer_type": "dispatcher",
         "progress_level": 0,
         "synced_to_erp": false,
-        "bon_chargement": { "id": 22, "shipment_number": "BCH-2026-00022" },
+        "delivery_mission": { "id": 14, "mission_number": "MSN-20260619-0001" },
         "livreur": { "id": 9, "name": "Youssef Livreur" },
-        "created_at": "2026-06-15T08:00:00Z"
+        "created_at": "2026-06-19T13:00:00Z"
       }
     ]
   }
@@ -1615,7 +1377,7 @@ curl "https://api.omni360.cloud/api/backend/dispatcher/warehouse-transfers" \
 
 ### `GET /backend/dispatcher/warehouse-transfers/{id}`
 
-Full transfer detail with items, BCH, rider, accepter. (`WarehouseTransferController::show()` → `WarehouseTransferService::getTransferDetails()`.)
+Full transfer detail with items, mission, rider, accepter. (`WarehouseTransferController::show()` → `WarehouseTransferService::getTransferDetails()`.)
 
 ```bash
 curl "https://api.omni360.cloud/api/backend/dispatcher/warehouse-transfers/5" \
@@ -1630,16 +1392,16 @@ curl "https://api.omni360.cloud/api/backend/dispatcher/warehouse-transfers/5" \
     "id": 5,
     "transfer_number": "WT-2026-00005",
     "status": "pending",
-    "shipment_id": 22,
+    "delivery_mission_id": 14,
     "rider_id": 9,
-    "from_warehouse": "MAIN-CASA-01",
+    "from_warehouse": "MAIN-A0001",
     "to_warehouse": "VAN-9",
     "notes": null,
     "accepted_by": null,
     "accepted_at": null,
-    "bon_chargement": {
-      "id": 22,
-      "shipment_number": "BCH-2026-00022",
+    "delivery_mission": {
+      "id": 14,
+      "mission_number": "MSN-20260619-0001",
       "delivery_notes": [ { "id": 501, "partner": { "id": 12, "name": "Supermarché Atlas" } } ]
     },
     "livreur": { "id": 9, "name": "Youssef Livreur" },
@@ -1653,39 +1415,19 @@ curl "https://api.omni360.cloud/api/backend/dispatcher/warehouse-transfers/5" \
         "delivered_quantity": 0,
         "returned_quantity": 0,
         "unit_price": 3200.00,
+        "delivery_note_id": 501,
+        "sales_group_code": "DRY",
         "product": { "id": 55, "name": "Huile Végétale 5L" }
       }
     ],
-    "created_at": "2026-06-15T08:00:00Z"
+    "created_at": "2026-06-19T13:00:00Z"
   }
 }
 ```
 
-### `POST /backend/dispatcher/warehouse-transfers/from-bch/{bchId}` ⚡
-
-Create a WT from a **completed** BCH — the only real "create" path. Items/quantities are
-derived automatically from the BCH's delivery notes; there is no request body to author manually.
-
-```bash
-curl -X POST "https://api.omni360.cloud/api/backend/dispatcher/warehouse-transfers/from-bch/22" \
-  -H "Authorization: Bearer {TOKEN}" \
-  -H "Content-Type: application/json" \
-  -H "Idempotency-Key: wt:create:$(date +%s)" \
-  -d '{}'
-```
-
-**Constraint:** BCH must be `status = completed`, else `422 {"success": false, "message": "BCH must be completed before creating warehouse transfer"}`.
-
-**Response `201`:**
-```json
-{
-  "success": true,
-  "message": "...",
-  "warehouse_transfer_id": 5
-}
-```
-
-> There is a second, different acceptance path — `POST /backend/warehouse-transfers/bch/{bchId}/accept` (no `dispatcher` prefix, registered separately in `routes/backend.php`) — which both creates the WT **and** flips the BCH to `in_transit` in one call, but only accepts BCH in `prepared`/`loaded` status (not `completed`). Don't call both for the same BCH; pick one path depending on which BCH status you're acting on.
+> `transferred_quantity` is sourced from each BL item's `prepared_quantity` (falling back to
+> `allocated_quantity` if a line was never synced from the BP) — it reflects what the Magasinier
+> actually picked, not what was originally requested.
 
 ### `POST /backend/dispatcher/warehouse-transfers/{id}/accept` ⚡
 
@@ -1720,21 +1462,22 @@ curl -X POST "https://api.omni360.cloud/api/backend/dispatcher/warehouse-transfe
 - No `ship`/`in_transit`/`receive`/`partially_received` transitions exist anywhere in
   `WarehouseTransferService` or the controller. The real lifecycle observed in code is just
   `pending → accepted → completed` (plus `rejected` as a terminal alternative, and `validated`
-  used only by the décharge-reconciliation creation path, not the BCH path). If your screen
-  needs ship/receive actions, they need to be built from scratch — this isn't a routing gap
-  like list/detail/accept/reject were.
-- No manual/arbitrary transfer creation (see the warning above) — only BCH-driven.
+  used only by the décharge-reconciliation creation path). If your screen needs ship/receive
+  actions, they need to be built from scratch — this isn't a routing gap like list/detail/accept/
+  reject were.
+- No manual/arbitrary transfer creation, and no dispatcher-triggered "create" endpoint at all
+  anymore (see the note above) — creation is 100% internal to `complete_preparation`.
 - `accept`/`reject` have **no status guard** (no check that the transfer is currently `pending`
   before transitioning) and **no idempotency replay check** beyond the header requirement —
-  unlike the BL/BCH/DO decision engine, this controller does direct `$model->update()` calls,
-  not the `Decision` class pattern used elsewhere in this doc. Flag to backend if you need the
-  same guarantees (constraint checks, replay-safe responses) as the rest of the dispatcher API.
+  unlike the BL/Delivery-Mission decision engine, this controller does direct `$model->update()`
+  calls, not the `Decision` class pattern used elsewhere in this doc. Flag to backend if you need
+  the same guarantees (constraint checks, replay-safe responses) as the rest of the dispatcher API.
 
 ### Real `warehouse_transfers` status values (from code, not invented)
 
 | Status | Meaning | Set by |
 |---|---|---|
-| `pending` | Created, awaiting acceptance | `createFromBch` / `createFromShipment` |
+| `pending` | Created, awaiting acceptance | `createFromMission()` (auto, on BP completion) |
 | `accepted` | Dispatcher/rider accepted | `accept()` |
 | `completed` | Delivery fully reconciled | various service flows |
 | `rejected` | Rejected, reason in `notes` | `reject()` |
@@ -1862,7 +1605,7 @@ curl -X POST "https://api.omni360.cloud/api/vans/3/assign" \
   }'
 
 # Unassign — idempotency-required. ends_at/notes optional (defaults: ends_at=now())
-# Blocked with 422 if the vehicle/rider is linked to an active BCH (see guard below).
+# Blocked with 422 if the vehicle/rider is linked to an active delivery mission (see guard below).
 curl -X POST "https://api.omni360.cloud/api/vans/3/unassign" \
   -H "Authorization: Bearer {TOKEN}" -H "Content-Type: application/json" \
   -H "Idempotency-Key: van:3:unassign:$(date +%s)" \
@@ -1920,24 +1663,28 @@ pivot table; don't expect those columns on raw `Vehicle` model attributes.
 > is unchanged and still lists vans only — use `/backend/dispatcher/vehicles` (§12) or
 > `/backend/riders/with-vehicles` (above) for an all-types view.
 
-### Active-shipment guard on unassign
+### Active-mission guard on unassign
 
-> **Added 2026-06-17:** `unassignRider` now **hard-blocks with `422`** if the vehicle (or its
-> currently-assigned rider, via `rider_id`) is linked to a `shipments` row whose `status` is
-> **not** `completed` or `cancelled` (i.e. `pending`/`in_preparation`/`prepared`/`validated`/
-> `loaded`/`in_transit`). This prevents unassigning a rider/vehicle mid-BCH, which would break
-> traceability of who/what actually carried a given shipment.
+> `unassignRider` **hard-blocks with `422`** if the vehicle (or its currently-assigned rider, via
+> `rider_id`) is linked to a `delivery_missions` row whose `status` is **not** `completed` or
+> `cancelled` (i.e. `draft`/`in_preparation`/`ready`/`in_transit`). This prevents unassigning a
+> rider/vehicle mid-mission, which would break traceability of who/what actually carried a given
+> delivery. `Vehicle::activeBonChargements()` (kept its legacy method name — it's now a
+> `hasMany(DeliveryMission::class, 'vehicle_id')`, see `app/Models/Vehicle.php`) is the relation
+> backing this check.
 > ```json
 > {"success": false, "message": "Cannot unassign vehicle/rider while linked to an active Bon de Chargement."}
 > ```
+> (The error message text itself wasn't updated to say "mission" — still reads "Bon de
+> Chargement" even though the underlying check is mission-based; flag to backend if this should
+> be reworded.)
+>
 > To support disabling the "Retirer" button proactively in the UI instead of waiting for the
-> 422, **all three vehicle-listing endpoints now include a `has_active_shipments` boolean**:
-> `GET /backend/dispatcher/vehicles` (§12), `GET /backend/riders/with-vehicles` (above, on each
-> vehicle inside `vehicles[]`), and `GET /api/vans` (`index`). When `true`, hide/disable
-> "Retirer" and show a tooltip — e.g. *"Impossible de retirer : BCH en cours"*. Verified via
-> tinker: creating a `pending` `Shipment` tied to a vehicle/rider sets `has_active_shipments:
-> true` on that vehicle and makes `unassign` return `422`; deleting/completing the shipment
-> restores normal unassign behavior.
+> 422, **all three vehicle-listing endpoints still include a `has_active_shipments` boolean**
+> (field name kept as-is — it now reflects active missions, not `shipments` rows, which no
+> longer exist): `GET /backend/dispatcher/vehicles` (§12), `GET /backend/riders/with-vehicles`
+> (above, on each vehicle inside `vehicles[]`), and `GET /api/vans` (`index`). When `true`,
+> hide/disable "Retirer" and show a tooltip — e.g. *"Impossible de retirer : mission en cours"*.
 
 ---
 
@@ -1959,9 +1706,9 @@ pivot table; don't expect those columns on raw `Vehicle` model attributes.
   "message": "La décision est bloquée",
   "constraints": [
     {
-      "name": "rider_required",
-      "reason": "Un livreur doit être assigné avant de soumettre le BCH au magasinier.",
-      "context": { "shipment_id": 22 }
+      "name": "driver_required",
+      "reason": "A driver (rider_id) is required to create a mission.",
+      "context": { "mission_id": 14 }
     }
   ]
 }
@@ -1999,12 +1746,10 @@ type BlStatus =
   | 'returned'
   | 'cancelled';
 
-type BchStatus =
-  | 'pending'
+type DeliveryMissionStatus =
+  | 'draft'
   | 'in_preparation'
-  | 'prepared'
-  | 'validated'
-  | 'loaded'
+  | 'ready'
   | 'in_transit'
   | 'completed'
   | 'cancelled';
@@ -2020,19 +1765,6 @@ type BpStatus =
   | 'shortage_split_done'
   | 'rejected';
 
-type DoStatus =
-  | 'draft'
-  | 'pending_allocation'
-  | 'allocated'
-  | 'partially_allocated'
-  | 'optimized'
-  | 'in_preparation'
-  | 'prepared'
-  | 'ready_for_loading'
-  | 'dispatched'
-  | 'cancelled'
-  | 'rejected';
-
 // ─── Core Models ─────────────────────────────────────────────────────────────
 
 interface Rider {
@@ -2043,19 +1775,21 @@ interface Rider {
 
 interface Vehicle {
   id: number;
-  plate: string;
+  plate_number: string;
   capacity_kg?: number;
 }
 
 interface DeliveryNoteItem {
   id: number;
   product_id: number;
-  quantity: number;
-  allocated_qty: number;
+  ordered_quantity: number;
+  allocated_quantity: number;
   prepared_quantity?: number | null;
+  delivered_quantity?: number;
   unit_price: number;
-  total_price: number;
-  product: { id: number; name: string; sku: string };
+  unit?: string;
+  sales_group_code?: string | null;
+  product: { id: number; name: string; sku?: string };
 }
 
 interface DeliveryNote {
@@ -2067,27 +1801,41 @@ interface DeliveryNote {
   notes?: string;
   branch_code: string;
   is_quantity_locked: boolean;
+  delivery_mission_id?: number | null;
   partner: { id: number; name: string; code: string };
   order?: { id: number; order_code: string; bc_status: string };
   rider?: Rider | null;
   dispatcher?: { id: number; name: string };
   items?: DeliveryNoteItem[];
-  bon_chargement?: Pick<Shipment, 'id' | 'shipment_number' | 'status'> | null;
+  delivery_mission?: Pick<DeliveryMission, 'id' | 'mission_number' | 'status'> | null;
   preparation?: Pick<PreparationOrder, 'id' | 'bp_number' | 'status'> | null;
   created_at: string;
 }
 
-interface Shipment {
+// ─── Delivery Mission — the dispatcher's Drag&Drop container, replaces Shipment/BCH ──
+
+interface DeliveryMission {
   id: number;
-  shipment_number: string;
-  status: BchStatus;
+  mission_number: string;
+  status: DeliveryMissionStatus;
+  rider_id: number;
+  dispatcher_id?: number;
+  vehicle_id: number;
   branch_code: string;
-  has_shortage: boolean;
-  shortage_acknowledged: boolean;
-  notes?: string;
-  estimated_departure?: string;
+  notes?: string | null;
+  started_at?: string | null;
+  closed_at?: string | null;
+  close_notes?: string | null;
+  van_stock_reconciled: boolean;
+  cod_reconciled: boolean;
+  returns_reconciled: boolean;
+  total_bls?: number | null;
+  delivered_bls?: number | null;
+  failed_bls?: number | null;
+  total_returns?: number | null;
+  total_cod_collected?: number | null;
   rider?: Rider | null;
-  dispatcher?: { id: number; name: string };
+  dispatcher?: { id: number; name: string } | null;
   vehicle?: Vehicle | null;
   delivery_notes?: DeliveryNote[];
   preparation_order?: PreparationOrder | null;
@@ -2108,13 +1856,14 @@ interface PreparationOrderItem {
 interface PreparationOrder {
   id: number;
   bp_number: string;
+  delivery_mission_id: number;
   status: BpStatus;
   total_shortage_percentage?: number;
   is_critical_shortage?: boolean;
   shortage_acknowledged: boolean;
   preparation_efficiency?: number | null;
   magasinier?: { id: number; name: string } | null;
-  shipment?: Pick<Shipment, 'id' | 'shipment_number' | 'status'> | null;
+  delivery_mission?: Pick<DeliveryMission, 'id' | 'mission_number' | 'status'> | null;
   items?: PreparationOrderItem[];
   created_at: string;
   prepared_at?: string | null;
@@ -2122,144 +1871,78 @@ interface PreparationOrder {
   rejection_reason?: string | null;
 }
 
-interface DeliveryOrder {
-  id: number;
-  do_number: string;
-  status: DoStatus;
-  planned_delivery_date: string;
-  delivery_zone?: string;
-  orders_count: number;
-  total_ordered_amount: number;
-  driver?: Rider | null;
-  vehicle?: Vehicle | null;
-}
-
 // ─── Dashboard ────────────────────────────────────────────────────────────────
 
 interface DispatcherDashboard {
-  stats: {
-    pending_orders: number;
-    draft_bls: number;
-    pending_bch: number;
-    in_transit: number;
+  pipeline: {
+    bc_confirmed: number;
+    missions_draft: number;
+    missions_in_preparation: number;
+    missions_ready: number;
+    missions_in_transit: number;
+    bp_pending: number;
+    bp_in_progress: number;
+    bp_shortage_queue: number;
+    bp_rejected: number;
+    bl_draft: number;
+    bl_confirmed: number;
+    bl_ready: number;
+    bl_loaded: number;
+    bl_in_transit: number;
+    delivered_today: number;
+  };
+  alerts: {
     shortage_queue: number;
-    confirmed_today: number;
+    rejected_bps: number;
+    overdue_deliveries: number;
   };
-  recentPreparations: Array<{
-    id: number;
-    bp_number: string;
-    status: BpStatus;
-    shipment: { id: number; shipment_number: string };
-    rider?: Rider | null;
-  }>;
-}
-
-// ─── BCH List Response ────────────────────────────────────────────────────────
-
-interface BchIndexResponse {
-  bch: {
-    current_page: number;
-    per_page: number;
-    total: number;
-    data: Shipment[];
-  };
-  stats: {
-    total: number;
-    pending: number;
-    in_preparation: number;
-    prepared: number;
-    completed: number;
+  activity: {
+    recent_orders: Array<Record<string, unknown>>;
+    active_deliveries: Array<Pick<DeliveryNote, 'id' | 'delivery_number' | 'status'>>;
+    recent_shortages: Array<Pick<PreparationOrder, 'id' | 'bp_number' | 'status' | 'total_shortage_percentage' | 'delivery_mission_id'>>;
   };
 }
 
-// ─── Balance Check ────────────────────────────────────────────────────────────
+// ─── Batch Preview (virtual, read-only — see §8.9) ───────────────────────────
 
-interface ShortageProductBalance {
+interface MissionBatchPreviewProduct {
   product_id: number;
-  product_name: string;
-  sku: string;
+  product_name: string | null;
   total_requested: number;
   total_prepared: number;
-  shortage: number;
-  requesting_bls: Array<{
-    bl_id: number;
-    delivery_number: string;
-    partner_name: string;
-    requested: number;
-    current_prepared: number;
-    suggested_equal: number;
-    suggested_fifo: number;
+  missions: Array<{ mission_id: number; bp_id: number; quantity: number }>;
+}
+
+interface MissionBatchPreviewResponse {
+  success: boolean;
+  missions: Array<{
+    id: number;
+    mission_number: string;
+    status: DeliveryMissionStatus;
+    rider: Pick<Rider, 'id' | 'name'> | null;
+    vehicle: Pick<Vehicle, 'id' | 'plate_number'> | null;
+    bp_id?: number | null;
+    bp_number?: string | null;
   }>;
-}
-
-interface BalanceAnalysis {
-  bch_id: number;
-  shipment_number: string;
-  products: ShortageProductBalance[];
-}
-
-// ─── Logistics Batch (LOT) ───────────────────────────────────────────────────
-
-type BatchStatus = 'open' | 'sealed';
-
-interface LogisticsBatch {
-  id: number;
-  batch_number: string;
-  status: BatchStatus;
-  branch_code: string;
-  dispatcher?: { id: number; name: string };
-  sealed_at?: string | null;
-  preparation_order_id?: number | null;
-  delivery_notes?: DeliveryNote[];
-  preparation_order?: Pick<PreparationOrder, 'id' | 'bp_number' | 'status'> | null;
-  notes?: string | null;
-  created_at: string;
-}
-
-// ─── Delivery Mission (DM) — schema exists, NOT wired to any decision/controller/route ──
-// See [LOOSE END / FUTURE TODO GAP] in §12b. Do not build a frontend screen against this yet.
-
-type DeliveryMissionStatus = 'created' | 'started' | 'closed';
-
-interface DeliveryMission {
-  id: number;
-  mission_number: string;
-  status: DeliveryMissionStatus;
-  rider_id: number;
-  shipment_id: number;
-  vehicle_id?: number | null;
-  branch_code: string;
-  started_at?: string | null;
-  closed_at?: string | null;
-  van_stock_reconciled: boolean;
-  cod_reconciled: boolean;
-  returns_reconciled: boolean;
-  total_bls?: number | null;
-  delivered_bls?: number | null;
-  failed_bls?: number | null;
-  total_returns?: number | null;
-  total_cod_collected?: number | null;
+  products: MissionBatchPreviewProduct[];
 }
 
 // ─── Warehouse Transfer (WT) ─────────────────────────────────────────────────
 
-type TransferStatus =
-  | 'pending'
-  | 'approved'
-  | 'in_transit'
-  | 'received'
-  | 'partially_received'
-  | 'cancelled'
-  | 'rejected';
+type TransferStatus = 'pending' | 'accepted' | 'completed' | 'rejected' | 'validated';
 
 interface WarehouseTransferItem {
   id: number;
   product_id: number;
-  product_name?: string;
+  product_code?: string | null;
+  product_name?: string | null;
   requested_quantity: number;
-  approved_quantity?: number | null;
-  received_quantity?: number | null;
-  unit_cost: number;
+  transferred_quantity: number;
+  delivered_quantity: number;
+  returned_quantity: number;
+  unit_price: number;
+  delivery_note_id?: number | null;
+  sales_group_code?: string | null;
 }
 
 interface WarehouseTransfer {
@@ -2267,29 +1950,34 @@ interface WarehouseTransfer {
   transfer_number: string;
   status: TransferStatus;
   transfer_type: string;
-  source_branch_id: number;
-  destination_branch_id: number;
-  source_warehouse_id?: number | null;
-  destination_warehouse_id?: number | null;
+  delivery_mission_id: number;
+  rider_id: number;
+  from_warehouse: string;
+  to_warehouse: string;
+  progress_level: number;
+  synced_to_erp?: boolean;
   notes?: string | null;
-  requested_by?: { id: number; name: string };
-  approved_by?: { id: number; name: string } | null;
+  accepted_by?: number | null;
+  accepted_at?: string | null;
+  delivery_mission?: Pick<DeliveryMission, 'id' | 'mission_number'> | null;
+  livreur?: Rider | null;
   items?: WarehouseTransferItem[];
   created_at: string;
-  approved_at?: string | null;
-  completed_at?: string | null;
 }
 
 // ─── Workflow Decision Types ──────────────────────────────────────────────────
 
 type BlDecision = 'update_delivery' | 'split_delivery' | 'cancel_delivery' | 'confirm_delivery' | 'mark_ready' | 'mark_loaded' | 'mark_in_transit' | 'mark_delivered' | 'mark_partial_delivery' | 'mark_returned';
-type BchDecision = 'create_bch' | 'update_bch' | 'submit_to_warehouse' | 'validate_shipment' | 'mark_bch_loaded' | 'mark_bch_in_transit' | 'complete_shipment' | 'cancel_bch' | 'adjust_quantities' | 'resubmit_bch' | 'acknowledge_shortage';
-type BatchDecision = 'create_batch' | 'update_batch' | 'seal_batch' | 'delete_batch';
-// No MissionDecision type — DeliveryMission has no registered decisions (see §12b, §16).
+// allocate_delivery_note REMOVED 2026-06-21 — folded into confirm_delivery_mission, see §2/§8.2.
+type DeliveryMissionDecision = 'create_delivery_mission' | 'confirm_delivery_mission' | 'reopen_delivery_mission' | 'start_delivery_mission' | 'complete_delivery_mission' | 'update_delivery_mission' | 'cancel_delivery_mission';
+// generate_preparation_for_mission REMOVED 2026-06-21 — folded into confirm_delivery_mission.
+// adjust_quantities / create_decharge have NO delivery-mission equivalent yet — see §2, §8.
 
 interface WorkflowExecuteResponse {
   success: boolean;
   message: string;
+  decision?: string;
+  output?: Record<string, unknown>;
   data?: Record<string, unknown>;
 }
 
@@ -2304,99 +1992,86 @@ interface WorkflowConstraint {
 
 ## 15. End-to-End Workflow Examples
 
-### Example A — Full Dispatch Cycle (Happy Path)
+### Example A — Full Mission Cycle (Happy Path, with both allocation outcomes)
+
+End-to-end through the current Delivery Mission pipeline (§2, §8): BC → mission creation →
+per-BL allocation → BP generation → Magasinier preparation → warehouse transfer (auto) →
+mission departure → mission completion.
 
 ```bash
-# Step 1: Dispatcher checks confirmed orders
+# Step 1: Dispatcher checks confirmed orders ready to dispatch
 curl "https://api.omni360.cloud/api/backend/dispatcher/orders/pending" \
   -H "Authorization: Bearer {TOKEN}"
-# → order id: 201, bc_status: "confirmed"
+# → orders 201 (partner 12), 207 (partner 12), 212 (partner 18), all bc_status: "confirmed"
 
-# Step 2: (System/ADV creates BLs from orders — see BC workflow)
-# BL id: 501 is created in "draft" status
+# Step 2: Drag & drop the 3 orders into a new mission — orders 201+207 (same partner) merge
+# into ONE BL, order 212 becomes a separate BL. No stock touched yet.
+curl -X POST "https://api.omni360.cloud/api/backend/dispatcher/delivery-missions" \
+  -H "Authorization: Bearer {TOKEN}" -H "Content-Type: application/json" \
+  -H "Idempotency-Key: mission:create:$(date +%s)" \
+  -d '{"order_ids":[201,207,212],"rider_id":9,"vehicle_id":3,"notes":"Tournée matinale zone Centre"}'
+# → output.mission_id: 14, status: "draft", bl_count: 2
+#   delivery_notes: [{id: 501, partner_id: 12, order_ids: [201,207]}, {id: 502, partner_id: 18, order_ids: [212]}]
 
-# Step 3: Dispatcher reviews the draft BL
-curl "https://api.omni360.cloud/api/backend/dispatcher/bon-livraisons/501" \
-  -H "Authorization: Bearer {TOKEN}"
+# Step 3: Confirm the mission — ONE atomic call allocates stock for every BL on it
+# (BL 501 fully covered, BL 502 has a shortfall) AND generates the BP, in one transaction.
+curl -X POST "https://api.omni360.cloud/api/backend/workflow/delivery-mission/14/execute" \
+  -H "Authorization: Bearer {TOKEN}" -H "Content-Type: application/json" \
+  -H "Idempotency-Key: mission:14:confirm:$(date +%s)" \
+  -d '{"decision": "confirm_delivery_mission"}'
+# → output.status: "in_preparation"
+#   output.allocations: [
+#     {delivery_note_id: 501, total_ordered: 40, total_allocated: 40, allocation_rate: 100.0, backlog_orders_count: 0},
+#     {delivery_note_id: 502, total_ordered: 15, total_allocated: 9, allocation_rate: 60.0,
+#      backlog_orders: [{id: 318, order_code: "BC-2026-00318", bc_status: "confirmed"}], backlog_orders_count: 1}
+#   ]
+#   output.preparation: {bp_id: 88, bp_number: "BP-2026-00088", bl_count: 2, items_count: 3}
+#   output.fully_backlogged: false
+# → BL 501/502: "confirmed" then immediately "batched" (NOT "partially_allocated" — no such BL status)
+# → BC-2026-00318 (the shortfall) reappears in GET /backend/dispatcher/orders/pending, ready for a future mission
 
-# Step 4: Dispatcher assigns rider and sets delivery date
-curl -X PUT "https://api.omni360.cloud/api/backend/dispatcher/bon-livraisons/501" \
-  -H "Authorization: Bearer {TOKEN}" \
-  -H "Content-Type: application/json" \
-  -H "Idempotency-Key: bl:501:update:$(date +%s)" \
-  -d '{"decision":"update_delivery","rider_id":9,"delivery_date":"2026-06-16"}'
+# Step 5: Magasinier executes the BP (Module 16, not repeated here) — start_preparation,
+# update items while picking, then complete_preparation. On completion, BLs → "ready" AND
+# WarehouseTransferService::createFromMission() auto-creates the depot→van transfer —
+# mission flips straight to "ready" (no separate dispatcher-triggered WT step, see §12c).
 
-# Step 5: Create a BCH grouping this BL (+ BL 502 for same route)
-curl -X POST "https://api.omni360.cloud/api/backend/dispatcher/bon-chargements" \
-  -H "Authorization: Bearer {TOKEN}" \
-  -H "Content-Type: application/json" \
-  -H "Idempotency-Key: bch:create:$(date +%s)" \
-  -d '{"decision":"create_bch","bl_ids":[501,502],"rider_id":9,"vehicle_id":3}'
-# → bch_id: 22
+# Step 6: Rider departs
+curl -X POST "https://api.omni360.cloud/api/backend/workflow/delivery-mission/14/execute" \
+  -H "Authorization: Bearer {TOKEN}" -H "Content-Type: application/json" \
+  -H "Idempotency-Key: mission:14:start:$(date +%s)" \
+  -d '{"decision": "start_delivery_mission"}'
+# → output.status: "in_transit"; BLs 501/502 → "in_transit"
 
-# Step 6: Submit to Magasinier
-curl -X POST "https://api.omni360.cloud/api/backend/dispatcher/bon-chargements/22/submit" \
-  -H "Authorization: Bearer {TOKEN}" \
-  -H "Content-Type: application/json" \
-  -H "Idempotency-Key: bch:22:submit:$(date +%s)" \
-  -d '{}'
-# → Scenario B: bp_id: 88 created, BCH → "in_preparation"
+# Step 7: (Rider delivers — see the Rider/Livreur module, not covered here)
 
-# Step 7: Magasinier prepares (see Module 16 — Magasinier)
-# → BCH eventually becomes "prepared", BLs become "ready"
-
-# Step 8: Dispatcher prints loading manifest
-curl "https://api.omni360.cloud/api/backend/dispatcher/bon-chargements/22/print" \
-  -H "Authorization: Bearer {TOKEN}"
+# Step 8: Dispatcher/rider closes the mission once all deliveries are resolved
+curl -X POST "https://api.omni360.cloud/api/backend/workflow/delivery-mission/14/execute" \
+  -H "Authorization: Bearer {TOKEN}" -H "Content-Type: application/json" \
+  -H "Idempotency-Key: mission:14:complete:$(date +%s)" \
+  -d '{"decision": "complete_delivery_mission", "close_notes": "RAS"}'
+# → output.status: "completed", delivery_rate: 100.0 (computed via DeliveryMission::computeStats())
 ```
 
 ---
 
-### Example B — Shortage Handling
+### Example B — Cancelling a Draft Mission
 
 ```bash
-# Magasinier completes BP with partial quantities → BCH: completed_partial
-
-# Step 1: Dispatcher sees shortage in queue
-curl "https://api.omni360.cloud/api/backend/dispatcher/preparations/shortage-queue" \
-  -H "Authorization: Bearer {TOKEN}"
-# → bp_id: 88, status: "completed_partial", shortage: 10 units of product 55
-
-# Step 2: Analyze the balance
-curl "https://api.omni360.cloud/api/backend/dispatcher/bon-chargements/22/balance" \
-  -H "Authorization: Bearer {TOKEN}"
-# → product 55: 30 prepared, 40 requested across 2 BLs
-# → suggested_equal: 15 each
-
-# Step 3a: Apply equal split
-curl -X PUT "https://api.omni360.cloud/api/backend/dispatcher/bon-chargements/22/balance" \
-  -H "Authorization: Bearer {TOKEN}" \
-  -H "Content-Type: application/json" \
-  -H "Idempotency-Key: bch:22:balance:$(date +%s)" \
-  -d '{"decision":"adjust_quantities","split_strategy":"equal"}'
-# → BCH: "ready"
-
-# Step 3b: OR manual override (give priority to BL 501)
-curl -X PUT "https://api.omni360.cloud/api/backend/dispatcher/bon-chargements/22/balance" \
-  -H "Authorization: Bearer {TOKEN}" \
-  -H "Content-Type: application/json" \
-  -H "Idempotency-Key: bch:22:balance:manual:$(date +%s)" \
-  -d '{
-    "decision": "adjust_quantities",
-    "split_strategy": "manual",
-    "adjustments": [
-      {"bl_item_id": 2001, "new_quantity": 20, "reason": "Client prioritaire"},
-      {"bl_item_id": 2002, "new_quantity": 10}
-    ]
-  }'
+# Mission 15 is still draft (BP not generated yet) — dispatcher cancels it
+curl -X POST "https://api.omni360.cloud/api/backend/workflow/delivery-mission/15/execute" \
+  -H "Authorization: Bearer {TOKEN}" -H "Content-Type: application/json" \
+  -H "Idempotency-Key: mission:15:cancel:$(date +%s)" \
+  -d '{"decision":"cancel_delivery_mission","reason":"Livreur indisponible. Mission sera recréée demain."}'
+# → output.status: "cancelled"; all linked BLs → "cancelled", stock reservations released
+# → No décharge generated (simplification vs. the old cancel_bch — see §8.7)
 ```
 
 ---
 
-### Example C — BL Split Before Grouping
+### Example C — BL Split Before Allocation
 
 ```bash
-# BL 501 has mixed cold chain and ambient products — must be split
+# BL 501 has mixed cold chain and ambient products — must be split before allocation
 curl -X POST "https://api.omni360.cloud/api/backend/dispatcher/bon-livraisons/501/split" \
   -H "Authorization: Bearer {TOKEN}" \
   -H "Content-Type: application/json" \
@@ -2411,21 +2086,52 @@ curl -X POST "https://api.omni360.cloud/api/backend/dispatcher/bon-livraisons/50
 # → BL 501 cancelled (split), child BLs 502 and 503 created in DRAFT
 ```
 
+`SplitDeliveryDecision` (`split_delivery`, modelType `bon-livraison`) is unrelated to the dropped
+Shipment/DO/LogisticsBatch tables — it only ever operated on `delivery_notes`/`delivery_note_items`,
+so it carried over unchanged.
+
 ---
 
-### Example D — Dispatcher Rejects a BCH After Magasinier Rejects BP
+### Example D — Editing a BC Already Inside a Confirmed Mission **(new 2026-06-22)**
+
+A salesperson needs to correct a quantity on BC 318, which is already merged into BL 501 inside
+mission 14 — and mission 14 is already `in_preparation` (BP generated, magasinier not done yet).
 
 ```bash
-# Magasinier rejects the BP (material issue, wrong items, etc.)
-# → BP status: "rejected", BCH reverts to "pending"
+# Step 1: Pull the mission back to draft — cancels the BP (kept for audit), releases the
+# reserved stock, BLs → draft. Fails with bp_already_finalized if the magasinier already
+# completed/rejected the BP in the meantime.
+curl -X POST "https://api.omni360.cloud/api/backend/workflow/delivery-mission/14/execute" \
+  -H "Authorization: Bearer {TOKEN}" -H "Content-Type: application/json" \
+  -H "Idempotency-Key: mission:14:reopen:$(date +%s)" \
+  -d '{"decision": "reopen_delivery_mission", "reason": "BC 318 quantity correction"}'
+# → output.status: "draft", cancelled_bp_id: 88, reopened_bls: [{id: 501, ...}]
 
-# Dispatcher resubmits
-curl -X POST "https://api.omni360.cloud/api/backend/dispatcher/bon-chargements/22/resubmit" \
-  -H "Authorization: Bearer {TOKEN}" \
-  -H "Content-Type: application/json" \
-  -H "Idempotency-Key: bch:22:resubmit:$(date +%s)" \
-  -d '{"decision":"resubmit_bch"}'
-# → New BP created → BCH: "in_preparation"
+# Step 2: Detach BC 318 from the mission — it reverts to a standalone confirmed BC.
+# BL 501 had BC 318 merged with sibling BC 201 (same partner) — items are recomputed
+# from BC 201 alone, BL is NOT deleted.
+curl -X POST "https://api.omni360.cloud/api/backend/workflow/delivery-mission/14/execute" \
+  -H "Authorization: Bearer {TOKEN}" -H "Content-Type: application/json" \
+  -H "Idempotency-Key: mission:14:detach:$(date +%s)" \
+  -d '{"decision": "update_delivery_mission", "remove_order_ids": [318]}'
+# → output.removed_orders: [{order_id: 318, bl_deleted: false, bl_id: 501, remaining_order_ids: [201]}]
+
+# Step 3: Salesperson edits BC 318 freely (it's a standalone confirmed order now) — not
+# covered here, see the Sales/ADV module.
+
+# Step 4: Dispatcher re-attaches the corrected BC 318 to the mission.
+curl -X POST "https://api.omni360.cloud/api/backend/workflow/delivery-mission/14/execute" \
+  -H "Authorization: Bearer {TOKEN}" -H "Content-Type: application/json" \
+  -H "Idempotency-Key: mission:14:reattach:$(date +%s)" \
+  -d '{"decision": "update_delivery_mission", "add_order_ids": [318]}'
+# → output.added_from_orders: [{id: 501, partner_id: 12, order_ids: [318], merged_into_existing: true}]
+
+# Step 5: Re-confirm — fresh allocation + a brand-new BP, replacing the cancelled one.
+curl -X POST "https://api.omni360.cloud/api/backend/workflow/delivery-mission/14/execute" \
+  -H "Authorization: Bearer {TOKEN}" -H "Content-Type: application/json" \
+  -H "Idempotency-Key: mission:14:reconfirm:$(date +%s)" \
+  -d '{"decision": "confirm_delivery_mission"}'
+# → output.status: "in_preparation", output.preparation.bp_id: 89 (new BP, the old one (88) stays "cancelled")
 ```
 
 ---
@@ -2442,154 +2148,80 @@ with body `{ "decision": "<decision_key>", ...fields }`.
 
 ### BL (bon-livraison) decisions
 
-| Decision key | `allowedFromStates` | What it does |
-|---|---|---|
-| `confirm_delivery` | `draft` | Confirms BL, reserves stock — advances to `confirmed` |
-| `update_delivery` | `draft`, `confirmed` | Updates rider, delivery date, notes |
-| `split_delivery` | `draft` | Splits BL into 2+ child BLs |
-| `cancel_delivery` | `draft`, `confirmed` | Cancels BL, releases reserved stock |
-| `mark_ready` | `in_preparation` | Marks BL ready after preparation (Magasinier action) |
-| `mark_loaded` | `ready` | Confirms items loaded onto vehicle |
-| `mark_in_transit` | `loaded` | Rider departs — BL in transit |
-| `mark_delivered` | `in_transit` | Full delivery confirmed |
-| `mark_partial_delivery` | `in_transit` | Partial delivery recorded |
-| `mark_returned` | `in_transit`, `partially_delivered` | Return recorded |
-| `reopen_delivery` | `cancelled` | Reopen cancelled BL (admin only) |
+| Decision key | `allowed_roles` | `risk_level` | What it does |
+|---|---|---|---|
+| `confirm_delivery` | dispatcher, admin | medium | Confirms BL, reserves stock — advances to `confirmed`. **Throws on insufficient stock** (hard exception) — for mission-created BLs, stock allocation now happens via `confirm_delivery_mission` instead (§8.2), never call this on a mission BL directly |
+| `update_delivery` | dispatcher, admin | low | Updates rider, delivery date, notes |
+| `split_delivery` | dispatcher, admin | medium | Splits BL into 2+ child BLs — see §7.6 |
+| `cancel_delivery` | dispatcher, admin | high | Cancels BL, releases reserved stock |
+| `process_return` | dispatcher, admin | high | Processes a return on this BL |
+| `mark_delivery_failed` | dispatcher, admin | medium | Marks delivery as failed |
+| `confirm_delivery_completion` | dispatcher, admin | medium | Confirms delivery completion |
+| `create_delivery_return` | rider, dispatcher, admin | medium | Rider creates an immediate return at delivery time |
 
-### BCH (bon-chargement / shipment) decisions
+### Delivery Mission decisions
 
-| Decision key | `allowedFromStates` | What it does |
-|---|---|---|
-| `create_bch` | *(creation)* | Creates BCH from selected BLs |
-| `update_bch` | `pending`, `prepared`, `validated` | Updates rider, date, BL list |
-| `submit_to_warehouse` | `pending` | Submits to Magasinier; creates BP if needed |
-| `validate_shipment` | `prepared` | Dispatcher validates prepared BCH |
-| `mark_bch_loaded` | `validated` | Confirms loading complete |
-| `mark_bch_in_transit` | `loaded` | Shipment in transit |
-| `complete_shipment` | `in_transit` | Delivery cycle complete |
-| `cancel_bch` | `pending` | Cancels BCH, releases stock, reverts BLs to draft |
-| `resubmit_bch` | `pending` (BP rejected) | Creates new BP after rejection |
-| `adjust_quantities` | `in_preparation` (shortage) | Applies shortage split strategy |
-| `acknowledge_shortage` | `in_preparation` | Acknowledges the shortage before balancing |
+Model-type slug: **`delivery-mission`** (also accepted as `mission`, normalized by
+`WorkflowController::normalizeModelType()`). Full request/response shapes are documented in §8.
 
-### BP (bon-preparation / preparation-order) decisions
-
-| Decision key | `allowedFromStates` | What it does |
-|---|---|---|
-| `start_preparation` | `pending` | Magasinier starts picking |
-| `complete_preparation` | `in_progress` | All items picked — full |
-| `report_shortage` | `in_progress` | Mark partial pick with shortage details |
-| `reject_preparation` | `pending`, `in_progress` | Magasinier rejects BP |
-| `request_rework` | `completed_partial` | Dispatcher requests re-pick after shortage review |
-| `accept_shortage` | `awaiting_shortage_review` | Dispatcher accepts shortage, proceeds |
-
-### DO (delivery-order) decisions
-
-Model-type slug: **`delivery-order`** (singular, kebab-case — `do` is also accepted and normalizes to `delivery-order`, see `WorkflowController::normalizeModelType()`).
-
-| Decision key | `allowedFromStates` | What it does |
-|---|---|---|
-| `create_delivery_order` ⚡ | *(creation — `id` = `0`)* | Consolidate confirmed BCs into a new DO. Equivalent to `POST /backend/dispatcher/delivery-orders` (§9), but supports `auto_allocate`/`allocation_strategy` in the same call. Idempotency-key required. `branch_code` is **optional** — if omitted, it's derived from the selected orders' shared `branch_id` (`Branch::find($order->branch_id)->code`). Returns `mixed_branches` violation if the selected orders span more than one branch — pass `branch_code` explicitly to disambiguate in that case. |
-| `update_delivery_order` | any | Update planned date, zone, itinerary, notes |
-| `optimize_do` | `draft`, `allocated`, `partially_allocated` | Consolidates `delivery_zone`/`planned_delivery_date`/`notes` → `optimized`. Also accepts optional `driver_id`/`vehicle_id` as a **planning-time proposal** (not binding) — see the §2 correction (2026-06-17) above for why this contradicts older docs/training data: the authoritative vehicle for the actual shipment is still resolved at `generate_bch_from_dos` time, which can differ from what was proposed here, especially when multiple DOs are combined into one BCH. |
-| `start_do_preparation` | `optimized` | Spawns a BP for Magasinier → `in_preparation` |
-| `complete_do_preparation` | `in_preparation` | Magasinier marks DO preparation complete (handles shortage `adjustments`) → `prepared` |
-| `generate_bch_from_dos` ⚡ | `prepared`, `ready_for_loading` | **Pipeline 2 (§2) terminal step.** Generate a BCH (shipment) from one or more DOs, bypassing LOT/Val.DO entirely. Body: `do_ids` (array, required — defaults to `[the URL {id}]` if omitted, so a single-DO call needs no extra body), optional `driver_id`, `vehicle_id`, `departure_date`, `notes`. Locks the DO(s) → `dispatched`. If `wms.volumetric_dispatch` is enabled (and `wms.advanced_mode`), this is also where `VolumetricDispatchGate::assertCanDispatchBatch()` runs — it evaluates the **aggregated** weight/volume of every `do_ids` entry against the **one** resolved vehicle (`options.vehicle_id` ?? first DO's `vehicle_id`), not each DO individually against its own stored `vehicle_id`. |
-| `delete_delivery_order` ⚡ | `draft` | Delete a DO (admin/dispatcher only — high risk) |
-| `validate_delivery_order` | requires DO `allocated`/`partially_allocated` AND ≥1 unit actually allocated (see fix below) AND, if the DO has a logistics batch, that batch's BP must already be `completed_full`/`shortage_accepted` | **Pipeline 1 (§2) step — runs AFTER the LOT's BP completes, not before `create_batch`.** Despite the name, this does **not** allocate stock itself (`runAllocation()` only runs at DO creation via `auto_allocate`) — it only validates that allocation + BP-completion already happened, then sets DO → `validated`. `allowedFromStates` is declared empty on the class; the real gate is `DeliveryOrder::isAllocated()` plus the BP-status check, both enforced in `validate()` (`ValidateDeliveryOrderDecision.php:51,63-82`). **Frontend must never call this right after `create_delivery_order`** — see the incident note below. |
-
-> ⚠️ **Incident (2026-06-18) — DO validated with zero stock allocated, cause not fully resolved.**
-> A DO (`do_id: 3`) was created via `create_delivery_order(auto_allocate: true)` against orders
-> with no available depot stock, correctly landing in `partially_allocated` with `allocated_qty
-> = 0` on every line (`runAllocation()`'s status logic — `DeliveryOrderService.php:205-207` —
-> always returns `ALLOCATED`/`PARTIALLY_ALLOCATED`, never leaves the DO at `pending_allocation`,
-> even at 0% success). **9 seconds later**, the same DO was `validated` by the same user, with
-> `total_allocated_amount: 0.00` and no `logistics_batch_id` — i.e. `validate_delivery_order`
-> ran despite zero real allocation and without ever going through Pipeline 1's LOT/BP step.
->
-> **Two separate things were found and fixed:**
-> 1. **Real validation gap (fixed):** `ValidateDeliveryOrderDecision::validate()` only checked
->    `isAllocated()` — a status check (`ALLOCATED`/`PARTIALLY_ALLOCATED`), not a quantity check.
->    Since `runAllocation()` sets `PARTIALLY_ALLOCATED` even at 0 units allocated, and no
->    logistics batch existed yet (skipping the BP-completeness check entirely), **nothing in the
->    guard blocked validating a DO with zero actual allocation**. Added a 4th check: `sum(allocated_qty) <= 0`
->    → `zero_allocation` violation. A DO that failed allocation entirely can no longer be validated.
-> 2. **Caller never identified.** A full server-side audit (decision classes, controllers, event
->    listeners, model observers, scheduled commands, queued jobs) found **no code path that
->    auto-calls `validate_delivery_order`** — `CreateDeliveryOrderDecision::doExecute()` does not
->    chain it, no `execute()` override exists, no listener/observer touches `DeliveryOrder.status`.
->    The frontend team independently confirmed only one network request
->    (`create_delivery_order`) fires from the drag-drop-confirm flow. Server request logs for the
->    incident window weren't available to cross-check. **Added request-context logging to
->    `ValidateDeliveryOrderDecision::doExecute()`** (actor, request_id, IP/UA) so the *next*
->    occurrence can be traced to its actual caller. If you see this again, check
->    `storage/logs/laravel.log` for `"validate_delivery_order called"` around the timestamp.
+| Decision key | `allowed_roles` | `risk_level` | What it does |
+|---|---|---|---|
+| `create_delivery_mission` ⚡ | dispatcher, supply_manager, admin | medium | *(creation — `id` = `0`)* Drag&Drop confirmed orders into a new mission; generates one BL per partner. See §8.1 |
+| `confirm_delivery_mission` ⚡ | dispatcher, supply_manager, admin | medium | Atomic: allocates stock for every BL, then generates the BP. Replaces `allocate_delivery_note` + `generate_preparation_for_mission` (both removed 2026-06-21). See §8.2 |
+| `start_delivery_mission` | dispatcher, rider, admin | medium | Rider departs — mission must be `ready`. See §8.3 |
+| `complete_delivery_mission` | dispatcher, rider, admin | medium | Mission must be `in_transit` — computes stats. See §8.4 |
+| `update_delivery_mission` | dispatcher, admin | low | Edit rider/vehicle/notes/BL list/individual BCs (BL/BC list only while `draft`). See §8.5 |
+| `reopen_delivery_mission` ⚡ | dispatcher, supply_manager, admin | high | **New 2026-06-22.** Cancels the BP and rolls an `in_preparation` mission back to `draft` so its BCs can be edited. See §8.6 |
+| `cancel_delivery_mission` | dispatcher, admin | high | Cancel a `draft` mission, release stock. See §8.7 |
 
 ⚡ = idempotency-key required (`config('erp.idempotency.required_workflow_decisions')`).
 
+> **Known gaps — not ported, no `delivery-mission` equivalent exists today:**
+> - `adjust_quantities` (manual/equal/fifo shortage-rebalancing across multiple BLs sharing one
+>   mission's BP) — `config/decisions.php`'s `delivery-mission` block has an explicit comment
+>   noting this was not ported.
+> - `create_decharge` (van → depot unload after a mission) — `CreateDechargeDecision` was built
+>   entirely around `Shipment` and was not replaced; the `decharge` block's `approve_decharge`/
+>   `reject_decharge` decisions still exist (they operate on an existing décharge created some
+>   other way), but nothing currently *creates* a décharge from a delivery mission.
+
 ```bash
-curl -X POST https://api.omni360.cloud/api/backend/workflow/delivery-order/0/execute \
+curl -X POST https://api.omni360.cloud/api/backend/workflow/delivery-mission/0/execute \
   -H "Authorization: Bearer {TOKEN}" -H "Content-Type: application/json" \
-  -H "Idempotency-Key: do:create:$(date +%s)" \
+  -H "Idempotency-Key: mission:create:$(date +%s)" \
   -d '{
-    "decision": "create_delivery_order",
+    "decision": "create_delivery_mission",
     "metadata": {
-      "order_ids": [95, 102, 110],
-      "planned_delivery_date": "2026-06-18",
-      "delivery_zone": "ZONE-SUD",
-      "itinerary_id": 3,
-      "auto_allocate": true,
-      "allocation_strategy": "priority_first"
+      "order_ids": [201, 207, 212],
+      "rider_id": 9,
+      "vehicle_id": 3
     }
   }'
 ```
 
-> ⚠️ **Calling convention:** decision-specific fields (`order_ids`, `branch_code`, etc.) must be nested under the top-level **`metadata`** key (or equivalently `data.metadata` — both are merged together server-side, see `WorkflowController::executeDecision()`). Putting them flat under `data` does **not** work — every `*Decision::validate()`/`doExecute()` reads `$context->data['metadata']`, which the controller always populates (with at least audit fields), so a flat `data` payload is silently ignored. This applies to every decision in this document, not just `create_delivery_order`.
+> ⚠️ **Calling convention:** decision-specific fields (`order_ids`, `rider_id`, etc.) must be
+> nested under the top-level **`metadata`** key (or equivalently `data.metadata` — both are
+> merged together server-side, see `WorkflowController::executeDecision()`). Putting them flat
+> under `data` does **not** work — every `*Decision::validate()`/`doExecute()` reads
+> `$context->data['metadata']`, which the controller always populates (with at least audit
+> fields), so a flat `data` payload is silently ignored. The dedicated REST routes (§8.1, §8.2)
+> handle this wrapping for you — only relevant if you call the generic workflow route directly.
 
-> ℹ️ **`branch_code` is optional as of `CreateDeliveryOrderDecision`'s latest fix.** `orders.branch_code` was dropped by the 3NF normalization migration (`2026_06_24_000000_normalize_branch_code_to_branch_id.php`) in favor of `orders.branch_id`, but `delivery_orders.branch_code` was not migrated. Rather than forcing the frontend to look up `branch_id → code` itself, the decision now derives it server-side from the selected orders when `branch_code` is omitted from the payload. Only pass `branch_code` explicitly if you need to override, or if the selected orders span multiple branches (the decision returns a `mixed_branches` violation in that case, listing the conflicting `branch_ids`).
+### BP (bon-preparation / preparation-order) decisions
 
-`generate_bch_from_dos` — single-DO call (no body needed, `do_ids` defaults to the URL `{id}`):
+| Decision key | `allowed_roles` | `risk_level` | What it does |
+|---|---|---|---|
+| `start_preparation` | magasinier, warehouse, admin | low | Magasinier starts picking |
+| `update_preparation` | magasinier, warehouse, admin | low | Update items while picking |
+| `complete_preparation` | magasinier, warehouse, admin | medium | All items picked. On the mission flow, this is also where the warehouse transfer is auto-created (§12c) |
+| `reject_preparation` | magasinier, warehouse, admin | medium | Magasinier rejects BP |
+| `report_shortage` | magasinier, warehouse, admin | medium | Mark partial pick with shortage details |
+| `continue_preparation` | magasinier, warehouse, admin | low | Resume a paused preparation |
+| `review_partial_preparation` | dispatcher, admin | medium | Dispatcher shortage resolution (operates on BP, not BCH — BCH no longer exists) |
 
-```bash
-curl -X POST https://api.omni360.cloud/api/backend/workflow/delivery-order/42/execute \
-  -H "Authorization: Bearer {TOKEN}" -H "Content-Type: application/json" \
-  -H "Idempotency-Key: do:bch:$(date +%s)" \
-  -d '{"decision": "generate_bch_from_dos", "metadata": {}}'
-```
-
-Grouping multiple DOs into one BCH — pass `do_ids` explicitly (the URL `{id}` is still required but only used to resolve the subject for authorization):
-
-```bash
-curl -X POST https://api.omni360.cloud/api/backend/workflow/delivery-order/42/execute \
-  -H "Authorization: Bearer {TOKEN}" -H "Content-Type: application/json" \
-  -H "Idempotency-Key: do:bch:$(date +%s)" \
-  -d '{
-    "decision": "generate_bch_from_dos",
-    "metadata": {
-      "do_ids": [42, 43, 44],
-      "driver_id": 7,
-      "vehicle_id": 12,
-      "departure_date": "2026-06-18"
-    }
-  }'
-```
-
-### Logistics Batch (logistics-batch) decisions
-
-Model-type slug: **`logistics-batch`**. Creation decisions (`create_batch`) execute against `id = 0`, same convention as `create_delivery_order`.
-
-| Decision key | `allowedFromStates` | What it does |
-|---|---|---|
-| `create_batch` ⚡ | *(creation — `id` = `0`)* | Groups `delivery_order_ids` (array, required) + `branch_code` (required) into a new LOT, status `open`. DOs must be `allocated`/`partially_allocated`/`validated`, same branch, and not already in another open/sealed/in_preparation batch. |
-| `update_batch` | `open` | Add/remove DOs (`add_delivery_order_ids`/`remove_delivery_order_ids`) or edit `notes`. Blocked once sealed. |
-| `seal_batch` ⚡ | `open` (requires ≥1 DO) | Locks the LOT, aggregates every DO's items by `product_id` across the whole batch, generates ONE `PreparationOrder` (BP) → LOT `sealed`. Idempotent — replaying returns the same BP. |
-| `delete_batch` | `open` | Deletes an unsealed batch, detaches its DOs. |
-
-There is **no** `validate_batch`/`start_delivery`/`complete_batch`/`cancel_batch` decision — those keys were previously documented here but do not exist in `config/decisions.php`. See §12 for the real `open → sealed` lifecycle.
-
-### Delivery Mission decisions — none registered
-
-`App\Models\DeliveryMission` exists but has **no entry under any model type in `config/decisions.php`**, no controller, no route. There is no `start_mission`/`complete_mission`/`partial_delivery`/`fail_delivery`/`reschedule_mission` decision anywhere in the codebase — see the [LOOSE END / FUTURE TODO GAP] note in §12b.
+`create_bp_from_orders`/`create_bp_from_bls` are **removed** — a BP is now always created
+atomically by `confirm_delivery_mission` (delivery-mission modelType, §8.2), never directly from
+orders/BLs.
 
 ### How to check available decisions for a record
 
@@ -2598,8 +2230,8 @@ There is **no** `validate_batch`/`start_delivery`/`complete_batch`/`cancel_batch
 curl "https://api.omni360.cloud/api/backend/workflow/bon-livraison/501/decisions" \
   -H "Authorization: Bearer {TOKEN}"
 
-# Check for BCH 22
-curl "https://api.omni360.cloud/api/backend/workflow/bon-chargement/22/decisions" \
+# Check for mission 14
+curl "https://api.omni360.cloud/api/backend/workflow/delivery-mission/14/decisions" \
   -H "Authorization: Bearer {TOKEN}"
 ```
 
@@ -2664,12 +2296,13 @@ Key columns for the entities the Dispatcher API works with. Use these when build
 | `id` | `bigint` | Primary key |
 | `delivery_number` | `varchar` | BL reference (e.g. `BL-2026-00501`) |
 | `status` | `varchar` | BlStatus enum value |
-| `order_id` | `bigint FK` | Source order (BC) |
+| `order_id` | `bigint FK` | Source order (BC) — only the "primary" order when a mission merged several orders for the same partner; the full set of consumed `order_ids` is only visible in `create_delivery_mission`'s response payload, not as a column |
+| `delivery_mission_id` | `bigint FK` | Mission this BL belongs to (replaces `bon_chargement_id`/`shipment_id`) |
 | `partner_id` | `bigint FK` | Delivery destination partner |
 | `rider_id` | `bigint FK` | Assigned livreur |
 | `dispatcher_id` | `bigint FK` | Dispatcher who created it |
-| `branch_id` | `bigint FK` | Owning branch |
-| `bon_chargement_id` | `bigint FK` | BCH this BL belongs to (null = not batched) |
+| `branch_code` | `varchar` | Owning branch |
+| `warehouse_transfer_id` | `bigint FK` | Set once `complete_preparation` generates the mission's WT (§12c) |
 | `is_quantity_locked` | `boolean` | Prevents dispatcher from changing quantities |
 | `delivery_date` | `date` | Planned delivery date |
 | `total_amount` | `decimal` | BL total |
@@ -2682,37 +2315,13 @@ Key columns for the entities the Dispatcher API works with. Use these when build
 | `id` | `bigint` | Primary key |
 | `delivery_note_id` | `bigint FK` | Parent BL |
 | `product_id` | `bigint FK` | Product |
-| `order_product_id` | `bigint FK` | Source order line |
-| `quantity` | `decimal` | Requested quantity |
-| `allocated_qty` | `decimal` | Quantity allocated from stock |
+| `ordered_quantity` | `decimal` | Requested quantity (summed across merged orders for the same product) |
+| `allocated_quantity` | `decimal` | Quantity allocated from stock by `confirm_delivery_mission`, reset to `0` by `reopen_delivery_mission` |
 | `prepared_quantity` | `decimal` | Quantity actually prepared by Magasinier |
+| `delivered_quantity` | `decimal` | Quantity actually delivered |
 | `unit_price` | `decimal` | Unit price at time of order |
-| `total_price` | `decimal` | `quantity × unit_price` |
-
-### shipments (BCH)
-
-| Column | Type | Description |
-|---|---|---|
-| `id` | `bigint` | Primary key |
-| `shipment_number` | `varchar` | BCH reference (e.g. `BCH-2026-00022`) |
-| `status` | `varchar` | BchStatus enum value |
-| `branch_id` | `bigint FK` | Owning branch |
-| `rider_id` | `bigint FK` | Assigned livreur |
-| `dispatcher_id` | `bigint FK` | Dispatcher who created |
-| `vehicle_id` | `bigint FK` | Vehicle assigned |
-| `has_shortage` | `boolean` | Set `true` when BP reports partial preparation |
-| `shortage_acknowledged` | `boolean` | Set `true` when Dispatcher accepts shortage |
-| `estimated_departure` | `timestamp` | Planned departure time |
-
-### shipment_deliveries (BCH ↔ BL pivot)
-
-| Column | Type | Description |
-|---|---|---|
-| `id` | `bigint` | Primary key |
-| `shipment_id` | `bigint FK` | Parent BCH |
-| `delivery_note_id` | `bigint FK` | BL included in this BCH |
-| `sequence_order` | `int` | Delivery stop order |
-| `is_primary` | `boolean` | Primary BL for this partner stop |
+| `unit` | `varchar` | Unit of measure |
+| `sales_group_code` | `varchar` | Sales group classification |
 
 ### preparation_orders (BP)
 
@@ -2721,7 +2330,7 @@ Key columns for the entities the Dispatcher API works with. Use these when build
 | `id` | `bigint` | Primary key |
 | `bp_number` | `varchar` | BP reference (e.g. `BP-2026-00088`) |
 | `status` | `varchar` | BpStatus enum value |
-| `shipment_id` | `bigint FK` | Parent BCH |
+| `delivery_mission_id` | `bigint FK` | **The only FK on this table now** — one BP per mission, replaces `shipment_id`/`logistics_batch_id`/`delivery_order_id` (all dropped, see `App\Models\PreparationOrder`'s docblock notes) |
 | `magasinier_id` | `bigint FK` | Magasinier assigned |
 | `total_shortage_percentage` | `decimal` | % of items short |
 | `is_critical_shortage` | `boolean` | Flag for severe shortage (>= threshold) |
@@ -2736,82 +2345,38 @@ Key columns for the entities the Dispatcher API works with. Use these when build
 | Column | Type | Description |
 |---|---|---|
 | `id` | `bigint` | Primary key |
-| `preparation_order_id` | `bigint FK` | Parent BP |
+| `bon_preparation_id` | `bigint FK` | Parent BP (table column name — not `preparation_order_id`) |
 | `product_id` | `bigint FK` | Product |
 | `delivery_note_item_id` | `bigint FK` | Linked BL line item |
-| `requested_quantity` | `decimal` | Quantity the Dispatcher requested |
-| `available_quantity` | `decimal` | Stock available at time of picking |
+| `order_id` / `partner_id` | `bigint FK` | Source order/partner, for grouping in the picking list |
+| `requested_quantity` | `decimal` | Aggregated from `delivery_note_items.allocated_quantity` across the mission's confirmed BLs |
+| `available_quantity` | `decimal` | Stock available at BP-generation time (snapshot) |
 | `prepared_quantity` | `decimal` | Quantity actually picked |
 | `shortage_quantity` | `decimal` | `requested - prepared` |
 | `shortage_reason` | `varchar` | Magasinier's note on shortage cause |
 | `shortage_reported_at` | `timestamp` | When shortage was flagged |
 
-### logistics_batches (LOT)
-
-> **Corrected 2026-06-17**: previously listed `branch_code` here — that column was actually
-> dropped by the 3NF normalization migration (`logistics_batches` is `branch_id`-only).
-> Verified via `Schema::hasColumn('logistics_batches', 'branch_code')` → `false` on the live DB.
-> Code that reads `$batch->branch_code` (e.g. `SealBatchDecision`'s/`ContinuePreparationDecision`'s
-> `$bp->logisticsBatch?->branch_code` fallback chain) silently gets `null` from this source —
-> harmless there since it falls through to `deliveryNotes.branch_code` next, but don't trust
-> `logisticsBatch->branch_code` as a value source elsewhere without checking first.
+### delivery_missions (DM) — fully wired, live
 
 | Column | Type | Description |
 |---|---|---|
 | `id` | `bigint` | Primary key |
-| `batch_number` | `varchar` | LOT reference (e.g. `BATCH-2026-00003`) |
-| `branch_id` | `bigint FK` | Owning branch |
-| `dispatcher_id` | `bigint FK` | Dispatcher who created the batch |
-| `preparation_order_id` | `bigint FK` | BP generated by `seal_batch` (null until sealed) |
-| `status` | `varchar` | `open` or `sealed` in practice — column comment also lists `in_preparation`/`completed`/`cancelled` as reserved-but-unused values; no decision currently sets them |
-| `sealed_at` | `timestamp` | When `seal_batch` ran |
-| `notes` | `text` | Dispatcher notes |
-
-> No `rider_id`/`vehicle_id`/`delivery_date`/`total_amount` columns on this table — fleet assignment and delivery dates live on the BCH (`shipments`), not the LOT.
-
-### delivery_missions (DM) — schema exists, unwired
-
-| Column | Type | Description |
-|---|---|---|
-| `id` | `bigint` | Primary key |
-| `mission_number` | `varchar` | DM reference |
-| `rider_id` | `bigint FK` | Rider for this session |
-| `shipment_id` | `bigint FK` | The BCH this mission covers |
-| `vehicle_id` | `bigint FK` | Vehicle |
+| `mission_number` | `varchar` | DM reference (e.g. `MSN-20260619-0001`) |
+| `rider_id` | `bigint FK` | Driver for this mission |
+| `dispatcher_id` | `bigint FK` | Dispatcher who created it |
+| `vehicle_id` | `bigint FK` | Vehicle assigned |
 | `branch_code` | `varchar` | Owning branch |
-| `status` | `varchar` | `created`, `started`, `closed` (per model constants — no code currently writes these) |
-| `started_at` / `closed_at` | `timestamp` | Session bounds |
-| `van_stock_reconciled` / `cod_reconciled` / `returns_reconciled` | `boolean` | Reconciliation flags |
-| `total_bls` / `delivered_bls` / `failed_bls` / `total_returns` / `total_cod_collected` | numeric | Session totals |
+| `status` | `varchar` | `draft`/`in_preparation`/`ready`/`in_transit`/`completed`/`cancelled` (see §3) |
+| `started_at` / `closed_at` | `timestamp` | Mission bounds, set by `start_delivery_mission`/`complete_delivery_mission` |
+| `close_notes` / `closed_by` | mixed | Set by `complete_delivery_mission` |
+| `notes` | `text` | Free text |
+| `van_stock_reconciled` / `cod_reconciled` / `returns_reconciled` | `boolean` | Reconciliation flags (`DeliveryMission::refreshReconciliation()`) |
+| `total_bls` / `delivered_bls` / `failed_bls` / `total_returns` / `total_cod_collected` | numeric | Computed by `DeliveryMission::computeStats()` on completion |
 
-See the [LOOSE END / FUTURE TODO GAP] note in §2 and §12b — this table is migrated but no decision, controller, or route populates it yet.
-
-### delivery_orders (DO)
-
-> **Corrected 2026-06-17** against `Schema::getColumnListing('delivery_orders')` — previous
-> version said `branch_id`/`rider_id`; the real columns are `branch_code` (string, **not**
-> migrated by the 3NF pass — see the `branch_code` optional-derivation note in §16) and
-> `driver_id` (not `rider_id`).
-
-| Column | Type | Description |
-|---|---|---|
-| `id` | `bigint` | Primary key |
-| `do_number` | `varchar` | DO reference (e.g. `DO-2026-00010`) |
-| `status` | `varchar` | DoStatus enum value |
-| `branch_code` | `varchar FK` | Owning branch (`branches.code`) |
-| `driver_id` | `bigint FK` | Driver assigned (planning-time proposal — see §2/§16 `optimize_do` correction) |
-| `vehicle_id` | `bigint FK` | Vehicle (same caveat as `driver_id`) |
-| `planned_delivery_date` | `date` | Planned date for all stops in this DO |
-| `delivery_zone` | `varchar` | Geographic zone label |
-| `itinerary_id` | `bigint FK` | Itinerary |
-| `logistics_batch_id` | `bigint FK` | LOT this DO belongs to, Pipeline 1 only (§2) |
-| `dispatched_bch_id` | `bigint FK` | BCH this DO was dispatched into, Pipeline 2 only (§2) |
-| `allocation_run_id` | `varchar` | Set by `runAllocation()`, only when created with `auto_allocate` |
-| `total_ordered_amount` / `total_allocated_amount` | `decimal` | Sums across linked orders |
-| `orders_count` / `products_count` | `int` | Denormalized counts |
-| `optimized_by` / `optimized_at` | mixed | Set by `optimize_do` |
-| `dispatched_by` / `dispatched_at` | mixed | Set by `generate_bch_from_dos` |
-| `period_id` | `bigint FK` | ERP period |
+> `shipment_id` (the transitional column from the Phase 1 migration) and the model's
+> `shipment()`/`bonChargement()` relation aliases were both dropped on 2026-06-20
+> (Phase 4) — `delivery_missions` has no remaining link to the (now-gone) `shipments`
+> table.
 
 ### vehicles
 
@@ -2857,29 +2422,25 @@ use the `activeAssignments`/`assignedUser` relations instead.
 
 ### warehouse_transfers (WT)
 
-> Corrected 2026-06-17 against `Schema::getColumnListing('warehouse_transfers')` on the live DB — the
-> previous version of this table was entirely fabricated (no `source_branch_id`/`destination_branch_id`/
-> `approved_by_id`/`completed_at` columns exist). See §12c for the real lifecycle.
-
 | Column | Type | Description |
 |---|---|---|
 | `id` | `bigint` | Primary key |
 | `transfer_number` | `varchar` | WT reference (e.g. `WT-2026-00005`) |
 | `status` | `varchar` | `pending`/`accepted`/`completed`/`rejected`/`validated` — see §12c |
-| `shipment_id` | `bigint FK` | Source BCH (`shipments.id`) |
+| `delivery_mission_id` | `bigint FK` | Source mission — **the live FK** for new transfers (replaces `shipment_id`, see §2) |
+| `shipment_id` | `bigint FK` | Legacy column, kept on the table for historical rows; not written by `createFromMission()` |
 | `rider_id` | `bigint FK` | Rider this transfer is for |
 | `livreur_emplacement_code` | `varchar` | Rider's mobile stock emplacement code |
 | `from_warehouse` | `varchar` | Origin warehouse code (string, not an FK id) |
 | `to_warehouse` | `varchar` | Destination warehouse code (string, not an FK id) |
-| `from_storage_location_id` | `bigint FK` | Origin storage location |
-| `to_storage_location_id` | `bigint FK` | Destination storage location |
-| `transfer_type` | `varchar` | e.g. `bch_to_van` |
+| `from_storage_location_id` | `bigint FK` | Origin storage location (depot) |
+| `to_storage_location_id` | `bigint FK` | Destination storage location (rider's van) |
+| `transfer_type` | `varchar` | `dispatcher` for mission-generated transfers |
 | `progress_level` | `int` | 0–100, set by `accept()` (→50) and completion flows |
 | `synced_to_erp` / `erp_sync_status` / `erp_error_message` / `erp_synced_at` / `erp_transfer_id` | mixed | Sage X3 sync tracking |
 | `accepted_by` | `bigint FK` | User who accepted |
 | `accepted_at` | `timestamp` | When accepted |
 | `notes` | `text` | Free text — also used to store the `reject()` reason (no dedicated rejection column) |
-| `delivery_mission_id` | `bigint FK` | Linked DM (schema-only, see §12b) |
 | `loading_request_id` | `bigint FK` | If created from a conventional loading request flow |
 | `decharge_reconciliation_request_id` | `bigint FK` | If created from a décharge reconciliation flow |
 | `period_id` | `bigint FK` | ERP period |
@@ -2892,48 +2453,14 @@ use the `activeAssignments`/`assignedUser` relations instead.
 | `warehouse_transfer_id` | `bigint FK` | Parent WT |
 | `product_id` | `bigint FK` | Product |
 | `product_code` / `product_name` | `varchar` | Denormalized snapshot at transfer time |
-| `requested_quantity` | `decimal` | Quantity requested |
-| `transferred_quantity` | `decimal` | Quantity actually transferred from warehouse |
+| `requested_quantity` | `decimal` | Quantity requested (`delivery_note_items.allocated_quantity`) |
+| `transferred_quantity` | `decimal` | Quantity actually transferred (`prepared_quantity`, falling back to `allocated_quantity`) |
 | `delivered_quantity` | `decimal` | Quantity delivered to the partner |
 | `returned_quantity` | `decimal` | Quantity returned |
 | `unit_price` | `decimal` | Price at transfer time |
-| `delivery_note_id` | `bigint FK` | Linked BL, if applicable |
+| `delivery_note_id` | `bigint FK` | Linked BL |
+| `sales_group_code` | `varchar` | Sales group classification — **required**, `complete_preparation`/`createFromMission` throws if any line is missing it |
 | `stock_batch_id` / `batch_number` / `expiry_date` | mixed | Lot/batch tracking |
-| `sales_group_code` | `varchar` | Sales group classification |
-
-### delivery_order_orders
-
-| Column | Type | Description |
-|---|---|---|
-| `id` | `bigint` | Primary key |
-| `delivery_order_id` | `bigint FK` | Parent DO |
-| `order_id` | `bigint FK` | Order (BC) assigned to this DO |
-
-### delivery_order_items
-
-| Column | Type | Description |
-|---|---|---|
-| `id` | `bigint` | Primary key |
-| `delivery_order_id` | `bigint FK` | Parent DO |
-| `order_product_id` | `bigint FK` | Source order line item |
-| `product_id` | `bigint FK` | Product being delivered |
-| `quantity` | `decimal` | Quantity allocated to this DO |
-
-### shipment_delivery_orders
-
-| Column | Type | Description |
-|---|---|---|
-| `id` | `bigint` | Primary key |
-| `shipment_id` | `bigint FK` | Parent BCH |
-| `delivery_order_id` | `bigint FK` | Target Delivery Order (DO) |
-
-### preparation_delivery_notes
-
-| Column | Type | Description |
-|---|---|---|
-| `id` | `bigint` | Primary key |
-| `preparation_order_id` | `bigint FK` | Parent BP |
-| `delivery_note_id` | `bigint FK` | Target Delivery Note (BL) for shortage mapping |
 
 ---
 
@@ -2941,42 +2468,54 @@ use the `activeAssignments`/`assignedUser` relations instead.
 
 ```
 Order (BC)
-  └─► DeliveryOrderOrders ──► DeliveryOrder (DO)
-                                    │
-                                    ▼ (logistics_batch_id)
-                              LogisticsBatch (LOT)
-                                    │
-                                [seal_batch]
-                                    ▼
-                              PreparationOrder (BP)  [ONE BP for the whole LOT]
-                                    └─► PreparationOrderItem (aggregated by product_id across all DOs)
-
-(After BP completion, BLs are generated and the chain continues per-BL:)
-
-DeliveryNote (BL)
-  ├─► DeliveryNoteItem [1:many]
-  └─► ShipmentDelivery ──► Shipment (BCH)
-                                 └─► PreparationOrder (BP)   [also reachable directly per-BCH
-                                                               via the generate_bch_from_dos shortcut,
-                                                               which skips the LOT step]
-
-DeliveryMission (DM) — schema only, not wired to any of the above (see §12b)
-
-WarehouseTransfer (WT)
-  ├─► WarehouseTransferItem
-  └─► Branch (source) → Branch (destination)
+  └─► [create_delivery_mission, grouped by partner_id] ──► DeliveryMission
+                                                                  │
+                                                                  ▼
+                                                          DeliveryNote (BL) — draft
+                                                                  │
+                                              [confirm_delivery_mission — ONE atomic call:
+                                               allocate every BL, then generate the BP]
+                                                                  ▼
+                                                          DeliveryNote (BL) — confirmed → batched
+                                                                  │  (shortfall → backlog Order,
+                                                                  │   via ShortageBacklogService)
+                                                                  ▼
+                                                          PreparationOrder (BP)  [ONE BP per mission]
+                                                                  │
+                                                  [reopen_delivery_mission — rolls BACK to
+                                                   draft: BP → cancelled, stock released,
+                                                   BLs → draft, mission → draft]
+                                                                  └─► PreparationOrderItem
+                                                                       (aggregated by product_id
+                                                                        across the mission's BLs)
+                                                                  │
+                                                  [Magasinier: start/complete_preparation]
+                                                                  ▼
+                                                          WarehouseTransfer (WT)  [auto-created,
+                                                                  │                CENTRAL → VAN]
+                                                                  └─► WarehouseTransferItem
+                                                                  ▼
+                                                  [start_delivery_mission / complete_delivery_mission]
+                                                                  ▼
+                                                          DeliveryMission — completed
 ```
 
 **Key navigation pattern for frontend:**
 
-1. Start from `Order.id` → fetch `/dispatcher/orders/{id}` to get `delivery_notes[]`
-2. From `DeliveryOrder.id` → fetch `/workflow/delivery-order/{id}` (§16) to get the DO, its `logistics_batch`, and any `bchs[]`
-3. From `LogisticsBatch.id` → fetch `/dispatcher/batches/{id}` to get `delivery_notes[]` + `preparation_order` (§12)
-4. From `DeliveryNote.id` → fetch `/dispatcher/bon-livraisons/{id}` to get `bon_chargement`, `preparation`
-5. From `Shipment.id` → fetch `/dispatcher/bon-chargements/{id}` to get `delivery_notes[]` + `preparation_order`
-6. From `PreparationOrder.id` → fetch BP detail for shortage analysis
+1. Start from `Order.id` → fetch `/dispatcher/orders/{id}` to get linked delivery notes (via `order_logistics_details`)
+2. From `DeliveryMission.id` → fetch `/workflow/delivery-mission/{id}` (§8.8) to get the mission, its `delivery_notes[]`, and `preparation_order`
+3. From `DeliveryNote.id` → fetch `/dispatcher/bon-livraisons/{id}` to get `delivery_mission`, `preparation`
+4. From `PreparationOrder.id` → fetch `/workflow/bon-preparation/{id}` for shortage analysis — payload includes `mission` (not `batch`/`bch`)
+5. From `DeliveryMission.id` → fetch `/dispatcher/warehouse-transfers?...` filtered by rider/status to find its auto-generated WT
 
 ---
 
-*Generated from source: `app/Http/Controllers/Backend/DispatcherController.php`, `app/Decisions/Dispatcher/`, `routes/backend.php`, `config/decisions.php`, `database/migrations/`, `app/Enums/BlStatus.php`*  
-*Last updated: 2026-06-16 — pipeline (§2), batch lifecycle (§12, §16), and delivery-mission gap (§12b, §17, §18) corrected against source after an audit found the previous LOT/DM sections were fabricated/aspirational rather than implemented.*
+*Generated from source: `app/Http/Controllers/Backend/DispatcherController.php`, `app/Http/Controllers/Backend/WorkflowController.php`, `app/Decisions/Dispatcher/`, `app/Models/DeliveryMission.php`, `app/Models/PreparationOrder.php`, `app/Services/Dispatcher/MissionBlGeneratorService.php`, `app/Services/Dispatcher/MissionRollbackService.php`, `app/Services/WarehouseTransferService.php`, `routes/backend.php`, `config/decisions.php`, `database/migrations/`, `app/Enums/BlStatus.php`, `docs/modules/planning_refactor_schema.md`*
+
+*Last updated: 2026-06-22 —*
+1. *`allocate_delivery_note` and `generate_preparation_for_mission` (removed 2026-06-21) folded into one atomic `confirm_delivery_mission` (§8.2) — sections, examples, the decision registry, and TypeScript types updated throughout to stop referencing the removed decisions.*
+2. *New `update_delivery_mission` fields `add_order_ids`/`remove_order_ids` (§8.5) — detach/re-attach a single BC from a draft mission's merged BL without touching the whole BL, for when a salesperson needs to edit a BC already inside a mission.*
+3. *New `reopen_delivery_mission` decision (§8.6) — atomic rollback from `in_preparation` back to `draft`: cancels the BP (`status: cancelled`, kept for audit), releases reserved stock, BLs → draft. Blocked once the BP is no longer `pending`/`in_progress` (race-condition guard, re-checked inside the transaction). Required a new migration adding `cancelled` to `preparation_orders`' status CHECK constraint.*
+4. *All of the above verified live end-to-end against a real WSL Postgres instance (transaction + rollback, not assumed from code reading).*
+
+*Previous update: 2026-06-20 — full rewrite for the BC → DeliveryMission architecture migration. The old BC → DO → LOT/BCH pipeline and the parallel "Dispatch V2" BC → DO → BP → BCH pipeline are both removed; `shipments`, `shipment_deliveries`, `shipment_delivery_orders`, `delivery_orders`, `delivery_order_items`, `delivery_order_orders`, `logistics_batches`, and `preparation_delivery_notes` are dropped (`database/migrations/2026_07_17_130000_drop_shipment_delivery_order_logistics_batch_tables.php`). `adjust_quantities` and `create_decharge` have no `delivery-mission` equivalent yet — explicitly deferred, see §2 and §16.*

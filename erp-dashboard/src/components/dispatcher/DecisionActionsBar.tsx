@@ -1,9 +1,11 @@
-import { useEffect, useState } from 'react';
-import { AlertCircle, Loader2, Pencil, CheckCircle2, Route, Trash2, Send, X } from 'lucide-react';
+import { useEffect, useMemo, useState } from 'react';
+import { AlertCircle, Loader2, Pencil, CheckCircle2, Route, Trash2, Send, X, Truck, User } from 'lucide-react';
 import toast from 'react-hot-toast';
 
 import { dispatcherApi } from '@/services/api/dispatcherApi';
-import type { DoDecisionItem, DoDecisionsResponse, Rider, Vehicle } from '@/types/dispatcher.types';
+import { SearchSelectDropdown } from '@/components/dispatcher/SearchSelectDropdown';
+import { CheckboxSearchDropdown, type CheckboxOption } from '@/components/dispatcher/CheckboxSearchDropdown';
+import type { DoDecisionItem, DoDecisionsResponse, RiderWithVehicles } from '@/types/dispatcher.types';
 
 const INTENT_STYLE: Record<string, { icon: React.ComponentType<{ className?: string }>; cls: string }> = {
   EDIT:     { icon: Pencil,       cls: 'bg-gray-600 hover:bg-gray-700 text-white' },
@@ -23,40 +25,159 @@ const extractErrorMessage = (err: any): string => {
   return err?.response?.data?.message ?? "Échec de l'action";
 };
 
+// Friendlier labels/icons for known field names — falls back to the backend-provided f.label for
+// anything not in this map, so the form stays generic for decisions we haven't special-cased.
+const FIELD_META: Record<string, { label: string; icon: React.ReactNode }> = {
+  driver_id: { label: 'Livreur', icon: <User size={12} /> },
+  rider_id: { label: 'Livreur', icon: <User size={12} /> },
+  vehicle_id: { label: 'Véhicule', icon: <Truck size={12} /> },
+  add_delivery_note_ids: { label: 'Ajouter des BL', icon: <CheckCircle2 size={12} /> },
+  remove_delivery_note_ids: { label: 'Retirer des BL', icon: <Trash2 size={12} /> },
+  add_order_ids: { label: 'Ajouter des BC', icon: <CheckCircle2 size={12} /> },
+};
+
+// Field names whose value is a number[] multi-select rather than a single scalar — handled
+// distinctly in missingRequired/handleSubmit below instead of the generic single-value path.
+const MULTI_SELECT_FIELDS = new Set(['add_delivery_note_ids', 'remove_delivery_note_ids', 'add_order_ids']);
+
+// Extra context only the mission-level "Edit Mission" decision needs — the BL add/remove pickers
+// can't function without knowing the mission's current BLs (to remove) and branch (to scope which
+// draft BLs are eligible to add). Optional so every other decision (BL cancel, etc.) is unaffected.
+export interface MissionEditContext {
+  branchCode?: string;
+  currentBls: CheckboxOption[];
+}
+
 const DecisionFormModal = ({
   subjectLabel,
   decisionItem,
   loading,
   onClose,
   onSubmit,
+  missionContext,
 }: {
   subjectLabel: string;
   decisionItem: DoDecisionItem;
   loading: boolean;
   onClose: () => void;
   onSubmit: (values: Record<string, unknown>) => void;
+  missionContext?: MissionEditContext;
 }) => {
   const [values, setValues] = useState<Record<string, string>>({});
-  const [riders, setRiders] = useState<Rider[]>([]);
-  const [vehicles, setVehicles] = useState<Vehicle[]>([]);
+  const [multiValues, setMultiValues] = useState<Record<string, number[]>>({});
+  const [riders, setRiders] = useState<RiderWithVehicles[]>([]);
+  const [availableBls, setAvailableBls] = useState<CheckboxOption[]>([]);
+  const [loadingAvailableBls, setLoadingAvailableBls] = useState(false);
+  const [availableOrders, setAvailableOrders] = useState<CheckboxOption[]>([]);
+  const [loadingAvailableOrders, setLoadingAvailableOrders] = useState(false);
 
+  const driverField = decisionItem.fields.find((f) => f.name === 'driver_id' || f.name === 'rider_id');
+  const hasVehicleField = decisionItem.fields.some((f) => f.name === 'vehicle_id');
+  const hasAddBlField = decisionItem.fields.some((f) => f.name === 'add_delivery_note_ids');
+  const hasAddOrderField = decisionItem.fields.some((f) => f.name === 'add_order_ids');
+
+  // Driver + vehicle come from the same "rider with their assigned vehicle(s)" lookup (docs §12d)
+  // — lets the vehicle picker scope itself to whichever driver is selected, instead of listing
+  // every active vehicle in the branch regardless of who's actually driving it.
   useEffect(() => {
-    if (decisionItem.fields.some((f) => f.name === 'driver_id' || f.name === 'rider_id')) {
-      dispatcherApi.livreurs.getList().then(setRiders).catch(() => {});
+    if (driverField || hasVehicleField) {
+      dispatcherApi.fleet.getRidersWithVehicles({ status: 'active' })
+        .then((res) => setRiders(Array.isArray(res) ? res : []))
+        .catch(() => setRiders([]));
     }
-    if (decisionItem.fields.some((f) => f.name === 'vehicle_id')) {
-      dispatcherApi.vehicles.getList().then(setVehicles).catch(() => {});
-    }
+  }, [decisionItem]);
+
+  // Eligible BLs to attach — must be draft and not already on a mission (docs §8.6); scoped to
+  // the mission's own branch when known, since cross-branch attachment isn't valid either way.
+  useEffect(() => {
+    if (!hasAddBlField) return;
+    setLoadingAvailableBls(true);
+    dispatcherApi.bonLivraisons.getList({ status: 'draft', per_page: 200 })
+      .then((res) => {
+        const opts = (res.data ?? [])
+          .filter((bl) => bl.delivery_mission_id == null && (!missionContext?.branchCode || bl.branch_code === missionContext.branchCode))
+          .map((bl) => ({ id: bl.id, label: `${bl.delivery_number} — ${bl.partner?.name ?? ''}` }));
+        setAvailableBls(opts);
+      })
+      .catch(() => setAvailableBls([]))
+      .finally(() => setLoadingAvailableBls(false));
+  }, [decisionItem]);
+
+  // Eligible BCs to attach — confirmed, not yet converted to a BL, same branch as the mission
+  // (backend 2026-06-22: new add_order_ids field on update_delivery_mission). Reuses the same
+  // orders/pending pool the mission workspace's BC selector already pulls from.
+  useEffect(() => {
+    if (!hasAddOrderField) return;
+    setLoadingAvailableOrders(true);
+    // No client-side branch filter here — confirmed live that `orders/pending` doesn't carry a
+    // top-level `branch_code` (only `branch_id`, a numeric FK with no client-side mapping to the
+    // mission's string `branch_code`), so comparing the two silently excluded every order. Branch
+    // eligibility is enforced server-side anyway (422 mixed_branches on submit), so just list
+    // every confirmed pending order and let that be the real check.
+    dispatcherApi.orders.getPending({ per_page: 200 })
+      .then((res) => {
+        const opts = (res.data ?? []).map((o) => ({ id: o.id, label: `${o.order_code} — ${o.partner?.name ?? ''}` }));
+        setAvailableOrders(opts);
+      })
+      .catch(() => setAvailableOrders([]))
+      .finally(() => setLoadingAvailableOrders(false));
   }, [decisionItem]);
 
   const style = INTENT_STYLE[decisionItem.intent ?? ''] ?? DEFAULT_INTENT_STYLE;
   const Icon = decisionItem.danger ? Trash2 : style.icon;
   const setField = (name: string, v: string) => setValues((p) => ({ ...p, [name]: v }));
-  const missingRequired = decisionItem.fields.some((f) => f.required && !values[f.name]);
+  const setMultiField = (name: string, ids: number[]) => setMultiValues((p) => ({ ...p, [name]: ids }));
+
+  const selectedRiderId = driverField ? (values[driverField.name] ? Number(values[driverField.name]) : '') : '';
+  const selectedRider = riders.find((r) => r.id === selectedRiderId);
+  const vehicleOptions = useMemo(() => {
+    if (selectedRider) {
+      return selectedRider.vehicles.map((v) => ({
+        id: v.id,
+        label: v.display_name ?? v.plate_number ?? v.plate ?? `#${v.id}`,
+        sublabel: [v.make, v.model].filter(Boolean).join(' ') || undefined,
+      }));
+    }
+    // No driver field on this decision (or none chosen yet) — fall back to every active rider's
+    // vehicle, tagged with that rider's name so it's still clear who currently has it.
+    return riders.flatMap((r) =>
+      r.vehicles.map((v) => ({
+        id: v.id,
+        label: v.display_name ?? v.plate_number ?? v.plate ?? `#${v.id}`,
+        sublabel: r.name,
+      }))
+    );
+  }, [riders, selectedRider]);
+
+  // If the driver changes to someone who doesn't have the currently-picked vehicle, clear it
+  // rather than silently submitting a vehicle/driver pair that don't belong together.
+  useEffect(() => {
+    if (!driverField || !hasVehicleField) return;
+    const vehicleFieldName = decisionItem.fields.find((f) => f.name === 'vehicle_id')?.name;
+    if (!vehicleFieldName) return;
+    const current = values[vehicleFieldName] ? Number(values[vehicleFieldName]) : null;
+    if (current != null && !vehicleOptions.some((v) => v.id === current)) {
+      setField(vehicleFieldName, '');
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedRiderId]);
+
+  const missingRequired = decisionItem.fields.some((f) => {
+    if (!f.required) return false;
+    if (MULTI_SELECT_FIELDS.has(f.name)) {
+      return !(multiValues[f.name]?.length);
+    }
+    return !values[f.name];
+  });
 
   const handleSubmit = () => {
     const payload: Record<string, unknown> = {};
     for (const f of decisionItem.fields) {
+      if (MULTI_SELECT_FIELDS.has(f.name)) {
+        const arr = multiValues[f.name];
+        if (arr?.length) payload[f.name] = arr;
+        continue;
+      }
       const v = values[f.name];
       if (v === undefined || v === '') continue;
       payload[f.name] = f.type === 'number' ? Number(v) : v;
@@ -82,7 +203,7 @@ const DecisionFormModal = ({
           </button>
         </div>
 
-        <div className="px-5 py-4 space-y-3 max-h-[60vh] overflow-y-auto">
+        <div className="px-5 py-4 space-y-4 max-h-[60vh] overflow-y-auto">
           {decisionItem.description && <p className="text-xs text-gray-500">{decisionItem.description}</p>}
 
           {decisionItem.danger && (
@@ -92,52 +213,122 @@ const DecisionFormModal = ({
             </div>
           )}
 
-          {decisionItem.fields.map((f) => (
-            <div key={f.name}>
-              <label className="block text-xs font-medium text-gray-700 mb-1.5">
-                {f.label} {f.required && <span className="text-red-500">*</span>}
-              </label>
-              {f.name === 'driver_id' || f.name === 'rider_id' ? (
-                <select
-                  value={values[f.name] ?? ''}
-                  onChange={(e) => setField(f.name, e.target.value)}
-                  className="w-full px-3 py-2 text-sm border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-300 outline-none"
-                >
-                  <option value="">— Sélectionner —</option>
-                  {riders.map((r) => (
-                    <option key={r.id} value={r.id}>{r.name}</option>
-                  ))}
-                </select>
-              ) : f.name === 'vehicle_id' ? (
-                <select
-                  value={values[f.name] ?? ''}
-                  onChange={(e) => setField(f.name, e.target.value)}
-                  className="w-full px-3 py-2 text-sm border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-300 outline-none"
-                >
-                  <option value="">— Sélectionner —</option>
-                  {vehicles.map((v) => (
-                    <option key={v.id} value={v.id}>
-                      {v.plate_number ?? v.plate} {v.internal_code ? `(${v.internal_code})` : ''} — {v.capacity_weight ?? v.capacity_kg ?? '?'} kg
-                    </option>
-                  ))}
-                </select>
-              ) : f.type === 'textarea' ? (
-                <textarea
-                  rows={3}
-                  value={values[f.name] ?? ''}
-                  onChange={(e) => setField(f.name, e.target.value)}
-                  className="w-full px-3 py-2 text-sm border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-300 outline-none resize-none"
+          {decisionItem.fields.map((f) => {
+            const meta = FIELD_META[f.name];
+            const label = meta?.label ?? f.label;
+
+            if (f.name === 'driver_id' || f.name === 'rider_id') {
+              return (
+                <SearchSelectDropdown
+                  key={f.name}
+                  label={label + (f.required ? ' *' : '')}
+                  icon={meta?.icon}
+                  options={riders.map((r) => ({
+                    id: r.id,
+                    label: r.name,
+                    sublabel: r.vehicles.length === 0 ? 'Sans véhicule' : r.vehicles.length > 1 ? `${r.vehicles.length} véhicules` : (r.vehicles[0].display_name ?? r.vehicles[0].plate_number),
+                  }))}
+                  value={values[f.name] ? Number(values[f.name]) : ''}
+                  onChange={(id) => setField(f.name, id === '' ? '' : String(id))}
                 />
-              ) : (
-                <input
-                  type={f.type}
-                  value={values[f.name] ?? ''}
-                  onChange={(e) => setField(f.name, e.target.value)}
-                  className="w-full px-3 py-2 text-sm border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-300 outline-none"
+              );
+            }
+
+            if (f.name === 'vehicle_id') {
+              return (
+                <SearchSelectDropdown
+                  key={f.name}
+                  label={label + (f.required ? ' *' : '')}
+                  icon={meta?.icon}
+                  options={vehicleOptions}
+                  value={values[f.name] ? Number(values[f.name]) : ''}
+                  onChange={(id) => setField(f.name, id === '' ? '' : String(id))}
+                  placeholder={selectedRider ? 'Sélectionner…' : driverField ? 'Choisissez un livreur d\'abord' : 'Sélectionner…'}
+                  disabled={!!driverField && !selectedRider}
                 />
-              )}
-            </div>
-          ))}
+              );
+            }
+
+            if (f.name === 'add_delivery_note_ids') {
+              return (
+                <div key={f.name}>
+                  <CheckboxSearchDropdown
+                    label={label + (f.required ? ' *' : '')}
+                    icon={meta?.icon}
+                    options={availableBls}
+                    selected={multiValues[f.name] ?? []}
+                    onChange={(ids) => setMultiField(f.name, ids)}
+                    emptyLabel={loadingAvailableBls ? 'Chargement…' : 'Aucun'}
+                    noResultsLabel={
+                      loadingAvailableBls
+                        ? 'Chargement…'
+                        : "Aucun BL brouillon disponible — un BL n'existe en dehors d'une mission que s'il en a été retiré (« Retirer des BL »)."
+                    }
+                  />
+                  <p className="text-[10px] text-gray-400 mt-1">BL brouillon, même branche, pas encore en mission.</p>
+                </div>
+              );
+            }
+
+            if (f.name === 'add_order_ids') {
+              return (
+                <div key={f.name}>
+                  <CheckboxSearchDropdown
+                    label={label + (f.required ? ' *' : '')}
+                    icon={meta?.icon}
+                    options={availableOrders}
+                    selected={multiValues[f.name] ?? []}
+                    onChange={(ids) => setMultiField(f.name, ids)}
+                    emptyLabel={loadingAvailableOrders ? 'Chargement…' : 'Aucun'}
+                    noResultsLabel={loadingAvailableOrders ? 'Chargement…' : 'Aucune BC confirmée disponible.'}
+                  />
+                  <p className="text-[10px] text-gray-400 mt-1">
+                    BC confirmée, pas encore convertie en BL. Sera fusionnée dans le BL existant du
+                    partenaire si la mission en a déjà un, sinon un nouveau BL est créé. Une BC d'une
+                    autre branche sera refusée à la confirmation.
+                  </p>
+                </div>
+              );
+            }
+
+            if (f.name === 'remove_delivery_note_ids') {
+              return (
+                <CheckboxSearchDropdown
+                  key={f.name}
+                  label={label + (f.required ? ' *' : '')}
+                  icon={meta?.icon}
+                  options={missionContext?.currentBls ?? []}
+                  selected={multiValues[f.name] ?? []}
+                  onChange={(ids) => setMultiField(f.name, ids)}
+                  emptyLabel="Aucun"
+                  noResultsLabel="Cette mission n'a aucun BL à retirer."
+                />
+              );
+            }
+
+            return (
+              <div key={f.name}>
+                <label className="block text-xs font-medium text-gray-700 mb-1.5">
+                  {label} {f.required && <span className="text-red-500">*</span>}
+                </label>
+                {f.type === 'textarea' ? (
+                  <textarea
+                    rows={3}
+                    value={values[f.name] ?? ''}
+                    onChange={(e) => setField(f.name, e.target.value)}
+                    className="w-full px-3 py-2 text-sm border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-300 outline-none resize-none"
+                  />
+                ) : (
+                  <input
+                    type={f.type}
+                    value={values[f.name] ?? ''}
+                    onChange={(e) => setField(f.name, e.target.value)}
+                    className="w-full px-3 py-2 text-sm border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-300 outline-none"
+                  />
+                )}
+              </div>
+            );
+          })}
 
           {decisionItem.fields.length === 0 && <p className="text-sm text-gray-500">Confirmer cette action ?</p>}
         </div>
@@ -166,7 +357,7 @@ const DecisionFormModal = ({
   );
 };
 
-export type DecisionExecutor = (id: number, decision: string, extra?: Record<string, unknown>) => Promise<{ success: boolean; message: string }>;
+export type DecisionExecutor = (id: number, decision: string, extra?: Record<string, unknown>) => Promise<{ success: boolean; message: string; output?: unknown }>;
 export type DecisionsFetcher = (id: number) => Promise<DoDecisionsResponse>;
 
 /**
@@ -181,6 +372,7 @@ export const DecisionActionsBar = ({
   executeDecision,
   onActionDone,
   compact = false,
+  missionContext,
 }: {
   subjectId: number;
   subjectLabel: string;
@@ -188,6 +380,7 @@ export const DecisionActionsBar = ({
   executeDecision: DecisionExecutor;
   onActionDone: () => void;
   compact?: boolean;
+  missionContext?: MissionEditContext;
 }) => {
   const [decisions, setDecisions] = useState<DoDecisionItem[]>([]);
   const [loading, setLoading] = useState(true);
@@ -209,9 +402,61 @@ export const DecisionActionsBar = ({
     try {
       const res = await executeDecision(subjectId, decision, extra);
       if (res.success) {
-        toast.success(res.message || 'Action effectuée');
+        // validate_delivery_order's allocation can legitimately come back partial (shortage on
+        // some lines) — docs §2/§9 are explicit this is a normal outcome, not an error, and must
+        // be shown clearly rather than as a generic green "success" toast. Checked generically on
+        // `output.status` rather than hardcoded to this one decision, since other decisions may
+        // return the same shape in the future.
+        const outputStatus = (res.output as { status?: string } | undefined)?.status;
+        if (outputStatus === 'partially_allocated') {
+          const rate = (res.output as { allocation_rate?: number } | undefined)?.allocation_rate;
+          toast(
+            `Allocation partielle${rate != null ? ` (${rate}% couvert)` : ''} — rupture sur certaines lignes, ce n'est pas une erreur.`,
+            { icon: '⚠️', duration: 7000 }
+          );
+        } else {
+          toast.success(res.message || 'Action effectuée');
+          // add_order_ids (2026-06-22) — each attached BC either merges into the partner's
+          // existing draft BL on this mission or spawns a new one; surface which happened so the
+          // dispatcher knows whether to expect a new BL row or an updated quantity on one already
+          // on screen.
+          const addedFromOrders = (res.output as { added_from_orders?: Array<{ merged_into_existing?: boolean }> } | undefined)?.added_from_orders;
+          if (addedFromOrders?.length) {
+            const mergedCount = addedFromOrders.filter((x) => x.merged_into_existing).length;
+            const newCount = addedFromOrders.length - mergedCount;
+            const parts = [];
+            if (newCount > 0) parts.push(`${newCount} nouveau(x) BL`);
+            if (mergedCount > 0) parts.push(`${mergedCount} fusionnée(s) dans un BL existant`);
+            toast(`BC attachées — ${parts.join(', ')}.`, { icon: 'ℹ️', duration: 6000 });
+          }
+          // confirm_delivery_mission (2026-06-22) replaces the old allocate_delivery_note +
+          // generate_preparation_for_mission pair — one atomic call that reserves stock for every
+          // BL (shortage-tolerant, same semantics the old allocate had) and generates the BP.
+          // Surface both halves so the dispatcher sees exactly what happened, not just "success".
+          const allocations = (res.output as { allocations?: Array<{ delivery_number: string; backlog_orders_count?: number }> } | undefined)?.allocations;
+          const preparation = (res.output as { preparation?: { bp_number?: string } } | undefined)?.preparation;
+          if (allocations?.length) {
+            const withBacklog = allocations.filter((a) => (a.backlog_orders_count ?? 0) > 0);
+            const summary = withBacklog.length > 0
+              ? `${allocations.length} BL alloué(s), ${withBacklog.length} avec rupture (backlog créé)`
+              : `${allocations.length} BL alloué(s) intégralement`;
+            toast(
+              preparation?.bp_number ? `${summary} — BP ${preparation.bp_number} généré.` : summary,
+              { icon: withBacklog.length > 0 ? '⚠️' : 'ℹ️', duration: 7000 }
+            );
+          }
+        }
         onActionDone();
-        refetch();
+        // Terminal decisions (cancel/complete) put the subject in a state the workflow engine no
+        // longer resolves decisions for — re-querying after one of these 404s (confirmed live on
+        // cancel_delivery_mission). Skip the refetch instead of firing a request we know will
+        // fail; there are no further decisions possible from a terminal state anyway.
+        const isTerminal = /^(cancel|complete)_/.test(decision);
+        if (isTerminal) {
+          setDecisions([]);
+        } else {
+          refetch();
+        }
       } else {
         toast.error(res.message || 'Action refusée');
       }
@@ -260,6 +505,7 @@ export const DecisionActionsBar = ({
           decisionItem={activeDecision}
           loading={executing}
           onClose={() => setActiveDecision(null)}
+          missionContext={missionContext}
           onSubmit={async (vals) => {
             await run(activeDecision.decision, Object.keys(vals).length ? vals : undefined);
             setActiveDecision(null);
