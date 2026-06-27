@@ -406,7 +406,7 @@ export const TemplateEditorPage = () => {
             width: 100,
             cellRenderer: (params: any) => (
                 <div className="flex items-center h-full">
-                    <span className="text-xs px-2 py-0.5 bg-blue-100 text-blue-700 rounded">
+                    <span className="text-xs px-2 py-0.5 bg-sage-100 text-sage-700 rounded">
                         {params.value}
                     </span>
                 </div>
@@ -451,7 +451,7 @@ export const TemplateEditorPage = () => {
             flex: 1,
             cellRenderer: (params: any) => (
                 <div className="flex items-center h-full gap-2">
-                    <Table2 className="w-4 h-4 text-blue-600" />
+                    <Table2 className="w-4 h-4 text-sage-600" />
                     <span className="font-medium text-gray-900">{params.value}</span>
                 </div>
             ),
@@ -483,7 +483,7 @@ export const TemplateEditorPage = () => {
                 <div className="flex items-center h-full gap-2">
                     <button
                         onClick={() => loadTableColumns(params.data.name)}
-                        className="text-blue-600 hover:text-blue-700 text-xs"
+                        className="text-sage-600 hover:text-sage-700 text-xs"
                     >
                         Voir colonnes
                     </button>
@@ -558,7 +558,7 @@ export const TemplateEditorPage = () => {
                     {editMode !== 'view' && (
                         <button
                             onClick={() => handleAddFieldFromColumn(params.data)}
-                            className="text-xs px-2 py-1 bg-blue-600 text-white rounded hover:bg-blue-700"
+                            className="text-xs px-2 py-1 bg-sage-500 text-white rounded hover:bg-sage-600"
                         >
                             Ajouter
                         </button>
@@ -573,7 +573,7 @@ export const TemplateEditorPage = () => {
         <div className="flex flex-col h-full bg-white border-r border-gray-200 w-full">
             <div className="p-4 border-b border-gray-200 flex justify-between items-center bg-gray-50/50">
                 <h2 className="font-bold text-gray-900">Templates</h2>
-                <div className="text-xs px-2 py-1 bg-blue-100 text-blue-700 rounded-full font-medium">
+                <div className="text-xs px-2 py-1 bg-sage-100 text-sage-700 rounded-full font-medium">
                     {templates.length} template(s)
                 </div>
             </div>
@@ -597,7 +597,7 @@ export const TemplateEditorPage = () => {
                     <div className="h-full overflow-hidden flex flex-col">
                         {loading ? (
                             <div className="h-full flex flex-col items-center justify-center text-gray-400">
-                                <Loader2 className="w-8 h-8 animate-spin mb-2 text-blue-500" />
+                                <Loader2 className="w-8 h-8 animate-spin mb-2 text-sage-500" />
                                 <p>Chargement...</p>
                             </div>
                         ) : editedTemplate ? (
@@ -676,7 +676,7 @@ interface ActionItemProps {
 const ActionItem = ({ icon: Icon, label, onClick, variant = 'default', disabled = false }: ActionItemProps) => {
     const variants = {
         default: "text-gray-400 hover:text-gray-700 hover:bg-gray-50",
-        primary: "text-gray-400 hover:text-blue-600 hover:bg-blue-50",
+        primary: "text-gray-400 hover:text-sage-600 hover:bg-sage-50",
         success: "text-gray-400 hover:text-green-600 hover:bg-green-50",
         danger: "text-gray-400 hover:text-red-600 hover:bg-red-50"
     };
@@ -730,7 +730,7 @@ const ActionPanel = ({
         <div className="flex flex-col h-full bg-white border-l border-gray-200 w-11 shrink-0 shadow-[0_0_15px_rgba(0,0,0,0.05)] z-40 transition-all duration-300">
             <ActionGroup>
                 <div className="w-full flex justify-center mb-1">
-                    <div className="w-6 h-0.5 bg-blue-500 rounded-full opacity-50"></div>
+                    <div className="w-6 h-0.5 bg-sage-500 rounded-full opacity-50"></div>
                 </div>
                 {editMode === 'view' ? (
                     <>
@@ -963,7 +963,7 @@ const GeneralTab = ({ template, editMode, onUpdate }: any) => {
                             value={template.code || ''}
                             onChange={(e) => onUpdate({ ...template, code: e.target.value })}
                             disabled={isReadOnly}
-                            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500 disabled:bg-gray-50"
+                            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-sage-500 focus:border-sage-500 disabled:bg-gray-50"
                         />
                     </div>
                     <div>
@@ -975,7 +975,7 @@ const GeneralTab = ({ template, editMode, onUpdate }: any) => {
                             value={template.name || ''}
                             onChange={(e) => onUpdate({ ...template, name: e.target.value })}
                             disabled={isReadOnly}
-                            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500 disabled:bg-gray-50"
+                            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-sage-500 focus:border-sage-500 disabled:bg-gray-50"
                         />
                     </div>
                     <div>
@@ -987,7 +987,7 @@ const GeneralTab = ({ template, editMode, onUpdate }: any) => {
                             value={template.object_code || ''}
                             onChange={(e) => onUpdate({ ...template, object_code: e.target.value })}
                             disabled={isReadOnly}
-                            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500 disabled:bg-gray-50"
+                            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-sage-500 focus:border-sage-500 disabled:bg-gray-50"
                         />
                     </div>
                     <div>
@@ -999,7 +999,7 @@ const GeneralTab = ({ template, editMode, onUpdate }: any) => {
                             value={template.object_name || ''}
                             onChange={(e) => onUpdate({ ...template, object_name: e.target.value })}
                             disabled={isReadOnly}
-                            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500 disabled:bg-gray-50"
+                            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-sage-500 focus:border-sage-500 disabled:bg-gray-50"
                         />
                     </div>
                     <div>
@@ -1011,7 +1011,7 @@ const GeneralTab = ({ template, editMode, onUpdate }: any) => {
                             value={template.primary_table || ''}
                             onChange={(e) => onUpdate({ ...template, primary_table: e.target.value })}
                             disabled={isReadOnly}
-                            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500 disabled:bg-gray-50"
+                            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-sage-500 focus:border-sage-500 disabled:bg-gray-50"
                         />
                     </div>
                     <div>
@@ -1022,7 +1022,7 @@ const GeneralTab = ({ template, editMode, onUpdate }: any) => {
                             value={template.module || 'catalog'}
                             onChange={(e) => onUpdate({ ...template, module: e.target.value })}
                             disabled={isReadOnly}
-                            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500 disabled:bg-gray-50"
+                            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-sage-500 focus:border-sage-500 disabled:bg-gray-50"
                         >
                             <option value="catalog">Catalog</option>
                             <option value="crm">CRM</option>
@@ -1041,7 +1041,7 @@ const GeneralTab = ({ template, editMode, onUpdate }: any) => {
                         onChange={(e) => onUpdate({ ...template, description: e.target.value })}
                         disabled={isReadOnly}
                         rows={3}
-                        className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500 disabled:bg-gray-50"
+                        className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-sage-500 focus:border-sage-500 disabled:bg-gray-50"
                     />
                 </div>
             </div>
@@ -1057,7 +1057,7 @@ const GeneralTab = ({ template, editMode, onUpdate }: any) => {
                             value={template.type || 'both'}
                             onChange={(e) => onUpdate({ ...template, type: e.target.value })}
                             disabled={isReadOnly}
-                            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500 disabled:bg-gray-50"
+                            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-sage-500 focus:border-sage-500 disabled:bg-gray-50"
                         >
                             <option value="import">Import</option>
                             <option value="export">Export</option>
@@ -1072,7 +1072,7 @@ const GeneralTab = ({ template, editMode, onUpdate }: any) => {
                             checked={template.allow_import || false}
                             onChange={(e) => onUpdate({ ...template, allow_import: e.target.checked })}
                             disabled={isReadOnly}
-                            className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                            className="w-4 h-4 text-sage-600 border-gray-300 rounded focus:ring-sage-500"
                         />
                         <span className="text-sm font-medium text-gray-900">Autoriser l'import</span>
                     </label>
@@ -1082,7 +1082,7 @@ const GeneralTab = ({ template, editMode, onUpdate }: any) => {
                             checked={template.allow_export || false}
                             onChange={(e) => onUpdate({ ...template, allow_export: e.target.checked })}
                             disabled={isReadOnly}
-                            className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                            className="w-4 h-4 text-sage-600 border-gray-300 rounded focus:ring-sage-500"
                         />
                         <span className="text-sm font-medium text-gray-900">Autoriser l'export</span>
                     </label>
@@ -1092,7 +1092,7 @@ const GeneralTab = ({ template, editMode, onUpdate }: any) => {
                             checked={template.allow_update || false}
                             onChange={(e) => onUpdate({ ...template, allow_update: e.target.checked })}
                             disabled={isReadOnly}
-                            className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                            className="w-4 h-4 text-sage-600 border-gray-300 rounded focus:ring-sage-500"
                         />
                         <span className="text-sm font-medium text-gray-900">Autoriser la mise à jour</span>
                     </label>
@@ -1102,7 +1102,7 @@ const GeneralTab = ({ template, editMode, onUpdate }: any) => {
                             checked={template.is_active || false}
                             onChange={(e) => onUpdate({ ...template, is_active: e.target.checked })}
                             disabled={isReadOnly}
-                            className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                            className="w-4 h-4 text-sage-600 border-gray-300 rounded focus:ring-sage-500"
                         />
                         <span className="text-sm font-medium text-gray-900">Template actif</span>
                     </label>
@@ -1123,7 +1123,7 @@ const FieldsTab = ({ fields, editMode, onUpdateField, onDeleteField, onMoveField
                 {!isReadOnly && (
                     <button
                         onClick={onAddField}
-                        className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 flex items-center gap-2"
+                        className="px-4 py-2 bg-sage-500 text-white rounded-lg hover:bg-sage-600 flex items-center gap-2"
                     >
                         <Plus className="w-4 h-4" />
                         Ajouter un champ
@@ -1209,7 +1209,7 @@ const FieldsTab = ({ fields, editMode, onUpdateField, onDeleteField, onMoveField
                                             checked={field.is_required}
                                             onChange={(e) => onUpdateField(index, { is_required: e.target.checked })}
                                             disabled={isReadOnly}
-                                            className="w-3 h-3 text-blue-600 border-gray-300 rounded"
+                                            className="w-3 h-3 text-sage-600 border-gray-300 rounded"
                                         />
                                         <span className="text-xs text-gray-700">Requis</span>
                                     </label>
@@ -1219,7 +1219,7 @@ const FieldsTab = ({ fields, editMode, onUpdateField, onDeleteField, onMoveField
                                             checked={field.is_identifier}
                                             onChange={(e) => onUpdateField(index, { is_identifier: e.target.checked })}
                                             disabled={isReadOnly}
-                                            className="w-3 h-3 text-blue-600 border-gray-300 rounded"
+                                            className="w-3 h-3 text-sage-600 border-gray-300 rounded"
                                         />
                                         <span className="text-xs text-gray-700">Identifiant</span>
                                     </label>
@@ -1229,7 +1229,7 @@ const FieldsTab = ({ fields, editMode, onUpdateField, onDeleteField, onMoveField
                                             checked={field.is_visible}
                                             onChange={(e) => onUpdateField(index, { is_visible: e.target.checked })}
                                             disabled={isReadOnly}
-                                            className="w-3 h-3 text-blue-600 border-gray-300 rounded"
+                                            className="w-3 h-3 text-sage-600 border-gray-300 rounded"
                                         />
                                         <span className="text-xs text-gray-700">Visible</span>
                                     </label>
@@ -1256,7 +1256,7 @@ const FieldsTab = ({ fields, editMode, onUpdateField, onDeleteField, onMoveField
                     {!isReadOnly && (
                         <button
                             onClick={onAddField}
-                            className="mt-4 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+                            className="mt-4 px-4 py-2 bg-sage-500 text-white rounded-lg hover:bg-sage-600"
                         >
                             Ajouter le premier champ
                         </button>
@@ -1284,7 +1284,7 @@ const SettingsTab = ({ template, editMode, onUpdate }: any) => {
                             value={template.file_type || 'csv'}
                             onChange={(e) => onUpdate({ ...template, file_type: e.target.value })}
                             disabled={isReadOnly}
-                            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500 disabled:bg-gray-50"
+                            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-sage-500 focus:border-sage-500 disabled:bg-gray-50"
                         >
                             <option value="csv">CSV</option>
                             <option value="xlsx">Excel (XLSX)</option>
@@ -1302,7 +1302,7 @@ const SettingsTab = ({ template, editMode, onUpdate }: any) => {
                             onChange={(e) => onUpdate({ ...template, field_separator: e.target.value })}
                             disabled={isReadOnly}
                             maxLength={1}
-                            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500 disabled:bg-gray-50"
+                            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-sage-500 focus:border-sage-500 disabled:bg-gray-50"
                         />
                     </div>
                     <div>
@@ -1315,7 +1315,7 @@ const SettingsTab = ({ template, editMode, onUpdate }: any) => {
                             onChange={(e) => onUpdate({ ...template, decimal_separator: e.target.value })}
                             disabled={isReadOnly}
                             maxLength={1}
-                            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500 disabled:bg-gray-50"
+                            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-sage-500 focus:border-sage-500 disabled:bg-gray-50"
                         />
                     </div>
                     <div>
@@ -1327,7 +1327,7 @@ const SettingsTab = ({ template, editMode, onUpdate }: any) => {
                             value={template.date_format || 'Y-m-d'}
                             onChange={(e) => onUpdate({ ...template, date_format: e.target.value })}
                             disabled={isReadOnly}
-                            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500 disabled:bg-gray-50"
+                            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-sage-500 focus:border-sage-500 disabled:bg-gray-50"
                         />
                     </div>
                     <div>
@@ -1338,7 +1338,7 @@ const SettingsTab = ({ template, editMode, onUpdate }: any) => {
                             value={template.charset || 'UTF-8'}
                             onChange={(e) => onUpdate({ ...template, charset: e.target.value })}
                             disabled={isReadOnly}
-                            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500 disabled:bg-gray-50"
+                            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-sage-500 focus:border-sage-500 disabled:bg-gray-50"
                         >
                             <option value="UTF-8">UTF-8</option>
                             <option value="ISO-8859-1">ISO-8859-1</option>
@@ -1390,7 +1390,7 @@ const DatabaseBrowserModal = ({
                         <div className="flex-1 overflow-hidden">
                             {loadingTables ? (
                                 <div className="flex items-center justify-center h-full">
-                                    <Loader2 className="w-6 h-6 animate-spin text-blue-500" />
+                                    <Loader2 className="w-6 h-6 animate-spin text-sage-500" />
                                 </div>
                             ) : (
                                 <DataGrid
@@ -1410,7 +1410,7 @@ const DatabaseBrowserModal = ({
                             {selectedTable && (
                                 <button
                                     onClick={() => onGenerateFromTable(selectedTable)}
-                                    className="px-3 py-1.5 bg-blue-600 text-white text-sm rounded-lg hover:bg-blue-700 flex items-center gap-2"
+                                    className="px-3 py-1.5 bg-sage-500 text-white text-sm rounded-lg hover:bg-sage-600 flex items-center gap-2"
                                 >
                                     <Plus className="w-4 h-4" />
                                     Générer Template
@@ -1420,7 +1420,7 @@ const DatabaseBrowserModal = ({
                         <div className="flex-1 overflow-hidden">
                             {loadingColumns ? (
                                 <div className="flex items-center justify-center h-full">
-                                    <Loader2 className="w-6 h-6 animate-spin text-blue-500" />
+                                    <Loader2 className="w-6 h-6 animate-spin text-sage-500" />
                                 </div>
                             ) : selectedTable ? (
                                 <DataGrid

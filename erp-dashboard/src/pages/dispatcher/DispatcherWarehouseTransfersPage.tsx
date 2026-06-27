@@ -249,13 +249,13 @@ export const DispatcherWarehouseTransfersPage = () => {
                         </div>
                       )}
 
-                      {/* accept/reject have no status guard backend-side (callable from any
-                          status) — confirmed by backend, not a frontend assumption. No ship/
-                          in_transit/receive actions exist; pending → accepted → completed is
-                          driven by other service flows, not user-triggered here. */}
+                      {/* Fixed 2026-06-23 (docs §12c) — accept is now status-gated: must be
+                          `pending`, a second call (or one on an already accepted/rejected
+                          transfer) returns 422 instead of silently re-running the stock movement.
+                          reject still has no documented status guard — flag that one only. */}
                       <div className="p-3 rounded-lg bg-amber-50 border border-amber-200 text-xs text-amber-800 flex items-start gap-2">
                         <Package size={14} className="mt-0.5 shrink-0" />
-                        Accepter/rejeter ne sont pas gardés par statut côté backend (utilisable depuis n'importe quel état) — agir avec prudence.
+                        Rejeter n'est pas gardé par statut côté backend (utilisable depuis n'importe quel état) — agir avec prudence. Accepter, en revanche, est désormais bloqué hors statut « En attente ».
                       </div>
                     </>
                   )}
@@ -275,7 +275,7 @@ export const DispatcherWarehouseTransfersPage = () => {
                     label: 'Accepter',
                     variant: 'primary',
                     onClick: handleAccept,
-                    disabled: !selected || accepting,
+                    disabled: !selected || !details || accepting || details.status !== 'pending',
                   },
                   {
                     icon: XCircle,

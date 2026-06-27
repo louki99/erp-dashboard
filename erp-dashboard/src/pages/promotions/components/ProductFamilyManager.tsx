@@ -153,7 +153,7 @@ export const ProductFamilyManager = ({ selectedCodes, onSelectionChange }: Produ
                     <div className="flex items-center gap-2 h-full">
                         <button
                             onClick={() => handleEdit(family)}
-                            className="p-1 text-blue-600 hover:bg-blue-50 rounded"
+                            className="p-1 text-sage-600 hover:bg-sage-50 rounded"
                             title="Modifier"
                         >
                             <Pencil className="w-4 h-4" />

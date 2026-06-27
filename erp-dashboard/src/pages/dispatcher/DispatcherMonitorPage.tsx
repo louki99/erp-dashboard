@@ -1,6 +1,6 @@
 import { useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Loader2, RefreshCw, FileText, Package, Truck, Navigation, CheckCircle2, LayoutGrid } from 'lucide-react';
+import { Loader2, RefreshCw, FileText, Package, Truck, Navigation, CheckCircle2, LayoutGrid, AlertTriangle, XCircle } from 'lucide-react';
 
 import { MasterLayout } from '@/components/layout/MasterLayout';
 import { useDeliveryMissionsList } from '@/hooks/dispatcher/useDispatcherDeliveryMissions';
@@ -14,14 +14,21 @@ type Column = {
 };
 
 // 2026-06-20: single Delivery Mission pipeline replaces the old DO/LOT split-pipeline board
-// (docs §3, §8). draft → in_preparation → ready → in_transit → completed, plus cancelled (only
-// ever reached from draft) — no more Pipeline 1/Pipeline 2 distinction to tag.
+// (docs §3, §8). draft → in_preparation → ready → in_transit → completed.
+// cancelled is reachable from both draft (simple discard) and ready (full rollback: WT cancelled →
+// BP cancelled → BLs soft-deleted → BCs revert to confirmed). 2026-06-25: cancel_delivery_mission
+// now allowed from ready, so cancelled missions must have their own column or they vanish silently.
+// awaiting_shortage_review added 2026-06-23 — without its own column these missions would simply
+// not match any column's `statuses` and silently disappear from the board entirely (byColumn only
+// buckets a mission if `COLUMNS.find(...)` finds a match).
 const COLUMNS: Column[] = [
   { key: 'draft', label: 'Brouillon', icon: FileText, statuses: ['draft'] },
   { key: 'preparation', label: 'En préparation', icon: Package, statuses: ['in_preparation'] },
+  { key: 'shortage_review', label: 'Rupture à examiner', icon: AlertTriangle, statuses: ['awaiting_shortage_review'] },
   { key: 'ready', label: 'Prêt', icon: Truck, statuses: ['ready'] },
   { key: 'transit', label: 'En transit', icon: Navigation, statuses: ['in_transit'] },
   { key: 'completed', label: 'Terminé', icon: CheckCircle2, statuses: ['completed'] },
+  { key: 'cancelled', label: 'Annulé', icon: XCircle, statuses: ['cancelled'] },
 ];
 
 const MissionCard = ({ m, onClick }: { m: DeliveryMission; onClick: () => void }) => (
@@ -58,7 +65,7 @@ export const DispatcherMonitorPage = () => {
     <div className="h-full bg-white flex flex-col">
       <div className="p-4 border-b border-gray-100">
         <h1 className="text-sm font-semibold text-gray-900 flex items-center gap-2">
-          <LayoutGrid size={16} className="text-blue-600" /> Moniteur Logistique
+          <LayoutGrid size={16} className="text-sage-600" /> Moniteur Logistique
         </h1>
         <p className="text-xs text-gray-500 mt-1">Vue Kanban en lecture seule — {missions.length} mission(s)</p>
         <button
@@ -96,17 +103,19 @@ export const DispatcherMonitorPage = () => {
           <Loader2 className="animate-spin" />
         </div>
       ) : (
-        <div className="grid grid-cols-5 gap-3 h-full min-w-[1000px]">
+        <div className="grid grid-cols-7 gap-3 h-full min-w-[1400px]">
           {COLUMNS.map((col) => {
             const items = byColumn.get(col.key) ?? [];
             const Icon = col.icon;
+            const isShortageColumn = col.key === 'shortage_review';
+            const isCancelledColumn = col.key === 'cancelled';
             return (
-              <div key={col.key} className="bg-gray-100 rounded-lg p-2 flex flex-col min-h-0">
+              <div key={col.key} className={`rounded-lg p-2 flex flex-col min-h-0 ${isShortageColumn ? 'bg-red-50' : isCancelledColumn ? 'bg-rose-50' : 'bg-gray-100'}`}>
                 <div className="flex items-center justify-between px-1 py-1.5 mb-1">
-                  <span className="text-xs font-bold text-gray-700 flex items-center gap-1.5">
-                    <Icon size={13} className="text-gray-400" /> {col.label}
+                  <span className={`text-xs font-bold flex items-center gap-1.5 ${isShortageColumn ? 'text-red-700' : isCancelledColumn ? 'text-rose-600' : 'text-gray-700'}`}>
+                    <Icon size={13} className={isShortageColumn ? 'text-red-500' : isCancelledColumn ? 'text-rose-400' : 'text-gray-400'} /> {col.label}
                   </span>
-                  <span className="text-[10px] text-gray-500">{items.length}</span>
+                  <span className={`text-[10px] ${isShortageColumn && items.length > 0 ? 'font-bold text-red-600' : 'text-gray-500'}`}>{items.length}</span>
                 </div>
                 <div className="flex-1 overflow-y-auto px-1">
                   {items.length === 0 ? (

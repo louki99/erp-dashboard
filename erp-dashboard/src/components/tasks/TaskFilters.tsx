@@ -53,7 +53,7 @@ export const TaskFilters: React.FC<TaskFiltersProps> = ({ filters, onFiltersChan
                 <Filter className="w-4 h-4" />
                 <span>Filtres</span>
                 {activeFiltersCount > 0 && (
-                    <span className="px-2 py-0.5 bg-blue-600 text-white text-xs rounded-full">
+                    <span className="px-2 py-0.5 bg-sage-500 text-white text-xs rounded-full">
                         {activeFiltersCount}
                     </span>
                 )}
@@ -70,7 +70,7 @@ export const TaskFilters: React.FC<TaskFiltersProps> = ({ filters, onFiltersChan
                                     onReset();
                                     setIsOpen(false);
                                 }}
-                                className="text-sm text-blue-600 hover:text-blue-700"
+                                className="text-sm text-sage-600 hover:text-sage-700"
                             >
                                 Réinitialiser
                             </button>
@@ -82,7 +82,7 @@ export const TaskFilters: React.FC<TaskFiltersProps> = ({ filters, onFiltersChan
                                 <select
                                     value={filters.status as string || ''}
                                     onChange={(e) => handleFilterChange('status', e.target.value || undefined)}
-                                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-sage-500 focus:border-sage-500"
                                 >
                                     <option value="">Tous les statuts</option>
                                     {statusOptions.map((option) => (
@@ -98,7 +98,7 @@ export const TaskFilters: React.FC<TaskFiltersProps> = ({ filters, onFiltersChan
                                 <select
                                     value={filters.workflow_type as string || ''}
                                     onChange={(e) => handleFilterChange('workflow_type', e.target.value || undefined)}
-                                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-sage-500 focus:border-sage-500"
                                 >
                                     <option value="">Tous les workflows</option>
                                     {workflowOptions.map((option) => (
@@ -114,7 +114,7 @@ export const TaskFilters: React.FC<TaskFiltersProps> = ({ filters, onFiltersChan
                                 <select
                                     value={filters.task_type as string || ''}
                                     onChange={(e) => handleFilterChange('task_type', e.target.value || undefined)}
-                                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-sage-500 focus:border-sage-500"
                                 >
                                     <option value="">Tous les types</option>
                                     {taskTypeOptions.map((option) => (
@@ -132,7 +132,7 @@ export const TaskFilters: React.FC<TaskFiltersProps> = ({ filters, onFiltersChan
                                     value={filters.search || ''}
                                     onChange={(e) => handleFilterChange('search', e.target.value || undefined)}
                                     placeholder="Rechercher..."
-                                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-sage-500 focus:border-sage-500"
                                 />
                             </div>
 
@@ -142,7 +142,7 @@ export const TaskFilters: React.FC<TaskFiltersProps> = ({ filters, onFiltersChan
                                     id="overdue"
                                     checked={filters.overdue || false}
                                     onChange={(e) => handleFilterChange('overdue', e.target.checked || undefined)}
-                                    className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                                    className="w-4 h-4 text-sage-600 border-gray-300 rounded focus:ring-sage-500"
                                 />
                                 <label htmlFor="overdue" className="text-sm text-gray-700">
                                     Tâches en retard uniquement
@@ -153,7 +153,7 @@ export const TaskFilters: React.FC<TaskFiltersProps> = ({ filters, onFiltersChan
                         <div className="mt-4 pt-4 border-t border-gray-200">
                             <button
                                 onClick={() => setIsOpen(false)}
-                                className="w-full px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+                                className="w-full px-4 py-2 bg-sage-500 text-white rounded-lg hover:bg-sage-600 transition-colors"
                             >
                                 Appliquer les filtres
                             </button>

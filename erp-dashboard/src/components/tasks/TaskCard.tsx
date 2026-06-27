@@ -12,7 +12,7 @@ interface TaskCardProps {
 
 const statusConfig = {
     pending: { color: 'bg-gray-100 text-gray-700', icon: Clock, label: 'En attente' },
-    ready: { color: 'bg-blue-100 text-blue-700', icon: PlayCircle, label: 'Prêt' },
+    ready: { color: 'bg-sage-100 text-sage-700', icon: PlayCircle, label: 'Prêt' },
     in_progress: { color: 'bg-yellow-100 text-yellow-700', icon: Clock, label: 'En cours' },
     completed: { color: 'bg-green-100 text-green-700', icon: CheckCircle, label: 'Terminé' },
     failed: { color: 'bg-red-100 text-red-700', icon: XCircle, label: 'Échoué' },
@@ -40,7 +40,7 @@ export const TaskCard: React.FC<TaskCardProps> = ({ task, onClaim, onStart, onVi
 
     return (
         <div
-            className={`bg-white rounded-lg border border-gray-200 hover:border-blue-300 transition-all cursor-pointer ${
+            className={`bg-white rounded-lg border border-gray-200 hover:border-sage-300 transition-all cursor-pointer ${
                 compact ? 'p-3' : 'p-4'
             }`}
             onClick={() => onView?.(task.id)}
@@ -85,7 +85,7 @@ export const TaskCard: React.FC<TaskCardProps> = ({ task, onClaim, onStart, onVi
                                     e.stopPropagation();
                                     navigate(`/adv/validation?bcId=${task.taskable?.id}`);
                                 }}
-                                className="inline-flex items-center gap-1 px-2 py-1 text-xs text-blue-600 hover:text-blue-700 hover:bg-blue-100 rounded transition-colors"
+                                className="inline-flex items-center gap-1 px-2 py-1 text-xs text-sage-600 hover:text-sage-700 hover:bg-sage-100 rounded transition-colors"
                                 title="Voir le BC"
                             >
                                 <ExternalLink className="w-3 h-3" />
@@ -112,7 +112,7 @@ export const TaskCard: React.FC<TaskCardProps> = ({ task, onClaim, onStart, onVi
             </div>
 
             {isAssignedToMe && (
-                <div className="flex items-center gap-1 text-xs text-blue-600 mb-3">
+                <div className="flex items-center gap-1 text-xs text-sage-600 mb-3">
                     <User className="w-3 h-3" />
                     <span>Assigné à vous</span>
                 </div>
@@ -131,7 +131,7 @@ export const TaskCard: React.FC<TaskCardProps> = ({ task, onClaim, onStart, onVi
                             e.stopPropagation();
                             onClaim(task.id);
                         }}
-                        className="flex-1 px-3 py-1.5 bg-blue-600 text-white text-sm rounded hover:bg-blue-700 transition-colors"
+                        className="flex-1 px-3 py-1.5 bg-sage-500 text-white text-sm rounded hover:bg-sage-600 transition-colors"
                     >
                         Réclamer
                     </button>

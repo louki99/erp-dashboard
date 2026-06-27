@@ -90,7 +90,7 @@ export const CheckboxSearchDropdown = ({
                     >
                       <span
                         className={`w-3.5 h-3.5 rounded border shrink-0 flex items-center justify-center ${
-                          isChecked ? 'bg-blue-600 border-blue-600' : 'border-gray-300'
+                          isChecked ? 'bg-sage-500 border-sage-500' : 'border-gray-300'
                         }`}
                       >
                         {isChecked && <Check size={10} className="text-white" />}

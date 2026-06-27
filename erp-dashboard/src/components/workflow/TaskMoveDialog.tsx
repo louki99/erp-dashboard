@@ -43,7 +43,7 @@ export function TaskMoveDialog({ task, maxOrder, onClose, onSuccess }: TaskMoveD
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
             <div className="bg-white rounded-lg p-6 max-w-md w-full">
                 <div className="flex items-center gap-3 mb-4">
-                    <ArrowUpDown className="w-6 h-6 text-blue-600" />
+                    <ArrowUpDown className="w-6 h-6 text-sage-600" />
                     <h3 className="text-lg font-semibold text-gray-900">Move Task</h3>
                 </div>
 
@@ -67,7 +67,7 @@ export function TaskMoveDialog({ task, maxOrder, onClose, onSuccess }: TaskMoveD
                             max={maxOrder}
                             value={newOrder}
                             onChange={(e) => setNewOrder(Number(e.target.value))}
-                            className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                            className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-sage-500 focus:border-transparent"
                         />
                         <span className="text-sm text-gray-500">of {maxOrder}</span>
                     </div>
@@ -93,7 +93,7 @@ export function TaskMoveDialog({ task, maxOrder, onClose, onSuccess }: TaskMoveD
                     <button
                         onClick={handleMove}
                         disabled={loading || newOrder === task.order}
-                        className="flex-1 inline-flex items-center justify-center px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors disabled:opacity-50"
+                        className="flex-1 inline-flex items-center justify-center px-4 py-2 bg-sage-500 hover:bg-sage-600 text-white rounded-lg transition-colors disabled:opacity-50"
                     >
                         {loading ? (
                             <Loader2 className="w-4 h-4 mr-2 animate-spin" />

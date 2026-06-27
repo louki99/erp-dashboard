@@ -26,7 +26,7 @@ export function WorkflowTemplatesPage() {
                             <div className="flex items-center justify-between mb-2">
                                 <div>
                                     <h1 className="text-2xl font-bold text-gray-900 flex items-center gap-2">
-                                        <Workflow className="w-7 h-7 text-blue-600" />
+                                        <Workflow className="w-7 h-7 text-sage-600" />
                                         Workflow Templates
                                     </h1>
                                     <p className="text-gray-600 mt-1">
@@ -35,7 +35,7 @@ export function WorkflowTemplatesPage() {
                                 </div>
                                 <button
                                     onClick={() => navigate('/workflows/create')}
-                                    className="inline-flex items-center px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors font-medium"
+                                    className="inline-flex items-center px-4 py-2 bg-sage-500 hover:bg-sage-600 text-white rounded-lg transition-colors font-medium"
                                 >
                                     <Plus className="w-5 h-5 mr-2" />
                                     Create Workflow
@@ -49,7 +49,7 @@ export function WorkflowTemplatesPage() {
                                 onClick={() => setFilter('all')}
                                 className={`px-4 py-2 rounded-lg font-medium transition-colors ${
                                     filter === 'all'
-                                        ? 'bg-blue-600 text-white'
+                                        ? 'bg-sage-500 text-white'
                                         : 'bg-white text-gray-700 border border-gray-300 hover:bg-gray-50'
                                 }`}
                             >
@@ -59,7 +59,7 @@ export function WorkflowTemplatesPage() {
                                 onClick={() => setFilter('active')}
                                 className={`px-4 py-2 rounded-lg font-medium transition-colors ${
                                     filter === 'active'
-                                        ? 'bg-blue-600 text-white'
+                                        ? 'bg-sage-500 text-white'
                                         : 'bg-white text-gray-700 border border-gray-300 hover:bg-gray-50'
                                 }`}
                             >
@@ -69,7 +69,7 @@ export function WorkflowTemplatesPage() {
                                 onClick={() => setFilter('inactive')}
                                 className={`px-4 py-2 rounded-lg font-medium transition-colors ${
                                     filter === 'inactive'
-                                        ? 'bg-blue-600 text-white'
+                                        ? 'bg-sage-500 text-white'
                                         : 'bg-white text-gray-700 border border-gray-300 hover:bg-gray-50'
                                 }`}
                             >
@@ -80,7 +80,7 @@ export function WorkflowTemplatesPage() {
                         {/* Loading State */}
                         {loading && (
                             <div className="flex items-center justify-center py-12">
-                                <Loader2 className="w-8 h-8 animate-spin text-blue-600" />
+                                <Loader2 className="w-8 h-8 animate-spin text-sage-600" />
                             </div>
                         )}
 
@@ -120,7 +120,7 @@ export function WorkflowTemplatesPage() {
                                         {filter === 'all' && (
                                             <button
                                                 onClick={() => navigate('/workflows/create')}
-                                                className="inline-flex items-center px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors"
+                                                className="inline-flex items-center px-4 py-2 bg-sage-500 hover:bg-sage-600 text-white rounded-lg transition-colors"
                                             >
                                                 <Plus className="w-5 h-5 mr-2" />
                                                 Create Workflow

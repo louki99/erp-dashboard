@@ -144,7 +144,7 @@ function fieldStatus(
 
 const STATUS_CONFIG: Record<FieldStatus, { label: string; cls: string; icon: React.ElementType }> = {
     new:       { label: 'Nouveau',   cls: 'bg-emerald-50 text-emerald-700 border-emerald-200', icon: CheckCircle2 },
-    modified:  { label: 'Modifié',   cls: 'bg-blue-50    text-blue-700    border-blue-200',    icon: RefreshCw    },
+    modified:  { label: 'Modifié',   cls: 'bg-sage-50    text-sage-700    border-sage-200',    icon: RefreshCw    },
     unchanged: { label: 'Identique', cls: 'bg-gray-100   text-gray-500    border-gray-200',    icon: Minus        },
     unknown:   { label: 'Inconnu',   cls: 'bg-amber-50   text-amber-700   border-amber-200',   icon: AlertTriangle},
 };
@@ -280,12 +280,12 @@ export const PartnerFileImportDialog: React.FC<PartnerFileImportDialogProps> = (
             >
                 {/* ── Header ───────────────────────────────────────────────── */}
                 <div className="px-6 py-4 border-b border-gray-100 flex items-center gap-3 shrink-0">
-                    <div className="w-9 h-9 rounded-xl bg-indigo-600 flex items-center justify-center shrink-0">
+                    <div className="w-9 h-9 rounded-xl bg-sage-500 flex items-center justify-center shrink-0">
                         <FileText className="w-4.5 h-4.5 text-white w-5 h-5" />
                     </div>
                     <div className="flex-1">
                         <h2 className="text-sm font-bold text-gray-900">
-                            Importer un fichier <span className="font-mono text-indigo-600">.partner</span>
+                            Importer un fichier <span className="font-mono text-sage-600">.partner</span>
                         </h2>
                         {filename && (
                             <p className="text-[11px] text-gray-400 mt-0.5 font-mono">{filename}</p>
@@ -318,17 +318,17 @@ export const PartnerFileImportDialog: React.FC<PartnerFileImportDialogProps> = (
                                 className={cn(
                                     'w-full flex flex-col items-center gap-4 px-8 py-12 rounded-2xl border-2 border-dashed transition-all cursor-pointer',
                                     dragging
-                                        ? 'border-indigo-400 bg-indigo-50 scale-[1.01]'
-                                        : 'border-gray-200 bg-gray-50/60 hover:border-indigo-300 hover:bg-indigo-50/40',
+                                        ? 'border-sage-400 bg-sage-50 scale-[1.01]'
+                                        : 'border-gray-200 bg-gray-50/60 hover:border-sage-300 hover:bg-sage-50/40',
                                 )}
                             >
                                 {parsing ? (
-                                    <RefreshCw className="w-10 h-10 text-indigo-400 animate-spin" />
+                                    <RefreshCw className="w-10 h-10 text-sage-400 animate-spin" />
                                 ) : (
                                     <div className={cn('w-16 h-16 rounded-2xl flex items-center justify-center transition-colors',
-                                        dragging ? 'bg-indigo-200' : 'bg-white border-2 border-dashed border-gray-200',
+                                        dragging ? 'bg-sage-200' : 'bg-white border-2 border-dashed border-gray-200',
                                     )}>
-                                        <Upload className={cn('w-7 h-7 transition-colors', dragging ? 'text-indigo-600' : 'text-gray-400')} />
+                                        <Upload className={cn('w-7 h-7 transition-colors', dragging ? 'text-sage-600' : 'text-gray-400')} />
                                     </div>
                                 )}
                                 <div className="text-center">
@@ -340,7 +340,7 @@ export const PartnerFileImportDialog: React.FC<PartnerFileImportDialogProps> = (
                                     </p>
                                 </div>
                                 <div className="px-4 py-2 bg-white border border-gray-200 rounded-xl text-xs text-gray-500 shadow-sm">
-                                    <span className="font-mono text-indigo-600">*.partner</span>
+                                    <span className="font-mono text-sage-600">*.partner</span>
                                     &nbsp;— Format texte, champs séparés par <span className="font-mono">__:</span>
                                 </div>
                             </button>
@@ -358,7 +358,7 @@ export const PartnerFileImportDialog: React.FC<PartnerFileImportDialogProps> = (
                                     <button
                                         type="button"
                                         onClick={downloadExampleFile}
-                                        className="flex items-center gap-1.5 px-3 py-1 rounded-lg text-xs font-medium text-indigo-600 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 transition-colors"
+                                        className="flex items-center gap-1.5 px-3 py-1 rounded-lg text-xs font-medium text-sage-600 bg-sage-50 hover:bg-sage-100 border border-sage-200 transition-colors"
                                         title="Télécharger le fichier d'exemple"
                                     >
                                         <Download className="w-3 h-3" />
@@ -409,7 +409,7 @@ export const PartnerFileImportDialog: React.FC<PartnerFileImportDialogProps> = (
                                 );
                             })}
                             <div className="ml-auto flex items-center gap-2">
-                                <button type="button" onClick={selectAll}  className="text-xs text-indigo-600 hover:underline">Tout</button>
+                                <button type="button" onClick={selectAll}  className="text-xs text-sage-600 hover:underline">Tout</button>
                                 <span className="text-gray-300">|</span>
                                 <button type="button" onClick={selectNone} className="text-xs text-gray-400 hover:underline">Aucun</button>
                                 <span className="text-[11px] text-gray-400 ml-2">
@@ -459,7 +459,7 @@ export const PartnerFileImportDialog: React.FC<PartnerFileImportDialogProps> = (
                                             className={cn(
                                                 'w-full flex items-center gap-3 px-3 py-2.5 rounded-xl border text-left transition-all',
                                                 isSelected
-                                                    ? 'border-indigo-200 bg-indigo-50/70 shadow-sm'
+                                                    ? 'border-sage-200 bg-sage-50/70 shadow-sm'
                                                     : 'border-transparent bg-gray-50 hover:bg-gray-100',
                                             )}
                                         >
@@ -467,7 +467,7 @@ export const PartnerFileImportDialog: React.FC<PartnerFileImportDialogProps> = (
                                             <div className={cn(
                                                 'w-4 h-4 rounded border flex items-center justify-center shrink-0 transition-colors',
                                                 isSelected
-                                                    ? 'bg-indigo-600 border-indigo-600'
+                                                    ? 'bg-sage-500 border-sage-500'
                                                     : 'border-gray-300 bg-white',
                                             )}>
                                                 {isSelected && <Check className="w-2.5 h-2.5 text-white" />}
@@ -534,7 +534,7 @@ export const PartnerFileImportDialog: React.FC<PartnerFileImportDialogProps> = (
                                     type="button"
                                     onClick={handleApply}
                                     disabled={selected.size === 0}
-                                    className="flex items-center gap-2 px-5 py-2 text-sm text-white bg-indigo-600 hover:bg-indigo-700 rounded-lg transition-colors disabled:opacity-40 disabled:cursor-not-allowed shadow-sm"
+                                    className="flex items-center gap-2 px-5 py-2 text-sm text-white bg-sage-500 hover:bg-sage-600 rounded-lg transition-colors disabled:opacity-40 disabled:cursor-not-allowed shadow-sm"
                                 >
                                     <Download className="w-4 h-4" />
                                     Appliquer {selected.size} champ{selected.size !== 1 ? 's' : ''}

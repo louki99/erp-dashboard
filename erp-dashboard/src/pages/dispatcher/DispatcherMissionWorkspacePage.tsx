@@ -1,13 +1,16 @@
 import { useEffect, useMemo, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
 import {
   DndContext, DragOverlay, PointerSensor, useDraggable, useDroppable, useSensor, useSensors, pointerWithin,
   type DragEndEvent, type DragStartEvent,
 } from '@dnd-kit/core';
 import {
   Loader2, Package, Truck, User, RefreshCw, CheckCircle2, ChevronDown, ChevronUp, Route,
-  Search, Filter, X, MapPin, UserCircle2, Navigation, Box, Weight, AlertTriangle, MapPinned, Eye, GripVertical,
+  Search, Filter, X, MapPin, UserCircle2, Box, Weight, AlertTriangle, MapPinned, Eye, GripVertical,
+  Trash2, XCircle, CheckSquare, Square, Sparkles, Banknote, TrendingDown, Printer,
+  Info, Phone, Calendar, ExternalLink, Copy, Check,
 } from 'lucide-react';
+import { openPdf } from '@/utils/pdfUtils';
 import toast from 'react-hot-toast';
 
 import { MasterLayout } from '@/components/layout/MasterLayout';
@@ -18,71 +21,169 @@ import { CheckboxSearchDropdown, type CheckboxOption } from '@/components/dispat
 import { LoadCapacityBar } from '@/components/dispatcher/LoadCapacityBar';
 import { Highlight } from '@/components/dispatcher/Highlight';
 import { BlDetailModal } from '@/components/dispatcher/BlDetailModal';
+import { ShortageAllocationModal } from '@/components/dispatcher/ShortageAllocationModal';
 import { computeMissionLoad } from '@/utils/missionLoad';
 import { dispatcherApi } from '@/services/api/dispatcherApi';
-import { useDispatcherPendingOrders } from '@/hooks/dispatcher/useDispatcherOrders';
+import { useDispatcherPendingOrders, useDispatcherOrderDetail } from '@/hooks/dispatcher/useDispatcherOrders';
 import { useRidersWithVehicles } from '@/hooks/dispatcher/useDispatcherFleet';
 import {
   useDeliveryMissionsList,
   useCreateDeliveryMission,
 } from '@/hooks/dispatcher/useDispatcherDeliveryMissions';
-import type { DeliveryMission, DispatcherOrder, OrdersPendingFilters } from '@/types/dispatcher.types';
+import type { DeliveryMission, DispatcherOrder, OrdersPendingFilters, ReviewPartialPreparationOutput } from '@/types/dispatcher.types';
 
 // ─── BC → Delivery Mission workspace (docs §8.1, 2026-06-20) ──────────────────
 // Replaces the old two-screen Planning/Loading split: rider + vehicle are now picked at mission
 // creation time, in the same call that selects the BCs — there's no longer a separate "seal the
 // LOT" or "group into a BCH" step before assigning a rider.
 
-// ─── Proximity smart-sort ───────────────────────────────────────────────────
-// Replaces "Zone de livraison" / "Secteur géo" text/ID filters — those required knowing an
-// internal code/ID by heart and didn't actually use the geo coordinates already on every order
-// (`partner.geo_lat`/`geo_lng`). This greedily chains the BC pool nearest-neighbor by haversine
-// distance instead, so partners close to each other end up adjacent in the list — closer to what
-// a dispatcher actually wants ("group the BCs that are near each other") than a manual zone code.
-const toRad = (deg: number) => (deg * Math.PI) / 180;
-
-const haversineKm = (lat1: number, lng1: number, lat2: number, lng2: number): number => {
-  const R = 6371;
-  const dLat = toRad(lat2 - lat1);
-  const dLng = toRad(lng2 - lng1);
-  const a =
-    Math.sin(dLat / 2) ** 2 +
-    Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLng / 2) ** 2;
-  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-};
-
-const sortByProximity = (orders: DispatcherOrder[]): Array<DispatcherOrder & { __distFromPrev?: number }> => {
-  const withGeo = orders.filter((o) => o.partner.geo_lat != null && o.partner.geo_lng != null);
-  const withoutGeo = orders.filter((o) => o.partner.geo_lat == null || o.partner.geo_lng == null);
-  if (withGeo.length === 0) return orders;
-
-  const remaining = [...withGeo];
-  const chain: Array<DispatcherOrder & { __distFromPrev?: number }> = [];
-  let current = remaining.shift()!;
-  chain.push(current);
-
-  while (remaining.length > 0) {
-    const curLat = Number(current.partner.geo_lat);
-    const curLng = Number(current.partner.geo_lng);
-    let nearestIdx = 0;
-    let nearestDist = Infinity;
-    remaining.forEach((o, idx) => {
-      const d = haversineKm(curLat, curLng, Number(o.partner.geo_lat), Number(o.partner.geo_lng));
-      if (d < nearestDist) { nearestDist = d; nearestIdx = idx; }
+// ─── Copy-to-clipboard micro-button ─────────────────────────────────────────
+// Used next to every reference code (BC, BL, mission number) so the dispatcher
+// can copy it without selecting text manually. Shows a check icon for 1.5 s.
+const CopyButton = ({ text, className = '' }: { text: string; className?: string }) => {
+  const [copied, setCopied] = useState(false);
+  const handleCopy = (e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    navigator.clipboard.writeText(text).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
     });
-    current = remaining.splice(nearestIdx, 1)[0];
-    chain.push({ ...current, __distFromPrev: nearestDist });
-  }
-  return [...chain, ...withoutGeo];
+  };
+  return (
+    <button
+      onClick={handleCopy}
+      title={copied ? 'Copié !' : `Copier ${text}`}
+      className={`shrink-0 p-0.5 rounded transition-colors ${
+        copied ? 'text-emerald-500' : 'text-gray-300 hover:text-gray-500 hover:bg-gray-100'
+      } ${className}`}
+    >
+      {copied ? <Check size={11} /> : <Copy size={11} />}
+    </button>
+  );
 };
 
+
+// Common cancel_delivery reasons (docs §7.7 just requires "min 10 chars", no enum) — a curated
+// dropdown speeds up the frequent cases; "Autre" reveals a free-text textarea for anything else.
+const BULK_CANCEL_REASON_PRESETS = [
+  "Le partenaire a annulé sa demande de livraison.",
+  "Adresse de livraison incorrecte ou introuvable.",
+  "Rupture de stock définitive sur cette commande.",
+  "Erreur de saisie sur la commande.",
+  "Doublon de commande.",
+  "Client injoignable.",
+] as const;
+const OTHER_REASON = '__other__';
+
+// awaiting_shortage_review added 2026-06-23 — the mission now flips here atomically the moment
+// its BP hits completed_partial, instead of staying passively `in_preparation`. Loops back to
+// in_preparation on request_rework, then either ready or back here depending on whether the
+// magasinier's continue_preparation fully resolved the shortage (see DeliveryMissionStatus).
 const MISSION_STATUS_LABEL: Record<string, string> = {
   draft: 'Brouillon',
   in_preparation: 'En préparation',
+  awaiting_shortage_review: 'Rupture à examiner',
   ready: 'Prêt',
   in_transit: 'En transit',
   completed: 'Terminé',
   cancelled: 'Annulé',
+};
+
+// draft is red, not neutral — a mission can land back here two ways: never confirmed yet, or
+// reverted by a magasinier `reject_preparation` (Module 16 §6.6, confirmed live 2026-06-23: BP →
+// rejected, mission + its BLs → draft, BCs stay attached). Either way it needs the dispatcher's
+// attention, so it shouldn't look the same as the in-progress/healthy statuses.
+const MISSION_STATUS_BADGE: Record<string, string> = {
+  draft: 'bg-red-100 text-red-700',
+  in_preparation: 'bg-amber-100 text-amber-700',
+  awaiting_shortage_review: 'bg-red-100 text-red-700',
+  ready: 'bg-blue-100 text-blue-700',
+  in_transit: 'bg-indigo-100 text-indigo-700',
+  completed: 'bg-emerald-100 text-emerald-700',
+  cancelled: 'bg-gray-100 text-gray-500',
+};
+
+// violations[].reason comes back from decision_denied errors — same extraction convention as
+// DecisionActionsBar, duplicated locally so the bulk-cancel loop can report a precise per-BL
+// reason instead of a generic "Échec".
+const extractCancelErrorMessage = (err: any): string => {
+  const violations = err?.response?.data?.violations as
+    | Array<{ constraint?: string; reason: string; context?: unknown }>
+    | undefined;
+  if (violations?.length) return violations.map((v) => v.reason).join(' · ');
+  return err?.response?.data?.message ?? "Échec de l'annulation";
+};
+
+type BulkCancelRow = {
+  id: number;
+  label: string;
+  status: 'pending' | 'processing' | 'success' | 'error';
+  message?: string;
+};
+
+// Sequential, animated bulk-cancel — cancel_delivery is per-BL (docs §7.7, no bulk endpoint
+// exists backend-side), so this drives N individual `executeDecision` calls one at a time and
+// renders live progress instead of firing them all in parallel (which would make a single
+// idempotency/stock-release failure hard to attribute to the right BL).
+const BulkCancelProgressModal = ({
+  rows,
+  processing,
+  onClose,
+}: {
+  rows: BulkCancelRow[];
+  processing: boolean;
+  onClose: () => void;
+}) => {
+  const done = rows.filter((r) => r.status === 'success' || r.status === 'error').length;
+  const failed = rows.filter((r) => r.status === 'error').length;
+  const pct = rows.length > 0 ? Math.round((done / rows.length) * 100) : 0;
+
+  return (
+    <Modal isOpen onClose={processing ? () => {} : onClose} title="Annulation des BL sélectionnés" size="sm">
+      <div className="p-5 space-y-4">
+        <div>
+          <div className="flex items-center justify-between text-xs text-gray-500 mb-1.5">
+            <span>{done} / {rows.length} traités</span>
+            <span>{pct}%</span>
+          </div>
+          <div className="h-2.5 w-full rounded-full bg-gray-100 overflow-hidden">
+            <div
+              className={`h-full rounded-full transition-all duration-500 ease-out ${failed > 0 ? 'bg-amber-500' : 'bg-emerald-500'}`}
+              style={{ width: `${pct}%` }}
+            />
+          </div>
+        </div>
+
+        <div className="max-h-64 overflow-y-auto space-y-1.5 -mx-1 px-1">
+          {rows.map((r) => (
+            <div key={r.id} className="flex items-center gap-2 px-2.5 py-1.5 rounded-lg bg-gray-50 text-xs">
+              {r.status === 'pending' && <span className="w-3.5 h-3.5 rounded-full border-2 border-gray-300 shrink-0" />}
+              {r.status === 'processing' && <Loader2 size={14} className="animate-spin text-blue-500 shrink-0" />}
+              {r.status === 'success' && <CheckCircle2 size={14} className="text-emerald-500 shrink-0" />}
+              {r.status === 'error' && <XCircle size={14} className="text-red-500 shrink-0" />}
+              <span className="font-mono font-medium text-gray-700 truncate">{r.label}</span>
+              {r.message && <span className="text-red-500 truncate ml-auto">{r.message}</span>}
+            </div>
+          ))}
+        </div>
+
+        {!processing && (
+          <div className="flex items-center justify-between pt-2 border-t border-gray-100">
+            <span className={`text-xs font-medium ${failed > 0 ? 'text-amber-600' : 'text-emerald-600'}`}>
+              {failed > 0 ? `${done - failed} réussi(s), ${failed} échec(s)` : `${done} BL annulé(s) avec succès`}
+            </span>
+            <button
+              onClick={onClose}
+              className="px-3 py-1.5 rounded-lg bg-gray-900 text-white text-xs font-semibold hover:bg-gray-800 transition-colors"
+            >
+              Fermer
+            </button>
+          </div>
+        )}
+      </div>
+    </Modal>
+  );
 };
 
 // ─── Drag a BC onto a mission to attach it (backend 2026-06-22, add_order_ids) ─────────────────
@@ -93,12 +194,12 @@ const DraggableOrderRow = ({
   order,
   checked,
   onToggle,
-  distLabel,
+  onViewDetail,
 }: {
   order: DispatcherOrder;
   checked: boolean;
   onToggle: () => void;
-  distLabel?: string;
+  onViewDetail: () => void;
 }) => {
   const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({
     id: `order-${order.id}`,
@@ -109,26 +210,24 @@ const DraggableOrderRow = ({
     <div
       ref={setNodeRef}
       style={transform ? { transform: `translate3d(${transform.x}px, ${transform.y}px, 0)`, zIndex: 50 } : undefined}
-      className={`flex items-start gap-2 px-2.5 py-2 rounded-lg border transition-colors ${
+      className={`flex items-center gap-2 px-2.5 py-2 rounded-lg border transition-colors ${
         isDragging ? 'opacity-40' : ''
-      } ${checked ? 'border-blue-400 bg-blue-50' : 'border-gray-100 hover:bg-gray-50'}`}
+      } ${checked ? 'border-sage-400 bg-sage-50' : 'border-gray-100 hover:bg-gray-50'}`}
     >
       <div
         {...attributes}
         {...listeners}
         title="Glisser vers une mission pour l'ajouter directement"
-        className="mt-0.5 p-0.5 rounded text-gray-300 hover:text-gray-500 hover:bg-gray-100 cursor-grab active:cursor-grabbing shrink-0 touch-none"
+        className="p-0.5 rounded text-gray-300 hover:text-gray-500 hover:bg-gray-100 cursor-grab active:cursor-grabbing shrink-0 touch-none"
       >
         <GripVertical size={13} />
       </div>
-      <label className="flex items-start gap-2 min-w-0 flex-1 cursor-pointer">
-        <input type="checkbox" checked={checked} onChange={onToggle} className="mt-0.5" />
+      <label className="flex items-center gap-2 min-w-0 flex-1 cursor-pointer">
+        <input type="checkbox" checked={checked} onChange={onToggle} />
         <div className="min-w-0 flex-1">
-          <div className="flex items-center gap-1.5">
-            <div className="text-xs font-mono font-semibold text-gray-800 truncate">{order.order_code}</div>
-            {distLabel && (
-              <span className="shrink-0 text-[10px] px-1.5 py-0.5 rounded-full bg-emerald-50 text-emerald-700 font-medium">{distLabel}</span>
-            )}
+          <div className="flex items-center gap-1">
+            <span className="text-xs font-mono font-semibold text-gray-800 truncate">{order.order_code}</span>
+            <CopyButton text={order.order_code} />
           </div>
           <div className="text-[11px] text-gray-500 truncate">
             {order.partner.name}{order.partner.city ? ` · ${order.partner.city}` : ''}
@@ -138,6 +237,155 @@ const DraggableOrderRow = ({
           )}
         </div>
       </label>
+      <button
+        onClick={(e) => { e.stopPropagation(); onViewDetail(); }}
+        title="Voir le détail du BC"
+        className="shrink-0 p-1 rounded text-gray-300 hover:text-sage-500 hover:bg-sage-50 transition-colors"
+      >
+        <Info size={12} />
+      </button>
+    </div>
+  );
+};
+
+// Statuses where the BP genuinely needs a dispatcher decision (docs §10) — `completed_partial`
+// just landed and hasn't been analyzed yet, `awaiting_shortage_review` is mid-flow with
+// accept/rework both available. `partial_rework_requested` is excluded: at that point the ball is
+// back in the magasinier's court (continue_preparation), nothing for the dispatcher to arbitrate.
+const SHORTAGE_NEEDS_DISPATCHER_REVIEW = new Set(['completed_partial', 'awaiting_shortage_review']);
+
+// Inline "Quantity Control / Arbitrage" panel — surfaces the shortage straight on the mission
+// card (no need to navigate to the separate Shortage Queue page) the moment the BP the dispatcher
+// is already looking at needs review_partial_preparation/accept_partial_preparation/
+// request_rework. There's no dedicated "mission status" for this — the mission itself stays
+// in_preparation throughout (docs §3); the signal already lives on `mission.preparation_order.status`,
+// no API change needed.
+const MissionShortagePanel = ({
+  bp,
+  onRefresh,
+}: {
+  bp: NonNullable<DeliveryMission['preparation_order']>;
+  onRefresh: () => void;
+}) => {
+  const [reviewAnalysis, setReviewAnalysis] = useState<ReviewPartialPreparationOutput | null>(null);
+  const [showAllocationModal, setShowAllocationModal] = useState(false);
+  const shortageItems = (bp.items ?? []).filter((i) => (i.shortage_quantity ?? 0) > 0);
+
+  const executeDecisionWithCapture = async (id: number, decision: string, extra?: Record<string, unknown>) => {
+    const res = await dispatcherApi.preparations.executeDecision(id, decision, extra);
+    if (decision === 'review_partial_preparation' && res.success) {
+      setReviewAnalysis((res.output as ReviewPartialPreparationOutput | undefined) ?? null);
+    }
+    if (decision === 'accept_partial_preparation' || decision === 'request_rework') {
+      setReviewAnalysis(null);
+    }
+    return res;
+  };
+
+  // accept_partial_preparation's allocation table can only be built from
+  // review_partial_preparation's own execution output (`shortage_details[].affected_bls`) — there
+  // is no separate read endpoint for it (flagged to backend). If this card never saw that output
+  // this session (e.g. page reloaded after review but before accept), there's currently no way to
+  // recover it — review_partial_preparation itself is only offered while the BP is still
+  // completed_partial, not once it's awaiting_shortage_review.
+  const handleAcceptClick = async () => {
+    if (!reviewAnalysis) {
+      const loadingToast = toast.loading("Récupération des données de répartition...");
+      try {
+        const res = await executeDecisionWithCapture(bp.id, 'review_partial_preparation');
+        toast.dismiss(loadingToast);
+        if (!res.success) {
+          toast.error("Impossible de récupérer les données de répartition.");
+          return;
+        }
+      } catch (err) {
+        toast.dismiss(loadingToast);
+        toast.error("Erreur lors de la récupération des données.");
+        return;
+      }
+    }
+    setShowAllocationModal(true);
+  };
+
+  return (
+    <div className="rounded-xl border border-red-200 bg-red-50/50 overflow-hidden">
+      <div className="px-4 py-2.5 bg-red-100/70 border-b border-red-200 flex items-center justify-between gap-3">
+        <div className="flex items-center gap-2 min-w-0">
+          <AlertTriangle size={15} className="text-red-600 shrink-0" />
+          <span className="text-xs font-bold text-red-800 truncate">
+            Rupture à examiner — BP {bp.bp_number}
+          </span>
+        </div>
+        <DecisionActionsBar
+          subjectId={bp.id}
+          subjectLabel={bp.bp_number}
+          fetchDecisions={dispatcherApi.preparations.getDecisions}
+          executeDecision={executeDecisionWithCapture}
+          onActionDone={onRefresh}
+          compact
+          // accept_partial_preparation gets the Quantity Controller table instead of the generic
+          // reason-only modal (requested 2026-06-23) — see ShortageAllocationModal.
+          customDecisionHandlers={{ accept_partial_preparation: handleAcceptClick }}
+        />
+      </div>
+
+      {showAllocationModal && reviewAnalysis && (
+        <ShortageAllocationModal
+          bp={bp}
+          shortageDetails={reviewAnalysis.shortage_details}
+          onClose={() => setShowAllocationModal(false)}
+          onConfirmed={onRefresh}
+        />
+      )}
+
+      <div className="p-3 space-y-2.5">
+        {reviewAnalysis && (
+          <div className="bg-white border border-indigo-100 rounded-lg overflow-hidden">
+            <div className="px-3 py-2 bg-indigo-50 border-b border-indigo-100 flex items-center gap-1.5">
+              <Sparkles size={13} className="text-indigo-500 shrink-0" />
+              <span className="text-xs font-semibold text-indigo-900">Analyse de la rupture</span>
+            </div>
+            <div className="p-3 space-y-2">
+              <div className="grid grid-cols-2 gap-2 text-[11px]">
+                <div className="p-2 rounded-lg bg-gray-50 border border-gray-100">
+                  <div className="text-gray-500">Rupture</div>
+                  <div className="font-bold text-gray-900">
+                    {reviewAnalysis.analysis.shortage_percentage}% ({reviewAnalysis.analysis.total_shortage}/{reviewAnalysis.analysis.total_requested})
+                  </div>
+                </div>
+                <div className="p-2 rounded-lg bg-gray-50 border border-gray-100">
+                  <div className="text-gray-500 flex items-center gap-1"><Banknote size={10} /> Valeur</div>
+                  <div className="font-bold text-gray-900">{reviewAnalysis.analysis.shortage_value.toLocaleString('fr-MA')} Dh</div>
+                </div>
+              </div>
+              <div className={`flex items-center gap-1.5 text-[11px] rounded-lg px-2.5 py-1.5 border ${
+                reviewAnalysis.recommended_action === 'accept_and_split'
+                  ? 'text-emerald-700 bg-emerald-50 border-emerald-100'
+                  : 'text-purple-700 bg-purple-50 border-purple-100'
+              }`}>
+                Recommandation : <strong>{reviewAnalysis.recommended_action === 'accept_and_split' ? 'Accepter et splitter' : 'Demander une reprise'}</strong>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {shortageItems.length > 0 && (
+          <div className="space-y-1.5">
+            <div className="flex items-center gap-1.5 text-[11px] text-red-600 font-medium">
+              <TrendingDown size={12} />
+              {shortageItems.length} ligne(s) en rupture
+            </div>
+            {shortageItems.map((item) => (
+              <div key={item.id} className="flex items-center justify-between gap-2 px-2.5 py-1.5 rounded-lg bg-white border border-red-100 text-[11px]">
+                <span className="font-medium text-gray-700 truncate">{item.product?.name ?? `Produit #${item.product_id}`}</span>
+                <span className="shrink-0 text-red-600 font-semibold">
+                  {item.prepared_quantity}/{item.requested_quantity} (-{item.shortage_quantity})
+                </span>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
     </div>
   );
 };
@@ -155,8 +403,82 @@ const MissionCard = ({
   onViewBl: (blId: number) => void;
   defaultExpanded?: boolean;
 }) => {
-  const [expanded, setExpanded] = useState(defaultExpanded);
   const isDraftMission = mission.status === 'draft';
+  // Specifically a magasinier rejection (not just "never confirmed yet") — only a mission that
+  // already had a BP generated can have a `preparation_order`, so this combination is unambiguous.
+  const isRejectedByMagasinier = isDraftMission && mission.preparation_order?.status === 'rejected';
+  // Primary signal is now the mission's own status (set atomically with the BP, 2026-06-23) —
+  // the BP-status check is kept as a fallback for any mission row that hasn't synced yet (e.g. a
+  // stale list cache), not the source of truth anymore.
+  const needsShortageReview =
+    mission.status === 'awaiting_shortage_review' ||
+    (!!mission.preparation_order && SHORTAGE_NEEDS_DISPATCHER_REVIEW.has(mission.preparation_order.status));
+  // Auto-expand on first render if there's already a shortage waiting — the arbitrage panel is
+  // useless to the dispatcher hidden behind a collapsed card. Only the initial mount matters here
+  // (useState's lazy initializer runs once); afterwards the dispatcher's manual collapse wins.
+  const [expanded, setExpanded] = useState(defaultExpanded || needsShortageReview);
+
+  // ─── Bulk BL cancellation ────────────────────────────────────────────────
+  // No bulk-cancel endpoint exists (docs §7.7 is per-BL) — selecting several BLs and clicking
+  // "Annuler la sélection" drives the same `cancel_delivery` decision N times sequentially,
+  // surfaced as a single animated progress modal instead of forcing the dispatcher to click
+  // "Cancel Delivery" once per row.
+  const [selectedBlIds, setSelectedBlIds] = useState<Set<number>>(new Set());
+  const [showBulkReasonModal, setShowBulkReasonModal] = useState(false);
+  const [bulkReasonChoice, setBulkReasonChoice] = useState<string>(BULK_CANCEL_REASON_PRESETS[0]);
+  const [bulkReasonCustom, setBulkReasonCustom] = useState('');
+  const bulkReason = bulkReasonChoice === OTHER_REASON ? bulkReasonCustom : bulkReasonChoice;
+  const [bulkRows, setBulkRows] = useState<BulkCancelRow[] | null>(null);
+  const [bulkProcessing, setBulkProcessing] = useState(false);
+
+  // Bulk-cancel is draft-only — if the mission moves on (e.g. confirmed while this card was
+  // already open with a selection mid-flight), drop any stale selection rather than leave it
+  // sitting inert in state.
+  useEffect(() => {
+    if (!isDraftMission && selectedBlIds.size > 0) setSelectedBlIds(new Set());
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isDraftMission]);
+
+  const toggleBlSelected = (id: number) => {
+    setSelectedBlIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  };
+  const allBlIds = (mission.delivery_notes ?? []).map((bl) => bl.id);
+  const allBlsSelected = allBlIds.length > 0 && allBlIds.every((id) => selectedBlIds.has(id));
+  const toggleSelectAllBls = () => {
+    setSelectedBlIds(allBlsSelected ? new Set() : new Set(allBlIds));
+  };
+
+  const runBulkCancel = async () => {
+    const ids = Array.from(selectedBlIds);
+    const rows: BulkCancelRow[] = ids.map((id) => ({
+      id,
+      label: mission.delivery_notes?.find((bl) => bl.id === id)?.delivery_number ?? `#${id}`,
+      status: 'pending',
+    }));
+    setShowBulkReasonModal(false);
+    setBulkRows(rows);
+    setBulkProcessing(true);
+
+    for (const id of ids) {
+      setBulkRows((prev) => prev?.map((r) => (r.id === id ? { ...r, status: 'processing' } : r)) ?? prev);
+      try {
+        const res = await dispatcherApi.bonLivraisons.executeDecision(id, 'cancel_delivery', { reason: bulkReason });
+        setBulkRows((prev) =>
+          prev?.map((r) => (r.id === id ? { ...r, status: res.success ? 'success' : 'error', message: res.success ? undefined : res.message } : r)) ?? prev
+        );
+      } catch (err) {
+        setBulkRows((prev) => prev?.map((r) => (r.id === id ? { ...r, status: 'error', message: extractCancelErrorMessage(err) } : r)) ?? prev);
+      }
+    }
+
+    setBulkProcessing(false);
+    setSelectedBlIds(new Set());
+    onRefresh();
+  };
 
   // Auto-expand a card the moment it starts matching a search (e.g. typing a BL/BC code that
   // belongs to a currently-collapsed mission) — but don't fight the dispatcher if they manually
@@ -164,6 +486,13 @@ const MissionCard = ({
   useEffect(() => {
     if (defaultExpanded) setExpanded(true);
   }, [defaultExpanded]);
+
+  // Same one-shot expand on the false→true edge for shortage review — covers the case where a
+  // BP this card already knows about transitions into a reviewable state on a background refetch
+  // (the magasinier just finished picking elsewhere), not just on first mount.
+  useEffect(() => {
+    if (needsShortageReview) setExpanded(true);
+  }, [needsShortageReview]);
 
   // Drop target for a dragged BC row — only a draft mission can accept add_order_ids (docs §8.6),
   // so non-draft missions stay registered as droppable (for a clear "rejected" hover state) but
@@ -196,6 +525,12 @@ const MissionCard = ({
           <AlertTriangle size={11} /> Mission non modifiable (statut « {MISSION_STATUS_LABEL[mission.status] ?? mission.status} »)
         </div>
       )}
+      {isRejectedByMagasinier && (
+        <div className="px-4 py-1.5 bg-red-50 text-red-700 text-[11px] font-semibold flex items-center gap-1.5 border-b border-red-100">
+          <AlertTriangle size={11} className="shrink-0" />
+          Rejetée par le magasinier (BP {mission.preparation_order?.bp_number}) — corrigez puis confirmez à nouveau pour générer un nouveau BP.
+        </div>
+      )}
       <button
         onClick={() => setExpanded((v) => !v)}
         className="w-full px-4 py-3 flex items-center justify-between hover:bg-gray-50 transition-colors"
@@ -207,14 +542,29 @@ const MissionCard = ({
               <span className="text-sm font-bold text-gray-900">
                 <Highlight text={mission.mission_number} query={searchQuery} />
               </span>
-              <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-blue-100 text-blue-700">
+              <CopyButton text={mission.mission_number} />
+              <span className={`px-2 py-0.5 rounded-full text-[10px] font-semibold ${MISSION_STATUS_BADGE[mission.status] ?? 'bg-blue-100 text-blue-700'}`}>
                 {MISSION_STATUS_LABEL[mission.status] ?? mission.status}
               </span>
+              {/* Redundant once mission.status itself is awaiting_shortage_review (the status
+                  badge above already reads "Rupture à examiner") — only shown as a fallback for
+                  the legacy signal (BP-level status) in case the mission-level one hasn't synced. */}
+              {needsShortageReview && mission.status !== 'awaiting_shortage_review' && (
+                <span className="flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-red-100 text-red-700">
+                  <AlertTriangle size={10} /> Rupture à examiner
+                </span>
+              )}
             </div>
-            <div className="text-xs text-gray-500 mt-0.5 flex items-center gap-2">
+            <div className="text-xs text-gray-500 mt-0.5 flex items-center gap-2 flex-wrap">
               <span className="flex items-center gap-1"><User size={11} /> <Highlight text={mission.rider?.name ?? '—'} query={searchQuery} /></span>
               <span className="flex items-center gap-1"><Truck size={11} /> {mission.vehicle?.plate_number ?? mission.vehicle?.plate ?? '—'}</span>
               <span>{mission.bl_count ?? mission.delivery_notes?.length ?? 0} BL</span>
+              {mission.delivery_date && (
+                <span className="flex items-center gap-1 text-sage-600 font-medium">
+                  <Calendar size={11} />
+                  {new Date(mission.delivery_date).toLocaleDateString('fr-FR', { day: '2-digit', month: 'short', year: 'numeric' })}
+                </span>
+              )}
             </div>
           </div>
         </div>
@@ -231,27 +581,109 @@ const MissionCard = ({
             onActionDone={onRefresh}
             missionContext={{
               branchCode: mission.branch_code,
+              currentRiderId: mission.rider_id,
               currentBls: (mission.delivery_notes ?? []).map((bl) => ({
                 id: bl.id,
                 label: `${bl.delivery_number}${bl.partner?.name ? ` — ${bl.partner.name}` : ''}`,
               })),
+              currentOrders: (mission.delivery_notes ?? []).flatMap((bl) => {
+                const ordersList = bl.orders || (bl.order ? [bl.order] : []);
+                return ordersList.map((o) => ({
+                  id: o.id,
+                  label: `${o.order_code}${bl.partner?.name ? ` — ${bl.partner.name}` : ''}`,
+                }));
+              }),
             }}
           />
 
+          {needsShortageReview && mission.preparation_order && (
+            <MissionShortagePanel bp={mission.preparation_order} onRefresh={onRefresh} />
+          )}
+
           {mission.delivery_notes && mission.delivery_notes.length > 0 ? (
             <div className="space-y-2">
-              <h4 className="text-xs font-semibold text-gray-500">Bons de livraison</h4>
+              <div className="flex items-center justify-between">
+                {/* Bulk-select/cancel is a draft-only convenience — once the magasinier has the
+                    mission (in_preparation and beyond), amputating BLs out from under an active
+                    picking run is exactly the unsafe edit "Modifier la préparation" exists to
+                    prevent properly (full rollback flow). Selection checkboxes are hidden outright
+                    rather than just disabling the button, so there's no dead UI implying it's
+                    still possible. */}
+                {isDraftMission ? (
+                  <button
+                    onClick={toggleSelectAllBls}
+                    className="flex items-center gap-1.5 text-xs font-semibold text-gray-500 hover:text-gray-700 transition-colors"
+                  >
+                    {allBlsSelected ? <CheckSquare size={14} className="text-sage-600" /> : <Square size={14} />}
+                    Bons de livraison ({mission.delivery_notes.length})
+                  </button>
+                ) : (
+                  <h4 className="text-xs font-semibold text-gray-500">Bons de livraison ({mission.delivery_notes.length})</h4>
+                )}
+                <div className="flex items-center gap-1.5">
+                  {isDraftMission && selectedBlIds.size > 0 && (
+                    <button
+                      onClick={() => setShowBulkReasonModal(true)}
+                      className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-semibold text-white bg-red-600 hover:bg-red-700 transition-colors"
+                    >
+                      <Trash2 size={12} />
+                      Annuler la sélection ({selectedBlIds.size})
+                    </button>
+                  )}
+                  <div className="flex items-center gap-1.5">
+                    <button
+                      onClick={() => openPdf('mission', mission.id, { force: true })}
+                      title="Imprimer le document mission complet (avec prix)"
+                      className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-semibold text-sage-700 hover:text-sage-800 hover:bg-sage-50 transition-colors border border-sage-200"
+                    >
+                      <Printer size={12} />
+                      Imprimer mission
+                    </button>
+                    <button
+                      onClick={() => openPdf('mission', mission.id, { force: true, prices: false })}
+                      title="Copie chauffeur — sans prix"
+                      className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-semibold text-gray-500 hover:text-gray-700 hover:bg-gray-100 transition-colors border border-gray-200"
+                    >
+                      <Truck size={12} />
+                      Copie chauffeur
+                    </button>
+                  </div>
+                </div>
+              </div>
               {mission.delivery_notes.map((bl) => (
-                <div key={bl.id} className="flex items-center justify-between gap-3 px-3 py-2 rounded-lg bg-gray-50 border border-gray-100">
-                  <div className="min-w-0">
-                    <div className="text-xs font-mono font-semibold text-gray-800 truncate">
-                      <Highlight text={bl.delivery_number} query={searchQuery} />
-                    </div>
-                    <div className="text-[11px] text-gray-400 truncate">
-                      <Highlight text={bl.partner?.name ?? ''} query={searchQuery} />
-                      {bl.order?.order_code && (
-                        <span> · <Highlight text={bl.order.order_code} query={searchQuery} /></span>
-                      )}
+                <div
+                  key={bl.id}
+                  className={`flex items-center justify-between gap-3 px-3 py-2 rounded-lg border transition-colors ${
+                    isDraftMission && selectedBlIds.has(bl.id) ? 'bg-sage-50 border-sage-200' : 'bg-gray-50 border-gray-100'
+                  }`}
+                >
+                  <div className="flex items-center gap-2.5 min-w-0">
+                    {isDraftMission && (
+                      <button
+                        onClick={() => toggleBlSelected(bl.id)}
+                        title="Sélectionner ce BL"
+                        className="shrink-0 text-gray-400 hover:text-sage-600 transition-colors"
+                      >
+                        {selectedBlIds.has(bl.id) ? <CheckSquare size={16} className="text-sage-600" /> : <Square size={16} />}
+                      </button>
+                    )}
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-1">
+                        <span className="text-xs font-mono font-semibold text-gray-800 truncate">
+                          <Highlight text={bl.delivery_number} query={searchQuery} />
+                        </span>
+                        <CopyButton text={bl.delivery_number} />
+                      </div>
+                      <div className="flex items-center gap-1 text-[11px] text-gray-400 truncate">
+                        <Highlight text={bl.partner?.name ?? ''} query={searchQuery} />
+                        {bl.order?.order_code && (
+                          <>
+                            <span> · </span>
+                            <Highlight text={bl.order.order_code} query={searchQuery} />
+                            <CopyButton text={bl.order.order_code} />
+                          </>
+                        )}
+                      </div>
                     </div>
                   </div>
                   <div className="flex items-center gap-1.5 shrink-0">
@@ -261,6 +693,17 @@ const MissionCard = ({
                       className="p-1.5 rounded hover:bg-gray-200 text-gray-500 transition-colors"
                     >
                       <Eye size={14} />
+                    </button>
+                    <button
+                      onClick={() => {
+                        const blStatus = (bl as any).status as string | undefined;
+                        const watermark = (blStatus === 'batched' || blStatus === 'confirmed') ? 'DRAFT' : undefined;
+                        openPdf('bl', bl.id, { force: true, watermark });
+                      }}
+                      title="Imprimer le BL (PDF)"
+                      className="p-1.5 rounded hover:bg-gray-200 text-gray-500 transition-colors"
+                    >
+                      <Printer size={14} />
                     </button>
                     <DecisionActionsBar
                       subjectId={bl.id}
@@ -279,17 +722,412 @@ const MissionCard = ({
           )}
         </div>
       )}
+
+      {showBulkReasonModal && (
+        <Modal isOpen onClose={() => setShowBulkReasonModal(false)} title={`Annuler ${selectedBlIds.size} BL`} size="sm">
+          <div className="p-5 space-y-4">
+            <p className="text-xs text-gray-500">
+              Cette raison sera appliquée aux {selectedBlIds.size} BL sélectionnés. Chacun sera annulé
+              individuellement ({'"cancel_delivery"'}) — un BL en échec n'empêche pas les suivants de continuer.
+            </p>
+            <div>
+              <label className="block text-xs font-medium text-gray-700 mb-1.5">Raison de l'annulation *</label>
+              <select
+                value={bulkReasonChoice}
+                onChange={(e) => setBulkReasonChoice(e.target.value)}
+                className="w-full px-3 py-2 text-sm border border-gray-200 rounded-xl focus:ring-2 focus:ring-red-300 outline-none bg-white"
+              >
+                {BULK_CANCEL_REASON_PRESETS.map((r) => (
+                  <option key={r} value={r}>{r}</option>
+                ))}
+                <option value={OTHER_REASON}>Autre (préciser)…</option>
+              </select>
+              {bulkReasonChoice === OTHER_REASON && (
+                <textarea
+                  rows={3}
+                  value={bulkReasonCustom}
+                  onChange={(e) => setBulkReasonCustom(e.target.value)}
+                  placeholder="Min. 10 caractères…"
+                  autoFocus
+                  className="w-full mt-2 px-3 py-2 text-sm border border-gray-200 rounded-xl focus:ring-2 focus:ring-red-300 outline-none resize-none"
+                />
+              )}
+            </div>
+            <div className="flex items-center gap-3">
+              <button
+                onClick={() => setShowBulkReasonModal(false)}
+                className="flex-1 py-2 text-sm font-medium text-gray-700 bg-gray-100 rounded-xl hover:bg-gray-200 transition-colors"
+              >
+                Annuler
+              </button>
+              <button
+                onClick={runBulkCancel}
+                disabled={bulkReason.trim().length < 10}
+                className="flex-1 flex items-center justify-center gap-2 py-2 text-sm font-semibold rounded-xl bg-red-600 hover:bg-red-700 text-white disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+              >
+                <Trash2 className="w-4 h-4" />
+                Confirmer
+              </button>
+            </div>
+          </div>
+        </Modal>
+      )}
+
+      {bulkRows && (
+        <BulkCancelProgressModal
+          rows={bulkRows}
+          processing={bulkProcessing}
+          onClose={() => { setBulkRows(null); setBulkReasonChoice(BULK_CANCEL_REASON_PRESETS[0]); setBulkReasonCustom(''); }}
+        />
+      )}
+    </div>
+  );
+};
+
+// ─── BC detail modal ─────────────────────────────────────────────────────────
+// Full-detail read-only view of a DispatcherOrder (BC). Uses a custom overlay so
+// we have complete layout control — gradient header, KPI strip, side-by-side info
+// columns, and a product line-items table.
+// NOTE: order_products requires GET /backend/dispatcher/orders/{id} to include
+// the `order_products` relation with nested `product` (name + sku). Ask Sadi9 to
+// confirm this is eager-loaded on the show endpoint if the articles section is empty.
+const BcDetailModal = ({ orderId, onClose }: { orderId: number; onClose: () => void }) => {
+  const { data: order, loading } = useDispatcherOrderDetail(orderId);
+
+  const fmtAmt = (v?: number | string | null) =>
+    v != null ? `${Number(v).toLocaleString('fr-FR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} MAD` : '—';
+  const fmtDate = (d?: string | null) =>
+    d ? new Date(d).toLocaleDateString('fr-FR', { day: '2-digit', month: 'short', year: 'numeric' }) : '—';
+
+  const sp   = order?.salesperson_data?.salesperson ?? order?.salesperson ?? null;
+  const itin = order?.partner?.active_itineraries?.[0] ?? null;
+  const fm   = order?.financial_metadata;
+  const area = order?.partner?.geo_area;
+  const products = order?.order_products ?? [];
+
+  const bcStatusColor: Record<string, string> = {
+    confirmed: 'bg-blue-500/20 text-blue-100 ring-blue-400/30',
+    approved:  'bg-indigo-500/20 text-indigo-100 ring-indigo-400/30',
+    pending:   'bg-amber-500/20 text-amber-100 ring-amber-400/30',
+    cancelled: 'bg-red-500/20 text-red-100 ring-red-400/30',
+    completed: 'bg-emerald-500/20 text-emerald-100 ring-emerald-400/30',
+  };
+
+  const infoRow = (label: string, value: React.ReactNode, highlight = false) => (
+    <div className="flex items-baseline justify-between gap-3 py-1.5 border-b border-gray-100 last:border-0">
+      <span className="text-[11px] text-gray-400 shrink-0">{label}</span>
+      <span className={`text-xs text-right ${highlight ? 'font-bold text-sage-700' : 'font-medium text-gray-800'}`}>
+        {value}
+      </span>
+    </div>
+  );
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+      {/* Backdrop */}
+      <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={onClose} />
+
+      {/* Panel */}
+      <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-5xl max-h-[92vh] flex flex-col overflow-hidden">
+
+        {/* ── Gradient header ─────────────────────────────────────────────────── */}
+        <div className="bg-gradient-to-br from-sage-600 via-sage-700 to-sage-900 px-6 pt-5 pb-0 shrink-0">
+          <div className="flex items-start justify-between gap-4 mb-4">
+            <div className="min-w-0">
+              {/* Status / canal chips */}
+              <div className="flex items-center gap-2 flex-wrap mb-2">
+                {order?.bc_status && (
+                  <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold ring-1 ${bcStatusColor[order.bc_status] ?? 'bg-white/10 text-white ring-white/20'}`}>
+                    {order.bc_status.replace(/_/g, ' ').toUpperCase()}
+                  </span>
+                )}
+                {order?.canal && (
+                  <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold bg-purple-500/25 text-purple-100 ring-1 ring-purple-400/30">
+                    {order.canal}
+                  </span>
+                )}
+                {order?.payment_status && (
+                  <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold bg-white/10 text-white/80 ring-1 ring-white/20">
+                    Paiement · {order.payment_status}
+                  </span>
+                )}
+              </div>
+
+              {/* BC code */}
+              <h2 className="text-xl font-bold text-white tracking-tight truncate">
+                {loading ? 'Chargement…' : (order?.order_code ?? '—')}
+              </h2>
+              {order && (
+                <p className="mt-0.5 text-sm text-sage-200 truncate">
+                  {order.partner.name}
+                  {order.partner.city ? ` · ${order.partner.city}` : ''}
+                  {order.order_date ? ` · ${fmtDate(order.order_date)}` : ''}
+                </p>
+              )}
+            </div>
+
+            <div className="flex items-center gap-2 shrink-0">
+              {order && (
+                <button
+                  onClick={() => openPdf('bc', order.id, { force: true })}
+                  className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-white text-sage-700 hover:bg-sage-50 text-xs font-bold shadow transition-colors"
+                >
+                  <Printer size={13} /> Imprimer BC
+                </button>
+              )}
+              <button
+                onClick={onClose}
+                className="p-2 rounded-xl bg-white/10 hover:bg-white/20 text-white transition-colors"
+              >
+                <X size={16} />
+              </button>
+            </div>
+          </div>
+
+          {/* KPI strip */}
+          {order && (
+            <div className="grid grid-cols-4 gap-px bg-white/10 rounded-t-xl overflow-hidden -mx-6 px-0">
+              {[
+                { label: 'Total TTC', value: fmtAmt(order.total_amount), accent: true },
+                { label: 'Sous-total HT', value: fmtAmt(order.sub_total), accent: false },
+                { label: 'TVA', value: fmtAmt(order.tax_amount), accent: false },
+                { label: fm?.payment_method ? 'Mode paiement' : 'Livraison prévue',
+                  value: fm?.payment_method ?? fmtDate(order.logistics_details?.delivery_date ?? order.due_date),
+                  accent: false },
+              ].map((kpi) => (
+                <div key={kpi.label} className="bg-white/[0.07] px-4 py-3">
+                  <p className="text-[10px] text-sage-200 uppercase tracking-wide">{kpi.label}</p>
+                  <p className={`mt-0.5 text-sm font-bold truncate ${kpi.accent ? 'text-white' : 'text-sage-100'}`}>
+                    {kpi.value}
+                  </p>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
+        {/* ── Scrollable body ──────────────────────────────────────────────────── */}
+        {loading ? (
+          <div className="flex-1 flex items-center justify-center py-20">
+            <Loader2 className="w-8 h-8 animate-spin text-sage-500" />
+          </div>
+        ) : !order ? (
+          <div className="flex-1 flex items-center justify-center py-20 text-sm text-gray-400">
+            Commande introuvable
+          </div>
+        ) : (
+          <div className="flex-1 overflow-y-auto p-6 space-y-5">
+
+            {/* ── Row 1 : Client | Commercial | Finances ─────────────────────── */}
+            <div className="grid grid-cols-3 gap-4">
+
+              {/* Client */}
+              <div className="col-span-1 rounded-xl border border-gray-100 bg-gray-50/60 p-4">
+                <h4 className="flex items-center gap-1.5 text-[10px] font-extrabold text-gray-400 uppercase tracking-widest mb-3">
+                  <MapPin size={10} /> Client
+                </h4>
+                <p className="text-sm font-bold text-gray-900 mb-0.5 truncate">{order.partner.name}</p>
+                <p className="text-[11px] text-gray-400 font-mono mb-3">{order.partner.code}</p>
+                <div className="space-y-0.5">
+                  {order.partner.city    && infoRow('Ville',    order.partner.city)}
+                  {order.partner.address && infoRow('Adresse',  order.partner.address)}
+                  {area                  && infoRow('Zone',     area.name)}
+                  {order.partner.delivery_zone && infoRow('Secteur', order.partner.delivery_zone)}
+                  {itin && infoRow('Tournée', <span className="text-emerald-600">{itin.name}</span>)}
+                  {order.partner.geo_lat && order.partner.geo_lng && infoRow('GPS',
+                    <a
+                      href={`https://maps.google.com/?q=${order.partner.geo_lat},${order.partner.geo_lng}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-flex items-center gap-1 text-blue-600 hover:underline"
+                    >
+                      Voir sur carte <ExternalLink size={9} />
+                    </a>
+                  )}
+                </div>
+              </div>
+
+              {/* Commercial */}
+              <div className="col-span-1 rounded-xl border border-gray-100 bg-gray-50/60 p-4">
+                <h4 className="flex items-center gap-1.5 text-[10px] font-extrabold text-gray-400 uppercase tracking-widest mb-3">
+                  <User size={10} /> Commercial
+                </h4>
+                {sp ? (
+                  <>
+                    <p className="text-sm font-bold text-gray-900 mb-0.5 truncate">{sp.name}</p>
+                    {sp.code && <p className="text-[11px] text-gray-400 font-mono mb-3">{sp.code}</p>}
+                    <div className="space-y-0.5">
+                      {sp.phone && infoRow('Tél.',
+                        <a href={`tel:${sp.phone}`} className="inline-flex items-center gap-1 text-blue-600 hover:underline">
+                          <Phone size={9} /> {sp.phone}
+                        </a>
+                      )}
+                      {infoRow('Commande', fmtDate(order.order_date))}
+                      {order.confirmed_at && infoRow('Confirmé', fmtDate(order.confirmed_at))}
+                      {order.approved_at  && infoRow('Approuvé', fmtDate(order.approved_at))}
+                    </div>
+                  </>
+                ) : (
+                  <>
+                    <p className="text-xs text-gray-400 mb-3">—</p>
+                    <div className="space-y-0.5">
+                      {infoRow('Commande', fmtDate(order.order_date))}
+                      {order.confirmed_at && infoRow('Confirmé', fmtDate(order.confirmed_at))}
+                      {order.approved_at  && infoRow('Approuvé', fmtDate(order.approved_at))}
+                    </div>
+                  </>
+                )}
+              </div>
+
+              {/* Finances */}
+              <div className="col-span-1 rounded-xl border border-gray-100 bg-gray-50/60 p-4">
+                <h4 className="flex items-center gap-1.5 text-[10px] font-extrabold text-gray-400 uppercase tracking-widest mb-3">
+                  <Banknote size={10} /> Finances
+                </h4>
+                <div className="space-y-0.5">
+                  {infoRow('Sous-total HT', fmtAmt(order.sub_total))}
+                  {infoRow('TVA', fmtAmt(order.tax_amount))}
+                  {infoRow('Total TTC', fmtAmt(order.total_amount), true)}
+                  {fm?.payment_method && infoRow('Mode paiement', fm.payment_method)}
+                  {infoRow('Livraison', fmtDate(order.logistics_details?.delivery_date ?? order.due_date))}
+                  {fm?.is_credit_sale && (
+                    <div className="mt-2 flex items-center gap-1.5 rounded-lg bg-amber-50 border border-amber-200 px-3 py-1.5">
+                      <TrendingDown size={11} className="text-amber-500 shrink-0" />
+                      <span className="text-[11px] font-semibold text-amber-700">Vente à crédit</span>
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+
+            {/* ── Row 2 : Articles / Lignes de commande ─────────────────────── */}
+            <div className="rounded-xl border border-gray-100 overflow-hidden">
+              {/* Table header */}
+              <div className="flex items-center justify-between px-4 py-3 bg-gray-50 border-b border-gray-100">
+                <h4 className="flex items-center gap-1.5 text-[10px] font-extrabold text-gray-500 uppercase tracking-widest">
+                  <Package size={11} />
+                  Articles
+                  {products.length > 0 && (
+                    <span className="ml-1 px-1.5 py-0.5 rounded-full bg-sage-100 text-sage-700 text-[10px] font-bold">
+                      {products.length}
+                    </span>
+                  )}
+                </h4>
+                {products.length > 0 && (
+                  <span className="text-xs text-gray-500">
+                    Total : <span className="font-bold text-sage-700">{fmtAmt(order.total_amount)}</span>
+                  </span>
+                )}
+              </div>
+
+              {products.length === 0 ? (
+                <div className="px-4 py-8 text-center">
+                  <Package size={28} className="mx-auto mb-2 text-gray-200" />
+                  <p className="text-sm text-gray-400">Aucun article disponible</p>
+                  <p className="text-[11px] text-gray-300 mt-1">
+                    Demander au backend d'inclure <code className="bg-gray-100 px-1 rounded">order_products</code> dans{' '}
+                    <code className="bg-gray-100 px-1 rounded">GET /dispatcher/orders/{'{id}'}</code>
+                  </p>
+                </div>
+              ) : (
+                <>
+                  {/* Column headers */}
+                  <div className="grid grid-cols-[1fr_auto_auto_auto] gap-x-4 px-4 py-2 bg-gray-50/40 border-b border-gray-100 text-[10px] font-bold text-gray-400 uppercase tracking-wide">
+                    <span>Produit</span>
+                    <span className="text-right w-16">Qté</span>
+                    <span className="text-right w-28">Prix unitaire</span>
+                    <span className="text-right w-28">Total ligne</span>
+                  </div>
+
+                  {/* Rows */}
+                  <div className="divide-y divide-gray-50">
+                    {products.map((item, idx) => {
+                      const qty       = Number(item.quantity);
+                      const unitP     = item.final_price ?? item.price;
+                      const lineTotal = qty * unitP;
+                      const hasPromo  = item.final_price != null && item.final_price !== item.price;
+                      const ref       = item.product?.code ?? item.product?.sku;
+                      return (
+                        <div
+                          key={item.id}
+                          className={`grid grid-cols-[1fr_auto_auto_auto] gap-x-4 px-4 py-3 items-center ${idx % 2 === 1 ? 'bg-gray-50/40' : ''}`}
+                        >
+                          <div className="min-w-0">
+                            <p className="text-xs font-semibold text-gray-800 truncate">
+                              {item.product?.name ?? `Produit #${item.product_id}`}
+                            </p>
+                            {ref && <p className="text-[10px] text-gray-400 font-mono">{ref}</p>}
+                          </div>
+                          <span className="w-16 text-right text-xs font-bold text-gray-700">
+                            {qty} <span className="text-gray-400 font-normal">u.</span>
+                          </span>
+                          <span className="w-28 text-right text-xs text-gray-500">
+                            {hasPromo && (
+                              <span className="line-through text-gray-300 mr-1">{fmtAmt(item.price)}</span>
+                            )}
+                            {fmtAmt(unitP)}
+                          </span>
+                          <span className="w-28 text-right text-xs font-bold text-sage-700">
+                            {fmtAmt(lineTotal)}
+                          </span>
+                        </div>
+                      );
+                    })}
+                  </div>
+
+                  {/* Footer total */}
+                  <div className="grid grid-cols-[1fr_auto_auto_auto] gap-x-4 px-4 py-3 bg-sage-50 border-t border-sage-100">
+                    <span className="text-xs font-bold text-sage-800">
+                      {products.length} article{products.length > 1 ? 's' : ''}
+                    </span>
+                    <span className="w-16" />
+                    <span className="w-28 text-right text-[11px] text-sage-600 font-semibold">Total TTC</span>
+                    <span className="w-28 text-right text-sm font-extrabold text-sage-700">
+                      {fmtAmt(order.total_amount)}
+                    </span>
+                  </div>
+                </>
+              )}
+            </div>
+
+          </div>
+        )}
+      </div>
     </div>
   );
 };
 
 export const DispatcherMissionWorkspacePage = () => {
   const navigate = useNavigate();
-  const [selectedOrderIds, setSelectedOrderIds] = useState<number[]>([]);
+  const location = useLocation();
+  // Handoff from DispatcherOrdersPage's "Planifier (Mission)" button — selection made there
+  // arrives via navigation state (one-shot, not a query param: shouldn't survive a refresh or be
+  // bookmarkable) instead of being lost on redirect like before.
+  const incomingOrderIds = (location.state as { preselectedOrderIds?: number[] } | null)?.preselectedOrderIds;
+  const [selectedOrderIds, setSelectedOrderIds] = useState<number[]>(incomingOrderIds ?? []);
+
+  useEffect(() => {
+    if (incomingOrderIds?.length) {
+      toast.success(`${incomingOrderIds.length} commande(s) pré-sélectionnée(s) depuis la liste des commandes.`);
+      // Clear the handoff state so it doesn't re-apply on a back-navigation or refresh.
+      navigate(location.pathname, { replace: true, state: null });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   const [riderId, setRiderId] = useState<number | ''>('');
   const [vehicleId, setVehicleId] = useState<number | ''>('');
   const [notes, setNotes] = useState('');
+  const [deliveryDate, setDeliveryDate] = useState('');
   const [showCreateConfirm, setShowCreateConfirm] = useState(false);
+  const [createPanelOpen, setCreatePanelOpen] = useState<boolean>(() => {
+    try { return localStorage.getItem('dispatcher:createPanelOpen') !== 'false'; }
+    catch { return true; }
+  });
+  const toggleCreatePanel = () => setCreatePanelOpen((v) => {
+    const next = !v;
+    try { localStorage.setItem('dispatcher:createPanelOpen', String(next)); } catch {}
+    return next;
+  });
 
   const { data: riders, loading: ridersLoading } = useRidersWithVehicles({ status: 'active' });
 
@@ -321,7 +1159,6 @@ export const DispatcherMissionWorkspacePage = () => {
   const [city, setCity] = useState('');
   const [itineraryIds, setItineraryIds] = useState<number[]>([]);
   const [salespersonIds, setSalespersonIds] = useState<number[]>([]);
-  const [smartSort, setSmartSort] = useState(false);
 
   const orderFilters = useMemo<OrdersPendingFilters>(() => ({
     per_page: 100,
@@ -374,8 +1211,8 @@ export const DispatcherMissionWorkspacePage = () => {
         return spId != null && salespersonIds.includes(spId);
       });
     }
-    return smartSort ? sortByProximity(list) : list;
-  }, [allOrders, city, itineraryIds, salespersonIds, smartSort]);
+    return list;
+  }, [allOrders, city, itineraryIds, salespersonIds]);
 
   const { data: missions, loading: missionsLoading, refetch: refetchMissions } = useDeliveryMissionsList();
   const { create, loading: creating } = useCreateDeliveryMission();
@@ -385,6 +1222,7 @@ export const DispatcherMissionWorkspacePage = () => {
   // its own identity or by something they remember about one of its BLs/BCs.
   const [missionSearch, setMissionSearch] = useState('');
   const [viewBlId, setViewBlId] = useState<number | null>(null);
+  const [viewBcId, setViewBcId] = useState<number | null>(null);
 
   const filteredMissions = useMemo(() => {
     const q = missionSearch.trim().toLowerCase();
@@ -494,11 +1332,13 @@ export const DispatcherMissionWorkspacePage = () => {
         rider_id: riderId,
         vehicle_id: vehicleId,
         notes: notes || undefined,
+        delivery_date: deliveryDate || undefined,
       });
       if (res.success) {
         toast.success(res.message || 'Mission créée');
         setSelectedOrderIds([]);
         setNotes('');
+        setDeliveryDate('');
         setShowCreateConfirm(false);
         refreshAll();
       } else {
@@ -519,7 +1359,7 @@ export const DispatcherMissionWorkspacePage = () => {
       <div className="p-4 border-b border-gray-100">
         <div className="flex items-center justify-between">
           <h1 className="text-sm font-semibold text-gray-900 flex items-center gap-2">
-            <Package size={16} className="text-blue-600" /> Commandes en attente
+            <Package size={16} className="text-sage-600" /> Commandes en attente
           </h1>
           <button
             onClick={() => navigate('/dispatcher/workspace/map')}
@@ -541,7 +1381,7 @@ export const DispatcherMissionWorkspacePage = () => {
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             placeholder="BC, partenaire…"
-            className="w-full pl-8 pr-3 py-2 text-xs border border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-300 focus:border-blue-400 bg-gray-50"
+            className="w-full pl-8 pr-3 py-2 text-xs border border-gray-200 rounded-lg focus:ring-2 focus:ring-sage-300 focus:border-sage-400 bg-gray-50"
           />
         </div>
 
@@ -549,12 +1389,12 @@ export const DispatcherMissionWorkspacePage = () => {
           <button
             onClick={() => setShowFilters(true)}
             className={`flex-1 flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg border text-xs font-medium transition-colors ${
-              activeFilterCount > 0 ? 'border-blue-400 bg-blue-50 text-blue-700' : 'border-gray-200 text-gray-600 hover:bg-gray-50'
+              activeFilterCount > 0 ? 'border-sage-400 bg-sage-50 text-sage-700' : 'border-gray-200 text-gray-600 hover:bg-gray-50'
             }`}
           >
             <Filter size={12} /> Filtres
             {activeFilterCount > 0 && (
-              <span className="px-1.5 py-0.5 rounded-full bg-blue-600 text-white text-[10px] font-bold leading-none">
+              <span className="px-1.5 py-0.5 rounded-full bg-sage-500 text-white text-[10px] font-bold leading-none">
                 {activeFilterCount}
               </span>
             )}
@@ -567,15 +1407,6 @@ export const DispatcherMissionWorkspacePage = () => {
           </button>
         </div>
 
-        <button
-          onClick={() => setSmartSort((v) => !v)}
-          title="Regrouper les BC les plus proches géographiquement (basé sur les coordonnées GPS partenaire)"
-          className={`mt-2 w-full flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg border text-xs font-medium transition-colors ${
-            smartSort ? 'border-emerald-400 bg-emerald-50 text-emerald-700' : 'border-gray-200 text-gray-600 hover:bg-gray-50'
-          }`}
-        >
-          <Navigation size={12} /> Tri par proximité {smartSort ? '(actif)' : ''}
-        </button>
       </div>
 
       <div className="flex-1 overflow-y-auto p-2">
@@ -587,18 +1418,15 @@ export const DispatcherMissionWorkspacePage = () => {
           <p className="text-xs text-gray-400 text-center py-8">Aucune commande en attente</p>
         ) : (
           <div className="space-y-1.5">
-            {orders.map((o) => {
-              const dist = o.__distFromPrev;
-              return (
-                <DraggableOrderRow
-                  key={o.id}
-                  order={o}
-                  checked={selectedOrderIds.includes(o.id)}
-                  onToggle={() => toggleOrder(o.id)}
-                  distLabel={smartSort && dist != null ? `~${dist < 1 ? `${Math.round(dist * 1000)}m` : `${dist.toFixed(1)}km`}` : undefined}
-                />
-              );
-            })}
+            {orders.map((o) => (
+              <DraggableOrderRow
+                key={o.id}
+                order={o}
+                checked={selectedOrderIds.includes(o.id)}
+                onToggle={() => toggleOrder(o.id)}
+                onViewDetail={() => setViewBcId(o.id)}
+              />
+            ))}
           </div>
         )}
       </div>
@@ -608,11 +1436,28 @@ export const DispatcherMissionWorkspacePage = () => {
   const mainContent = (
     <div className="h-full overflow-y-auto bg-slate-50 p-6 space-y-6">
       {/* Mission creation form */}
-      <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-5">
-        <h2 className="text-sm font-bold text-gray-800 mb-4 flex items-center gap-2">
-          <Route size={16} className="text-blue-500" /> Créer une mission
-        </h2>
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+      <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
+        {/* Collapsible header */}
+        <button
+          onClick={toggleCreatePanel}
+          className="w-full flex items-center justify-between px-5 py-3.5 hover:bg-gray-50 transition-colors"
+        >
+          <span className="flex items-center gap-2 text-sm font-bold text-gray-800">
+            <Route size={16} className="text-blue-500" /> Créer une mission
+            {selectedOrderIds.length > 0 && (
+              <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-blue-100 text-blue-700">
+                {selectedOrderIds.length} BC sélectionnée{selectedOrderIds.length > 1 ? 's' : ''}
+              </span>
+            )}
+          </span>
+          {createPanelOpen
+            ? <ChevronUp size={15} className="text-gray-400" />
+            : <ChevronDown size={15} className="text-gray-400" />}
+        </button>
+
+        {createPanelOpen && (
+        <div className="px-5 pb-5 border-t border-gray-100 pt-4 space-y-3">
+          {/* Livreur on its own row so the dropdown never overlaps sibling inputs */}
           <SearchSelectDropdown
             label="Livreur"
             options={riders.map((r) => ({
@@ -624,17 +1469,30 @@ export const DispatcherMissionWorkspacePage = () => {
             onChange={handleSelectRider}
             disabled={ridersLoading}
           />
-          <div>
-            <label className="block text-xs font-semibold text-gray-600 mb-1">Notes (optionnel)</label>
-            <input
-              type="text"
-              value={notes}
-              onChange={(e) => setNotes(e.target.value)}
-              className="w-full border border-gray-300 rounded-lg px-2.5 py-2 text-sm"
-              placeholder="…"
-            />
+          <div className="grid grid-cols-2 gap-2">
+            <div>
+              <label className="block text-xs font-semibold text-gray-600 mb-1">
+                Date de livraison <span className="text-gray-400 font-normal">(optionnel)</span>
+              </label>
+              <input
+                type="date"
+                value={deliveryDate}
+                min={new Date().toISOString().split('T')[0]}
+                onChange={(e) => setDeliveryDate(e.target.value)}
+                className="w-full border border-gray-300 rounded-lg px-2.5 py-2 text-sm focus:ring-2 focus:ring-blue-300 focus:border-blue-400"
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-semibold text-gray-600 mb-1">Notes <span className="text-gray-400 font-normal">(optionnel)</span></label>
+              <input
+                type="text"
+                value={notes}
+                onChange={(e) => setNotes(e.target.value)}
+                className="w-full border border-gray-300 rounded-lg px-2.5 py-2 text-sm focus:ring-2 focus:ring-blue-300 focus:border-blue-400"
+                placeholder="…"
+              />
+            </div>
           </div>
-        </div>
 
         {/* Vehicle — auto-selected from the rider's assignment (GET /riders/with-vehicles, §12d).
             A select only appears if the rider has more than one active vehicle. */}
@@ -662,21 +1520,21 @@ export const DispatcherMissionWorkspacePage = () => {
                 )}
 
                 {selectedVehicle && (
-                  <div className="p-3 rounded-lg bg-blue-50 border border-blue-100">
+                  <div className="p-3 rounded-lg bg-sage-50 border border-sage-100">
                     <div className="flex items-center gap-2 mb-2">
-                      <Truck size={14} className="text-blue-500" />
-                      <span className="text-sm font-bold text-blue-900">
+                      <Truck size={14} className="text-sage-500" />
+                      <span className="text-sm font-bold text-sage-900">
                         {selectedVehicle.display_name ?? selectedVehicle.plate_number ?? selectedVehicle.plate}
                       </span>
                       {(selectedVehicle.make || selectedVehicle.model) && (
-                        <span className="text-xs text-blue-600">{[selectedVehicle.make, selectedVehicle.model].filter(Boolean).join(' ')}</span>
+                        <span className="text-xs text-sage-600">{[selectedVehicle.make, selectedVehicle.model].filter(Boolean).join(' ')}</span>
                       )}
                     </div>
                     <div className="grid grid-cols-2 gap-2 text-xs">
-                      <div className="flex items-center gap-1.5 text-blue-700">
+                      <div className="flex items-center gap-1.5 text-sage-700">
                         <Box size={12} /> Volume: <strong>{selectedVehicle.capacity_volume ?? '—'} m³</strong>
                       </div>
-                      <div className="flex items-center gap-1.5 text-blue-700">
+                      <div className="flex items-center gap-1.5 text-sage-700">
                         <Weight size={12} /> Charge: <strong>{selectedVehicle.payload_kg ?? selectedVehicle.capacity_weight ?? '—'} kg</strong>
                       </div>
                     </div>
@@ -700,11 +1558,13 @@ export const DispatcherMissionWorkspacePage = () => {
         <button
           onClick={openCreateConfirm}
           disabled={creating || selectedOrderIds.length === 0}
-          className="mt-4 flex items-center justify-center gap-2 px-4 py-2.5 text-sm font-semibold rounded-lg bg-blue-600 hover:bg-blue-700 text-white shadow-sm disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+          className="mt-4 flex items-center justify-center gap-2 px-4 py-2.5 text-sm font-semibold rounded-lg bg-sage-500 hover:bg-sage-600 text-white shadow-sm disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
         >
           {creating ? <Loader2 size={14} className="animate-spin" /> : <CheckCircle2 size={14} />}
           Créer la mission ({selectedOrderIds.length} BC)
         </button>
+        </div>
+        )}
       </div>
 
       {/* Existing missions */}
@@ -725,7 +1585,7 @@ export const DispatcherMissionWorkspacePage = () => {
             value={missionSearch}
             onChange={(e) => setMissionSearch(e.target.value)}
             placeholder="Mission, livreur, BL, BC…"
-            className="w-full pl-8 pr-3 py-2 text-xs border border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-300 focus:border-blue-400 bg-white"
+            className="w-full pl-8 pr-3 py-2 text-xs border border-gray-200 rounded-lg focus:ring-2 focus:ring-sage-300 focus:border-sage-400 bg-white"
           />
         </div>
 
@@ -817,7 +1677,7 @@ export const DispatcherMissionWorkspacePage = () => {
             )}
             <button
               onClick={() => setShowFilters(false)}
-              className="flex-1 flex items-center justify-center gap-1.5 text-xs text-white font-semibold py-2 rounded-lg bg-blue-600 hover:bg-blue-700"
+              className="flex-1 flex items-center justify-center gap-1.5 text-xs text-white font-semibold py-2 rounded-lg bg-sage-500 hover:bg-sage-600"
             >
               Appliquer
             </button>
@@ -837,9 +1697,20 @@ export const DispatcherMissionWorkspacePage = () => {
             <LoadCapacityBar estimate={missionLoad} vehicle={selectedVehicle} />
           )}
 
-          {notes && (
-            <div className="p-2.5 rounded-lg bg-gray-50 border border-gray-100 text-xs text-gray-600">
-              <span className="font-semibold text-gray-700">Notes: </span>{notes}
+          {(deliveryDate || notes) && (
+            <div className="p-2.5 rounded-lg bg-gray-50 border border-gray-100 text-xs text-gray-600 space-y-1">
+              {deliveryDate && (
+                <div className="flex items-center gap-1.5">
+                  <Calendar size={11} className="text-sage-500 shrink-0" />
+                  <span className="font-semibold text-gray-700">Livraison :</span>
+                  {new Date(deliveryDate).toLocaleDateString('fr-FR', { weekday: 'long', day: '2-digit', month: 'long', year: 'numeric' })}
+                </div>
+              )}
+              {notes && (
+                <div className="flex items-start gap-1.5">
+                  <span className="font-semibold text-gray-700 shrink-0">Notes :</span> {notes}
+                </div>
+              )}
             </div>
           )}
 
@@ -847,7 +1718,7 @@ export const DispatcherMissionWorkspacePage = () => {
             <button
               onClick={handleCreateMission}
               disabled={creating}
-              className="flex-1 flex items-center justify-center gap-2 py-2.5 text-sm font-semibold rounded-lg bg-blue-600 hover:bg-blue-700 text-white disabled:opacity-50"
+              className="flex-1 flex items-center justify-center gap-2 py-2.5 text-sm font-semibold rounded-lg bg-sage-500 hover:bg-sage-600 text-white disabled:opacity-50"
             >
               {creating ? <Loader2 size={14} className="animate-spin" /> : <CheckCircle2 size={14} />}
               Confirmer
@@ -864,6 +1735,7 @@ export const DispatcherMissionWorkspacePage = () => {
       </Modal>
 
       <BlDetailModal blId={viewBlId} onClose={() => setViewBlId(null)} />
+      {viewBcId !== null && <BcDetailModal orderId={viewBcId} onClose={() => setViewBcId(null)} />}
 
       <Modal
         isOpen={pendingDrop != null}
@@ -882,7 +1754,7 @@ export const DispatcherMissionWorkspacePage = () => {
               <button
                 onClick={confirmAddOrderToMission}
                 disabled={confirmingDrop}
-                className="flex-1 flex items-center justify-center gap-2 py-2.5 text-sm font-semibold rounded-lg bg-blue-600 hover:bg-blue-700 text-white disabled:opacity-60 transition-colors"
+                className="flex-1 flex items-center justify-center gap-2 py-2.5 text-sm font-semibold rounded-lg bg-sage-500 hover:bg-sage-600 text-white disabled:opacity-60 transition-colors"
               >
                 {confirmingDrop ? <Loader2 size={14} className="animate-spin" /> : <CheckCircle2 size={14} />}
                 {confirmingDrop ? 'Ajout en cours…' : 'Confirmer'}

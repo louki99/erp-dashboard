@@ -108,7 +108,7 @@ export function TaskTemplateDetailPage() {
             <MasterLayout
                 mainContent={
                     <div className="flex items-center justify-center h-full">
-                        <Loader2 className="w-8 h-8 animate-spin text-blue-600" />
+                        <Loader2 className="w-8 h-8 animate-spin text-sage-600" />
                     </div>
                 }
             />
@@ -147,7 +147,7 @@ export function TaskTemplateDetailPage() {
                                                 Inactive
                                             </span>
                                         )}
-                                        <span className="inline-flex items-center px-3 py-1 rounded-full text-sm font-medium bg-blue-100 text-blue-800">
+                                        <span className="inline-flex items-center px-3 py-1 rounded-full text-sm font-medium bg-sage-100 text-sage-800">
                                             {template.task_type}
                                         </span>
                                     </div>
@@ -198,42 +198,42 @@ export function TaskTemplateDetailPage() {
                                     onClick={() => setActiveTab('details')}
                                     className={`pb-3 px-1 font-medium transition-colors relative ${
                                         activeTab === 'details'
-                                            ? 'text-blue-600'
+                                            ? 'text-sage-600'
                                             : 'text-gray-600 hover:text-gray-900'
                                     }`}
                                 >
                                     <Settings className="w-4 h-4 inline mr-2" />
                                     Details
                                     {activeTab === 'details' && (
-                                        <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-blue-600"></div>
+                                        <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-sage-500"></div>
                                     )}
                                 </button>
                                 <button
                                     onClick={() => setActiveTab('dependencies')}
                                     className={`pb-3 px-1 font-medium transition-colors relative ${
                                         activeTab === 'dependencies'
-                                            ? 'text-blue-600'
+                                            ? 'text-sage-600'
                                             : 'text-gray-600 hover:text-gray-900'
                                     }`}
                                 >
                                     <GitBranch className="w-4 h-4 inline mr-2" />
                                     Dependencies ({template.dependencies?.length || 0})
                                     {activeTab === 'dependencies' && (
-                                        <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-blue-600"></div>
+                                        <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-sage-500"></div>
                                     )}
                                 </button>
                                 <button
                                     onClick={() => setActiveTab('validation')}
                                     className={`pb-3 px-1 font-medium transition-colors relative ${
                                         activeTab === 'validation'
-                                            ? 'text-blue-600'
+                                            ? 'text-sage-600'
                                             : 'text-gray-600 hover:text-gray-900'
                                     }`}
                                 >
                                     <CheckCircle className="w-4 h-4 inline mr-2" />
                                     Validation Rules ({template.validation_rules?.length || 0})
                                     {activeTab === 'validation' && (
-                                        <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-blue-600"></div>
+                                        <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-sage-500"></div>
                                     )}
                                 </button>
                             </div>

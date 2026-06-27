@@ -254,7 +254,7 @@ export const ProductFormModal = ({ isOpen, onClose, onSuccess, product }: Produc
                 <div className="flex-1 overflow-y-auto p-6">
                     {metadataLoading ? (
                         <div className="flex items-center justify-center h-full">
-                            <Loader2 className="w-8 h-8 animate-spin text-blue-600" />
+                            <Loader2 className="w-8 h-8 animate-spin text-sage-600" />
                         </div>
                     ) : (
                         <>
@@ -270,7 +270,7 @@ export const ProductFormModal = ({ isOpen, onClose, onSuccess, product }: Produc
                                                 type="text"
                                                 value={formData.name}
                                                 onChange={(e) => handleInputChange('name', e.target.value)}
-                                                className={`w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 ${errors.name ? 'border-red-500' : 'border-gray-300'
+                                                className={`w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-sage-500 ${errors.name ? 'border-red-500' : 'border-gray-300'
                                                     }`}
                                                 placeholder="Ex: Foie de Poulet Surgelé"
                                             />
@@ -290,7 +290,7 @@ export const ProductFormModal = ({ isOpen, onClose, onSuccess, product }: Produc
                                                 type="text"
                                                 value={formData.code}
                                                 onChange={(e) => handleInputChange('code', e.target.value)}
-                                                className={`w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 ${errors.code ? 'border-red-500' : 'border-gray-300'
+                                                className={`w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-sage-500 ${errors.code ? 'border-red-500' : 'border-gray-300'
                                                     }`}
                                                 placeholder="Ex: FOIE-001"
                                             />
@@ -311,7 +311,7 @@ export const ProductFormModal = ({ isOpen, onClose, onSuccess, product }: Produc
                                             <select
                                                 value={formData.brand || ''}
                                                 onChange={(e) => handleInputChange('brand', e.target.value ? Number(e.target.value) : undefined)}
-                                                className={`w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 ${errors.brand ? 'border-red-500' : 'border-gray-300'
+                                                className={`w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-sage-500 ${errors.brand ? 'border-red-500' : 'border-gray-300'
                                                     }`}
                                             >
                                                 <option value="">Sélectionner une marque</option>
@@ -336,7 +336,7 @@ export const ProductFormModal = ({ isOpen, onClose, onSuccess, product }: Produc
                                             <select
                                                 value={formData.unit || ''}
                                                 onChange={(e) => handleInputChange('unit', e.target.value ? Number(e.target.value) : undefined)}
-                                                className={`w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 ${errors.unit ? 'border-red-500' : 'border-gray-300'
+                                                className={`w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-sage-500 ${errors.unit ? 'border-red-500' : 'border-gray-300'
                                                     }`}
                                             >
                                                 <option value="">Sélectionner une unité</option>
@@ -362,7 +362,7 @@ export const ProductFormModal = ({ isOpen, onClose, onSuccess, product }: Produc
                                         <textarea
                                             value={formData.short_description}
                                             onChange={(e) => handleInputChange('short_description', e.target.value)}
-                                            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-sage-500"
                                             rows={2}
                                             placeholder="Brève description du produit"
                                         />
@@ -375,7 +375,7 @@ export const ProductFormModal = ({ isOpen, onClose, onSuccess, product }: Produc
                                         <textarea
                                             value={formData.description}
                                             onChange={(e) => handleInputChange('description', e.target.value)}
-                                            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-sage-500"
                                             rows={4}
                                             placeholder="Description complète du produit"
                                         />
@@ -396,7 +396,7 @@ export const ProductFormModal = ({ isOpen, onClose, onSuccess, product }: Produc
                                                 step="0.01"
                                                 value={formData.price}
                                                 onChange={(e) => handleInputChange('price', parseFloat(e.target.value) || 0)}
-                                                className={`w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 ${errors.price ? 'border-red-500' : 'border-gray-300'
+                                                className={`w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-sage-500 ${errors.price ? 'border-red-500' : 'border-gray-300'
                                                     }`}
                                                 placeholder="0.00"
                                             />
@@ -417,7 +417,7 @@ export const ProductFormModal = ({ isOpen, onClose, onSuccess, product }: Produc
                                                 step="0.01"
                                                 value={formData.discount_price || ''}
                                                 onChange={(e) => handleInputChange('discount_price', parseFloat(e.target.value) || 0)}
-                                                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-sage-500"
                                                 placeholder="0.00"
                                             />
                                         </div>
@@ -433,7 +433,7 @@ export const ProductFormModal = ({ isOpen, onClose, onSuccess, product }: Produc
                                                 step="0.01"
                                                 value={formData.buy_price || ''}
                                                 onChange={(e) => handleInputChange('buy_price', parseFloat(e.target.value) || 0)}
-                                                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-sage-500"
                                                 placeholder="0.00"
                                             />
                                         </div>
@@ -446,7 +446,7 @@ export const ProductFormModal = ({ isOpen, onClose, onSuccess, product }: Produc
                                                 type="number"
                                                 value={formData.min_order_quantity}
                                                 onChange={(e) => handleInputChange('min_order_quantity', parseInt(e.target.value) || 1)}
-                                                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-sage-500"
                                                 placeholder="1"
                                                 min="1"
                                             />
@@ -461,7 +461,7 @@ export const ProductFormModal = ({ isOpen, onClose, onSuccess, product }: Produc
                                                 type="checkbox"
                                                 checked={formData.is_discountable}
                                                 onChange={(e) => handleInputChange('is_discountable', e.target.checked)}
-                                                className="w-4 h-4 text-blue-600 rounded focus:ring-blue-500"
+                                                className="w-4 h-4 text-sage-600 rounded focus:ring-sage-500"
                                             />
                                             <span className="text-sm text-gray-700">Produit remisable</span>
                                         </label>
@@ -481,7 +481,7 @@ export const ProductFormModal = ({ isOpen, onClose, onSuccess, product }: Produc
                                                 type="number"
                                                 value={formData.quantity}
                                                 onChange={(e) => handleInputChange('quantity', parseInt(e.target.value) || 0)}
-                                                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-sage-500"
                                                 placeholder="0"
                                                 min="0"
                                             />
@@ -495,7 +495,7 @@ export const ProductFormModal = ({ isOpen, onClose, onSuccess, product }: Produc
                                                 type="number"
                                                 value={formData.decimal_precision || 0}
                                                 onChange={(e) => handleInputChange('decimal_precision', parseInt(e.target.value) || 0)}
-                                                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-sage-500"
                                                 placeholder="0"
                                                 min="0"
                                                 max="4"
@@ -511,7 +511,7 @@ export const ProductFormModal = ({ isOpen, onClose, onSuccess, product }: Produc
                                                 type="checkbox"
                                                 checked={formData.decimal_quantity_allowed}
                                                 onChange={(e) => handleInputChange('decimal_quantity_allowed', e.target.checked)}
-                                                className="w-4 h-4 text-blue-600 rounded focus:ring-blue-500"
+                                                className="w-4 h-4 text-sage-600 rounded focus:ring-sage-500"
                                             />
                                             <span className="text-sm text-gray-700">Quantité décimale autorisée</span>
                                         </label>
@@ -521,7 +521,7 @@ export const ProductFormModal = ({ isOpen, onClose, onSuccess, product }: Produc
                                                 type="checkbox"
                                                 checked={formData.is_backorder_allowed}
                                                 onChange={(e) => handleInputChange('is_backorder_allowed', e.target.checked)}
-                                                className="w-4 h-4 text-blue-600 rounded focus:ring-blue-500"
+                                                className="w-4 h-4 text-sage-600 rounded focus:ring-sage-500"
                                             />
                                             <span className="text-sm text-gray-700">Commande en rupture autorisée</span>
                                         </label>
@@ -531,7 +531,7 @@ export const ProductFormModal = ({ isOpen, onClose, onSuccess, product }: Produc
                                                 type="checkbox"
                                                 checked={formData.is_batch_managed}
                                                 onChange={(e) => handleInputChange('is_batch_managed', e.target.checked)}
-                                                className="w-4 h-4 text-blue-600 rounded focus:ring-blue-500"
+                                                className="w-4 h-4 text-sage-600 rounded focus:ring-sage-500"
                                             />
                                             <span className="text-sm text-gray-700">Gestion par lot</span>
                                         </label>
@@ -541,7 +541,7 @@ export const ProductFormModal = ({ isOpen, onClose, onSuccess, product }: Produc
                                                 type="checkbox"
                                                 checked={formData.is_serialized}
                                                 onChange={(e) => handleInputChange('is_serialized', e.target.checked)}
-                                                className="w-4 h-4 text-blue-600 rounded focus:ring-blue-500"
+                                                className="w-4 h-4 text-sage-600 rounded focus:ring-sage-500"
                                             />
                                             <span className="text-sm text-gray-700">Produit sérialisé</span>
                                         </label>
@@ -551,7 +551,7 @@ export const ProductFormModal = ({ isOpen, onClose, onSuccess, product }: Produc
                                                 type="checkbox"
                                                 checked={formData.is_expirable}
                                                 onChange={(e) => handleInputChange('is_expirable', e.target.checked)}
-                                                className="w-4 h-4 text-blue-600 rounded focus:ring-blue-500"
+                                                className="w-4 h-4 text-sage-600 rounded focus:ring-sage-500"
                                             />
                                             <span className="text-sm text-gray-700">Produit périssable</span>
                                         </label>
@@ -561,7 +561,7 @@ export const ProductFormModal = ({ isOpen, onClose, onSuccess, product }: Produc
                                                 type="checkbox"
                                                 checked={formData.is_weight_managed}
                                                 onChange={(e) => handleInputChange('is_weight_managed', e.target.checked)}
-                                                className="w-4 h-4 text-blue-600 rounded focus:ring-blue-500"
+                                                className="w-4 h-4 text-sage-600 rounded focus:ring-sage-500"
                                             />
                                             <span className="text-sm text-gray-700">Gestion par poids</span>
                                         </label>
@@ -588,7 +588,7 @@ export const ProductFormModal = ({ isOpen, onClose, onSuccess, product }: Produc
                                                                         : (formData.categories || []).filter(id => id !== category.id);
                                                                     handleInputChange('categories', newCategories);
                                                                 }}
-                                                                className="w-4 h-4 text-blue-600 rounded focus:ring-blue-500"
+                                                                className="w-4 h-4 text-sage-600 rounded focus:ring-sage-500"
                                                             />
                                                             <span className="text-sm text-gray-700">{category.name}</span>
                                                         </label>
@@ -616,7 +616,7 @@ export const ProductFormModal = ({ isOpen, onClose, onSuccess, product }: Produc
                                                                         : (formData.vat_taxes || []).filter(id => id !== tax.id);
                                                                     handleInputChange('vat_taxes', newTaxes);
                                                                 }}
-                                                                className="w-4 h-4 text-blue-600 rounded focus:ring-blue-500"
+                                                                className="w-4 h-4 text-sage-600 rounded focus:ring-sage-500"
                                                             />
                                                             <span className="text-sm text-gray-700">{tax.name} ({tax.rate}%)</span>
                                                         </label>
@@ -636,7 +636,7 @@ export const ProductFormModal = ({ isOpen, onClose, onSuccess, product }: Produc
                                                 type="checkbox"
                                                 checked={formData.is_salable}
                                                 onChange={(e) => handleInputChange('is_salable', e.target.checked)}
-                                                className="w-4 h-4 text-blue-600 rounded focus:ring-blue-500"
+                                                className="w-4 h-4 text-sage-600 rounded focus:ring-sage-500"
                                             />
                                             <span className="text-sm text-gray-700">Produit vendable</span>
                                         </label>
@@ -646,7 +646,7 @@ export const ProductFormModal = ({ isOpen, onClose, onSuccess, product }: Produc
                                                 type="checkbox"
                                                 checked={formData.is_returnable}
                                                 onChange={(e) => handleInputChange('is_returnable', e.target.checked)}
-                                                className="w-4 h-4 text-blue-600 rounded focus:ring-blue-500"
+                                                className="w-4 h-4 text-sage-600 rounded focus:ring-sage-500"
                                             />
                                             <span className="text-sm text-gray-700">Produit retournable</span>
                                         </label>
@@ -656,7 +656,7 @@ export const ProductFormModal = ({ isOpen, onClose, onSuccess, product }: Produc
                                                 type="checkbox"
                                                 checked={formData.is_visible_individually}
                                                 onChange={(e) => handleInputChange('is_visible_individually', e.target.checked)}
-                                                className="w-4 h-4 text-blue-600 rounded focus:ring-blue-500"
+                                                className="w-4 h-4 text-sage-600 rounded focus:ring-sage-500"
                                             />
                                             <span className="text-sm text-gray-700">Visible individuellement</span>
                                         </label>
@@ -666,7 +666,7 @@ export const ProductFormModal = ({ isOpen, onClose, onSuccess, product }: Produc
                                                 type="checkbox"
                                                 checked={formData.is_featured}
                                                 onChange={(e) => handleInputChange('is_featured', e.target.checked)}
-                                                className="w-4 h-4 text-blue-600 rounded focus:ring-blue-500"
+                                                className="w-4 h-4 text-sage-600 rounded focus:ring-sage-500"
                                             />
                                             <span className="text-sm text-gray-700">Produit en vedette</span>
                                         </label>
@@ -723,7 +723,7 @@ export const ProductFormModal = ({ isOpen, onClose, onSuccess, product }: Produc
                                                     </button>
                                                 </div>
                                             ))}
-                                            <label className="border-2 border-dashed border-gray-300 rounded-lg p-4 flex flex-col items-center justify-center cursor-pointer hover:border-blue-500">
+                                            <label className="border-2 border-dashed border-gray-300 rounded-lg p-4 flex flex-col items-center justify-center cursor-pointer hover:border-sage-500">
                                                 <Plus className="w-8 h-8 text-gray-400 mb-1" />
                                                 <span className="text-xs text-gray-500">Ajouter</span>
                                                 <input
@@ -754,7 +754,7 @@ export const ProductFormModal = ({ isOpen, onClose, onSuccess, product }: Produc
                     <button
                         onClick={handleSubmit}
                         disabled={creating || updating || metadataLoading}
-                        className="px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-50 flex items-center gap-2"
+                        className="px-4 py-2 text-sm font-medium text-white bg-sage-500 rounded-md hover:bg-sage-600 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-sage-500 disabled:opacity-50 flex items-center gap-2"
                     >
                         {(creating || updating) && <Loader2 className="w-4 h-4 animate-spin" />}
                         {isEditMode ? 'Mettre à jour' : 'Créer le produit'}

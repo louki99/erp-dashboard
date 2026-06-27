@@ -191,7 +191,7 @@ export const PartnerDetailModal = ({
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
             <div className="bg-white dark:bg-gray-800 rounded-lg shadow-2xl w-full max-w-4xl max-h-[90vh] overflow-hidden border border-gray-200 dark:border-gray-700 flex flex-col animate-in fade-in zoom-in-95 duration-200">
                 {/* Header */}
-                <div className="bg-gradient-to-r from-blue-600 to-indigo-600 p-6 shrink-0">
+                <div className="bg-gradient-to-r from-sage-500 to-sage-600 p-6 shrink-0">
                     <div className="flex items-start justify-between text-white">
                         <div className="flex items-center gap-4">
                             <div className="p-3 bg-white/20 rounded-lg backdrop-blur-sm">
@@ -199,7 +199,7 @@ export const PartnerDetailModal = ({
                             </div>
                             <div>
                                 <h2 className="text-2xl font-bold">{partner.name}</h2>
-                                <p className="text-blue-100 mt-1 font-mono text-sm">{partner.code}</p>
+                                <p className="text-sage-100 mt-1 font-mono text-sm">{partner.code}</p>
                             </div>
                         </div>
                         <button
@@ -226,7 +226,7 @@ export const PartnerDetailModal = ({
                                 className={cn(
                                     'flex items-center gap-2 px-4 py-3 text-sm font-medium border-b-2 transition-colors',
                                     activeTab === tab.id
-                                        ? 'border-blue-600 text-blue-600 dark:text-blue-400 bg-white dark:bg-gray-800'
+                                        ? 'border-sage-500 text-sage-600 dark:text-sage-400 bg-white dark:bg-gray-800'
                                         : 'border-transparent text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200'
                                 )}
                             >

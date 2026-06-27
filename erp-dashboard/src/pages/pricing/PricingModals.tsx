@@ -29,7 +29,7 @@ const ModalWrapper: React.FC<{ onClose: () => void; children: React.ReactNode }>
 const ModalHeader: React.FC<{ icon: React.ElementType; title: string; onClose: () => void }> = ({ icon: Icon, title, onClose }) => (
     <div className="flex items-center justify-between p-4 border-b border-gray-100">
         <div className="flex items-center gap-2">
-            <div className="w-8 h-8 rounded-lg bg-blue-50 flex items-center justify-center"><Icon className="w-4 h-4 text-blue-600" /></div>
+            <div className="w-8 h-8 rounded-lg bg-sage-50 flex items-center justify-center"><Icon className="w-4 h-4 text-sage-600" /></div>
             <h2 className="text-lg font-semibold text-gray-900">{title}</h2>
         </div>
         <button onClick={onClose} className="p-1.5 rounded-md hover:bg-gray-100 transition-colors"><X className="w-5 h-5 text-gray-400" /></button>
@@ -40,7 +40,7 @@ const ModalFooter: React.FC<{ onClose: () => void; onSubmit: () => void; loading
     <div className="flex items-center justify-end gap-2 p-4 border-t border-gray-100">
         <button onClick={onClose} className="px-4 py-2 text-sm text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded-lg transition-colors">Annuler</button>
         <button onClick={onSubmit} disabled={loading}
-            className="px-4 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center gap-2">
+            className="px-4 py-2 text-sm bg-sage-500 text-white rounded-lg hover:bg-sage-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center gap-2">
             {loading && <Loader2 className="w-4 h-4 animate-spin" />}
             {label}
         </button>
@@ -54,7 +54,7 @@ const Field: React.FC<{ label: string; required?: boolean; children: React.React
     </div>
 );
 
-const inputCls = "w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm";
+const inputCls = "w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-sage-500 text-sm";
 const selectCls = `${inputCls} bg-white`;
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -330,21 +330,21 @@ export const ModalPreview: React.FC<ModalPreviewProps> = ({ form, setForm, onClo
                 </Field>
 
                 {previewData && (
-                    <div className="p-4 bg-gradient-to-br from-blue-50 to-indigo-50 rounded-lg border border-blue-200 space-y-3">
+                    <div className="p-4 bg-gradient-to-br from-sage-50 to-sage-50 rounded-lg border border-sage-200 space-y-3">
                         <div className="text-center">
-                            <div className="text-xs text-blue-600 mb-1">Prix effectif</div>
-                            <div className="text-3xl font-bold text-blue-800">{previewData.final_price.toFixed(2)} €</div>
+                            <div className="text-xs text-sage-600 mb-1">Prix effectif</div>
+                            <div className="text-3xl font-bold text-sage-800">{previewData.final_price.toFixed(2)} €</div>
                         </div>
                         <div className="grid grid-cols-3 gap-2 text-center text-xs">
-                            <div className="p-2 bg-white rounded border border-blue-100">
+                            <div className="p-2 bg-white rounded border border-sage-100">
                                 <div className="text-gray-500">Prix de base</div>
                                 <div className="font-bold text-gray-900">{previewData.base_price.toFixed(2)}</div>
                             </div>
-                            <div className="p-2 bg-white rounded border border-blue-100">
+                            <div className="p-2 bg-white rounded border border-sage-100">
                                 <div className="text-gray-500">Remise</div>
                                 <div className="font-bold text-amber-600">-{(previewData.base_price - previewData.final_price).toFixed(2)}</div>
                             </div>
-                            <div className="p-2 bg-white rounded border border-blue-100">
+                            <div className="p-2 bg-white rounded border border-sage-100">
                                 <div className="text-gray-500">Source</div>
                                 <div className="font-bold text-gray-700">{previewData.applied_rule}</div>
                             </div>
@@ -355,7 +355,7 @@ export const ModalPreview: React.FC<ModalPreviewProps> = ({ form, setForm, onClo
             <div className="flex items-center justify-end gap-2 p-4 border-t border-gray-100">
                 <button onClick={onClose} className="px-4 py-2 text-sm text-gray-600 hover:bg-gray-100 rounded-lg transition-colors">Fermer</button>
                 <button onClick={onSubmit} disabled={loading}
-                    className="px-4 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 transition-colors flex items-center gap-2">
+                    className="px-4 py-2 text-sm bg-sage-500 text-white rounded-lg hover:bg-sage-600 disabled:opacity-50 transition-colors flex items-center gap-2">
                     {loading && <Loader2 className="w-4 h-4 animate-spin" />}
                     Calculer
                 </button>
@@ -453,7 +453,7 @@ export const ModalImport: React.FC<ModalImportProps> = ({ importFile: _unusedImp
         <div className="p-4 space-y-4">
             <Field label="Fichier CSV" required>
                 <input type="file" accept=".csv" onChange={e => setImportFile(e.target.files?.[0] || null)}
-                    className="w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-medium file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100" />
+                    className="w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-medium file:bg-sage-50 file:text-sage-700 hover:file:bg-sage-100" />
             </Field>
             <div className="grid grid-cols-3 gap-3">
                 <Field label="Mode">

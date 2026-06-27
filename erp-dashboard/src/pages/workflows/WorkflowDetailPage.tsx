@@ -92,7 +92,7 @@ export function WorkflowDetailPage() {
             <MasterLayout
                 mainContent={
                     <div className="flex items-center justify-center h-full">
-                        <Loader2 className="w-8 h-8 animate-spin text-blue-600" />
+                        <Loader2 className="w-8 h-8 animate-spin text-sage-600" />
                     </div>
                 }
             />
@@ -160,7 +160,7 @@ export function WorkflowDetailPage() {
                                                 Inactive
                                             </span>
                                         )}
-                                        <span className="inline-flex items-center px-3 py-1 rounded-full text-sm font-medium bg-blue-100 text-blue-800">
+                                        <span className="inline-flex items-center px-3 py-1 rounded-full text-sm font-medium bg-sage-100 text-sage-800">
                                             Version {workflow.version}
                                         </span>
                                     </div>
@@ -212,56 +212,56 @@ export function WorkflowDetailPage() {
                                     onClick={() => setActiveTab('visualization')}
                                     className={`pb-3 px-1 font-medium transition-colors relative ${
                                         activeTab === 'visualization'
-                                            ? 'text-blue-600'
+                                            ? 'text-sage-600'
                                             : 'text-gray-600 hover:text-gray-900'
                                     }`}
                                 >
                                     <Eye className="w-4 h-4 inline mr-2" />
                                     Visualization
                                     {activeTab === 'visualization' && (
-                                        <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-blue-600"></div>
+                                        <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-sage-500"></div>
                                     )}
                                 </button>
                                 <button
                                     onClick={() => setActiveTab('templates')}
                                     className={`pb-3 px-1 font-medium transition-colors relative ${
                                         activeTab === 'templates'
-                                            ? 'text-blue-600'
+                                            ? 'text-sage-600'
                                             : 'text-gray-600 hover:text-gray-900'
                                     }`}
                                 >
                                     <Settings className="w-4 h-4 inline mr-2" />
                                     Templates ({templates.length})
                                     {activeTab === 'templates' && (
-                                        <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-blue-600"></div>
+                                        <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-sage-500"></div>
                                     )}
                                 </button>
                                 <button
                                     onClick={() => setActiveTab('tasks')}
                                     className={`pb-3 px-1 font-medium transition-colors relative ${
                                         activeTab === 'tasks'
-                                            ? 'text-blue-600'
+                                            ? 'text-sage-600'
                                             : 'text-gray-600 hover:text-gray-900'
                                     }`}
                                 >
                                     <ListTodo className="w-4 h-4 inline mr-2" />
                                     Tasks
                                     {activeTab === 'tasks' && (
-                                        <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-blue-600"></div>
+                                        <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-sage-500"></div>
                                     )}
                                 </button>
                                 <button
                                     onClick={() => setActiveTab('statistics')}
                                     className={`pb-3 px-1 font-medium transition-colors relative ${
                                         activeTab === 'statistics'
-                                            ? 'text-blue-600'
+                                            ? 'text-sage-600'
                                             : 'text-gray-600 hover:text-gray-900'
                                     }`}
                                 >
                                     <BarChart3 className="w-4 h-4 inline mr-2" />
                                     Statistics
                                     {activeTab === 'statistics' && (
-                                        <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-blue-600"></div>
+                                        <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-sage-500"></div>
                                     )}
                                 </button>
                             </div>
@@ -274,7 +274,7 @@ export function WorkflowDetailPage() {
                                     <h2 className="text-lg font-semibold text-gray-900">Workflow Flow</h2>
                                     <button
                                         onClick={handleShowCreateTemplateForm}
-                                        className="inline-flex items-center px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors"
+                                        className="inline-flex items-center px-4 py-2 bg-sage-500 hover:bg-sage-600 text-white rounded-lg transition-colors"
                                     >
                                         <Plus className="w-4 h-4 mr-2" />
                                         Add Template
@@ -299,7 +299,7 @@ export function WorkflowDetailPage() {
                                     <h2 className="text-lg font-semibold text-gray-900">Task Templates</h2>
                                     <button
                                         onClick={handleShowCreateTemplateForm}
-                                        className="inline-flex items-center px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors"
+                                        className="inline-flex items-center px-4 py-2 bg-sage-500 hover:bg-sage-600 text-white rounded-lg transition-colors"
                                     >
                                         <Plus className="w-4 h-4 mr-2" />
                                         Add Template
@@ -317,7 +317,7 @@ export function WorkflowDetailPage() {
                                         </p>
                                         <button
                                             onClick={handleShowCreateTemplateForm}
-                                            className="inline-flex items-center px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors"
+                                            className="inline-flex items-center px-4 py-2 bg-sage-500 hover:bg-sage-600 text-white rounded-lg transition-colors"
                                         >
                                             <Plus className="w-4 h-4 mr-2" />
                                             Create First Template
@@ -328,7 +328,7 @@ export function WorkflowDetailPage() {
                                         {templates.map((template) => (
                                             <div
                                                 key={template.id}
-                                                className="bg-white border border-gray-200 rounded-lg p-4 hover:border-blue-400 transition-colors cursor-pointer"
+                                                className="bg-white border border-gray-200 rounded-lg p-4 hover:border-sage-400 transition-colors cursor-pointer"
                                                 onClick={() =>
                                                     navigate(`/workflows/${workflow.id}/templates/${template.id}`)
                                                 }
@@ -348,7 +348,7 @@ export function WorkflowDetailPage() {
                                                                     Inactive
                                                                 </span>
                                                             )}
-                                                            <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-blue-100 text-blue-800">
+                                                            <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-sage-100 text-sage-800">
                                                                 {template.task_type}
                                                             </span>
                                                         </div>
@@ -386,23 +386,23 @@ export function WorkflowDetailPage() {
                         {activeTab === 'tasks' && (
                             <div>
                                 <h2 className="text-lg font-semibold text-gray-900 mb-4">Workflow Task Instances</h2>
-                                <div className="bg-blue-50 border border-blue-200 rounded-lg p-6 text-center">
-                                    <ListTodo className="w-12 h-12 text-blue-600 mx-auto mb-3" />
-                                    <h3 className="text-lg font-medium text-blue-900 mb-2">
+                                <div className="bg-sage-50 border border-sage-200 rounded-lg p-6 text-center">
+                                    <ListTodo className="w-12 h-12 text-sage-600 mx-auto mb-3" />
+                                    <h3 className="text-lg font-medium text-sage-900 mb-2">
                                         Task Instance Tracking
                                     </h3>
-                                    <p className="text-sm text-blue-700 mb-4">
+                                    <p className="text-sm text-sage-700 mb-4">
                                         This section shows actual task instances created from this workflow template.
                                         Task instances are created when workflows are initialized for specific entities (Orders, BL, etc.).
                                     </p>
-                                    <div className="text-xs text-blue-600 space-y-1">
+                                    <div className="text-xs text-sage-600 space-y-1">
                                         <p>• View task instances by navigating to the Tasks Dashboard</p>
                                         <p>• Filter by workflow type to see tasks from this workflow</p>
                                         <p>• Monitor task progress and completion status</p>
                                     </div>
                                     <button
                                         onClick={() => navigate('/tasks')}
-                                        className="mt-4 inline-flex items-center px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors"
+                                        className="mt-4 inline-flex items-center px-4 py-2 bg-sage-500 hover:bg-sage-600 text-white rounded-lg transition-colors"
                                     >
                                         <ListTodo className="w-4 h-4 mr-2" />
                                         Go to Tasks Dashboard
@@ -416,7 +416,7 @@ export function WorkflowDetailPage() {
                                 <h2 className="text-lg font-semibold text-gray-900 mb-4">Workflow Statistics</h2>
                                 {statsLoading ? (
                                     <div className="flex items-center justify-center py-12">
-                                        <Loader2 className="w-8 h-8 animate-spin text-blue-600" />
+                                        <Loader2 className="w-8 h-8 animate-spin text-sage-600" />
                                     </div>
                                 ) : statistics ? (
                                     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
@@ -434,7 +434,7 @@ export function WorkflowDetailPage() {
                                         </div>
                                         <div className="bg-white border border-gray-200 rounded-lg p-4">
                                             <div className="text-sm text-gray-600 mb-1">Total Instances</div>
-                                            <div className="text-2xl font-bold text-blue-600">
+                                            <div className="text-2xl font-bold text-sage-600">
                                                 {statistics.usage?.total_instances || 0}
                                             </div>
                                         </div>

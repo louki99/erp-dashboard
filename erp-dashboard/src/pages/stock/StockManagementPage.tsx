@@ -398,7 +398,7 @@ export const StockManagementPage = () => {
                                     value={searchInput}
                                     onChange={(e) => handleSearch(e.target.value)}
                                     placeholder="Rechercher un produit..."
-                                    className="w-full pl-8 pr-8 py-1.5 text-xs border border-gray-200 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-gray-50"
+                                    className="w-full pl-8 pr-8 py-1.5 text-xs border border-gray-200 rounded-md focus:outline-none focus:ring-2 focus:ring-sage-500 focus:border-transparent bg-gray-50"
                                 />
                                 {searchInput && (
                                     <button
@@ -417,7 +417,7 @@ export const StockManagementPage = () => {
                                     type="text"
                                     value={stockFilters.branch_code}
                                     onChange={(e) => setStockFilters(prev => ({ ...prev, branch_code: e.target.value, page: 1 }))}
-                                    className="flex-1 px-2 py-1 text-xs border border-gray-200 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-50 font-mono"
+                                    className="flex-1 px-2 py-1 text-xs border border-gray-200 rounded-md focus:outline-none focus:ring-2 focus:ring-sage-500 bg-gray-50 font-mono"
                                     placeholder="A0001"
                                 />
                             </div>
@@ -518,7 +518,7 @@ export const StockManagementPage = () => {
                                             </div>
                                         </div>
                                         <div className="text-right shrink-0">
-                                            <div className="text-xl sm:text-2xl font-bold text-blue-600 whitespace-nowrap">
+                                            <div className="text-xl sm:text-2xl font-bold text-sage-600 whitespace-nowrap">
                                                 {selected.effective_available}
                                                 <span className="text-xs sm:text-sm font-normal text-gray-400 ml-1">effectif</span>
                                             </div>
@@ -571,10 +571,10 @@ export const StockManagementPage = () => {
                                                     </div>
                                                     <div className="text-xs text-gray-400 mt-0.5">Physique - Réservé</div>
                                                 </div>
-                                                <div className="p-3 rounded-lg border border-blue-100 bg-blue-50 shadow-sm">
-                                                    <div className="text-xs text-blue-600 mb-1 font-medium">Effectif</div>
-                                                    <div className="text-2xl font-bold text-blue-700">{selected.effective_available}</div>
-                                                    <div className="text-xs text-blue-400 mt-0.5">Avec provisoire</div>
+                                                <div className="p-3 rounded-lg border border-sage-100 bg-sage-50 shadow-sm">
+                                                    <div className="text-xs text-sage-600 mb-1 font-medium">Effectif</div>
+                                                    <div className="text-2xl font-bold text-sage-700">{selected.effective_available}</div>
+                                                    <div className="text-xs text-sage-400 mt-0.5">Avec provisoire</div>
                                                 </div>
                                             </div>
 
@@ -664,11 +664,11 @@ export const StockManagementPage = () => {
                                                                 <div className="text-lg font-bold text-red-600">{effective.reserved}</div>
                                                             </div>
                                                         </div>
-                                                        <div className="flex items-center gap-2 p-2.5 rounded-lg border border-blue-100 bg-blue-50">
-                                                            <div className="w-3 h-3 rounded-full bg-blue-500 shrink-0" />
+                                                        <div className="flex items-center gap-2 p-2.5 rounded-lg border border-sage-100 bg-sage-50">
+                                                            <div className="w-3 h-3 rounded-full bg-sage-500 shrink-0" />
                                                             <div>
                                                                 <div className="text-xs text-gray-500">Effectif</div>
-                                                                <div className="text-lg font-bold text-blue-700">{effective.effective}</div>
+                                                                <div className="text-lg font-bold text-sage-700">{effective.effective}</div>
                                                             </div>
                                                         </div>
                                                     </div>
@@ -681,7 +681,7 @@ export const StockManagementPage = () => {
                                                         <span className="mx-1">−</span>
                                                         <span className="text-red-600 font-bold">{effective.reserved}</span>
                                                         <span className="mx-1">=</span>
-                                                        <span className="text-blue-700 font-bold text-base">{effective.effective}</span>
+                                                        <span className="text-sage-700 font-bold text-base">{effective.effective}</span>
                                                     </div>
                                                 </div>
                                             ) : (
@@ -704,7 +704,7 @@ export const StockManagementPage = () => {
                                                 <select
                                                     value={movementStatusFilter}
                                                     onChange={(e) => setMovementStatusFilter(e.target.value as MovementStatus | '')}
-                                                    className="text-xs px-2 py-1.5 border border-gray-200 rounded-md bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                                    className="text-xs px-2 py-1.5 border border-gray-200 rounded-md bg-white focus:outline-none focus:ring-2 focus:ring-sage-500"
                                                 >
                                                     <option value="">Tous les statuts</option>
                                                     <option value="CONFIRMED">Confirmé</option>
@@ -714,7 +714,7 @@ export const StockManagementPage = () => {
                                                 <select
                                                     value={movementTypeFilter}
                                                     onChange={(e) => setMovementTypeFilter(e.target.value as MovementType | '')}
-                                                    className="text-xs px-2 py-1.5 border border-gray-200 rounded-md bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                                    className="text-xs px-2 py-1.5 border border-gray-200 rounded-md bg-white focus:outline-none focus:ring-2 focus:ring-sage-500"
                                                 >
                                                     <option value="">Tous les types</option>
                                                     <option value="purchase">Achat</option>
@@ -802,8 +802,8 @@ export const StockManagementPage = () => {
                         ) : (
                             /* ── Empty state ──────────────────────────────── */
                             <div className="flex-1 flex flex-col items-center justify-center text-gray-400 bg-slate-50/50">
-                                <div className="w-20 h-20 rounded-2xl bg-gradient-to-br from-blue-50 to-indigo-100 flex items-center justify-center mb-4 shadow-sm">
-                                    <Box className="w-10 h-10 text-blue-400" />
+                                <div className="w-20 h-20 rounded-2xl bg-gradient-to-br from-sage-50 to-sage-100 flex items-center justify-center mb-4 shadow-sm">
+                                    <Box className="w-10 h-10 text-sage-400" />
                                 </div>
                                 <p className="text-base font-medium text-gray-500 mb-1">Gestion des Stocks</p>
                                 <p className="text-sm text-gray-400 mb-4 max-w-xs text-center">
@@ -823,8 +823,8 @@ export const StockManagementPage = () => {
                                         <span>Mouvements provisoires et réceptions locales</span>
                                     </div>
                                     <div className="flex items-center gap-2">
-                                        <div className="w-5 h-5 rounded bg-blue-100 flex items-center justify-center">
-                                            <Truck className="w-3 h-3 text-blue-600" />
+                                        <div className="w-5 h-5 rounded bg-sage-100 flex items-center justify-center">
+                                            <Truck className="w-3 h-3 text-sage-600" />
                                         </div>
                                         <span>Réconciliation automatique avec X3</span>
                                     </div>
@@ -917,8 +917,8 @@ export const StockManagementPage = () => {
                         {/* Modal header */}
                         <div className="flex items-center justify-between p-4 border-b border-gray-100">
                             <div className="flex items-center gap-2">
-                                <div className="w-8 h-8 rounded-lg bg-blue-50 flex items-center justify-center">
-                                    <Plus className="w-4 h-4 text-blue-600" />
+                                <div className="w-8 h-8 rounded-lg bg-sage-50 flex items-center justify-center">
+                                    <Plus className="w-4 h-4 text-sage-600" />
                                 </div>
                                 <h2 className="text-lg font-semibold text-gray-900">Nouveau mouvement provisoire</h2>
                             </div>
@@ -939,7 +939,7 @@ export const StockManagementPage = () => {
                                         type="text"
                                         value={provisionalForm.branch_code || ''}
                                         onChange={(e) => setProvisionalForm(prev => ({ ...prev, branch_code: e.target.value }))}
-                                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm font-mono"
+                                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-sage-500 text-sm font-mono"
                                         placeholder="A0001"
                                     />
                                 </div>
@@ -949,7 +949,7 @@ export const StockManagementPage = () => {
                                         type="number"
                                         value={provisionalForm.product_id || ''}
                                         onChange={(e) => setProvisionalForm(prev => ({ ...prev, product_id: parseInt(e.target.value) || 0 }))}
-                                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
+                                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-sage-500 text-sm"
                                         placeholder="123"
                                     />
                                 </div>
@@ -962,7 +962,7 @@ export const StockManagementPage = () => {
                                         type="number"
                                         value={provisionalForm.quantity || ''}
                                         onChange={(e) => setProvisionalForm(prev => ({ ...prev, quantity: parseFloat(e.target.value) || 0 }))}
-                                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
+                                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-sage-500 text-sm"
                                         placeholder="10"
                                         min="0"
                                     />
@@ -972,7 +972,7 @@ export const StockManagementPage = () => {
                                     <select
                                         value={provisionalForm.type || 'purchase'}
                                         onChange={(e) => setProvisionalForm(prev => ({ ...prev, type: e.target.value as any }))}
-                                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm bg-white"
+                                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-sage-500 text-sm bg-white"
                                     >
                                         <option value="purchase">Achat</option>
                                         <option value="adjustment">Ajustement</option>
@@ -989,7 +989,7 @@ export const StockManagementPage = () => {
                                     type="text"
                                     value={provisionalForm.external_reference || ''}
                                     onChange={(e) => setProvisionalForm(prev => ({ ...prev, external_reference: e.target.value }))}
-                                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
+                                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-sage-500 text-sm"
                                     placeholder="POS-REC-0001"
                                 />
                             </div>
@@ -999,7 +999,7 @@ export const StockManagementPage = () => {
                                 <textarea
                                     value={provisionalForm.notes || ''}
                                     onChange={(e) => setProvisionalForm(prev => ({ ...prev, notes: e.target.value }))}
-                                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
+                                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-sage-500 text-sm"
                                     rows={3}
                                     placeholder="Réception locale, ajustement inventaire..."
                                 />
@@ -1022,7 +1022,7 @@ export const StockManagementPage = () => {
                             <button
                                 onClick={handleCreateProvisional}
                                 disabled={creatingProvisional}
-                                className="px-4 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center gap-2"
+                                className="px-4 py-2 text-sm bg-sage-500 text-white rounded-lg hover:bg-sage-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center gap-2"
                             >
                                 {creatingProvisional && <Loader2 className="w-4 h-4 animate-spin" />}
                                 Créer le mouvement
@@ -1069,7 +1069,7 @@ export const StockManagementPage = () => {
                             </div>
                             <div className="flex items-center gap-3 mt-2 pt-2 border-t border-gray-200 text-xs text-gray-500">
                                 <span>Dépôt: <strong className="text-gray-700">{selected.branch_code}</strong></span>
-                                <span>Effectif: <strong className="text-blue-600">{selected.effective_available}</strong></span>
+                                <span>Effectif: <strong className="text-sage-600">{selected.effective_available}</strong></span>
                             </div>
                         </div>
 

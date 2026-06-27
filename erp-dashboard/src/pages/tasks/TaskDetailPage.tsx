@@ -74,7 +74,7 @@ export const TaskDetailPage = () => {
             <MasterLayout
                 mainContent={
                     <div className="flex items-center justify-center h-full">
-                        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
+                        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-sage-500"></div>
                     </div>
                 }
             />
@@ -91,7 +91,7 @@ export const TaskDetailPage = () => {
                             <h2 className="text-xl font-semibold text-gray-900 mb-2">Tâche introuvable</h2>
                             <button
                                 onClick={() => navigate('/tasks')}
-                                className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+                                className="px-4 py-2 bg-sage-500 text-white rounded-lg hover:bg-sage-600"
                             >
                                 Retour aux tâches
                             </button>
@@ -104,7 +104,7 @@ export const TaskDetailPage = () => {
 
     const statusConfig = {
         pending: { color: 'bg-gray-100 text-gray-700', icon: Clock, label: 'En attente' },
-        ready: { color: 'bg-blue-100 text-blue-700', icon: PlayCircle, label: 'Prêt' },
+        ready: { color: 'bg-sage-100 text-sage-700', icon: PlayCircle, label: 'Prêt' },
         in_progress: { color: 'bg-yellow-100 text-yellow-700', icon: Clock, label: 'En cours' },
         completed: { color: 'bg-green-100 text-green-700', icon: CheckCircle, label: 'Terminé' },
         failed: { color: 'bg-red-100 text-red-700', icon: XCircle, label: 'Échoué' },
@@ -185,7 +185,7 @@ export const TaskDetailPage = () => {
                             </div>
 
                             {isAssignedToMe && (
-                                <div className="flex items-center gap-2 text-blue-600 bg-blue-50 rounded-lg p-3 mb-4">
+                                <div className="flex items-center gap-2 text-sage-600 bg-sage-50 rounded-lg p-3 mb-4">
                                     <User className="w-4 h-4" />
                                     <span className="text-sm font-medium">Cette tâche vous est assignée</span>
                                 </div>
@@ -196,7 +196,7 @@ export const TaskDetailPage = () => {
                                     <button
                                         onClick={handleClaim}
                                         disabled={actionLoading}
-                                        className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50"
+                                        className="px-4 py-2 bg-sage-500 text-white rounded-lg hover:bg-sage-600 disabled:opacity-50"
                                     >
                                         Réclamer la tâche
                                     </button>

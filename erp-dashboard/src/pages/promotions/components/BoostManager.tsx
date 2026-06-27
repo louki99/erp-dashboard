@@ -242,7 +242,7 @@ export const BoostManager = ({ productFamilyId }: BoostManagerProps) => {
                     <div className="flex items-center gap-2 h-full">
                         <button
                             onClick={() => handleEdit(boost)}
-                            className="p-1 text-blue-600 hover:bg-blue-50 rounded"
+                            className="p-1 text-sage-600 hover:bg-sage-50 rounded"
                             title="Modifier"
                         >
                             <Pencil className="w-4 h-4" />
@@ -439,7 +439,7 @@ export const BoostManager = ({ productFamilyId }: BoostManagerProps) => {
                 size="xl"
             >
                 <form onSubmit={handleSubmit(onSubmitBulk)} className="p-6 space-y-4">
-                    <div className="p-3 bg-blue-50 rounded-md border border-blue-200 text-sm text-blue-800">
+                    <div className="p-3 bg-sage-50 rounded-md border border-sage-200 text-sm text-sage-800">
                         <strong>Note:</strong> Cette opération remplacera tous les boosts existants pour la famille de produits sélectionnée.
                     </div>
 

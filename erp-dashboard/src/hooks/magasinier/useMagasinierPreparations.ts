@@ -2,6 +2,8 @@ import { useEffect, useState } from 'react';
 import { magasinierApi } from '@/services/api/magasinierApi';
 import type {
     PreparationsResponse,
+    PreparationsAllResponse,
+    PreparationsScope,
     BonPreparationDetailResponse,
     SavePreparationRequest,
     RejectPreparationRequest,
@@ -12,6 +14,7 @@ import type {
     CompletePreparationResponse,
     StartPreparationResponse,
     RejectPreparationResponse,
+    UpdatePreparationResponse,
 } from '@/types/magasinier.types';
 
 export const useMagasinierPreparationsList = (filters?: { status?: string; search?: string; page?: number }) => {
@@ -36,6 +39,39 @@ export const useMagasinierPreparationsList = (filters?: { status?: string; searc
     useEffect(() => {
         fetchList();
     }, [filters?.page, filters?.status, filters?.search]);
+
+    return { data, loading, error, refetch: fetchList };
+};
+
+export const useMagasinierPreparationsAll = (filters: {
+    scope?: PreparationsScope;
+    status?: string;
+    search?: string;
+    date_from?: string;
+    date_to?: string;
+    page?: number;
+    per_page?: number;
+}) => {
+    const [data, setData] = useState<PreparationsAllResponse | null>(null);
+    const [loading, setLoading] = useState(true);
+    const [error, setError] = useState<string | null>(null);
+
+    const fetchList = async () => {
+        setLoading(true);
+        setError(null);
+        try {
+            const res = await magasinierApi.preparations.getAll(filters);
+            setData(res);
+        } catch (err) {
+            setError(err instanceof Error ? err.message : 'Failed to fetch preparations');
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    useEffect(() => {
+        fetchList();
+    }, [filters.scope, filters.status, filters.search, filters.date_from, filters.date_to, filters.page]);
 
     return { data, loading, error, refetch: fetchList };
 };
@@ -98,6 +134,23 @@ export const useMagasinierSavePreparation = () => {
     };
 
     return { save, loading };
+};
+
+// update_preparation (docs §6.4) — incremental save while picking, callable multiple times
+// before complete_preparation. Lets the magasinier persist progress without committing the BP.
+export const useMagasinierUpdateItems = () => {
+    const [loading, setLoading] = useState(false);
+
+    const updateItems = async (id: number, items: Array<{ product_id: number; prepared_quantity: number }>): Promise<UpdatePreparationResponse> => {
+        setLoading(true);
+        try {
+            return await magasinierApi.preparations.updateItems(id, items);
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    return { updateItems, loading };
 };
 
 export const useMagasinierRejectPreparation = () => {

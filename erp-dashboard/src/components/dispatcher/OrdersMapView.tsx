@@ -248,7 +248,7 @@ export const OrdersMapView = ({
                             ? 'bg-red-500 text-white hover:bg-red-600'
                             : drawMode
                             ? 'bg-amber-500 text-white hover:bg-amber-600'
-                            : 'bg-indigo-600 text-white hover:bg-indigo-700'
+                            : 'bg-sage-500 text-white hover:bg-sage-600'
                     }`}
                 >
                     {hasShape ? (
@@ -366,7 +366,7 @@ export const OrdersMapView = ({
                                             <div className="font-medium text-gray-800">{order.partner.name}</div>
                                             <div className="text-gray-500">{order.partner.city}</div>
                                             {order.partner.delivery_zone && (
-                                                <div className="mt-1 text-indigo-600 font-medium">{order.partner.delivery_zone}</div>
+                                                <div className="mt-1 text-sage-600 font-medium">{order.partner.delivery_zone}</div>
                                             )}
                                             <div className="mt-1 font-semibold text-gray-700">
                                                 {Number(order.total_amount).toLocaleString('fr-FR')} MAD
@@ -380,7 +380,7 @@ export const OrdersMapView = ({
                                                     className={`mt-2 w-full flex items-center justify-center gap-1 px-2 py-1.5 rounded text-xs font-semibold transition-colors ${
                                                         isPicked
                                                             ? 'bg-emerald-100 text-emerald-700 hover:bg-emerald-200'
-                                                            : 'bg-indigo-600 text-white hover:bg-indigo-700'
+                                                            : 'bg-sage-500 text-white hover:bg-sage-600'
                                                     }`}
                                                 >
                                                     {isPicked ? (<><Check className="w-3 h-3" /> Sélectionné</>) : (<><Plus className="w-3 h-3" /> Sélectionner</>)}

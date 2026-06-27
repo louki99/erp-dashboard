@@ -13,24 +13,24 @@ export const PromotionRuleEditor = () => {
     return (
         <div className="space-y-4">
             {/* Help Section */}
-            <div className="bg-blue-50 border border-blue-200 rounded-lg overflow-hidden">
+            <div className="bg-sage-50 border border-sage-200 rounded-lg overflow-hidden">
                 <button
                     type="button"
                     onClick={() => setShowHelp(!showHelp)}
-                    className="w-full flex items-center justify-between p-3 text-left hover:bg-blue-100 transition-colors"
+                    className="w-full flex items-center justify-between p-3 text-left hover:bg-sage-100 transition-colors"
                 >
                     <div className="flex items-center gap-2">
-                        <Info className="w-4 h-4 text-blue-600" />
-                        <span className="text-sm font-medium text-blue-900">Comment Fonctionnent les Règles de Promotion</span>
+                        <Info className="w-4 h-4 text-sage-600" />
+                        <span className="text-sm font-medium text-sage-900">Comment Fonctionnent les Règles de Promotion</span>
                     </div>
                     {showHelp ? (
-                        <ChevronUp className="w-4 h-4 text-blue-600" />
+                        <ChevronUp className="w-4 h-4 text-sage-600" />
                     ) : (
-                        <ChevronDown className="w-4 h-4 text-blue-600" />
+                        <ChevronDown className="w-4 h-4 text-sage-600" />
                     )}
                 </button>
                 {showHelp && (
-                    <div className="p-4 pt-0 border-t border-blue-200 bg-white">
+                    <div className="p-4 pt-0 border-t border-sage-200 bg-white">
                         <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-sm text-gray-700">
                             <div>
                                 <h4 className="font-semibold text-gray-900 mb-2">Règles de Promotion</h4>

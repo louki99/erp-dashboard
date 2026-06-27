@@ -20,7 +20,7 @@ const ActionItem = ({ icon: Icon, label, onClick, variant = 'default', disabled 
     const variants = {
         default: "text-gray-400 hover:text-gray-700 dark:text-gray-500 dark:hover:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800",
         danger: "text-gray-400 hover:text-red-600 dark:hover:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/10",
-        primary: "text-gray-400 hover:text-blue-600 dark:hover:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/10",
+        primary: "text-gray-400 hover:text-sage-600 dark:hover:text-sage-500 hover:bg-sage-50 dark:hover:bg-sage-900/10",
         sage: "text-sage-500 hover:text-sage-700 dark:text-sage-400 dark:hover:text-sage-200 hover:bg-sage-50 dark:hover:bg-sage-900/20"
     };
 

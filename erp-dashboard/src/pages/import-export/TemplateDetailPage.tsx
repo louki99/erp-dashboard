@@ -177,7 +177,7 @@ export const TemplateDetailPage = () => {
                 mainContent={
                     <div className="h-full flex items-center justify-center">
                         <div className="text-center">
-                            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto"></div>
+                            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-sage-500 mx-auto"></div>
                             <p className="mt-4 text-gray-600">Chargement...</p>
                         </div>
                     </div>
@@ -220,9 +220,9 @@ export const TemplateDetailPage = () => {
                     
                     <div className="flex-1 overflow-auto p-4">
                         <div className="space-y-3">
-                            <div className="bg-gradient-to-br from-blue-50 to-blue-100 p-4 rounded-lg border border-blue-200">
-                                <p className="text-xs font-medium text-blue-600 mb-1">CODE</p>
-                                <p className="text-lg font-bold text-blue-900">{template.code || 'Nouveau'}</p>
+                            <div className="bg-gradient-to-br from-sage-50 to-sage-100 p-4 rounded-lg border border-sage-200">
+                                <p className="text-xs font-medium text-sage-600 mb-1">CODE</p>
+                                <p className="text-lg font-bold text-sage-900">{template.code || 'Nouveau'}</p>
                             </div>
                             
                             <div className="p-3 bg-gray-50 rounded-lg border border-gray-200">
@@ -246,7 +246,7 @@ export const TemplateDetailPage = () => {
                             
                             <div className="p-3 bg-gray-50 rounded-lg border border-gray-200">
                                 <p className="text-xs font-medium text-gray-600 mb-1">Type</p>
-                                <span className="inline-block px-2 py-1 text-xs font-medium bg-blue-100 text-blue-700 rounded">
+                                <span className="inline-block px-2 py-1 text-xs font-medium bg-sage-100 text-sage-700 rounded">
                                     {template.type === 'import' ? 'Import' : template.type === 'export' ? 'Export' : 'Import/Export'}
                                 </span>
                             </div>
@@ -317,7 +317,7 @@ export const TemplateDetailPage = () => {
                                 <button
                                     onClick={handleSave}
                                     disabled={saving}
-                                    className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition flex items-center gap-2 disabled:opacity-50"
+                                    className="px-4 py-2 bg-sage-500 text-white rounded-lg hover:bg-sage-600 transition flex items-center gap-2 disabled:opacity-50"
                                 >
                                     <Save className="w-4 h-4" />
                                     {saving ? 'Enregistrement...' : 'Enregistrer'}
@@ -383,7 +383,7 @@ const GeneralTab = ({
                             type="text"
                             value={template.code}
                             onChange={(e) => setTemplate({ ...template, code: e.target.value })}
-                            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500"
+                            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-sage-500 focus:border-sage-500"
                             placeholder="ex: PRODUCT_IMPORT"
                         />
                     </div>
@@ -395,7 +395,7 @@ const GeneralTab = ({
                             type="text"
                             value={template.name}
                             onChange={(e) => setTemplate({ ...template, name: e.target.value })}
-                            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500"
+                            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-sage-500 focus:border-sage-500"
                             placeholder="ex: Import des produits"
                         />
                     </div>
@@ -407,7 +407,7 @@ const GeneralTab = ({
                             type="text"
                             value={template.module}
                             onChange={(e) => setTemplate({ ...template, module: e.target.value })}
-                            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500"
+                            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-sage-500 focus:border-sage-500"
                         />
                     </div>
                     <div>
@@ -416,7 +416,7 @@ const GeneralTab = ({
                         </label>
                         <input
                             type="text"
-                            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500"
+                            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-sage-500 focus:border-sage-500"
                         />
                     </div>
                     <div className="col-span-2">
@@ -429,7 +429,7 @@ const GeneralTab = ({
                                 value={availableTables.find(t => importExportApi.metadata.decodeTableId(t.id) === template.primary_table)?.id || ''}
                                 onChange={(e) => handleTableChange(e.target.value)}
                                 disabled={loadingTables}
-                                className="flex-1 px-3 py-2 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500 disabled:bg-gray-50"
+                                className="flex-1 px-3 py-2 border border-gray-300 rounded-md focus:ring-sage-500 focus:border-sage-500 disabled:bg-gray-50"
                             >
                                 <option value="">Sélectionner une table...</option>
                                 {availableTables.map((table) => (
@@ -438,7 +438,7 @@ const GeneralTab = ({
                                     </option>
                                 ))}
                             </select>
-                            {loadingTables && <Loader2 className="w-4 h-4 animate-spin text-blue-600" />}
+                            {loadingTables && <Loader2 className="w-4 h-4 animate-spin text-sage-600" />}
                         </div>
                         {template.primary_table && (
                             <p className="text-xs text-gray-500 mt-1">
@@ -453,7 +453,7 @@ const GeneralTab = ({
                         <textarea
                             value={template.description || ''}
                             onChange={(e) => setTemplate({ ...template, description: e.target.value })}
-                            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500"
+                            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-sage-500 focus:border-sage-500"
                             rows={3}
                             placeholder="Description du template..."
                         />
@@ -465,7 +465,7 @@ const GeneralTab = ({
                         <select
                             value={template.type}
                             onChange={(e) => setTemplate({ ...template, type: e.target.value as 'import' | 'export' | 'both' })}
-                            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500"
+                            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-sage-500 focus:border-sage-500"
                         >
                             <option value="import">Import uniquement</option>
                             <option value="export">Export uniquement</option>
@@ -486,7 +486,7 @@ const GeneralTab = ({
                                 type="checkbox"
                                 checked={template.allow_export}
                                 onChange={(e) => setTemplate({ ...template, allow_export: e.target.checked })}
-                                className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                                className="w-4 h-4 text-sage-600 border-gray-300 rounded focus:ring-sage-500"
                             />
                             <span className="text-sm font-medium text-gray-700">Export</span>
                         </label>
@@ -505,7 +505,7 @@ const GeneralTab = ({
                             type="checkbox"
                             checked={template.allow_import}
                             onChange={(e) => setTemplate({ ...template, allow_import: e.target.checked })}
-                            className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                            className="w-4 h-4 text-sage-600 border-gray-300 rounded focus:ring-sage-500"
                         />
                         <span className="text-sm font-medium text-gray-700">Import</span>
                     </label>
@@ -690,7 +690,7 @@ const FieldsTab = ({ template, setTemplate, onSave }: { template: Template; setT
             cellRenderer: (params: any) => (
                 <div className="flex items-center h-full">
                     {params.value ? (
-                        <span className="text-xs px-2 py-0.5 bg-blue-100 text-blue-700 rounded font-medium">Oui</span>
+                        <span className="text-xs px-2 py-0.5 bg-sage-100 text-sage-700 rounded font-medium">Oui</span>
                     ) : (
                         <span className="text-xs text-gray-400">-</span>
                     )}
@@ -729,7 +729,7 @@ const FieldsTab = ({ template, setTemplate, onSave }: { template: Template; setT
                             e.stopPropagation();
                             handleEditField(params.data);
                         }}
-                        className="p-1 text-blue-600 hover:bg-blue-100 rounded"
+                        className="p-1 text-sage-600 hover:bg-sage-100 rounded"
                     >
                         <Edit className="w-4 h-4" />
                     </button>
@@ -758,7 +758,7 @@ const FieldsTab = ({ template, setTemplate, onSave }: { template: Template; setT
                 </div>
                 <button
                     onClick={handleAddField}
-                    className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition flex items-center gap-2"
+                    className="px-4 py-2 bg-sage-500 text-white rounded-lg hover:bg-sage-600 transition flex items-center gap-2"
                 >
                     <Plus className="w-4 h-4" />
                     Ajouter un champ
@@ -939,7 +939,7 @@ const FieldEditModal = ({
                                     value={selectedTableId}
                                     onChange={(e) => handleTableChange(e.target.value)}
                                     disabled={loadingTables}
-                                    className="flex-1 px-3 py-2 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500 disabled:bg-gray-50"
+                                    className="flex-1 px-3 py-2 border border-gray-300 rounded-md focus:ring-sage-500 focus:border-sage-500 disabled:bg-gray-50"
                                 >
                                     <option value="">Sélectionner une table...</option>
                                     {availableTables.map((table) => (
@@ -948,15 +948,15 @@ const FieldEditModal = ({
                                         </option>
                                     ))}
                                 </select>
-                                {loadingTables && <Loader2 className="w-4 h-4 animate-spin text-blue-600" />}
+                                {loadingTables && <Loader2 className="w-4 h-4 animate-spin text-sage-600" />}
                             </div>
                             {field.source_table && (
-                                <div className="mt-2 p-2 bg-blue-50 border border-blue-200 rounded">
-                                    <p className="text-xs text-blue-700">
+                                <div className="mt-2 p-2 bg-sage-50 border border-sage-200 rounded">
+                                    <p className="text-xs text-sage-700">
                                         <span className="font-semibold">Table réelle:</span> {field.source_table}
                                     </p>
                                     {availableColumns.length > 0 && (
-                                        <p className="text-xs text-blue-600 mt-1">
+                                        <p className="text-xs text-sage-600 mt-1">
                                             {availableColumns.length} colonnes disponibles
                                         </p>
                                     )}
@@ -972,7 +972,7 @@ const FieldEditModal = ({
                                     value={field.field_name}
                                     onChange={(e) => handleColumnSelect(e.target.value)}
                                     disabled={loadingColumns || !field.source_table}
-                                    className="flex-1 px-3 py-2 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500 disabled:bg-gray-50"
+                                    className="flex-1 px-3 py-2 border border-gray-300 rounded-md focus:ring-sage-500 focus:border-sage-500 disabled:bg-gray-50"
                                 >
                                     <option value="">Sélectionner une colonne...</option>
                                     {availableColumns.map((column) => {
@@ -991,7 +991,7 @@ const FieldEditModal = ({
                                         );
                                     })}
                                 </select>
-                                {loadingColumns && <Loader2 className="w-4 h-4 animate-spin text-blue-600" />}
+                                {loadingColumns && <Loader2 className="w-4 h-4 animate-spin text-sage-600" />}
                             </div>
                             <p className="text-xs text-gray-500 mt-1">
                                 Ou saisissez manuellement:
@@ -1000,7 +1000,7 @@ const FieldEditModal = ({
                                 type="text"
                                 value={field.field_name}
                                 onChange={(e) => onUpdate({ ...field, field_name: e.target.value })}
-                                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500 mt-1"
+                                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-sage-500 focus:border-sage-500 mt-1"
                                 placeholder="ex: code, name, email"
                             />
                         </div>
@@ -1012,7 +1012,7 @@ const FieldEditModal = ({
                                 type="text"
                                 value={field.indicator}
                                 onChange={(e) => onUpdate({ ...field, indicator: e.target.value.toUpperCase() })}
-                                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500"
+                                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-sage-500 focus:border-sage-500"
                                 placeholder="ex: A, B, C"
                                 maxLength={5}
                             />
@@ -1028,7 +1028,7 @@ const FieldEditModal = ({
                                 type="text"
                                 value={field.display_name}
                                 onChange={(e) => onUpdate({ ...field, display_name: e.target.value })}
-                                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500"
+                                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-sage-500 focus:border-sage-500"
                                 placeholder="ex: Code produit"
                             />
                         </div>
@@ -1039,7 +1039,7 @@ const FieldEditModal = ({
                             <select
                                 value={field.field_type || field.data_type}
                                 onChange={(e) => onUpdate({ ...field, field_type: e.target.value, data_type: e.target.value as any })}
-                                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500"
+                                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-sage-500 focus:border-sage-500"
                             >
                                 <option value="string">String</option>
                                 <option value="integer">Integer</option>
@@ -1058,7 +1058,7 @@ const FieldEditModal = ({
                                 type="text"
                                 value={field.default_value || ''}
                                 onChange={(e) => onUpdate({ ...field, default_value: e.target.value })}
-                                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500"
+                                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-sage-500 focus:border-sage-500"
                             />
                         </div>
                     </div>
@@ -1069,7 +1069,7 @@ const FieldEditModal = ({
                                 type="checkbox"
                                 checked={field.is_required}
                                 onChange={(e) => onUpdate({ ...field, is_required: e.target.checked })}
-                                className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                                className="w-4 h-4 text-sage-600 border-gray-300 rounded focus:ring-sage-500"
                             />
                             <span className="text-sm font-medium text-gray-900">Champ requis</span>
                         </label>
@@ -1078,7 +1078,7 @@ const FieldEditModal = ({
                                 type="checkbox"
                                 checked={field.is_identifier}
                                 onChange={(e) => onUpdate({ ...field, is_identifier: e.target.checked })}
-                                className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                                className="w-4 h-4 text-sage-600 border-gray-300 rounded focus:ring-sage-500"
                             />
                             <span className="text-sm font-medium text-gray-900">Champ identifiant (clé)</span>
                         </label>
@@ -1087,7 +1087,7 @@ const FieldEditModal = ({
                                 type="checkbox"
                                 checked={field.is_visible}
                                 onChange={(e) => onUpdate({ ...field, is_visible: e.target.checked })}
-                                className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                                className="w-4 h-4 text-sage-600 border-gray-300 rounded focus:ring-sage-500"
                             />
                             <span className="text-sm font-medium text-gray-900">Champ visible</span>
                         </label>
@@ -1103,7 +1103,7 @@ const FieldEditModal = ({
                     </button>
                     <button
                         onClick={onSave}
-                        className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition"
+                        className="px-4 py-2 bg-sage-500 text-white rounded-lg hover:bg-sage-600 transition"
                     >
                         Enregistrer
                     </button>
@@ -1127,7 +1127,7 @@ const SettingsTab = ({ template, setTemplate }: { template: Template; setTemplat
                         <select
                             value={template.file_type || 'csv'}
                             onChange={(e) => setTemplate({ ...template, file_type: e.target.value })}
-                            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500"
+                            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-sage-500 focus:border-sage-500"
                         >
                             <option value="csv">CSV</option>
                             <option value="xlsx">Excel (XLSX)</option>
@@ -1144,7 +1144,7 @@ const SettingsTab = ({ template, setTemplate }: { template: Template; setTemplat
                             value={template.field_separator || ';'}
                             onChange={(e) => setTemplate({ ...template, field_separator: e.target.value })}
                             maxLength={1}
-                            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500"
+                            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-sage-500 focus:border-sage-500"
                         />
                     </div>
                     <div>
@@ -1156,7 +1156,7 @@ const SettingsTab = ({ template, setTemplate }: { template: Template; setTemplat
                             value={template.decimal_separator || '.'}
                             onChange={(e) => setTemplate({ ...template, decimal_separator: e.target.value })}
                             maxLength={1}
-                            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500"
+                            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-sage-500 focus:border-sage-500"
                         />
                     </div>
                     <div>
@@ -1167,7 +1167,7 @@ const SettingsTab = ({ template, setTemplate }: { template: Template; setTemplat
                             type="text"
                             value={template.date_format || 'Y-m-d'}
                             onChange={(e) => setTemplate({ ...template, date_format: e.target.value })}
-                            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500"
+                            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-sage-500 focus:border-sage-500"
                         />
                     </div>
                     <div>
@@ -1177,7 +1177,7 @@ const SettingsTab = ({ template, setTemplate }: { template: Template; setTemplat
                         <select
                             value={template.charset || 'UTF-8'}
                             onChange={(e) => setTemplate({ ...template, charset: e.target.value })}
-                            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500"
+                            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-sage-500 focus:border-sage-500"
                         >
                             <option value="UTF-8">UTF-8</option>
                             <option value="ISO-8859-1">ISO-8859-1</option>

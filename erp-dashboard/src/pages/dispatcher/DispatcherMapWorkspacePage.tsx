@@ -128,7 +128,7 @@ export const DispatcherMapWorkspacePage = () => {
         >
           <ArrowLeft size={18} />
         </button>
-        <MapPinned size={16} className="text-blue-600" />
+        <MapPinned size={16} className="text-sage-600" />
         <div>
           <div className="text-sm font-bold text-gray-900">Dispatcher Carte</div>
           <div className="text-[11px] text-gray-500">Dessinez une zone ou cliquez un pin pour sélectionner</div>
@@ -163,7 +163,7 @@ export const DispatcherMapWorkspacePage = () => {
         <div className="w-96 shrink-0 bg-white border-l border-gray-200 flex flex-col">
         <div className="p-4 border-b border-gray-100 flex items-center justify-between">
           <div className="flex items-center gap-2">
-            <Package size={16} className="text-blue-600" />
+            <Package size={16} className="text-sage-600" />
             <h2 className="text-sm font-bold text-gray-900">{selectedOrderIds.length} sélectionnée(s)</h2>
           </div>
           {selectedOrderIds.length > 0 && (
@@ -233,7 +233,7 @@ export const DispatcherMapWorkspacePage = () => {
           )}
 
           {selectedVehicle && (
-            <div className="p-3 rounded-lg bg-blue-50 border border-blue-100">
+            <div className="p-3 rounded-lg bg-sage-50 border border-sage-100">
               <div className="flex items-center gap-2 mb-2">
                 <Truck size={14} className="text-blue-500" />
                 <span className="text-sm font-bold text-blue-900">
@@ -266,7 +266,7 @@ export const DispatcherMapWorkspacePage = () => {
           <button
             onClick={() => setShowConfirm(true)}
             disabled={selectedOrderIds.length === 0 || riderId === '' || vehicleId === ''}
-            className="w-full flex items-center justify-center gap-2 px-4 py-2.5 text-sm font-semibold rounded-lg bg-blue-600 hover:bg-blue-700 text-white shadow-sm disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+            className="w-full flex items-center justify-center gap-2 px-4 py-2.5 text-sm font-semibold rounded-lg bg-sage-500 hover:bg-sage-600 text-white shadow-sm disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
           >
             <CheckCircle2 size={14} /> Créer la mission ({selectedOrderIds.length} BC)
           </button>
@@ -288,7 +288,7 @@ export const DispatcherMapWorkspacePage = () => {
               <button
                 onClick={handleCreateMission}
                 disabled={creating}
-                className="flex-1 flex items-center justify-center gap-2 py-2.5 text-sm font-semibold rounded-lg bg-blue-600 hover:bg-blue-700 text-white disabled:opacity-50"
+                className="flex-1 flex items-center justify-center gap-2 py-2.5 text-sm font-semibold rounded-lg bg-sage-500 hover:bg-sage-600 text-white disabled:opacity-50"
               >
                 {creating ? <Loader2 size={14} className="animate-spin" /> : <CheckCircle2 size={14} />}
                 Confirmer

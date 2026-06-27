@@ -152,7 +152,7 @@ export function BulkTaskActions({ selectedTaskIds, onActionComplete, onClearSele
                         <button
                             onClick={() => setShowReassignDialog(true)}
                             disabled={loading}
-                            className="inline-flex items-center px-3 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm rounded-lg transition-colors disabled:opacity-50"
+                            className="inline-flex items-center px-3 py-2 bg-sage-500 hover:bg-sage-600 text-white text-sm rounded-lg transition-colors disabled:opacity-50"
                         >
                             <UserPlus className="w-4 h-4 mr-2" />
                             Reassign
@@ -184,7 +184,7 @@ export function BulkTaskActions({ selectedTaskIds, onActionComplete, onClearSele
                                 value={newUserId || ''}
                                 onChange={(e) => setNewUserId(Number(e.target.value))}
                                 placeholder="Enter user ID"
-                                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-sage-500 focus:border-transparent"
                             />
                             <p className="text-xs text-gray-500 mt-1">
                                 Note: In production, this would be a user selector dropdown
@@ -195,7 +195,7 @@ export function BulkTaskActions({ selectedTaskIds, onActionComplete, onClearSele
                             <button
                                 onClick={handleBulkReassign}
                                 disabled={loading || !newUserId}
-                                className="flex-1 inline-flex items-center justify-center px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors disabled:opacity-50"
+                                className="flex-1 inline-flex items-center justify-center px-4 py-2 bg-sage-500 hover:bg-sage-600 text-white rounded-lg transition-colors disabled:opacity-50"
                             >
                                 {loading ? (
                                     <Loader2 className="w-4 h-4 mr-2 animate-spin" />

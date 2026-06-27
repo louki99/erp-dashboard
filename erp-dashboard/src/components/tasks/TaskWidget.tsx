@@ -45,7 +45,7 @@ export const TaskWidget: React.FC<TaskWidgetProps> = ({
         return (
             <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-6">
                 <div className="flex items-center justify-center py-8">
-                    <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+                    <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-sage-500"></div>
                 </div>
             </div>
         );
@@ -60,10 +60,10 @@ export const TaskWidget: React.FC<TaskWidgetProps> = ({
 
     return (
         <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
-            <div className="px-6 py-4 border-b border-gray-100 flex justify-between items-center bg-gradient-to-r from-blue-50 to-white">
+            <div className="px-6 py-4 border-b border-gray-100 flex justify-between items-center bg-gradient-to-r from-sage-50 to-white">
                 <div className="flex items-center gap-3">
-                    <div className="p-2 bg-blue-100 rounded-lg">
-                        <ListTodo className="w-5 h-5 text-blue-600" />
+                    <div className="p-2 bg-sage-100 rounded-lg">
+                        <ListTodo className="w-5 h-5 text-sage-600" />
                     </div>
                     <div>
                         <h3 className="font-semibold text-gray-900">{title}</h3>
@@ -75,7 +75,7 @@ export const TaskWidget: React.FC<TaskWidgetProps> = ({
                 {showViewAll && (
                     <button
                         onClick={() => navigate('/tasks')}
-                        className="text-sm text-blue-600 hover:text-blue-700 font-medium flex items-center gap-1"
+                        className="text-sm text-sage-600 hover:text-sage-700 font-medium flex items-center gap-1"
                     >
                         Voir tout
                         <ArrowRight className="w-4 h-4" />
@@ -93,7 +93,7 @@ export const TaskWidget: React.FC<TaskWidgetProps> = ({
                     safeTasks.slice(0, maxTasks).map((task) => {
                         const isAssignedToMe = task.assignments.some((a) => a.status === 'claimed');
                         const statusConfig = {
-                            ready: { color: 'text-blue-600', bg: 'bg-blue-100', icon: Clock },
+                            ready: { color: 'text-sage-600', bg: 'bg-sage-100', icon: Clock },
                             in_progress: { color: 'text-yellow-600', bg: 'bg-yellow-100', icon: Clock },
                             completed: { color: 'text-green-600', bg: 'bg-green-100', icon: CheckCircle },
                             failed: { color: 'text-red-600', bg: 'bg-red-100', icon: AlertCircle },
@@ -131,7 +131,7 @@ export const TaskWidget: React.FC<TaskWidgetProps> = ({
                                                             e.stopPropagation();
                                                             navigate(`/adv/validation?bcId=${task.taskable?.id}`);
                                                         }}
-                                                        className="inline-flex items-center gap-1 px-2 py-0.5 text-xs text-blue-600 hover:text-blue-700 hover:bg-blue-50 rounded transition-colors"
+                                                        className="inline-flex items-center gap-1 px-2 py-0.5 text-xs text-sage-600 hover:text-sage-700 hover:bg-sage-50 rounded transition-colors"
                                                         title="Voir le BC"
                                                     >
                                                         <ExternalLink className="w-3 h-3" />
@@ -146,14 +146,14 @@ export const TaskWidget: React.FC<TaskWidgetProps> = ({
                                                 <span className="text-orange-600">⏱ {task.timeout_minutes}min</span>
                                             )}
                                             {isAssignedToMe && (
-                                                <span className="text-blue-600 font-medium">Assigné à vous</span>
+                                                <span className="text-sage-600 font-medium">Assigné à vous</span>
                                             )}
                                         </div>
                                     </div>
                                     {task.status === 'ready' && (
                                         <button
                                             onClick={(e) => handleQuickStart(task.id, e)}
-                                            className="px-3 py-1.5 bg-blue-600 text-white text-xs rounded hover:bg-blue-700 transition-colors whitespace-nowrap"
+                                            className="px-3 py-1.5 bg-sage-500 text-white text-xs rounded hover:bg-sage-600 transition-colors whitespace-nowrap"
                                         >
                                             Démarrer
                                         </button>
@@ -169,7 +169,7 @@ export const TaskWidget: React.FC<TaskWidgetProps> = ({
                 <div className="px-6 py-3 bg-gray-50 border-t border-gray-100">
                     <button
                         onClick={() => navigate('/tasks')}
-                        className="text-sm text-blue-600 hover:text-blue-700 font-medium"
+                        className="text-sm text-sage-600 hover:text-sage-700 font-medium"
                     >
                         Voir {safeTasks.length - maxTasks} tâche(s) de plus
                     </button>

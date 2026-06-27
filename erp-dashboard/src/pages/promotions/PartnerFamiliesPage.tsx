@@ -318,7 +318,7 @@ export const PartnerFamiliesPage = () => {
                                 e.stopPropagation();
                                 handleEdit(family);
                             }}
-                            className="p-1.5 text-blue-600 hover:bg-blue-50 rounded transition-colors"
+                            className="p-1.5 text-sage-600 hover:bg-sage-50 rounded transition-colors"
                             title="Modifier"
                         >
                             <Edit className="w-4 h-4" />
@@ -345,10 +345,10 @@ export const PartnerFamiliesPage = () => {
         <div className="flex flex-col h-full bg-white border-r border-gray-200 w-full">
             <div className="p-3 border-b border-gray-200 flex justify-between items-center bg-gray-50/50">
                 <div className="flex items-center gap-2">
-                    <Users className="w-5 h-5 text-blue-600" />
+                    <Users className="w-5 h-5 text-sage-600" />
                     <h2 className="font-bold text-gray-900">Familles Partenaires</h2>
                 </div>
-                <div className="text-xs px-2 py-1 bg-blue-100 text-blue-700 rounded-full font-medium">
+                <div className="text-xs px-2 py-1 bg-sage-100 text-sage-700 rounded-full font-medium">
                     {families.length}
                 </div>
             </div>
@@ -356,7 +356,7 @@ export const PartnerFamiliesPage = () => {
             <div className="p-3 border-b border-gray-200 bg-gray-50">
                 <button
                     onClick={handleCreateNew}
-                    className="w-full flex items-center justify-center gap-2 bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition"
+                    className="w-full flex items-center justify-center gap-2 bg-sage-500 text-white px-4 py-2 rounded-lg hover:bg-sage-600 transition"
                 >
                     <Plus className="w-4 h-4" />
                     <span className="text-sm font-medium">Nouvelle Famille</span>
@@ -412,7 +412,7 @@ export const PartnerFamiliesPage = () => {
                     <button
                         onClick={handleSave}
                         disabled={isSaving}
-                        className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition flex items-center gap-2 disabled:opacity-50"
+                        className="px-4 py-2 bg-sage-500 text-white rounded-lg hover:bg-sage-600 transition flex items-center gap-2 disabled:opacity-50"
                     >
                         <Save className="w-4 h-4" />
                         {isSaving ? 'Enregistrement...' : 'Enregistrer'}
@@ -427,7 +427,7 @@ export const PartnerFamiliesPage = () => {
                         onClick={() => setActiveTab('info')}
                         className={`py-3 px-4 border-b-2 transition ${
                             activeTab === 'info'
-                                ? 'border-blue-600 text-blue-600 font-medium'
+                                ? 'border-sage-500 text-sage-600 font-medium'
                                 : 'border-transparent text-gray-600 hover:text-gray-900'
                         }`}
                     >
@@ -437,7 +437,7 @@ export const PartnerFamiliesPage = () => {
                         onClick={() => setActiveTab('partners')}
                         className={`py-3 px-4 border-b-2 transition ${
                             activeTab === 'partners'
-                                ? 'border-blue-600 text-blue-600 font-medium'
+                                ? 'border-sage-500 text-sage-600 font-medium'
                                 : 'border-transparent text-gray-600 hover:text-gray-900'
                         }`}
                     >
@@ -461,7 +461,7 @@ export const PartnerFamiliesPage = () => {
                                         type="text"
                                         value={formData.code || ''}
                                         onChange={(e) => setFormData({ ...formData, code: e.target.value.toUpperCase() })}
-                                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent uppercase"
+                                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-sage-500 focus:border-transparent uppercase"
                                         placeholder="Ex: PREGROS"
                                         maxLength={20}
                                         disabled={isEditMode}
@@ -482,7 +482,7 @@ export const PartnerFamiliesPage = () => {
                                         type="text"
                                         value={formData.name || ''}
                                         onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-sage-500 focus:border-transparent"
                                         placeholder="Ex: Clients Gros"
                                         maxLength={100}
                                     />
@@ -495,7 +495,7 @@ export const PartnerFamiliesPage = () => {
                                     <textarea
                                         value={formData.partner_condition || ''}
                                         onChange={(e) => setFormData({ ...formData, partner_condition: e.target.value })}
-                                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent font-mono text-sm"
+                                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-sage-500 focus:border-transparent font-mono text-sm"
                                         placeholder="Ex: credit_limit > 50000"
                                         rows={2}
                                     />
@@ -503,9 +503,9 @@ export const PartnerFamiliesPage = () => {
                                         Condition SQL pour filtrer automatiquement les partenaires (ex: credit_limit &gt; 50000)
                                     </p>
                                     {formData.partner_condition && (
-                                        <div className="mt-2 p-2 bg-blue-50 border border-blue-200 rounded text-xs">
-                                            <span className="font-medium text-blue-700">Condition active:</span>
-                                            <code className="ml-2 text-blue-900">{formData.partner_condition}</code>
+                                        <div className="mt-2 p-2 bg-sage-50 border border-sage-200 rounded text-xs">
+                                            <span className="font-medium text-sage-700">Condition active:</span>
+                                            <code className="ml-2 text-sage-900">{formData.partner_condition}</code>
                                         </div>
                                     )}
                                 </div>
@@ -521,7 +521,7 @@ export const PartnerFamiliesPage = () => {
                                 <h3 className="text-lg font-semibold text-gray-900">Partenaires</h3>
                                 <button 
                                     onClick={() => setShowPartnerModal(true)}
-                                    className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition flex items-center gap-2"
+                                    className="px-4 py-2 bg-sage-500 text-white rounded-lg hover:bg-sage-600 transition flex items-center gap-2"
                                 >
                                     <Plus className="w-4 h-4" />
                                     Ajouter Partenaires
@@ -530,11 +530,11 @@ export const PartnerFamiliesPage = () => {
                             
                             {formData.partners && formData.partners.length > 0 ? (
                                 <div>
-                                    <div className="mb-3 p-3 bg-gradient-to-r from-blue-50 to-indigo-50 rounded-lg border border-blue-200">
+                                    <div className="mb-3 p-3 bg-gradient-to-r from-sage-50 to-sage-50 rounded-lg border border-sage-200">
                                         <div className="grid grid-cols-3 gap-3 text-center">
                                             <div>
                                                 <div className="text-xs text-gray-600">Partenaires</div>
-                                                <div className="text-xl font-bold text-blue-600">{formData.partners.length}</div>
+                                                <div className="text-xl font-bold text-sage-600">{formData.partners.length}</div>
                                             </div>
                                             <div>
                                                 <div className="text-xs text-gray-600">Crédit Total</div>
@@ -570,7 +570,7 @@ export const PartnerFamiliesPage = () => {
                                                                     💰 Crédit: {parseFloat(partner.credit_limit).toLocaleString()} Dh
                                                                 </p>
                                                                 {partner.price_list && (
-                                                                    <p className="text-xs text-blue-600">
+                                                                    <p className="text-xs text-sage-600">
                                                                         📋 {partner.price_list.name}
                                                                     </p>
                                                                 )}
@@ -611,7 +611,7 @@ export const PartnerFamiliesPage = () => {
         <div className="flex flex-col h-full bg-white border-l border-gray-200 w-11 shrink-0 shadow-[0_0_15px_rgba(0,0,0,0.05)] z-40">
             <div className="flex flex-col gap-1 py-3 border-b border-gray-200">
                 <div className="w-full flex justify-center mb-1">
-                    <div className="w-6 h-0.5 bg-blue-500 rounded-full opacity-50"></div>
+                    <div className="w-6 h-0.5 bg-sage-500 rounded-full opacity-50"></div>
                 </div>
                 <button
                     onClick={loadFamilies}
@@ -682,7 +682,7 @@ export const PartnerFamiliesPage = () => {
                             value={partnerSearch}
                             onChange={(e) => setPartnerSearch(e.target.value)}
                             placeholder="Rechercher par code ou nom..."
-                            className="w-full pl-10 pr-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                            className="w-full pl-10 pr-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-sage-500 focus:border-transparent"
                         />
                     </div>
                     <div className="mt-3 flex items-center justify-between">
@@ -692,7 +692,7 @@ export const PartnerFamiliesPage = () => {
                         <div className="flex gap-2">
                             <button
                                 onClick={handleSelectAllPartners}
-                                className="text-xs px-3 py-1 bg-blue-50 text-blue-600 rounded hover:bg-blue-100 transition"
+                                className="text-xs px-3 py-1 bg-sage-50 text-sage-600 rounded hover:bg-sage-100 transition"
                             >
                                 Tout sélectionner
                             </button>
@@ -709,7 +709,7 @@ export const PartnerFamiliesPage = () => {
                             onClick={() => setCreditFilter('all')}
                             className={`text-xs px-3 py-1 rounded transition ${
                                 creditFilter === 'all'
-                                    ? 'bg-blue-600 text-white'
+                                    ? 'bg-sage-500 text-white'
                                     : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
                             }`}
                         >
@@ -752,7 +752,7 @@ export const PartnerFamiliesPage = () => {
                 <div className="flex-1 overflow-y-auto p-6">
                     {loadingPartners ? (
                         <div className="text-center py-12">
-                            <RefreshCw className="w-8 h-8 text-blue-600 animate-spin mx-auto mb-3" />
+                            <RefreshCw className="w-8 h-8 text-sage-600 animate-spin mx-auto mb-3" />
                             <p className="text-gray-400">Chargement des partenaires...</p>
                         </div>
                     ) : filteredPartners.length === 0 ? (
@@ -771,15 +771,15 @@ export const PartnerFamiliesPage = () => {
                                         onClick={() => handleTogglePartner(partner.code)}
                                         className={`p-4 rounded-xl border-2 transition-all text-left ${
                                             isSelected
-                                                ? 'border-blue-500 bg-blue-50'
-                                                : 'border-gray-200 hover:border-blue-300 bg-white'
+                                                ? 'border-sage-500 bg-sage-50'
+                                                : 'border-gray-200 hover:border-sage-300 bg-white'
                                         }`}
                                     >
                                         <div className="flex items-start justify-between">
                                             <div className="flex-1 min-w-0">
                                                 <div className="flex items-center gap-2 mb-1">
                                                     <p className="font-semibold text-gray-900 truncate">{partner.name}</p>
-                                                    {isSelected && <CheckCircle className="w-5 h-5 text-blue-600 shrink-0" />}
+                                                    {isSelected && <CheckCircle className="w-5 h-5 text-sage-600 shrink-0" />}
                                                 </div>
                                                 <p className="text-xs text-gray-500 mb-2">{partner.code}</p>
                                                 <div className="flex items-center gap-3 text-xs">
@@ -808,7 +808,7 @@ export const PartnerFamiliesPage = () => {
                     </div>
                     <button
                         onClick={() => setShowPartnerModal(false)}
-                        className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition"
+                        className="px-6 py-2 bg-sage-500 text-white rounded-lg hover:bg-sage-600 transition"
                     >
                         Terminé
                     </button>

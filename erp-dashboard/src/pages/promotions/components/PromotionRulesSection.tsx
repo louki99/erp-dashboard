@@ -236,7 +236,7 @@ export const PromotionRulesSection = () => {
                         {isExpanded && (
                             <div className="p-6 space-y-6">
                                 {/* Promotion Flow Indicator */}
-                                <div className="bg-gradient-to-r from-blue-50 to-purple-50 border border-blue-200 rounded-lg p-4">
+                                <div className="bg-gradient-to-r from-sage-50 to-purple-50 border border-sage-200 rounded-lg p-4">
                                     <h4 className="text-xs font-semibold text-gray-800 mb-2 flex items-center gap-2">
                                         <span className="text-base">🔄</span>
                                         Flux de la Promotion
@@ -358,7 +358,7 @@ export const PromotionRulesSection = () => {
                                         <button
                                             type="button"
                                             onClick={() => setIsAssortmentHelpOpen(true)}
-                                            className="text-xs px-2 py-1 bg-blue-100 text-blue-700 rounded hover:bg-blue-200 transition-colors inline-flex items-center gap-1"
+                                            className="text-xs px-2 py-1 bg-sage-100 text-sage-700 rounded hover:bg-sage-200 transition-colors inline-flex items-center gap-1"
                                             title="Guide des assortiments"
                                         >
                                             <HelpCircle className="w-3 h-3" />
@@ -390,7 +390,7 @@ export const PromotionRulesSection = () => {
                                                 <p className="text-xs text-gray-500 mt-1">Aucune condition - Remise directe</p>
                                             )}
                                             {assortmentType === '1' && (
-                                                <p className="text-xs text-blue-600 mt-1">📦 Chaque produit doit avoir la quantité minimum absolue</p>
+                                                <p className="text-xs text-sage-600 mt-1">📦 Chaque produit doit avoir la quantité minimum absolue</p>
                                             )}
                                             {assortmentType === '2' && (
                                                 <p className="text-xs text-purple-600 mt-1">📊 Chaque produit doit représenter X% de la quantité totale</p>
@@ -414,7 +414,7 @@ export const PromotionRulesSection = () => {
                                                 </div>
                                             )}
                                             {assortmentType === '1' && (
-                                                <div className="px-3 py-2 bg-blue-50 rounded-lg text-xs text-blue-700">
+                                                <div className="px-3 py-2 bg-sage-50 rounded-lg text-xs text-sage-700">
                                                     Définir minimum pour chaque produit ci-dessous
                                                 </div>
                                             )}
@@ -432,11 +432,11 @@ export const PromotionRulesSection = () => {
                                     </div>
 
                                     {(assortmentType === '1' || assortmentType === '2' || assortmentType === '3' || assortmentType === '4') && (
-                                        <div className="mt-4 p-4 bg-blue-50 border border-blue-200 rounded-lg">
+                                        <div className="mt-4 p-4 bg-sage-50 border border-sage-200 rounded-lg">
                                             <div className="flex items-center justify-between mb-3">
                                                 <div>
                                                     <h4 className="text-xs font-semibold text-gray-700">Produits Requis (ET)</h4>
-                                                    <p className="text-xs text-blue-600 mt-0.5">
+                                                    <p className="text-xs text-sage-600 mt-0.5">
                                                         {assortmentType === '1' && 'Quantité minimum absolue pour chaque produit'}
                                                         {assortmentType === '2' && 'Pourcentage minimum de la quantité totale'}
                                                         {assortmentType === '3' && 'Pourcentage minimum du montant total'}
@@ -465,7 +465,7 @@ export const PromotionRulesSection = () => {
                                             {(!currentLine.assortments || currentLine.assortments.length === 0) ? (
                                                 <div className="text-center py-3">
                                                     <p className="text-xs text-gray-500">Aucun produit requis</p>
-                                                    <p className="text-xs text-blue-600 mt-1">Cliquez sur "Ajouter" pour définir les produits</p>
+                                                    <p className="text-xs text-sage-600 mt-1">Cliquez sur "Ajouter" pour définir les produits</p>
                                                 </div>
                                             ) : (
                                                 <div className="space-y-2">
@@ -621,7 +621,7 @@ export const PromotionRulesSection = () => {
                                                                     />
                                                                 </div>
                                                             </div>
-                                                            <div className="flex items-center gap-2 bg-blue-50 border border-blue-200 rounded-lg px-3 py-2">
+                                                            <div className="flex items-center gap-2 bg-sage-50 border border-sage-200 rounded-lg px-3 py-2">
                                                                 <input
                                                                     {...register(`lines.${lineIndex}.details.${detailIndex}.repeating`)}
                                                                     type="checkbox"

@@ -1,6 +1,8 @@
 import apiClient from './client';
 import type {
     PreparationsResponse,
+    PreparationsAllResponse,
+    PreparationsScope,
     BonPreparationDetailResponse,
     ApiSuccessResponse,
     SavePreparationRequest,
@@ -16,6 +18,7 @@ import type {
     StartPreparationResponse,
     RejectPreparationResponse,
     UpdatePreparationResponse,
+    StockMovementsResponse,
 } from '@/types/magasinier.types';
 
 const MAGASINIER_BASE = '/api/backend/magasinier';
@@ -34,6 +37,19 @@ export const magasinierApi = {
     preparations: {
         getPending: async (params?: { status?: string; search?: string; page?: number }): Promise<PreparationsResponse> => {
             const response = await apiClient.get<PreparationsResponse>(`${MAGASINIER_BASE}/preparations/pending`, { params });
+            return response.data;
+        },
+
+        getAll: async (params?: {
+            scope?: PreparationsScope;
+            status?: string;
+            search?: string;
+            date_from?: string;
+            date_to?: string;
+            per_page?: number;
+            page?: number;
+        }): Promise<PreparationsAllResponse> => {
+            const response = await apiClient.get<PreparationsAllResponse>(`${MAGASINIER_BASE}/preparations`, { params });
             return response.data;
         },
 
@@ -130,8 +146,8 @@ export const magasinierApi = {
             return response.data;
         },
 
-        getMovements: async (params?: { type?: string; product_id?: number; date_from?: string; date_to?: string; page?: number }): Promise<any> => {
-            const response = await apiClient.get(`${MAGASINIER_BASE}/stock/movements`, { params });
+        getMovements: async (params?: { type?: string; product_id?: number; date_from?: string; date_to?: string; page?: number }): Promise<StockMovementsResponse> => {
+            const response = await apiClient.get<StockMovementsResponse>(`${MAGASINIER_BASE}/stock/movements`, { params });
             return response.data;
         },
 

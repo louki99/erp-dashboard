@@ -533,9 +533,9 @@ export const ProductsPage = () => {
                             <h1 className="text-sm font-semibold text-gray-900 mb-2">Gestion des Produits</h1>
 
                             <div className="grid grid-cols-2 gap-2 mt-2">
-                                <div className="bg-blue-50 rounded p-1.5">
+                                <div className="bg-sage-50 rounded p-1.5">
                                     <div className="text-xs text-gray-500">Total</div>
-                                    <div className="text-base font-bold text-blue-700">{stats.total_products}</div>
+                                    <div className="text-base font-bold text-sage-700">{stats.total_products}</div>
                                 </div>
                                 <div className="bg-green-50 rounded p-1.5">
                                     <div className="text-xs text-gray-500">Actifs</div>
@@ -623,7 +623,7 @@ export const ProductsPage = () => {
                                         </div>
                                         <div className="text-right shrink-0">
                                             {!isCreateMode && (
-                                                <div className="text-xl sm:text-2xl font-bold text-blue-600 whitespace-nowrap">
+                                                <div className="text-xl sm:text-2xl font-bold text-sage-600 whitespace-nowrap">
                                                     {details?.price ? parseFloat(details.price.toString()).toFixed(2) : '0.00'} <span className="text-xs sm:text-sm font-normal text-gray-400">MAD</span>
                                                 </div>
                                             )}
@@ -664,7 +664,7 @@ export const ProductsPage = () => {
                                                                 type="text"
                                                                 value={formData.code || ''}
                                                                 onChange={(e) => setFormData({ ...formData, code: e.target.value })}
-                                                                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                                                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-sage-500"
                                                                 placeholder="Ex: PROD-001"
                                                             />
                                                         </div>
@@ -674,7 +674,7 @@ export const ProductsPage = () => {
                                                                 type="text"
                                                                 value={formData.name || ''}
                                                                 onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                                                                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                                                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-sage-500"
                                                                 placeholder="Nom du produit"
                                                             />
                                                         </div>
@@ -686,7 +686,7 @@ export const ProductsPage = () => {
                                                                 type="text"
                                                                 value={formData.brand || ''}
                                                                 onChange={(e) => setFormData({ ...formData, brand: e.target.value })}
-                                                                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                                                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-sage-500"
                                                                 placeholder="Marque"
                                                             />
                                                         </div>
@@ -696,7 +696,7 @@ export const ProductsPage = () => {
                                                                 type="text"
                                                                 value={formData.unit || ''}
                                                                 onChange={(e) => setFormData({ ...formData, unit: e.target.value })}
-                                                                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                                                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-sage-500"
                                                                 placeholder="Unité"
                                                             />
                                                         </div>
@@ -706,7 +706,7 @@ export const ProductsPage = () => {
                                                         <textarea
                                                             value={formData.short_description || ''}
                                                             onChange={(e) => setFormData({ ...formData, short_description: e.target.value })}
-                                                            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                                            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-sage-500"
                                                             rows={2}
                                                             placeholder="Brève description"
                                                         />
@@ -746,7 +746,7 @@ export const ProductsPage = () => {
                                                             <div className="text-xs text-gray-500 mb-2">Unités multiples</div>
                                                             <div className="flex flex-wrap gap-2">
                                                                 {details.units.map((unit: any) => (
-                                                                    <span key={unit.id} className="px-2 py-1 bg-indigo-100 text-indigo-700 rounded text-xs font-medium">
+                                                                    <span key={unit.id} className="px-2 py-1 bg-sage-100 text-sage-700 rounded text-xs font-medium">
                                                                         {unit.name} ({unit.code})
                                                                     </span>
                                                                 ))}
@@ -802,7 +802,7 @@ export const ProductsPage = () => {
                                                             step="0.01"
                                                             value={formData.price || ''}
                                                             onChange={(e) => setFormData({ ...formData, price: parseFloat(e.target.value) || 0 })}
-                                                            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                                            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-sage-500"
                                                             placeholder="0.00"
                                                         />
                                                     </div>
@@ -813,7 +813,7 @@ export const ProductsPage = () => {
                                                             step="0.01"
                                                             value={formData.discount_price || ''}
                                                             onChange={(e) => setFormData({ ...formData, discount_price: parseFloat(e.target.value) || 0 })}
-                                                            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                                            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-sage-500"
                                                             placeholder="0.00"
                                                         />
                                                     </div>
@@ -824,7 +824,7 @@ export const ProductsPage = () => {
                                                             step="0.01"
                                                             value={formData.buy_price || ''}
                                                             onChange={(e) => setFormData({ ...formData, buy_price: parseFloat(e.target.value) || 0 })}
-                                                            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                                            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-sage-500"
                                                             placeholder="0.00"
                                                         />
                                                     </div>
@@ -834,7 +834,7 @@ export const ProductsPage = () => {
                                                             type="number"
                                                             value={formData.min_order_quantity || 1}
                                                             onChange={(e) => setFormData({ ...formData, min_order_quantity: parseInt(e.target.value) || 1 })}
-                                                            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                                            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-sage-500"
                                                             placeholder="1"
                                                             min="1"
                                                         />
@@ -880,7 +880,7 @@ export const ProductsPage = () => {
                                                         <div key={index} className="border border-gray-200 rounded-lg p-3 bg-gray-50">
                                                             <div className="flex items-center justify-between mb-2">
                                                                 <h4 className="font-semibold text-gray-900">{priceList.price_list.name}</h4>
-                                                                <span className="text-xs bg-blue-100 text-blue-700 px-2 py-1 rounded">
+                                                                <span className="text-xs bg-sage-100 text-sage-700 px-2 py-1 rounded">
                                                                     {priceList.price_list.code}
                                                                 </span>
                                                             </div>
@@ -898,7 +898,7 @@ export const ProductsPage = () => {
                                                                             </div>
                                                                             <div>
                                                                                 <div className="text-xs text-gray-500">Remise</div>
-                                                                                <div className="font-semibold text-blue-700">{parseFloat(detail.discount_rate).toFixed(2)}%</div>
+                                                                                <div className="font-semibold text-sage-700">{parseFloat(detail.discount_rate).toFixed(2)}%</div>
                                                                             </div>
                                                                         </div>
                                                                     ))}
@@ -929,9 +929,9 @@ export const ProductsPage = () => {
                                                             <div className="text-xs text-gray-500">Stock total</div>
                                                             <div className="font-semibold text-green-700 text-lg">{stockSummary.total_stock || 0}</div>
                                                         </div>
-                                                        <div className="p-3 rounded border border-gray-100 bg-blue-50">
+                                                        <div className="p-3 rounded border border-gray-100 bg-sage-50">
                                                             <div className="text-xs text-gray-500">Disponible</div>
-                                                            <div className="font-semibold text-blue-700 text-lg">{stockSummary.available_stock || 0}</div>
+                                                            <div className="font-semibold text-sage-700 text-lg">{stockSummary.available_stock || 0}</div>
                                                         </div>
                                                         <div className="p-3 rounded border border-gray-100 bg-orange-50">
                                                             <div className="text-xs text-gray-500">Réservé</div>
@@ -1093,7 +1093,7 @@ export const ProductsPage = () => {
                                                                 {detailData.data.thumbnails.map((thumb: any, index: number) => (
                                                                     <div
                                                                         key={thumb.id || index}
-                                                                        className="relative aspect-square bg-gradient-to-br from-gray-50 to-gray-100 rounded-lg border-2 border-gray-200 overflow-hidden cursor-pointer group hover:border-blue-400 hover:shadow-lg transition-all duration-200"
+                                                                        className="relative aspect-square bg-gradient-to-br from-gray-50 to-gray-100 rounded-lg border-2 border-gray-200 overflow-hidden cursor-pointer group hover:border-sage-400 hover:shadow-lg transition-all duration-200"
                                                                         onClick={() => {
                                                                             setSelectedImage(thumb.thumbnail || thumb.url);
                                                                             setShowLightbox(true);
@@ -1129,7 +1129,7 @@ export const ProductsPage = () => {
                                                                 {detailData.data.additional_thumbnails.map((thumb: any, index: number) => (
                                                                     <div
                                                                         key={thumb.id || index}
-                                                                        className="relative aspect-square bg-gradient-to-br from-gray-50 to-gray-100 rounded-lg border-2 border-gray-200 overflow-hidden cursor-pointer group hover:border-blue-400 hover:shadow-lg transition-all duration-200"
+                                                                        className="relative aspect-square bg-gradient-to-br from-gray-50 to-gray-100 rounded-lg border-2 border-gray-200 overflow-hidden cursor-pointer group hover:border-sage-400 hover:shadow-lg transition-all duration-200"
                                                                         onClick={() => {
                                                                             setSelectedImage(thumb.thumbnail || thumb.url);
                                                                             setShowLightbox(true);
@@ -1183,7 +1183,7 @@ export const ProductsPage = () => {
                                                                             [key]: e.target.checked
                                                                         }
                                                                     })}
-                                                                    className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                                                                    className="w-4 h-4 text-sage-600 border-gray-300 rounded focus:ring-sage-500"
                                                                 />
                                                             ) : field.type === 'select' && field.options ? (
                                                                 <select
@@ -1195,7 +1195,7 @@ export const ProductsPage = () => {
                                                                             [key]: e.target.value
                                                                         }
                                                                     })}
-                                                                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                                                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-sage-500"
                                                                 >
                                                                     <option value="">Sélectionner...</option>
                                                                     {field.options.map((opt: string) => (
@@ -1213,7 +1213,7 @@ export const ProductsPage = () => {
                                                                             [key]: e.target.value
                                                                         }
                                                                     })}
-                                                                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                                                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-sage-500"
                                                                 />
                                                             )}
                                                         </div>
@@ -1256,7 +1256,7 @@ export const ProductsPage = () => {
                                                                     type="checkbox"
                                                                     checked={formData.is_salable ?? true}
                                                                     onChange={(e) => setFormData({ ...formData, is_salable: e.target.checked })}
-                                                                    className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                                                                    className="w-4 h-4 text-sage-600 border-gray-300 rounded focus:ring-sage-500"
                                                                 />
                                                                 <span>Vendable</span>
                                                             </label>
@@ -1265,7 +1265,7 @@ export const ProductsPage = () => {
                                                                     type="checkbox"
                                                                     checked={formData.is_returnable ?? true}
                                                                     onChange={(e) => setFormData({ ...formData, is_returnable: e.target.checked })}
-                                                                    className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                                                                    className="w-4 h-4 text-sage-600 border-gray-300 rounded focus:ring-sage-500"
                                                                 />
                                                                 <span>Retournable</span>
                                                             </label>
@@ -1274,7 +1274,7 @@ export const ProductsPage = () => {
                                                                     type="checkbox"
                                                                     checked={formData.is_discountable ?? true}
                                                                     onChange={(e) => setFormData({ ...formData, is_discountable: e.target.checked })}
-                                                                    className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                                                                    className="w-4 h-4 text-sage-600 border-gray-300 rounded focus:ring-sage-500"
                                                                 />
                                                                 <span>Remisable</span>
                                                             </label>
@@ -1283,7 +1283,7 @@ export const ProductsPage = () => {
                                                                     type="checkbox"
                                                                     checked={formData.is_expirable ?? false}
                                                                     onChange={(e) => setFormData({ ...formData, is_expirable: e.target.checked })}
-                                                                    className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                                                                    className="w-4 h-4 text-sage-600 border-gray-300 rounded focus:ring-sage-500"
                                                                 />
                                                                 <span>Périssable</span>
                                                             </label>
@@ -1292,7 +1292,7 @@ export const ProductsPage = () => {
                                                                     type="checkbox"
                                                                     checked={formData.is_backorder_allowed ?? true}
                                                                     onChange={(e) => setFormData({ ...formData, is_backorder_allowed: e.target.checked })}
-                                                                    className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                                                                    className="w-4 h-4 text-sage-600 border-gray-300 rounded focus:ring-sage-500"
                                                                 />
                                                                 <span>Commande en rupture</span>
                                                             </label>
@@ -1301,7 +1301,7 @@ export const ProductsPage = () => {
                                                                     type="checkbox"
                                                                     checked={formData.is_weight_managed ?? true}
                                                                     onChange={(e) => setFormData({ ...formData, is_weight_managed: e.target.checked })}
-                                                                    className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                                                                    className="w-4 h-4 text-sage-600 border-gray-300 rounded focus:ring-sage-500"
                                                                 />
                                                                 <span>Géré par poids</span>
                                                             </label>
@@ -1315,7 +1315,7 @@ export const ProductsPage = () => {
                                                                     type="checkbox"
                                                                     checked={formData.is_featured ?? false}
                                                                     onChange={(e) => setFormData({ ...formData, is_featured: e.target.checked })}
-                                                                    className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                                                                    className="w-4 h-4 text-sage-600 border-gray-300 rounded focus:ring-sage-500"
                                                                 />
                                                                 <span>Produit vedette</span>
                                                             </label>
@@ -1324,7 +1324,7 @@ export const ProductsPage = () => {
                                                                     type="checkbox"
                                                                     checked={formData.is_quotation_required ?? false}
                                                                     onChange={(e) => setFormData({ ...formData, is_quotation_required: e.target.checked })}
-                                                                    className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                                                                    className="w-4 h-4 text-sage-600 border-gray-300 rounded focus:ring-sage-500"
                                                                 />
                                                                 <span>Devis requis</span>
                                                             </label>
@@ -1333,7 +1333,7 @@ export const ProductsPage = () => {
                                                                     type="checkbox"
                                                                     checked={formData.is_visible_individually ?? true}
                                                                     onChange={(e) => setFormData({ ...formData, is_visible_individually: e.target.checked })}
-                                                                    className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                                                                    className="w-4 h-4 text-sage-600 border-gray-300 rounded focus:ring-sage-500"
                                                                 />
                                                                 <span>Visible individuellement</span>
                                                             </label>
@@ -1342,7 +1342,7 @@ export const ProductsPage = () => {
                                                                     type="checkbox"
                                                                     checked={formData.requires_login_to_view ?? false}
                                                                     onChange={(e) => setFormData({ ...formData, requires_login_to_view: e.target.checked })}
-                                                                    className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                                                                    className="w-4 h-4 text-sage-600 border-gray-300 rounded focus:ring-sage-500"
                                                                 />
                                                                 <span>Connexion requise</span>
                                                             </label>
@@ -1357,7 +1357,7 @@ export const ProductsPage = () => {
                                                                     type="text"
                                                                     value={formData.meta_title || ''}
                                                                     onChange={(e) => setFormData({ ...formData, meta_title: e.target.value })}
-                                                                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                                                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-sage-500"
                                                                     placeholder="Titre pour les moteurs de recherche"
                                                                 />
                                                             </div>
@@ -1366,7 +1366,7 @@ export const ProductsPage = () => {
                                                                 <textarea
                                                                     value={formData.meta_description || ''}
                                                                     onChange={(e) => setFormData({ ...formData, meta_description: e.target.value })}
-                                                                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                                                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-sage-500"
                                                                     rows={2}
                                                                     placeholder="Description pour les moteurs de recherche"
                                                                 />
@@ -1377,7 +1377,7 @@ export const ProductsPage = () => {
                                                                     type="text"
                                                                     value={formData.meta_keywords || ''}
                                                                     onChange={(e) => setFormData({ ...formData, meta_keywords: e.target.value })}
-                                                                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                                                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-sage-500"
                                                                     placeholder="mot1, mot2, mot3"
                                                                 />
                                                             </div>
@@ -1447,25 +1447,25 @@ export const ProductsPage = () => {
                                                             <div className="grid grid-cols-2 gap-2">
                                                                 {details.marketing.is_featured && (
                                                                     <div className="flex items-center gap-2 text-sm">
-                                                                        <CheckCircle2 className="w-4 h-4 text-blue-600" />
+                                                                        <CheckCircle2 className="w-4 h-4 text-sage-600" />
                                                                         <span>En vedette</span>
                                                                     </div>
                                                                 )}
                                                                 {details.marketing.is_visible_individually && (
                                                                     <div className="flex items-center gap-2 text-sm">
-                                                                        <CheckCircle2 className="w-4 h-4 text-blue-600" />
+                                                                        <CheckCircle2 className="w-4 h-4 text-sage-600" />
                                                                         <span>Visible individuellement</span>
                                                                     </div>
                                                                 )}
                                                                 {details.marketing.is_free_good && (
                                                                     <div className="flex items-center gap-2 text-sm">
-                                                                        <CheckCircle2 className="w-4 h-4 text-blue-600" />
+                                                                        <CheckCircle2 className="w-4 h-4 text-sage-600" />
                                                                         <span>Produit gratuit</span>
                                                                     </div>
                                                                 )}
                                                                 {details.marketing.is_quotation_required && (
                                                                     <div className="flex items-center gap-2 text-sm">
-                                                                        <CheckCircle2 className="w-4 h-4 text-blue-600" />
+                                                                        <CheckCircle2 className="w-4 h-4 text-sage-600" />
                                                                         <span>Devis requis</span>
                                                                     </div>
                                                                 )}
@@ -1489,7 +1489,7 @@ export const ProductsPage = () => {
                                             {details?.categories && details.categories.length > 0 ? (
                                                 <div className="flex flex-wrap gap-2">
                                                     {details.categories.map((cat: any) => (
-                                                        <span key={cat.id} className="px-3 py-1 bg-blue-100 text-blue-700 rounded-full text-sm">
+                                                        <span key={cat.id} className="px-3 py-1 bg-sage-100 text-sage-700 rounded-full text-sm">
                                                             {cat.name}
                                                         </span>
                                                     ))}

@@ -43,7 +43,7 @@ export function RealtimeWorkflowMonitor({
     if (!progress) {
         return (
             <div className={cn('flex items-center justify-center p-8', className)}>
-                <Loader2 className="w-8 h-8 animate-spin text-blue-600" />
+                <Loader2 className="w-8 h-8 animate-spin text-sage-600" />
             </div>
         );
     }
@@ -65,7 +65,7 @@ export function RealtimeWorkflowMonitor({
                 </div>
                 <button
                     onClick={refetch}
-                    className="text-sm text-blue-600 hover:text-blue-700"
+                    className="text-sm text-sage-600 hover:text-sage-700"
                 >
                     Refresh
                 </button>
@@ -75,13 +75,13 @@ export function RealtimeWorkflowMonitor({
             <div className="bg-white border border-gray-200 rounded-lg p-4">
                 <div className="flex items-center justify-between mb-2">
                     <h3 className="text-lg font-semibold text-gray-900">Workflow Progress</h3>
-                    <span className="text-2xl font-bold text-blue-600">
+                    <span className="text-2xl font-bold text-sage-600">
                         {progress.progress_percentage.toFixed(0)}%
                     </span>
                 </div>
                 <div className="w-full bg-gray-200 rounded-full h-3 overflow-hidden">
                     <div
-                        className="bg-blue-600 h-full transition-all duration-500 ease-out"
+                        className="bg-sage-500 h-full transition-all duration-500 ease-out"
                         style={{ width: `${progress.progress_percentage}%` }}
                     />
                 </div>

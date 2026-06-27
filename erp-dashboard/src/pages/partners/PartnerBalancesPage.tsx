@@ -219,7 +219,7 @@ export const PartnerBalancesPage = () => {
                                 {/* Info Grid */}
                                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
                                     <div className="p-4 rounded-xl border border-gray-100 bg-gray-50 flex items-center gap-4">
-                                        <div className="p-3 bg-white rounded-lg shadow-sm text-blue-500">
+                                        <div className="p-3 bg-white rounded-lg shadow-sm text-sage-500">
                                             <Clock className="w-5 h-5" />
                                         </div>
                                         <div>
@@ -241,8 +241,8 @@ export const PartnerBalancesPage = () => {
                                 </div>
 
                                 {/* Placeholder for History */}
-                                <div className="mt-auto bg-blue-50 border border-blue-100 rounded-xl p-6 text-blue-800 flex items-start gap-4">
-                                    <div className="p-2 bg-blue-100 rounded-lg text-blue-600 shrink-0">
+                                <div className="mt-auto bg-sage-50 border border-sage-100 rounded-xl p-6 text-sage-800 flex items-start gap-4">
+                                    <div className="p-2 bg-sage-100 rounded-lg text-sage-600 shrink-0">
                                         <Filter className="w-5 h-5" />
                                     </div>
                                     <div>

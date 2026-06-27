@@ -14,8 +14,8 @@ interface StatsCardProps {
 
 const colorVariants = {
     blue: {
-        icon: 'text-blue-600 dark:text-blue-400',
-        bg: 'bg-blue-50 dark:bg-blue-900/20',
+        icon: 'text-sage-600 dark:text-sage-400',
+        bg: 'bg-sage-50 dark:bg-sage-900/20',
     },
     emerald: {
         icon: 'text-emerald-600 dark:text-emerald-400',

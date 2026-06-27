@@ -26,7 +26,7 @@ const StatCard = ({
     const colors = {
         amber: { bg: 'bg-amber-50', icon: 'text-amber-500', border: 'border-amber-200', text: 'text-amber-700' },
         red: { bg: 'bg-red-50', icon: 'text-red-500', border: 'border-red-200', text: 'text-red-700' },
-        blue: { bg: 'bg-blue-50', icon: 'text-blue-500', border: 'border-blue-200', text: 'text-blue-700' },
+        blue: { bg: 'bg-sage-50', icon: 'text-sage-500', border: 'border-sage-200', text: 'text-sage-700' },
     }[color];
 
     return (
@@ -60,7 +60,7 @@ const buildColumns = (): ColDef<Invoice>[] => [
         pinned: 'left',
         cellRenderer: (p: any) => (
             <div className="flex items-center h-full">
-                <span className="font-mono font-bold text-blue-600 text-xs">{p.value}</span>
+                <span className="font-mono font-bold text-sage-600 text-xs">{p.value}</span>
             </div>
         ),
     },
@@ -182,7 +182,7 @@ const AdvEcheancesContent = () => {
                         <button
                             onClick={handleExport}
                             disabled={!filtered.length}
-                            className="px-3.5 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm font-medium flex items-center gap-1.5 disabled:opacity-50 transition-colors"
+                            className="px-3.5 py-2 bg-sage-500 hover:bg-sage-600 text-white rounded-lg text-sm font-medium flex items-center gap-1.5 disabled:opacity-50 transition-colors"
                         >
                             <Download className="w-4 h-4" />
                             CSV

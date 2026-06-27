@@ -371,7 +371,7 @@ export const ImportPage = () => {
         <div className="flex flex-col h-full bg-white border-r border-gray-200 w-full">
             <div className="p-4 border-b border-gray-200 flex justify-between items-center bg-gray-50/50">
                 <h2 className="font-bold text-gray-900">Templates d'Import</h2>
-                <div className="text-xs px-2 py-1 bg-blue-100 text-blue-700 rounded-full font-medium">
+                <div className="text-xs px-2 py-1 bg-sage-100 text-sage-700 rounded-full font-medium">
                     {templates.length} template(s)
                 </div>
             </div>
@@ -398,7 +398,7 @@ export const ImportPage = () => {
                     <div className="h-full overflow-hidden flex flex-col">
                         {loading ? (
                             <div className="h-full flex flex-col items-center justify-center text-gray-400">
-                                <Loader2 className="w-8 h-8 animate-spin mb-2 text-blue-500" />
+                                <Loader2 className="w-8 h-8 animate-spin mb-2 text-sage-500" />
                                 <p>Chargement...</p>
                             </div>
                         ) : selectedTemplate ? (
@@ -465,7 +465,7 @@ interface ActionItemProps {
 const ActionItem = ({ icon: Icon, label, onClick, variant = 'default', disabled = false }: ActionItemProps) => {
     const variants = {
         default: "text-gray-400 hover:text-gray-700 hover:bg-gray-50",
-        primary: "text-gray-400 hover:text-blue-600 hover:bg-blue-50",
+        primary: "text-gray-400 hover:text-sage-600 hover:bg-sage-50",
         success: "text-gray-400 hover:text-green-600 hover:bg-green-50"
     };
 
@@ -501,7 +501,7 @@ const ActionPanel = ({ onRefresh, onStartImport, onReset, hasSelection, hasFile,
         <div className="flex flex-col h-full bg-white border-l border-gray-200 w-11 shrink-0 shadow-[0_0_15px_rgba(0,0,0,0.05)] z-40 transition-all duration-300">
             <ActionGroup>
                 <div className="w-full flex justify-center mb-1">
-                    <div className="w-6 h-0.5 bg-blue-500 rounded-full opacity-50"></div>
+                    <div className="w-6 h-0.5 bg-sage-500 rounded-full opacity-50"></div>
                 </div>
                 <ActionItem
                     icon={CheckCircle}

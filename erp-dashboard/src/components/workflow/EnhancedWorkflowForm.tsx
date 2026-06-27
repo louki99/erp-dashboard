@@ -54,9 +54,9 @@ export function EnhancedWorkflowForm({ workflow, onSubmit, onCancel }: EnhancedW
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
             <div className="bg-white rounded-lg shadow-xl max-w-3xl w-full max-h-[90vh] overflow-hidden flex flex-col">
                 {/* Header */}
-                <div className="flex items-center justify-between p-6 border-b border-gray-200 bg-gradient-to-r from-blue-50 to-indigo-50">
+                <div className="flex items-center justify-between p-6 border-b border-gray-200 bg-gradient-to-r from-sage-50 to-sage-50">
                     <div className="flex items-center gap-3">
-                        <div className="p-2 bg-blue-600 rounded-lg">
+                        <div className="p-2 bg-sage-500 rounded-lg">
                             <Workflow className="w-6 h-6 text-white" />
                         </div>
                         <div>
@@ -82,7 +82,7 @@ export function EnhancedWorkflowForm({ workflow, onSubmit, onCancel }: EnhancedW
                         <div className="flex items-center justify-between max-w-md mx-auto">
                             <div className="flex items-center">
                                 <div className={`w-8 h-8 rounded-full flex items-center justify-center ${
-                                    step >= 1 ? 'bg-blue-600 text-white' : 'bg-gray-200 text-gray-600'
+                                    step >= 1 ? 'bg-sage-500 text-white' : 'bg-gray-200 text-gray-600'
                                 }`}>
                                     {step > 1 ? <CheckCircle className="w-5 h-5" /> : '1'}
                                 </div>
@@ -91,7 +91,7 @@ export function EnhancedWorkflowForm({ workflow, onSubmit, onCancel }: EnhancedW
                             <div className="flex-1 h-0.5 bg-gray-300 mx-4"></div>
                             <div className="flex items-center">
                                 <div className={`w-8 h-8 rounded-full flex items-center justify-center ${
-                                    step >= 2 ? 'bg-blue-600 text-white' : 'bg-gray-200 text-gray-600'
+                                    step >= 2 ? 'bg-sage-500 text-white' : 'bg-gray-200 text-gray-600'
                                 }`}>
                                     2
                                 </div>
@@ -123,7 +123,7 @@ export function EnhancedWorkflowForm({ workflow, onSubmit, onCancel }: EnhancedW
                                             },
                                         })}
                                         disabled={isEdit}
-                                        className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent disabled:bg-gray-100 disabled:cursor-not-allowed"
+                                        className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-sage-500 focus:border-transparent disabled:bg-gray-100 disabled:cursor-not-allowed"
                                         placeholder="BC, BL, BCH, BP"
                                     />
                                     {errors.code && (
@@ -152,7 +152,7 @@ export function EnhancedWorkflowForm({ workflow, onSubmit, onCancel }: EnhancedW
                                             required: 'Name is required',
                                             maxLength: { value: 255, message: 'Name must be less than 255 characters' },
                                         })}
-                                        className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                                        className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-sage-500 focus:border-transparent"
                                         placeholder="Bon de Commande Workflow"
                                     />
                                     {errors.name && (
@@ -179,7 +179,7 @@ export function EnhancedWorkflowForm({ workflow, onSubmit, onCancel }: EnhancedW
                                     <textarea
                                         {...register('description')}
                                         rows={4}
-                                        className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                                        className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-sage-500 focus:border-transparent"
                                         placeholder="Describe the purpose of this workflow, when it should be used, and what it accomplishes..."
                                     />
                                     <p className="mt-1 text-xs text-gray-500">
@@ -194,7 +194,7 @@ export function EnhancedWorkflowForm({ workflow, onSubmit, onCancel }: EnhancedW
                                             type="checkbox"
                                             id="is_active"
                                             {...register('is_active')}
-                                            className="mt-1 w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                                            className="mt-1 w-4 h-4 text-sage-600 border-gray-300 rounded focus:ring-sage-500"
                                         />
                                         <div className="flex-1">
                                             <label htmlFor="is_active" className="text-sm font-medium text-gray-900 cursor-pointer">
@@ -209,14 +209,14 @@ export function EnhancedWorkflowForm({ workflow, onSubmit, onCancel }: EnhancedW
                                 </div>
 
                                 {/* Info Box */}
-                                <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+                                <div className="bg-sage-50 border border-sage-200 rounded-lg p-4">
                                     <div className="flex items-start gap-3">
-                                        <CheckCircle className="w-5 h-5 text-blue-600 mt-0.5" />
+                                        <CheckCircle className="w-5 h-5 text-sage-600 mt-0.5" />
                                         <div className="flex-1">
-                                            <h4 className="text-sm font-semibold text-blue-900 mb-1">
+                                            <h4 className="text-sm font-semibold text-sage-900 mb-1">
                                                 Next Steps
                                             </h4>
-                                            <ul className="text-xs text-blue-800 space-y-1">
+                                            <ul className="text-xs text-sage-800 space-y-1">
                                                 <li>• After creating the workflow, you can add task templates</li>
                                                 <li>• Define dependencies between tasks to control execution order</li>
                                                 <li>• Add validation rules to ensure data quality</li>
@@ -257,7 +257,7 @@ export function EnhancedWorkflowForm({ workflow, onSubmit, onCancel }: EnhancedW
                                     type="button"
                                     onClick={() => setStep(2)}
                                     disabled={!canProceedToStep2}
-                                    className="px-6 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                                    className="px-6 py-2 bg-sage-500 hover:bg-sage-600 text-white rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                                 >
                                     Next Step
                                 </button>
@@ -265,7 +265,7 @@ export function EnhancedWorkflowForm({ workflow, onSubmit, onCancel }: EnhancedW
                                 <button
                                     type="submit"
                                     disabled={submitting}
-                                    className="inline-flex items-center px-6 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors disabled:opacity-50"
+                                    className="inline-flex items-center px-6 py-2 bg-sage-500 hover:bg-sage-600 text-white rounded-lg transition-colors disabled:opacity-50"
                                 >
                                     {submitting ? (
                                         <>

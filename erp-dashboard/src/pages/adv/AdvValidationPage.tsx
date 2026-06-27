@@ -283,7 +283,7 @@ const DetailHeader = ({ data }: { data: BcDetailData }) => {
                         <div className="flex items-center gap-2.5 mb-1.5">
                             <h1 className="text-xl font-black text-gray-900 font-mono tracking-tight">{bc.order_code}</h1>
                             <Pill className={cfg.badge}><span className={cn('w-1.5 h-1.5 rounded-full', cfg.dot)} />{cfg.label}</Pill>
-                            {bc.is_preorder && <Pill className="bg-blue-50 text-blue-700 ring-blue-200">Pré-commande</Pill>}
+                            {bc.is_preorder && <Pill className="bg-sage-50 text-sage-700 ring-sage-200">Pré-commande</Pill>}
                         </div>
                         <div className="flex items-center gap-2 text-sm text-gray-500">
                             <Building className="w-3.5 h-3.5 text-gray-400" />
@@ -445,10 +445,10 @@ const TabResume = ({ data, onRefresh }: { data: BcDetailData; onRefresh: () => v
                         <CardHeader icon={Clock} title="État Workflow" />
                         <div className="p-5">
                             <div className="flex items-start gap-4 mb-4">
-                                <div className="flex-1 p-3 bg-indigo-50 border border-indigo-100 rounded-xl">
-                                    <p className="text-[10px] text-indigo-400 font-semibold uppercase tracking-wider">Étape actuelle</p>
-                                    <p className="text-sm font-bold text-indigo-800 mt-0.5">{wi.current_step.name}</p>
-                                    <p className="text-xs text-indigo-500 font-mono mt-0.5">{wi.current_step.code}</p>
+                                <div className="flex-1 p-3 bg-sage-50 border border-sage-100 rounded-xl">
+                                    <p className="text-[10px] text-sage-400 font-semibold uppercase tracking-wider">Étape actuelle</p>
+                                    <p className="text-sm font-bold text-sage-800 mt-0.5">{wi.current_step.name}</p>
+                                    <p className="text-xs text-sage-500 font-mono mt-0.5">{wi.current_step.code}</p>
                                 </div>
                                 <div className="px-3 py-2 bg-gray-50 border border-gray-100 rounded-xl text-center">
                                     <p className="text-[10px] text-gray-400 font-semibold uppercase">Statut</p>
@@ -481,9 +481,9 @@ const TabResume = ({ data, onRefresh }: { data: BcDetailData; onRefresh: () => v
                             <p className="text-2xl font-black">{fmt(bc.total_amount)} <span className="text-sm font-normal opacity-70">Dh</span></p>
                         </div>
                         <div className="grid grid-cols-2 gap-2">
-                            <div className="p-3 bg-blue-50 border border-blue-100 rounded-xl">
-                                <p className="text-[10px] text-blue-400 font-semibold uppercase">HT</p>
-                                <p className="text-sm font-black text-blue-800 mt-0.5">{fmt(bc.sub_total)} Dh</p>
+                            <div className="p-3 bg-sage-50 border border-sage-100 rounded-xl">
+                                <p className="text-[10px] text-sage-400 font-semibold uppercase">HT</p>
+                                <p className="text-sm font-black text-sage-800 mt-0.5">{fmt(bc.sub_total)} Dh</p>
                             </div>
                             <div className="p-3 bg-amber-50 border border-amber-100 rounded-xl">
                                 <p className="text-[10px] text-amber-400 font-semibold uppercase">TVA</p>
@@ -498,7 +498,7 @@ const TabResume = ({ data, onRefresh }: { data: BcDetailData; onRefresh: () => v
                             </div>
                             <div className="flex justify-between text-xs">
                                 <span className="text-gray-500">Vente crédit</span>
-                                <Pill className={bc.financial_metadata?.is_credit_sale ? 'bg-indigo-50 text-indigo-700 ring-indigo-200' : 'bg-gray-50 text-gray-600 ring-gray-200'}>
+                                <Pill className={bc.financial_metadata?.is_credit_sale ? 'bg-sage-50 text-sage-700 ring-sage-200' : 'bg-gray-50 text-gray-600 ring-gray-200'}>
                                     {bc.financial_metadata?.is_credit_sale ? 'Oui' : 'Non'}
                                 </Pill>
                             </div>
@@ -949,7 +949,7 @@ const TabLogistique = ({ logistics }: { logistics?: LogisticsAggregate }) => {
                                 ))}
                             </div>
                             <div className="flex flex-wrap gap-1.5 mt-3">
-                                {prod.profile_flags.stackable && <span className="text-[10px] px-2 py-0.5 bg-blue-50 text-blue-600 border border-blue-100 rounded-lg">Empilable</span>}
+                                {prod.profile_flags.stackable && <span className="text-[10px] px-2 py-0.5 bg-sage-50 text-sage-600 border border-sage-100 rounded-lg">Empilable</span>}
                                 {prod.profile_flags.fragile && <span className="text-[10px] px-2 py-0.5 bg-red-50 text-red-600 border border-red-100 rounded-lg">Fragile</span>}
                                 {prod.profile_flags.keep_upright && <span className="text-[10px] px-2 py-0.5 bg-slate-50 text-slate-600 border border-slate-100 rounded-lg">À l'endroit</span>}
                                 {prod.profile_flags.temperature_controlled && <span className="text-[10px] px-2 py-0.5 bg-cyan-50 text-cyan-600 border border-cyan-100 rounded-lg">Tempéré</span>}
@@ -974,8 +974,8 @@ const TabLogistique = ({ logistics }: { logistics?: LogisticsAggregate }) => {
                 </Card>
             )}
             {logistics.notes?.length > 0 && (
-                <div className="p-4 bg-blue-50 border border-blue-100 rounded-xl">
-                    {logistics.notes.map((note, i) => <p key={i} className="text-xs text-blue-700">{note}</p>)}
+                <div className="p-4 bg-sage-50 border border-sage-100 rounded-xl">
+                    {logistics.notes.map((note, i) => <p key={i} className="text-xs text-sage-700">{note}</p>)}
                 </div>
             )}
         </div>
@@ -1002,7 +1002,7 @@ const TabHistorique = ({ bc, orderId }: { bc: BC; orderId: number }) => {
                             <div className="space-y-4">
                                 {transitions.map(t => (
                                     <div key={t.id} className="relative pl-10">
-                                        <div className={cn('absolute left-3 top-1.5 w-2.5 h-2.5 rounded-full border-2 border-white ring-2', t.action === 'submit_order' ? 'bg-blue-500 ring-blue-200' : t.action === 'initialized' ? 'bg-gray-400 ring-gray-200' : 'bg-sage-500 ring-sage-200')} />
+                                        <div className={cn('absolute left-3 top-1.5 w-2.5 h-2.5 rounded-full border-2 border-white ring-2', t.action === 'submit_order' ? 'bg-sage-500 ring-sage-200' : t.action === 'initialized' ? 'bg-gray-400 ring-gray-200' : 'bg-sage-500 ring-sage-200')} />
                                         <div className="bg-gray-50 border border-gray-100 rounded-xl p-3.5">
                                             <div className="flex items-center justify-between mb-1.5">
                                                 <span className="text-[10px] font-mono font-bold text-gray-700 px-1.5 py-0.5 bg-white border border-gray-200 rounded-md">{t.action}</span>

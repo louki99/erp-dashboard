@@ -26,7 +26,7 @@ export function WorkflowMonitoringPage() {
                             <div className="flex items-center justify-between mb-2">
                                 <div>
                                     <h1 className="text-2xl font-bold text-gray-900 flex items-center gap-2">
-                                        <Activity className="w-7 h-7 text-blue-600" />
+                                        <Activity className="w-7 h-7 text-sage-600" />
                                         Workflow Monitoring
                                     </h1>
                                     <p className="text-gray-600 mt-1">
@@ -43,28 +43,28 @@ export function WorkflowMonitoringPage() {
                                     onClick={() => setActiveTab('sla')}
                                     className={`pb-3 px-1 font-medium transition-colors relative ${
                                         activeTab === 'sla'
-                                            ? 'text-blue-600'
+                                            ? 'text-sage-600'
                                             : 'text-gray-600 hover:text-gray-900'
                                     }`}
                                 >
                                     <TrendingUp className="w-4 h-4 inline mr-2" />
                                     SLA Dashboard
                                     {activeTab === 'sla' && (
-                                        <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-blue-600"></div>
+                                        <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-sage-500"></div>
                                     )}
                                 </button>
                                 <button
                                     onClick={() => setActiveTab('workflow')}
                                     className={`pb-3 px-1 font-medium transition-colors relative ${
                                         activeTab === 'workflow'
-                                            ? 'text-blue-600'
+                                            ? 'text-sage-600'
                                             : 'text-gray-600 hover:text-gray-900'
                                     }`}
                                 >
                                     <Activity className="w-4 h-4 inline mr-2" />
                                     Workflow Tracker
                                     {activeTab === 'workflow' && (
-                                        <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-blue-600"></div>
+                                        <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-sage-500"></div>
                                     )}
                                 </button>
                             </div>
@@ -89,7 +89,7 @@ export function WorkflowMonitoringPage() {
                                                     placeholder="Enter BC/BL/BCH/BP ID..."
                                                     value={searchQuery}
                                                     onChange={(e) => setSearchQuery(e.target.value)}
-                                                    className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                                                    className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-sage-500 focus:border-transparent"
                                                 />
                                             </div>
                                         </div>
@@ -103,7 +103,7 @@ export function WorkflowMonitoringPage() {
                                                         });
                                                     }
                                                 }}
-                                                className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors"
+                                                className="px-4 py-2 bg-sage-500 hover:bg-sage-600 text-white rounded-lg transition-colors"
                                             >
                                                 Track Workflow
                                             </button>

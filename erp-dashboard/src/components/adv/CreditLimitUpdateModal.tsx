@@ -220,9 +220,9 @@ export const CreditLimitUpdateModal = ({
                     </div>
 
                     {/* Info Notice */}
-                    <div className="mb-6 p-4 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg flex items-start gap-3">
-                        <Info className="w-5 h-5 text-blue-600 dark:text-blue-400 shrink-0 mt-0.5" />
-                        <p className="text-sm text-blue-900 dark:text-blue-100">
+                    <div className="mb-6 p-4 bg-sage-50 dark:bg-sage-900/20 border border-sage-200 dark:border-sage-800 rounded-lg flex items-start gap-3">
+                        <Info className="w-5 h-5 text-sage-600 dark:text-sage-400 shrink-0 mt-0.5" />
+                        <p className="text-sm text-sage-900 dark:text-sage-100">
                             Cette modification sera enregistrée dans l'historique des crédits du partenaire.
                         </p>
                     </div>

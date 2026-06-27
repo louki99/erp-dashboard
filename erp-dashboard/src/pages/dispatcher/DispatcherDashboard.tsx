@@ -44,14 +44,14 @@ const WorkspaceCard = ({
           {step}
         </span>
       </div>
-      <h3 className="text-sm font-bold text-gray-900 group-hover:text-blue-700 transition-colors">{title}</h3>
+      <h3 className="text-sm font-bold text-gray-900 group-hover:text-sage-700 transition-colors">{title}</h3>
       <p className="text-xs text-gray-500 mt-1 leading-relaxed">{description}</p>
       <div className="flex items-center justify-between mt-4 pt-3 border-t border-gray-50">
         <div>
           <span className="text-2xl font-bold text-gray-900">{metric}</span>
           <span className="text-xs text-gray-400 ml-1.5">{metricLabel}</span>
         </div>
-        <span className="flex items-center gap-1 text-xs font-semibold text-blue-600 group-hover:gap-2 transition-all">
+        <span className="flex items-center gap-1 text-xs font-semibold text-sage-600 group-hover:gap-2 transition-all">
           Ouvrir <ArrowRight className="w-3.5 h-3.5" />
         </span>
       </div>
@@ -205,7 +205,7 @@ const DashboardContent = () => {
           <p className="text-red-600 font-medium text-sm">{error || 'Données indisponibles'}</p>
           <button
             onClick={refetch}
-            className="px-4 py-2 bg-blue-600 text-white text-sm rounded-lg hover:bg-blue-700 transition-colors"
+            className="px-4 py-2 bg-sage-500 text-white text-sm rounded-lg hover:bg-sage-600 transition-colors"
           >
             Réessayer
           </button>
@@ -282,7 +282,7 @@ const DashboardContent = () => {
             title="Workspace Missions"
             description="Regrouper les BC confirmés en mission (rider + véhicule), générer les BL et lancer la préparation."
             icon={Route}
-            gradient="bg-blue-600"
+            gradient="bg-sage-500"
             metric={pipeline.bc_confirmed}
             metricLabel="BC en attente"
             step="Étape 1"
@@ -303,7 +303,7 @@ const DashboardContent = () => {
             description="Vue Kanban en lecture seule de toutes les missions de livraison."
             icon={Activity}
             gradient="bg-emerald-600"
-            metric={pipeline.missions_draft + pipeline.missions_in_preparation + pipeline.missions_ready + pipeline.missions_in_transit}
+            metric={pipeline.missions_draft + pipeline.missions_in_preparation + pipeline.missions_awaiting_shortage_review + pipeline.missions_ready + pipeline.missions_in_transit}
             metricLabel="Missions actives"
             step="Suivi"
             onClick={() => navigate('/dispatcher/monitor')}
@@ -322,8 +322,8 @@ const DashboardContent = () => {
             label="Commandes confirmées"
             value={pipeline.bc_confirmed}
             icon={ShoppingCart}
-            color="text-blue-600"
-            bg="bg-blue-50"
+            color="text-sage-600"
+            bg="bg-sage-50"
             urgent={pipeline.bc_confirmed > 0}
             onClick={() => navigate('/dispatcher/orders')}
           />
@@ -364,12 +364,13 @@ const DashboardContent = () => {
           {/* Row 1: Entry → Planning */}
           <div className="flex items-stretch gap-2 overflow-x-auto pb-1">
             <PipelineGroup label="Entrée">
-              <PipelineStage label="BC confirmés" count={pipeline.bc_confirmed} color="bg-blue-50 border-blue-200" textColor="text-blue-700" dotColor="bg-blue-500" urgent={pipeline.bc_confirmed > 0} />
+              <PipelineStage label="BC confirmés" count={pipeline.bc_confirmed} color="bg-sage-50 border-sage-200" textColor="text-sage-700" dotColor="bg-sage-500" urgent={pipeline.bc_confirmed > 0} />
             </PipelineGroup>
             <PipelineArrow />
             <PipelineGroup label="Missions">
               <PipelineStage label="Brouillon" count={pipeline.missions_draft} color="bg-indigo-50 border-indigo-200" textColor="text-indigo-700" dotColor="bg-indigo-500" />
               <PipelineStage label="En prép." count={pipeline.missions_in_preparation} color="bg-violet-50 border-violet-200" textColor="text-violet-700" dotColor="bg-violet-500" />
+              <PipelineStage label="Rupture à examiner" count={pipeline.missions_awaiting_shortage_review} color="bg-red-50 border-red-200" textColor="text-red-700" dotColor="bg-red-500" urgent={pipeline.missions_awaiting_shortage_review > 0} />
               <PipelineStage label="Prêtes" count={pipeline.missions_ready} color="bg-purple-50 border-purple-200" textColor="text-purple-700" dotColor="bg-purple-500" />
               <PipelineStage label="En transit" count={pipeline.missions_in_transit} color="bg-fuchsia-50 border-fuchsia-200" textColor="text-fuchsia-700" dotColor="bg-fuchsia-500" />
             </PipelineGroup>
@@ -407,12 +408,12 @@ const DashboardContent = () => {
         <div className="bg-white border border-gray-200 rounded-xl shadow-sm overflow-hidden">
           <div className="px-5 py-3.5 border-b border-gray-100 flex items-center justify-between">
             <div className="flex items-center gap-2">
-              <ShoppingCart className="w-4 h-4 text-blue-500" />
+              <ShoppingCart className="w-4 h-4 text-sage-500" />
               <span className="text-sm font-bold text-gray-800">Commandes récentes à dispatcher</span>
             </div>
             <button
               onClick={() => navigate('/dispatcher/orders')}
-              className="text-xs font-medium text-blue-600 hover:text-blue-700 flex items-center gap-1"
+              className="text-xs font-medium text-sage-600 hover:text-sage-700 flex items-center gap-1"
             >
               Voir tout <ArrowRight className="w-3 h-3" />
             </button>
@@ -426,7 +427,7 @@ const DashboardContent = () => {
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2">
                     <span className="text-sm font-mono font-semibold text-gray-800 truncate">{order.order_code}</span>
-                    <span className="px-1.5 py-0.5 rounded text-xs font-medium bg-blue-100 text-blue-700">
+                    <span className="px-1.5 py-0.5 rounded text-xs font-medium bg-sage-100 text-sage-700">
                       {order.bc_status}
                     </span>
                   </div>
@@ -509,6 +510,7 @@ const DashboardContent = () => {
       {pipeline.bc_confirmed === 0 &&
         pipeline.bl_draft === 0 &&
         pipeline.missions_draft === 0 &&
+        pipeline.missions_awaiting_shortage_review === 0 &&
         pipeline.bl_in_transit === 0 &&
         !hasAlerts && (
           <div className="text-center py-10 text-gray-400">
@@ -527,7 +529,7 @@ export const DispatcherDashboard = () => {
   const navigate = useNavigate();
 
   const navItems = [
-    { label: 'Workspace Missions', href: '/dispatcher/workspace/missions', icon: Route, color: 'text-blue-600 bg-blue-50', desc: 'BC → Mission → BL' },
+    { label: 'Workspace Missions', href: '/dispatcher/workspace/missions', icon: Route, color: 'text-sage-600 bg-sage-50', desc: 'BC → Mission → BL' },
     { label: 'Moniteur Logistique', href: '/dispatcher/monitor', icon: Activity, color: 'text-emerald-600 bg-emerald-50', desc: 'Kanban lecture seule' },
     { label: 'Commandes (BC)', href: '/dispatcher/orders', icon: ShoppingCart, color: 'text-sky-600 bg-sky-50', desc: 'BCs à dispatcher' },
     { label: 'Bons de livraison', href: '/dispatcher/bons-livraisons', icon: Package, color: 'text-amber-600 bg-amber-50', desc: 'BLs actifs' },

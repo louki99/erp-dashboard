@@ -115,7 +115,7 @@ export const PromotionsPage = () => {
         
         if (startDate > now) {
             return (
-                <span className="text-xs px-2 py-0.5 bg-blue-100 text-blue-700 rounded flex items-center gap-1 w-fit">
+                <span className="text-xs px-2 py-0.5 bg-sage-100 text-sage-700 rounded flex items-center gap-1 w-fit">
                     <Clock className="w-3 h-3" />
                     À venir
                 </span>
@@ -200,7 +200,7 @@ export const PromotionsPage = () => {
                                 setEditingPromotionId(promo.id!);
                                 setIsEditDrawerOpen(true);
                             }}
-                            className="p-1.5 text-blue-600 hover:bg-blue-50 rounded transition-colors"
+                            className="p-1.5 text-sage-600 hover:bg-sage-50 rounded transition-colors"
                             title="Modifier"
                         >
                             <Edit className="w-4 h-4" />
@@ -314,13 +314,13 @@ export const PromotionsPage = () => {
                     {selectedPromotion.usage_count !== undefined && (
                         <div className="bg-white rounded-lg border border-gray-200 p-6 shadow-sm">
                             <h3 className="text-base font-semibold text-gray-900 mb-4 flex items-center gap-2">
-                                <div className="w-1 h-5 bg-blue-500 rounded-full"></div>
+                                <div className="w-1 h-5 bg-sage-500 rounded-full"></div>
                                 Statistiques d'Utilisation
                             </h3>
                             <div className="grid grid-cols-2 gap-4">
-                                <div className="p-5 bg-gradient-to-br from-blue-50 to-blue-100/50 rounded-lg border border-blue-200/50">
-                                    <p className="text-xs text-blue-700 font-semibold uppercase tracking-wide">Utilisations</p>
-                                    <p className="text-3xl font-bold text-blue-900 mt-2">{selectedPromotion.usage_count}</p>
+                                <div className="p-5 bg-gradient-to-br from-sage-50 to-sage-100/50 rounded-lg border border-sage-200/50">
+                                    <p className="text-xs text-sage-700 font-semibold uppercase tracking-wide">Utilisations</p>
+                                    <p className="text-3xl font-bold text-sage-900 mt-2">{selectedPromotion.usage_count}</p>
                                 </div>
                                 <div className="p-5 bg-gradient-to-br from-green-50 to-green-100/50 rounded-lg border border-green-200/50">
                                     <p className="text-xs text-green-700 font-semibold uppercase tracking-wide">Remise Totale</p>
@@ -366,7 +366,7 @@ export const PromotionsPage = () => {
                 </button>
                 <button
                     onClick={() => navigate('/promotions/partner-families')}
-                    className="group relative w-8 h-8 flex items-center justify-center rounded-lg transition-all duration-200 mx-auto text-blue-600 hover:text-blue-700 hover:bg-blue-50"
+                    className="group relative w-8 h-8 flex items-center justify-center rounded-lg transition-all duration-200 mx-auto text-sage-600 hover:text-sage-700 hover:bg-sage-50"
                     title="Famille Partenaires"
                 >
                     <Users className="w-4 h-4" />

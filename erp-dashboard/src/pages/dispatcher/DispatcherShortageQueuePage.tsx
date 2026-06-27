@@ -1,45 +1,92 @@
 import { useMemo, useState } from 'react';
 import type { ColDef } from 'ag-grid-community';
+import toast from 'react-hot-toast';
 import {
   Loader2, AlertTriangle, RefreshCw, Package, AlertCircle,
-  ChevronRight, TrendingDown, Info,
+  ChevronRight, TrendingDown, Sparkles, Banknote, Printer, Download,
 } from 'lucide-react';
+import { openPdf, downloadPdf } from '@/utils/pdfUtils';
 
 import { MasterLayout } from '@/components/layout/MasterLayout';
 import { DataGrid } from '@/components/common/DataGrid';
 import { SageCollapsible } from '@/components/common/SageCollapsible';
+import { DecisionActionsBar } from '@/components/dispatcher/DecisionActionsBar';
+import { ShortageAllocationModal } from '@/components/dispatcher/ShortageAllocationModal';
+import { dispatcherApi } from '@/services/api/dispatcherApi';
 import { useDispatcherShortageQueue } from '@/hooks/dispatcher/useDispatcherShortageQueue';
-import type { PreparationOrder, BpStatus } from '@/types/dispatcher.types';
+import type { ApiSuccessResponse, PreparationOrder, BpStatus, ReviewPartialPreparationOutput } from '@/types/dispatcher.types';
 
 const BP_STATUS: Record<BpStatus, { label: string; color: string }> = {
   pending:                  { label: 'En attente',        color: 'bg-gray-100 text-gray-700' },
   in_progress:              { label: 'En cours',          color: 'bg-blue-100 text-blue-700' },
   completed_full:           { label: 'Complété',          color: 'bg-green-100 text-green-700' },
-  completed_partial:        { label: 'Rupture partielle', color: 'bg-orange-100 text-orange-700' },
+  completed_partial:        { label: 'Rupture signalée',  color: 'bg-orange-100 text-orange-700' },
   shortage_accepted:        { label: 'Rupture acceptée',  color: 'bg-yellow-100 text-yellow-800' },
-  awaiting_shortage_review: { label: 'À revoir',          color: 'bg-red-100 text-red-700' },
+  shortage_split_done:      { label: 'Reliquat splitté',  color: 'bg-teal-100 text-teal-700' },
+  awaiting_shortage_review: { label: 'À examiner',        color: 'bg-red-100 text-red-700' },
+  partial_rework_requested: { label: 'Reprise demandée',  color: 'bg-purple-100 text-purple-700' },
   rejected:                 { label: 'Rejeté',            color: 'bg-red-100 text-red-800' },
 };
 
 // ─── Shortage detail panel for a BP ────────────────────────────────────────────
-// 2026-06-20: the old BCH-level "Save Balance" (manual/equal/fifo rebalancing across BLs sharing
-// a BCH, via the `adjust_quantities` decision) has no delivery-mission equivalent — confirmed gap,
-// not ported by backend (config/decisions.php's `delivery-mission` block explicitly notes this).
-// This panel is read-only: it shows the BP's per-item shortage, but there's no in-app action to
-// rebalance it anymore. The old per-BL `allocate_delivery_note` re-run workaround no longer
-// applies either — it was removed 2026-06-22 in favor of the atomic, mission-level
-// `confirm_delivery_mission` (docs §8, runs once per mission, not re-runnable per BL). Until
-// backend adds a mission-level rebalance equivalent, this requires backend-side intervention.
+// Flow (docs §10, fixed/verified live 2026-06-23): completed_partial → [review_partial_
+// preparation] → awaiting_shortage_review → [accept_partial_preparation] → shortage_split_done
+// (backlog BC auto-created) OR [request_rework] → partial_rework_requested → magasinier picks
+// again (continue_preparation, Module 16 §6.8) → completed_full or back to this queue.
+// All 3 decisions render dynamically via DecisionActionsBar (model-agnostic, same as every other
+// module) — no hardcoded buttons, so the available actions always match the BP's real state.
 
 const ShortageDetailPanel = ({
   bp,
   onClose,
+  onRefresh,
 }: {
   bp: PreparationOrder;
   onClose: () => void;
+  onRefresh: () => void;
 }) => {
   const [open, setOpen] = useState(true);
+  const [reviewAnalysis, setReviewAnalysis] = useState<ReviewPartialPreparationOutput | null>(null);
+  const [showAllocationModal, setShowAllocationModal] = useState(false);
   const shortageItems = (bp.items ?? []).filter((i) => (i.shortage_quantity ?? 0) > 0);
+
+  // Captures review_partial_preparation's rich analysis (shortage value, recommended action,
+  // per-line breakdown, and — since 2026-06-23 — shortage_details[].affected_bls, the only source
+  // for the Quantity Controller table below) before handing the response back to
+  // DecisionActionsBar — that output is too valuable to bury in a generic toast.
+  const executeDecisionWithCapture = async (id: number, decision: string, extra?: Record<string, unknown>): Promise<ApiSuccessResponse> => {
+    const res = await dispatcherApi.preparations.executeDecision(id, decision, extra);
+    if (decision === 'review_partial_preparation' && res.success) {
+      setReviewAnalysis(res.output as ReviewPartialPreparationOutput | undefined ?? null);
+    }
+    if (decision === 'accept_partial_preparation' || decision === 'request_rework') {
+      setReviewAnalysis(null);
+    }
+    return res;
+  };
+
+  // affected_bls only exists in review_partial_preparation's own execution output (no read
+  // endpoint) — if this panel never captured it this session (e.g. opened directly on a BP
+  // already awaiting_shortage_review from a prior session), there's currently no way to recover
+  // it. Flagged to backend; for now, block with a clear message instead of opening an empty table.
+  const handleAcceptClick = async () => {
+    if (!reviewAnalysis) {
+      const loadingToast = toast.loading("Récupération des données de répartition...");
+      try {
+        const res = await executeDecisionWithCapture(bp.id, 'review_partial_preparation');
+        toast.dismiss(loadingToast);
+        if (!res.success) {
+          toast.error("Impossible de récupérer les données de répartition.");
+          return;
+        }
+      } catch (err) {
+        toast.dismiss(loadingToast);
+        toast.error("Erreur lors de la récupération des données.");
+        return;
+      }
+    }
+    setShowAllocationModal(true);
+  };
 
   return (
     <div className="h-full flex flex-col bg-white">
@@ -51,24 +98,88 @@ const ShortageDetailPanel = ({
           <div className="flex-1 min-w-0">
             <div className="flex items-center gap-2">
               <h2 className="text-base font-bold text-gray-900 truncate">Ruptures — {bp.bp_number}</h2>
-              <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-700 border border-red-200">
-                ⚠ Rupture
+              <span className={`px-2 py-0.5 rounded-full text-xs font-medium border ${BP_STATUS[bp.status]?.color ?? 'bg-gray-100 text-gray-700'}`}>
+                {BP_STATUS[bp.status]?.label ?? bp.status}
               </span>
             </div>
-            {bp.mission && <p className="text-xs text-gray-400 mt-0.5">Mission {bp.mission.mission_number}</p>}
+            {bp.delivery_mission && <p className="text-xs text-gray-400 mt-0.5">Mission {bp.delivery_mission.mission_number}</p>}
           </div>
+          <div className="flex items-center gap-1 shrink-0">
+            <button
+              onClick={() => openPdf('bp', bp.id, { force: true, watermark: bp.status === 'in_progress' ? 'DRAFT' : undefined })}
+              title="Imprimer le BP (PDF)"
+              className="p-1.5 rounded-lg hover:bg-gray-100 text-gray-400 hover:text-gray-700 transition-colors"
+            >
+              <Printer className="w-4 h-4" />
+            </button>
+            <button
+              onClick={() => downloadPdf('bp', bp.id)}
+              title="Télécharger le BP (PDF)"
+              className="p-1.5 rounded-lg hover:bg-gray-100 text-gray-400 hover:text-gray-700 transition-colors"
+            >
+              <Download className="w-4 h-4" />
+            </button>
+          </div>
+        </div>
+
+        <div className="mt-3">
+          <DecisionActionsBar
+            subjectId={bp.id}
+            subjectLabel={bp.bp_number}
+            fetchDecisions={dispatcherApi.preparations.getDecisions}
+            executeDecision={executeDecisionWithCapture}
+            onActionDone={onRefresh}
+            customDecisionHandlers={{ accept_partial_preparation: handleAcceptClick }}
+          />
         </div>
       </div>
 
+      {showAllocationModal && reviewAnalysis && (
+        <ShortageAllocationModal
+          bp={bp}
+          shortageDetails={reviewAnalysis.shortage_details}
+          onClose={() => setShowAllocationModal(false)}
+          onConfirmed={onRefresh}
+        />
+      )}
+
       <div className="flex-1 overflow-y-auto p-4 space-y-3 bg-slate-50">
-        <div className="flex items-start gap-2.5 p-3 rounded-lg bg-blue-50 border border-blue-100">
-          <Info size={16} className="text-blue-500 mt-0.5 shrink-0" />
-          <p className="text-xs text-blue-800 leading-relaxed">
-            Le rééquilibrage manuel (égal / FIFO) entre BL n'est plus disponible — cette action
-            n'a pas d'équivalent dans le nouveau pipeline Delivery Mission (gap confirmé côté
-            backend). Vue lecture seule en attendant un endpoint de remplacement.
-          </p>
-        </div>
+        {/* review_partial_preparation analysis */}
+        {reviewAnalysis && (
+          <div className="bg-white border border-indigo-100 rounded-lg overflow-hidden">
+            <div className="px-4 py-3 bg-indigo-50 border-b border-indigo-100 flex items-center gap-2">
+              <Sparkles size={15} className="text-indigo-500 shrink-0" />
+              <span className="text-sm font-semibold text-indigo-900">Analyse de la rupture</span>
+            </div>
+            <div className="p-4 space-y-3">
+              <div className="grid grid-cols-2 gap-3 text-xs">
+                <div className="p-2.5 rounded-lg bg-gray-50 border border-gray-100">
+                  <div className="text-gray-500">Rupture</div>
+                  <div className="font-bold text-gray-900">{reviewAnalysis.analysis.shortage_percentage}% ({reviewAnalysis.analysis.total_shortage}/{reviewAnalysis.analysis.total_requested})</div>
+                </div>
+                <div className="p-2.5 rounded-lg bg-gray-50 border border-gray-100">
+                  <div className="text-gray-500 flex items-center gap-1"><Banknote size={11} /> Valeur</div>
+                  <div className="font-bold text-gray-900">{reviewAnalysis.analysis.shortage_value.toLocaleString('fr-MA')} Dh</div>
+                </div>
+              </div>
+              {reviewAnalysis.analysis.is_critical && (
+                <div className="flex items-center gap-1.5 text-xs text-red-700 bg-red-50 border border-red-100 rounded-lg px-3 py-2">
+                  <AlertTriangle size={12} className="shrink-0" /> {reviewAnalysis.analysis.critical_items_count} ligne(s) critique(s) (rupture/périssable/surgelé)
+                </div>
+              )}
+              <div className={`flex items-center gap-1.5 text-xs rounded-lg px-3 py-2 border ${
+                reviewAnalysis.recommended_action === 'accept_and_split'
+                  ? 'text-emerald-700 bg-emerald-50 border-emerald-100'
+                  : 'text-purple-700 bg-purple-50 border-purple-100'
+              }`}>
+                Recommandation : <strong>{reviewAnalysis.recommended_action === 'accept_and_split' ? 'Accepter et splitter' : 'Demander une reprise'}</strong>
+              </div>
+              {reviewAnalysis.decision_guidance && (
+                <p className="text-xs text-gray-500 italic">{reviewAnalysis.decision_guidance}</p>
+              )}
+            </div>
+          </div>
+        )}
 
         {shortageItems.length === 0 ? (
           <div className="text-center py-12 text-gray-400">
@@ -95,7 +206,7 @@ const ShortageDetailPanel = ({
                   return (
                     <div key={item.id} className="bg-white border border-red-100 rounded-lg overflow-hidden px-4 py-3">
                       <div className="flex items-start justify-between gap-3">
-                        <div className="text-sm font-semibold text-gray-800">Produit #{item.product_id}</div>
+                        <div className="text-sm font-semibold text-gray-800">{item.product?.name ?? `Produit #${item.product_id}`}</div>
                         <div className="shrink-0 text-right">
                           <div className={`text-base font-bold ${rate > 50 ? 'text-red-700' : 'text-orange-600'}`}>
                             -{item.shortage_quantity}
@@ -125,11 +236,16 @@ const ShortageDetailPanel = ({
 // ─── Page ──────────────────────────────────────────────────────────────────────
 
 export const DispatcherShortageQueuePage = () => {
-  const [selected, setSelected] = useState<PreparationOrder | null>(null);
+  const [selectedId, setSelectedId] = useState<number | null>(null);
 
   const { data, loading, error, refetch } = useDispatcherShortageQueue();
   const allBps = data?.data ?? [];
-  const shortageItems = allBps.filter((b) => (b.total_shortage_percentage ?? 0) > 0 || b.is_critical_shortage);
+  // Worklist scope: BPs that still need a dispatcher decision (completed_partial just landed,
+  // awaiting_shortage_review mid-flow, or partial_rework_requested waiting on the magasinier).
+  // shortage_split_done/shortage_accepted are resolved — kept out of the active count.
+  const queueStatuses: BpStatus[] = ['completed_partial', 'awaiting_shortage_review', 'partial_rework_requested'];
+  const shortageItems = allBps.filter((b) => queueStatuses.includes(b.status));
+  const selected = shortageItems.find((b) => b.id === selectedId) ?? null;
 
   const columnDefs = useMemo<ColDef[]>(() => [
     {
@@ -143,14 +259,17 @@ export const DispatcherShortageQueuePage = () => {
     {
       headerName: 'Mission',
       width: 150,
-      valueGetter: (p) => (p.data as PreparationOrder | undefined)?.mission?.mission_number ?? '—',
+      valueGetter: (p) => (p.data as PreparationOrder | undefined)?.delivery_mission?.mission_number ?? '—',
     },
     {
       headerName: 'Statut',
-      width: 130,
-      valueGetter: (p) => {
-        const status = (p.data as PreparationOrder | undefined)?.status;
-        return status ? BP_STATUS[status]?.label ?? status : '—';
+      width: 150,
+      cellRenderer: (p: { data?: PreparationOrder }) => {
+        const status = p.data?.status;
+        const cfg = status ? BP_STATUS[status] : undefined;
+        return cfg ? (
+          <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium border ${cfg.color}`}>{cfg.label}</span>
+        ) : status ?? '—';
       },
     },
     {
@@ -158,15 +277,6 @@ export const DispatcherShortageQueuePage = () => {
       headerName: '% Rupture',
       width: 100,
       valueFormatter: (p: { value?: number }) => p.value != null ? `${p.value}%` : '—',
-    },
-    {
-      field: 'shortage_acknowledged',
-      headerName: 'Traité',
-      width: 80,
-      cellRenderer: (p: { value?: boolean }) =>
-        p.value
-          ? <span className="text-xs text-green-600 font-medium">Oui</span>
-          : <span className="text-xs text-red-600 font-semibold">Non</span>,
     },
     {
       field: 'created_at',
@@ -199,7 +309,7 @@ export const DispatcherShortageQueuePage = () => {
             {shortageItems.length > 0 && (
               <div className="flex items-center gap-2 px-3 py-2 bg-red-50 border border-red-100 rounded-lg text-xs text-red-600">
                 <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
-                <span><strong>{shortageItems.length}</strong> BP(s) en rupture</span>
+                <span><strong>{shortageItems.length}</strong> BP(s) nécessitent une décision</span>
               </div>
             )}
           </div>
@@ -227,7 +337,7 @@ export const DispatcherShortageQueuePage = () => {
                   rowData={shortageItems}
                   columnDefs={columnDefs}
                   loading={false}
-                  onRowSelected={(row: PreparationOrder) => setSelected(row)}
+                  onRowSelected={(row: PreparationOrder) => setSelectedId(row.id)}
                 />
               )}
             </div>
@@ -236,13 +346,13 @@ export const DispatcherShortageQueuePage = () => {
       }
       mainContent={
         selected ? (
-          <ShortageDetailPanel key={selected.id} bp={selected} onClose={() => setSelected(null)} />
+          <ShortageDetailPanel key={selected.id} bp={selected} onClose={() => setSelectedId(null)} onRefresh={refetch} />
         ) : (
           <div className="h-full flex items-center justify-center bg-slate-50">
             <div className="text-center space-y-3">
               <AlertTriangle className="w-14 h-14 text-amber-200 mx-auto" />
               <h3 className="text-base font-semibold text-gray-500">File de ruptures</h3>
-              <p className="text-sm text-gray-400">Sélectionnez un BP pour voir le détail des ruptures</p>
+              <p className="text-sm text-gray-400">Sélectionnez un BP pour examiner et résoudre la rupture</p>
             </div>
           </div>
         )

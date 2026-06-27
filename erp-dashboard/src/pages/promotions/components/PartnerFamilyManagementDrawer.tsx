@@ -144,7 +144,7 @@ export const PartnerFamilyManagementDrawer = ({
                         <button
                             type="button"
                             onClick={() => handleEdit(family)}
-                            className="p-1 text-blue-600 hover:bg-blue-50 rounded"
+                            className="p-1 text-sage-600 hover:bg-sage-50 rounded"
                             title="Modifier"
                             disabled={isDeleting}
                         >
@@ -179,10 +179,10 @@ export const PartnerFamilyManagementDrawer = ({
             size="xl"
         >
             <div className="p-6 space-y-4">
-                <div className="bg-gradient-to-r from-blue-50 to-indigo-50 p-4 rounded-lg border border-blue-100">
+                <div className="bg-gradient-to-r from-sage-50 to-sage-50 p-4 rounded-lg border border-sage-100">
                     <div className="flex items-center justify-between mb-2">
                         <div className="flex items-center gap-2">
-                            <Users className="w-5 h-5 text-blue-600" />
+                            <Users className="w-5 h-5 text-sage-600" />
                             <h3 className="text-sm font-semibold text-gray-900">
                                 Familles de Partenaires
                             </h3>
@@ -190,7 +190,7 @@ export const PartnerFamilyManagementDrawer = ({
                         <button
                             type="button"
                             onClick={handleCreate}
-                            className="flex items-center gap-2 px-3 py-1.5 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition text-sm"
+                            className="flex items-center gap-2 px-3 py-1.5 bg-sage-500 text-white rounded-md hover:bg-sage-600 transition text-sm"
                         >
                             <Plus className="w-4 h-4" />
                             Nouvelle Famille
@@ -213,7 +213,7 @@ export const PartnerFamilyManagementDrawer = ({
                                 </label>
                                 <input
                                     {...register('code', { required: true })}
-                                    className="w-full px-3 py-2 text-sm border rounded-md focus:ring-2 focus:ring-blue-500 outline-none uppercase"
+                                    className="w-full px-3 py-2 text-sm border rounded-md focus:ring-2 focus:ring-sage-500 outline-none uppercase"
                                     placeholder="FAM001"
                                     disabled={!!editingFamily}
                                 />
@@ -226,7 +226,7 @@ export const PartnerFamilyManagementDrawer = ({
                                 </label>
                                 <input
                                     {...register('name', { required: true })}
-                                    className="w-full px-3 py-2 text-sm border rounded-md focus:ring-2 focus:ring-blue-500 outline-none"
+                                    className="w-full px-3 py-2 text-sm border rounded-md focus:ring-2 focus:ring-sage-500 outline-none"
                                     placeholder="Partenaires Premium"
                                 />
                                 {errors.name && <p className="text-xs text-red-500 mt-1">Obligatoire</p>}
@@ -238,7 +238,7 @@ export const PartnerFamilyManagementDrawer = ({
                                 </label>
                                 <textarea
                                     {...register('partner_condition')}
-                                    className="w-full px-3 py-2 text-sm border rounded-md focus:ring-2 focus:ring-blue-500 outline-none"
+                                    className="w-full px-3 py-2 text-sm border rounded-md focus:ring-2 focus:ring-sage-500 outline-none"
                                     rows={2}
                                     placeholder="credit > 10000"
                                 />
@@ -261,7 +261,7 @@ export const PartnerFamilyManagementDrawer = ({
                                 <button
                                     type="submit"
                                     disabled={saving}
-                                    className="px-3 py-1.5 text-sm bg-blue-600 text-white rounded-md hover:bg-blue-700 transition disabled:opacity-50 flex items-center gap-2"
+                                    className="px-3 py-1.5 text-sm bg-sage-500 text-white rounded-md hover:bg-sage-600 transition disabled:opacity-50 flex items-center gap-2"
                                 >
                                     {saving && <Loader2 className="w-3 h-3 animate-spin" />}
                                     {editingFamily ? 'Mettre à jour' : 'Créer'}
@@ -276,7 +276,7 @@ export const PartnerFamilyManagementDrawer = ({
                     <input
                         type="text"
                         placeholder="Rechercher par code ou nom..."
-                        className="w-full pl-9 pr-4 py-2 border rounded-md focus:ring-2 focus:ring-blue-500 outline-none"
+                        className="w-full pl-9 pr-4 py-2 border rounded-md focus:ring-2 focus:ring-sage-500 outline-none"
                         value={search}
                         onChange={(e) => setSearch(e.target.value)}
                     />

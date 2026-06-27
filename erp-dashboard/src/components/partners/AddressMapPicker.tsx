@@ -99,7 +99,7 @@ const MapClickHandler: React.FC<MapClickHandlerProps> = ({ onClick }) => {
 
 // ─── Style helpers ────────────────────────────────────────────────────────────
 
-const inputCls = 'w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400 transition-colors bg-white placeholder:text-gray-300';
+const inputCls = 'w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-sage-500/20 focus:border-sage-400 transition-colors bg-white placeholder:text-gray-300';
 const labelCls = 'block text-[10px] font-bold text-gray-500 mb-1 uppercase tracking-widest';
 
 // Morocco centre as default map position
@@ -250,10 +250,10 @@ export const AddressMapPicker: React.FC<AddressMapPickerProps> = ({
                 <label className={labelCls}>Rechercher une adresse</label>
                 <div className={cn(
                     'flex items-center gap-2 px-3 py-2.5 border-2 rounded-xl transition-all bg-white',
-                    showSug ? 'border-indigo-400 ring-2 ring-indigo-500/10' : 'border-gray-200 hover:border-gray-300',
+                    showSug ? 'border-sage-400 ring-2 ring-sage-500/10' : 'border-gray-200 hover:border-gray-300',
                 )}>
                     {searching
-                        ? <Loader2 className="w-4 h-4 text-indigo-400 animate-spin shrink-0" />
+                        ? <Loader2 className="w-4 h-4 text-sage-400 animate-spin shrink-0" />
                         : <Search   className="w-4 h-4 text-gray-400 shrink-0" />
                     }
                     <input
@@ -278,7 +278,7 @@ export const AddressMapPicker: React.FC<AddressMapPickerProps> = ({
                             'flex items-center gap-1.5 px-2.5 py-1 text-xs font-medium rounded-lg border transition-all shrink-0',
                             locating
                                 ? 'border-gray-200 text-gray-400 cursor-wait'
-                                : 'border-indigo-200 text-indigo-600 hover:bg-indigo-50',
+                                : 'border-sage-200 text-sage-600 hover:bg-sage-50',
                         )}
                         title="Utiliser ma position GPS"
                     >
@@ -298,9 +298,9 @@ export const AddressMapPicker: React.FC<AddressMapPickerProps> = ({
                                 key={item.provider_ref ?? i}
                                 type="button"
                                 onMouseDown={e => { e.preventDefault(); onSelectSuggestion(item); }}
-                                className="w-full flex items-start gap-3 px-4 py-3 text-left hover:bg-indigo-50 transition-colors border-b border-gray-50 last:border-0"
+                                className="w-full flex items-start gap-3 px-4 py-3 text-left hover:bg-sage-50 transition-colors border-b border-gray-50 last:border-0"
                             >
-                                <MapPin className="w-4 h-4 text-indigo-400 mt-0.5 shrink-0" />
+                                <MapPin className="w-4 h-4 text-sage-400 mt-0.5 shrink-0" />
                                 <div className="min-w-0">
                                     <p className="text-sm font-medium text-gray-800 truncate">{item.label}</p>
                                     {(item.city || item.region) && (
@@ -327,7 +327,7 @@ export const AddressMapPicker: React.FC<AddressMapPickerProps> = ({
                 className={cn(
                     'w-full flex items-center justify-between px-4 py-2.5 rounded-xl border text-sm font-medium transition-all',
                     showMap
-                        ? 'border-indigo-200 bg-indigo-50 text-indigo-700'
+                        ? 'border-sage-200 bg-sage-50 text-sage-700'
                         : 'border-gray-200 bg-white text-gray-600 hover:bg-gray-50 hover:border-gray-300',
                 )}
             >
@@ -351,7 +351,7 @@ export const AddressMapPicker: React.FC<AddressMapPickerProps> = ({
                     {reversing && (
                         <div className="absolute inset-0 z-[900] flex items-center justify-center bg-white/60 backdrop-blur-[2px]">
                             <div className="flex items-center gap-2 bg-white px-4 py-2 rounded-full shadow-lg border border-gray-200">
-                                <Loader2 className="w-4 h-4 animate-spin text-indigo-500" />
+                                <Loader2 className="w-4 h-4 animate-spin text-sage-500" />
                                 <span className="text-xs text-gray-600 font-medium">Recherche de l'adresse…</span>
                             </div>
                         </div>
@@ -359,10 +359,10 @@ export const AddressMapPicker: React.FC<AddressMapPickerProps> = ({
 
                     {/* Map hint bar */}
                     <div className="flex items-center gap-2 px-3 py-2 bg-gray-50 border-b border-gray-200 text-[11px] text-gray-500">
-                        <MapPin className="w-3 h-3 shrink-0 text-indigo-500" />
+                        <MapPin className="w-3 h-3 shrink-0 text-sage-500" />
                         <span>Cliquez sur la carte ou faites glisser le marqueur pour positionner le partenaire</span>
                         {hasCoords && (
-                            <span className="ml-auto font-mono text-indigo-500 shrink-0">
+                            <span className="ml-auto font-mono text-sage-500 shrink-0">
                                 {value.geo_lat?.toFixed(5)}, {value.geo_lng?.toFixed(5)}
                             </span>
                         )}

@@ -190,7 +190,7 @@ const DetailPanel = ({
               <button
                 onClick={handleConfirm}
                 disabled={executing}
-                className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 transition-colors"
+                className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium bg-sage-500 text-white rounded-lg hover:bg-sage-600 disabled:opacity-50 transition-colors"
               >
                 <CheckCircle2 className="w-3.5 h-3.5" />
                 Confirmer
@@ -495,7 +495,7 @@ export const DispatcherBonLivraisonsPage = () => {
                   onClick={() => { setStatusFilter(tab.id); setPage(1); }}
                   className={`px-2.5 py-1 rounded-full text-xs font-medium transition-colors ${
                     statusFilter === tab.id
-                      ? 'bg-blue-600 text-white shadow-sm'
+                      ? 'bg-sage-500 text-white shadow-sm'
                       : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
                   }`}
                 >

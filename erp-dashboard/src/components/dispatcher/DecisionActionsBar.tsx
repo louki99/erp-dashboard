@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { AlertCircle, Loader2, Pencil, CheckCircle2, Route, Trash2, Send, X, Truck, User } from 'lucide-react';
+import { AlertCircle, Loader2, Pencil, CheckCircle2, Route, Trash2, Send, X, Truck, User, Package, AlertTriangle } from 'lucide-react';
 import toast from 'react-hot-toast';
 
 import { dispatcherApi } from '@/services/api/dispatcherApi';
@@ -9,20 +9,87 @@ import type { DoDecisionItem, DoDecisionsResponse, RiderWithVehicles } from '@/t
 
 const INTENT_STYLE: Record<string, { icon: React.ComponentType<{ className?: string }>; cls: string }> = {
   EDIT:     { icon: Pencil,       cls: 'bg-gray-600 hover:bg-gray-700 text-white' },
-  VALIDATE: { icon: CheckCircle2, cls: 'bg-blue-600 hover:bg-blue-700 text-white' },
-  DISPATCH: { icon: Route,        cls: 'bg-indigo-600 hover:bg-indigo-700 text-white' },
+  VALIDATE: { icon: CheckCircle2, cls: 'bg-sage-500 hover:bg-sage-600 text-white' },
+  DISPATCH: { icon: Route,        cls: 'bg-sage-600 hover:bg-sage-700 text-white' },
   DELETE:   { icon: Trash2,       cls: 'bg-white border border-red-200 text-red-600 hover:bg-red-50' },
 };
 const DEFAULT_INTENT_STYLE = { icon: Send, cls: 'bg-emerald-600 hover:bg-emerald-700 text-white' };
 
 // decision_denied errors come back as { violations: [{ constraint, reason, context }] }, not
 // `constraints` — surface each violation's `reason` so the dispatcher sees the actual cause.
+//
+// Delivery-mission decisions (docs §8.1-8.7) are the exception — their 422 `message` is a terse
+// machine code (`mission_not_draft`, `bp_already_finalized`, ...), not a human sentence like
+// every other module's `violations[].reason`. Mapped here so the dispatcher never sees a raw
+// snake_case string. `bp_already_finalized` specifically: docs §8.6 explicitly calls out "do not
+// silently retry this error" — it means the magasinier finished/rejected the BP in the race
+// window between the dispatcher opening "Modifier la préparation" and submitting it.
+const KNOWN_ERROR_CODES: Record<string, string> = {
+  mission_not_draft: "Cette mission n'est plus en brouillon — un autre utilisateur l'a peut-être déjà modifiée. Rafraîchissez.",
+  invalid_status: "Cette action n'est plus disponible pour le statut actuel de la mission — rafraîchissez pour voir l'état réel.",
+  no_draft_bls: 'Aucun BL en brouillon sur cette mission.',
+  driver_not_found: 'Livreur introuvable.',
+  vehicle_not_found: 'Véhicule introuvable.',
+  orders_not_in_mission: "Une des BC sélectionnées n'est plus rattachée à cette mission.",
+  order_not_confirmed: "Une des BC sélectionnées n'est pas (ou plus) confirmée.",
+  mixed_branches: "Les BC sélectionnées n'appartiennent pas toutes à la même branche que la mission.",
+  no_preparation_order: 'Aucun bon de préparation associé à cette mission.',
+  bp_already_finalized: 'Le magasinier a déjà finalisé ou rejeté la préparation entre-temps — impossible de rouvrir la mission. Rafraîchissez pour voir l\'état réel.',
+  reason_required: 'Une raison est requise pour cette action.',
+  // reassign_delivery_mission errors (docs §8.x, 2026-06-25)
+  mission_not_ready: "La mission n'est pas en état Prêt — rafraîchissez.",
+  transfer_already_accepted: "Le livreur a déjà accepté le chargement — contactez le magasin.",
+  rider_not_driver: "L'utilisateur sélectionné n'a pas le rôle livreur.",
+  same_rider: "Même livreur que l'actuel — choisissez un autre.",
+};
+
 const extractErrorMessage = (err: any): string => {
   const violations = err?.response?.data?.violations as
     | Array<{ constraint?: string; reason: string; context?: unknown }>
     | undefined;
   if (violations?.length) return violations.map((v) => v.reason).join(' · ');
-  return err?.response?.data?.message ?? "Échec de l'action";
+  const raw = err?.response?.data?.message as string | undefined;
+  if (raw && KNOWN_ERROR_CODES[raw]) return KNOWN_ERROR_CODES[raw];
+  return raw ?? "Échec de l'action";
+};
+
+const RICH_TOAST_TONE = {
+  success: { bg: 'bg-emerald-100', text: 'text-emerald-600', Icon: CheckCircle2 },
+  warning: { bg: 'bg-amber-100', text: 'text-amber-600', Icon: AlertTriangle },
+  info: { bg: 'bg-sage-100', text: 'text-sage-600', Icon: Package },
+} as const;
+
+// Replaces the plain `toast(text, { icon: 'ℹ️' })` one-liners with a proper card (icon badge,
+// title, optional subtitle) for outcomes worth more than a generic green/gray bar — e.g. mission
+// allocation results where the dispatcher needs to see the BP number, not just "Action effectuée".
+const showRichToast = (opts: {
+  tone: keyof typeof RICH_TOAST_TONE;
+  title: string;
+  subtitle?: React.ReactNode;
+  duration?: number;
+}) => {
+  const { bg, text, Icon } = RICH_TOAST_TONE[opts.tone];
+  toast.custom(
+    (t) => (
+      <div
+        className={`max-w-sm w-full bg-white shadow-lg ring-1 ring-black/5 rounded-xl pointer-events-auto flex items-start gap-3 p-3.5 transition-all ${
+          t.visible ? 'opacity-100 translate-y-0' : 'opacity-0 -translate-y-1'
+        }`}
+      >
+        <div className={`shrink-0 w-9 h-9 rounded-full flex items-center justify-center ${bg} ${text}`}>
+          <Icon size={16} />
+        </div>
+        <div className="min-w-0 flex-1 pt-0.5">
+          <p className="text-sm font-semibold text-gray-900 leading-snug">{opts.title}</p>
+          {opts.subtitle && <div className="text-xs text-gray-500 mt-1">{opts.subtitle}</div>}
+        </div>
+        <button onClick={() => toast.dismiss(t.id)} className="shrink-0 text-gray-300 hover:text-gray-500 transition-colors">
+          <X size={14} />
+        </button>
+      </div>
+    ),
+    { duration: opts.duration ?? 6000 }
+  );
 };
 
 // Friendlier labels/icons for known field names — falls back to the backend-provided f.label for
@@ -30,22 +97,48 @@ const extractErrorMessage = (err: any): string => {
 const FIELD_META: Record<string, { label: string; icon: React.ReactNode }> = {
   driver_id: { label: 'Livreur', icon: <User size={12} /> },
   rider_id: { label: 'Livreur', icon: <User size={12} /> },
+  new_rider_id: { label: 'Nouveau livreur', icon: <User size={12} /> },
   vehicle_id: { label: 'Véhicule', icon: <Truck size={12} /> },
+  new_vehicle_id: { label: 'Nouveau véhicule', icon: <Truck size={12} /> },
   add_delivery_note_ids: { label: 'Ajouter des BL', icon: <CheckCircle2 size={12} /> },
   remove_delivery_note_ids: { label: 'Retirer des BL', icon: <Trash2 size={12} /> },
   add_order_ids: { label: 'Ajouter des BC', icon: <CheckCircle2 size={12} /> },
+  remove_order_ids: { label: 'Retirer des BC', icon: <Trash2 size={12} /> },
+  // accept_partial_preparation's soft-limit override (docs §10): shortage % > 20, valeur > 500,
+  // ou ligne critique — sans ça la décision est refusée (violations[].reason le précise).
+  force_accept: { label: "Forcer l'acceptation (dépasse les seuils habituels)", icon: <AlertCircle size={12} /> },
 };
 
 // Field names whose value is a number[] multi-select rather than a single scalar — handled
 // distinctly in missingRequired/handleSubmit below instead of the generic single-value path.
-const MULTI_SELECT_FIELDS = new Set(['add_delivery_note_ids', 'remove_delivery_note_ids', 'add_order_ids']);
+const MULTI_SELECT_FIELDS = new Set(['add_delivery_note_ids', 'remove_delivery_note_ids', 'add_order_ids', 'remove_order_ids']);
 
 // Extra context only the mission-level "Edit Mission" decision needs — the BL add/remove pickers
 // can't function without knowing the mission's current BLs (to remove) and branch (to scope which
 // draft BLs are eligible to add). Optional so every other decision (BL cancel, etc.) is unaffected.
+// Steps shown inside the modal while the API call is in-flight (purely cosmetic simulation —
+// the backend executes all steps atomically; this gives the dispatcher transparency instead of
+// a black-box spinner on heavy rollback/cascade transactions).
+const DECISION_STEPS: Record<string, string[]> = {
+  reassign_delivery_mission: [
+    'Vérification des verrous de sécurité et lock de la mission…',
+    "Annulation du transfert de stock (WT) de l'ancien véhicule…",
+    'Bascule du contexte livreur sur la mission et cascade sur les BLs…',
+    'Génération du nouveau transfert de stock vers le nouveau van…',
+  ],
+  cancel_delivery_mission: [
+    'Révocation du transfert de stock en attente…',
+    'Annulation du Bon de Préparation (BP) et libération des réservations de stock…',
+    'Suppression logique (Soft-delete) des Bons de Livraison (BLs)…',
+    "Restauration des Bons de Commande (BCs) d'origine dans le backlog…",
+  ],
+};
+
 export interface MissionEditContext {
   branchCode?: string;
   currentBls: CheckboxOption[];
+  currentOrders?: CheckboxOption[];
+  currentRiderId?: number;
 }
 
 const DecisionFormModal = ({
@@ -65,26 +158,64 @@ const DecisionFormModal = ({
 }) => {
   const [values, setValues] = useState<Record<string, string>>({});
   const [multiValues, setMultiValues] = useState<Record<string, number[]>>({});
+  const [boolValues, setBoolValues] = useState<Record<string, boolean>>({});
+
+  // Step-by-step progress stepper for heavy cascade decisions.
+  // stepIdx === -1 → not running; 0..n-1 → at that step; n → all done (brief flash before close).
+  const steps = DECISION_STEPS[decisionItem.decision];
+  const [stepIdx, setStepIdx] = useState(-1);
+  const isStepperActive = steps != null && stepIdx >= 0;
+  const isAllDone = steps != null && stepIdx >= steps.length;
+
+  useEffect(() => {
+    if (!steps) { setStepIdx(-1); return; }
+    if (!loading) {
+      // API returned — snap to "all done" if stepper was running, otherwise stay idle.
+      setStepIdx((p) => (p >= 0 ? steps.length : -1));
+      return;
+    }
+    setStepIdx(0);
+    let cur = 0;
+    const id = setInterval(() => {
+      cur++;
+      setStepIdx(Math.min(cur, steps.length - 1));
+      if (cur >= steps.length - 1) clearInterval(id);
+    }, 650);
+    return () => clearInterval(id);
+  }, [loading]); // eslint-disable-line react-hooks/exhaustive-deps
+
   const [riders, setRiders] = useState<RiderWithVehicles[]>([]);
+  const [loadingRiders, setLoadingRiders] = useState(false);
   const [availableBls, setAvailableBls] = useState<CheckboxOption[]>([]);
   const [loadingAvailableBls, setLoadingAvailableBls] = useState(false);
   const [availableOrders, setAvailableOrders] = useState<CheckboxOption[]>([]);
   const [loadingAvailableOrders, setLoadingAvailableOrders] = useState(false);
 
-  const driverField = decisionItem.fields.find((f) => f.name === 'driver_id' || f.name === 'rider_id');
-  const hasVehicleField = decisionItem.fields.some((f) => f.name === 'vehicle_id');
+  const DRIVER_FIELD_NAMES = new Set(['driver_id', 'rider_id', 'new_rider_id']);
+  const VEHICLE_FIELD_NAMES = new Set(['vehicle_id', 'new_vehicle_id']);
+  const driverField = decisionItem.fields.find((f) => DRIVER_FIELD_NAMES.has(f.name));
+  const hasVehicleField = decisionItem.fields.some((f) => VEHICLE_FIELD_NAMES.has(f.name));
   const hasAddBlField = decisionItem.fields.some((f) => f.name === 'add_delivery_note_ids');
   const hasAddOrderField = decisionItem.fields.some((f) => f.name === 'add_order_ids');
 
-  // Driver + vehicle come from the same "rider with their assigned vehicle(s)" lookup (docs §12d)
-  // — lets the vehicle picker scope itself to whichever driver is selected, instead of listing
-  // every active vehicle in the branch regardless of who's actually driving it.
+  // Driver + vehicle come from the same "rider with their assigned vehicle(s)" lookup (docs §12d).
+  // For reassign_delivery_mission (new_rider_id field), the current rider is excluded from the
+  // list — no point offering a "reassign to the same person" option.
   useEffect(() => {
-    if (driverField || hasVehicleField) {
-      dispatcherApi.fleet.getRidersWithVehicles({ status: 'active' })
-        .then((res) => setRiders(Array.isArray(res) ? res : []))
-        .catch(() => setRiders([]));
-    }
+    if (!driverField && !hasVehicleField) return;
+    setLoadingRiders(true);
+    dispatcherApi.fleet.getRidersWithVehicles({ status: 'active' })
+      .then((res) => {
+        const all = Array.isArray(res) ? res : [];
+        const isReassign = decisionItem.fields.some((f) => f.name === 'new_rider_id');
+        setRiders(
+          isReassign && missionContext?.currentRiderId
+            ? all.filter((r) => r.id !== missionContext.currentRiderId)
+            : all
+        );
+      })
+      .catch(() => setRiders([]))
+      .finally(() => setLoadingRiders(false));
   }, [decisionItem]);
 
   // Eligible BLs to attach — must be draft and not already on a mission (docs §8.6); scoped to
@@ -149,21 +280,26 @@ const DecisionFormModal = ({
     );
   }, [riders, selectedRider]);
 
-  // If the driver changes to someone who doesn't have the currently-picked vehicle, clear it
-  // rather than silently submitting a vehicle/driver pair that don't belong together.
+  // If the driver changes to someone who doesn't have the currently-picked vehicle, clear it.
+  // If the new driver has exactly one vehicle, auto-select it so the dispatcher doesn't need
+  // to pick it manually (the common case for reassign_delivery_mission).
   useEffect(() => {
     if (!driverField || !hasVehicleField) return;
-    const vehicleFieldName = decisionItem.fields.find((f) => f.name === 'vehicle_id')?.name;
+    const vehicleFieldName = decisionItem.fields.find((f) => VEHICLE_FIELD_NAMES.has(f.name))?.name;
     if (!vehicleFieldName) return;
     const current = values[vehicleFieldName] ? Number(values[vehicleFieldName]) : null;
     if (current != null && !vehicleOptions.some((v) => v.id === current)) {
       setField(vehicleFieldName, '');
+    }
+    if (vehicleOptions.length === 1) {
+      setField(vehicleFieldName, String(vehicleOptions[0].id));
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedRiderId]);
 
   const missingRequired = decisionItem.fields.some((f) => {
     if (!f.required) return false;
+    if (f.type === 'boolean') return false; // unchecked (false) is a valid value, never "missing"
     if (MULTI_SELECT_FIELDS.has(f.name)) {
       return !(multiValues[f.name]?.length);
     }
@@ -173,6 +309,13 @@ const DecisionFormModal = ({
   const handleSubmit = () => {
     const payload: Record<string, unknown> = {};
     for (const f of decisionItem.fields) {
+      if (f.type === 'boolean') {
+        // Only send when explicitly toggled — most boolean fields (e.g. force_accept) are
+        // soft-limit overrides the backend defaults to false; omitting it when untouched keeps
+        // the payload minimal and avoids implying an explicit "false" was chosen.
+        if (boolValues[f.name]) payload[f.name] = true;
+        continue;
+      }
       if (MULTI_SELECT_FIELDS.has(f.name)) {
         const arr = multiValues[f.name];
         if (arr?.length) payload[f.name] = arr;
@@ -203,6 +346,43 @@ const DecisionFormModal = ({
           </button>
         </div>
 
+        {/* ── Step-by-step progress stepper (replaces form body while in-flight) ── */}
+        {isStepperActive ? (
+          <div className="px-5 py-6 space-y-3">
+            {steps.map((step, idx) => {
+              const done = isAllDone || idx < stepIdx;
+              const active = !isAllDone && idx === stepIdx;
+              return (
+                <div
+                  key={idx}
+                  className={`flex items-start gap-3 transition-all duration-300 ${!done && !active ? 'opacity-35' : ''}`}
+                >
+                  <div className="shrink-0 w-5 h-5 mt-0.5 flex items-center justify-center">
+                    {done
+                      ? <CheckCircle2 size={18} className="text-emerald-500" />
+                      : active
+                      ? <Loader2 size={18} className="animate-spin text-sage-500" />
+                      : <span className="w-3.5 h-3.5 rounded-full border-2 border-gray-300 block" />
+                    }
+                  </div>
+                  <p className={`text-xs leading-snug mt-0.5 ${done ? 'text-emerald-600' : active ? 'text-gray-900' : 'text-gray-400'}`}>
+                    <span className={`font-bold mr-1 ${done ? 'text-emerald-500' : active ? 'text-sage-600' : 'text-gray-400'}`}>
+                      Étape {idx + 1} :
+                    </span>
+                    <span className={active ? 'font-medium' : ''}>{step}</span>
+                  </p>
+                </div>
+              );
+            })}
+            <div className="mt-3 h-1 rounded-full bg-gray-100 overflow-hidden">
+              <div
+                className={`h-full rounded-full transition-all duration-700 ease-out ${isAllDone ? 'bg-emerald-500' : 'bg-sage-500'}`}
+                style={{ width: `${isAllDone ? 100 : ((stepIdx + 1) / steps.length) * 100}%` }}
+              />
+            </div>
+          </div>
+        ) : (
+
         <div className="px-5 py-4 space-y-4 max-h-[60vh] overflow-y-auto">
           {decisionItem.description && <p className="text-xs text-gray-500">{decisionItem.description}</p>}
 
@@ -217,24 +397,27 @@ const DecisionFormModal = ({
             const meta = FIELD_META[f.name];
             const label = meta?.label ?? f.label;
 
-            if (f.name === 'driver_id' || f.name === 'rider_id') {
+            if (DRIVER_FIELD_NAMES.has(f.name)) {
               return (
-                <SearchSelectDropdown
-                  key={f.name}
-                  label={label + (f.required ? ' *' : '')}
-                  icon={meta?.icon}
-                  options={riders.map((r) => ({
-                    id: r.id,
-                    label: r.name,
-                    sublabel: r.vehicles.length === 0 ? 'Sans véhicule' : r.vehicles.length > 1 ? `${r.vehicles.length} véhicules` : (r.vehicles[0].display_name ?? r.vehicles[0].plate_number),
-                  }))}
-                  value={values[f.name] ? Number(values[f.name]) : ''}
-                  onChange={(id) => setField(f.name, id === '' ? '' : String(id))}
-                />
+                <div key={f.name}>
+                  <SearchSelectDropdown
+                    label={label + (f.required ? ' *' : '')}
+                    icon={loadingRiders ? <Loader2 size={12} className="animate-spin" /> : meta?.icon}
+                    options={riders.map((r) => ({
+                      id: r.id,
+                      label: r.name,
+                      sublabel: r.vehicles.length === 0 ? 'Sans véhicule' : r.vehicles.length > 1 ? `${r.vehicles.length} véhicules` : (r.vehicles[0].display_name ?? r.vehicles[0].plate_number),
+                    }))}
+                    value={values[f.name] ? Number(values[f.name]) : ''}
+                    onChange={(id) => setField(f.name, id === '' ? '' : String(id))}
+                    placeholder={loadingRiders ? 'Chargement…' : 'Sélectionner…'}
+                    disabled={loadingRiders}
+                  />
+                </div>
               );
             }
 
-            if (f.name === 'vehicle_id') {
+            if (VEHICLE_FIELD_NAMES.has(f.name)) {
               return (
                 <SearchSelectDropdown
                   key={f.name}
@@ -243,7 +426,7 @@ const DecisionFormModal = ({
                   options={vehicleOptions}
                   value={values[f.name] ? Number(values[f.name]) : ''}
                   onChange={(id) => setField(f.name, id === '' ? '' : String(id))}
-                  placeholder={selectedRider ? 'Sélectionner…' : driverField ? 'Choisissez un livreur d\'abord' : 'Sélectionner…'}
+                  placeholder={selectedRider ? 'Sélectionner…' : driverField ? "Choisissez un livreur d'abord" : 'Sélectionner…'}
                   disabled={!!driverField && !selectedRider}
                 />
               );
@@ -306,6 +489,35 @@ const DecisionFormModal = ({
               );
             }
 
+            if (f.name === 'remove_order_ids') {
+              return (
+                <CheckboxSearchDropdown
+                  key={f.name}
+                  label={label + (f.required ? ' *' : '')}
+                  icon={meta?.icon}
+                  options={missionContext?.currentOrders ?? []}
+                  selected={multiValues[f.name] ?? []}
+                  onChange={(ids) => setMultiField(f.name, ids)}
+                  emptyLabel="Aucun"
+                  noResultsLabel="Cette mission n'a aucune BC à retirer."
+                />
+              );
+            }
+
+            if (f.type === 'boolean') {
+              return (
+                <label key={f.name} className="flex items-start gap-2 cursor-pointer select-none">
+                  <input
+                    type="checkbox"
+                    checked={boolValues[f.name] ?? false}
+                    onChange={(e) => setBoolValues((p) => ({ ...p, [f.name]: e.target.checked }))}
+                    className="mt-0.5 w-4 h-4 rounded border-gray-300 text-sage-600 focus:ring-sage-500/30"
+                  />
+                  <span className="text-xs text-gray-700">{label}</span>
+                </label>
+              );
+            }
+
             return (
               <div key={f.name}>
                 <label className="block text-xs font-medium text-gray-700 mb-1.5">
@@ -316,14 +528,14 @@ const DecisionFormModal = ({
                     rows={3}
                     value={values[f.name] ?? ''}
                     onChange={(e) => setField(f.name, e.target.value)}
-                    className="w-full px-3 py-2 text-sm border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-300 outline-none resize-none"
+                    className="w-full px-3 py-2 text-sm border border-gray-200 rounded-xl focus:ring-2 focus:ring-sage-500/30 outline-none resize-none"
                   />
                 ) : (
                   <input
                     type={f.type}
                     value={values[f.name] ?? ''}
                     onChange={(e) => setField(f.name, e.target.value)}
-                    className="w-full px-3 py-2 text-sm border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-300 outline-none"
+                    className="w-full px-3 py-2 text-sm border border-gray-200 rounded-xl focus:ring-2 focus:ring-sage-500/30 outline-none"
                   />
                 )}
               </div>
@@ -333,6 +545,9 @@ const DecisionFormModal = ({
           {decisionItem.fields.length === 0 && <p className="text-sm text-gray-500">Confirmer cette action ?</p>}
         </div>
 
+        )} {/* end stepper/form conditional */}
+
+        {!isStepperActive && (
         <div className="flex items-center gap-3 px-5 py-4 border-t border-gray-100">
           <button
             onClick={onClose}
@@ -352,6 +567,7 @@ const DecisionFormModal = ({
             Confirmer
           </button>
         </div>
+        )}
       </div>
     </div>
   );
@@ -373,6 +589,7 @@ export const DecisionActionsBar = ({
   onActionDone,
   compact = false,
   missionContext,
+  customDecisionHandlers,
 }: {
   subjectId: number;
   subjectLabel: string;
@@ -381,6 +598,12 @@ export const DecisionActionsBar = ({
   onActionDone: () => void;
   compact?: boolean;
   missionContext?: MissionEditContext;
+  // Opt-in escape hatch: when a decision's key has an entry here, clicking its button calls this
+  // handler instead of opening the generic field-driven DecisionFormModal — for decisions whose
+  // real-world UX needs more than text/number/boolean fields (e.g. accept_partial_preparation's
+  // per-BL quantity allocation table, which no generic field type covers). Everything else still
+  // goes through the normal dynamic flow; this only opts out specific, named decisions.
+  customDecisionHandlers?: Record<string, () => void>;
 }) => {
   const [decisions, setDecisions] = useState<DoDecisionItem[]>([]);
   const [loading, setLoading] = useState(true);
@@ -440,10 +663,42 @@ export const DecisionActionsBar = ({
             const summary = withBacklog.length > 0
               ? `${allocations.length} BL alloué(s), ${withBacklog.length} avec rupture (backlog créé)`
               : `${allocations.length} BL alloué(s) intégralement`;
+            showRichToast({
+              tone: withBacklog.length > 0 ? 'warning' : 'success',
+              title: summary,
+              subtitle: preparation?.bp_number ? (
+                <span className="inline-flex items-center gap-1">
+                  <Package size={11} className="shrink-0" />
+                  BP <span className="font-mono font-medium text-gray-700">{preparation.bp_number}</span> généré
+                </span>
+              ) : undefined,
+              duration: 7000,
+            });
+          }
+          // accept_partial_preparation (docs §10, fixed 2026-06-23) auto-chains a backlog BC split
+          // for the shortage quantity — the dispatcher needs to know this happened and how many
+          // backlog orders landed back in /orders/pending, not just "rupture acceptée".
+          const backlog = (res.output as { backlog?: { backlog_orders_count?: number; total_shortage_released?: number } } | undefined)?.backlog;
+          if (backlog?.backlog_orders_count) {
             toast(
-              preparation?.bp_number ? `${summary} — BP ${preparation.bp_number} généré.` : summary,
-              { icon: withBacklog.length > 0 ? '⚠️' : 'ℹ️', duration: 7000 }
+              `${backlog.backlog_orders_count} BC backlog créée(s) pour le reliquat (${backlog.total_shortage_released ?? '?'} unité(s)).`,
+              { icon: '📦', duration: 7000 }
             );
+          }
+          // reassign_delivery_mission — show new WT number + BL update count
+          const newWt = (res.output as { new_wt?: { number?: string }; bls_updated?: number } | undefined);
+          if (newWt?.new_wt?.number) {
+            showRichToast({
+              tone: 'success',
+              title: `Mission réassignée — ${newWt.bls_updated ?? 0} BL mis à jour`,
+              subtitle: (
+                <span className="inline-flex items-center gap-1">
+                  <Truck size={11} className="shrink-0" />
+                  Nouveau transfert <span className="font-mono font-medium text-gray-700">{newWt.new_wt.number}</span>
+                </span>
+              ),
+              duration: 7000,
+            });
           }
         }
         onActionDone();
@@ -488,7 +743,11 @@ export const DecisionActionsBar = ({
             <button
               key={d.decision}
               disabled={executing}
-              onClick={(e) => { e.stopPropagation(); setActiveDecision(d); }}
+              onClick={(e) => {
+                e.stopPropagation();
+                const custom = customDecisionHandlers?.[d.decision];
+                if (custom) custom(); else setActiveDecision(d);
+              }}
               title={d.description}
               className={`inline-flex items-center gap-1 px-2 py-1 rounded text-[11px] font-semibold transition-colors disabled:opacity-40 disabled:cursor-not-allowed ${cls}`}
             >
@@ -508,6 +767,11 @@ export const DecisionActionsBar = ({
           missionContext={missionContext}
           onSubmit={async (vals) => {
             await run(activeDecision.decision, Object.keys(vals).length ? vals : undefined);
+            // Hold the modal open briefly so the "all steps done" green flash is visible
+            // before it closes. Only for decisions that have a stepper (others close instantly).
+            if (DECISION_STEPS[activeDecision.decision]) {
+              await new Promise((r) => setTimeout(r, 500));
+            }
             setActiveDecision(null);
           }}
         />

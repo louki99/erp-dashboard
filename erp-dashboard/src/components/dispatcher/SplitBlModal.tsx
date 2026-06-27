@@ -53,8 +53,8 @@ const DraggableItem = ({ item, splitId }: { item: BonLivraisonItem; splitId: str
         <div
             ref={setNodeRef}
             style={style}
-            className={`group bg-white border-2 rounded-lg p-3 cursor-grab active:cursor-grabbing hover:border-blue-400 transition-all ${
-                isDragging ? 'shadow-lg border-blue-500 z-50' : 'border-gray-200'
+            className={`group bg-white border-2 rounded-lg p-3 cursor-grab active:cursor-grabbing hover:border-sage-400 transition-all ${
+                isDragging ? 'shadow-lg border-sage-500 z-50' : 'border-gray-200'
             }`}
         >
             <div className="flex items-start gap-3">
@@ -114,7 +114,7 @@ const DropZone = ({
     }, 0);
 
     const colors = [
-        { border: 'border-blue-300', bg: 'bg-blue-50', text: 'text-blue-700', badge: 'bg-blue-100' },
+        { border: 'border-sage-300', bg: 'bg-sage-50', text: 'text-sage-700', badge: 'bg-sage-100' },
         { border: 'border-green-300', bg: 'bg-green-50', text: 'text-green-700', badge: 'bg-green-100' },
         { border: 'border-purple-300', bg: 'bg-purple-50', text: 'text-purple-700', badge: 'bg-purple-100' },
         { border: 'border-orange-300', bg: 'bg-orange-50', text: 'text-orange-700', badge: 'bg-orange-100' },
@@ -175,7 +175,7 @@ const DropZone = ({
                     onChange={(e) => onNotesChange(e.target.value)}
                     disabled={loading}
                     placeholder="Ex: Produits surgelés - camion réfrigéré requis"
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm resize-none"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-sage-500 text-sm resize-none"
                     rows={2}
                     maxLength={500}
                 />
@@ -343,13 +343,13 @@ export const SplitBlModal = ({ isOpen, onClose, onConfirm, items, loading = fals
                 onDragEnd={handleDragEnd}
             >
                 <div className="p-6 space-y-6">
-                    <div className="bg-gradient-to-r from-blue-50 to-indigo-50 border-2 border-blue-200 rounded-xl p-5">
+                    <div className="bg-gradient-to-r from-sage-50 to-sage-100 border-2 border-sage-200 rounded-xl p-5">
                         <div className="flex items-start gap-4">
-                            <div className="p-2.5 bg-blue-500 rounded-lg">
+                            <div className="p-2.5 bg-sage-500 rounded-lg">
                                 <Scissors className="w-6 h-6 text-white" />
                             </div>
                             <div className="flex-1">
-                                <h4 className="font-bold text-blue-900 text-lg">Division du BL</h4>
+                                <h4 className="font-bold text-sage-900 text-lg">Division du BL</h4>
                                 <p className="text-sm text-blue-800 mt-1.5 leading-relaxed">
                                     Glissez-déposez les <span className="font-semibold">{items.length} articles</span> entre les divisions.
                                     Chaque division deviendra un BL séparé.
@@ -426,7 +426,7 @@ export const SplitBlModal = ({ isOpen, onClose, onConfirm, items, loading = fals
                     <button
                         onClick={handleAddSplit}
                         disabled={loading}
-                        className="w-full px-4 py-3 text-sm font-semibold text-blue-700 bg-blue-50 border-2 border-blue-300 border-dashed rounded-xl hover:bg-blue-100 hover:border-blue-400 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed transition-all"
+                        className="w-full px-4 py-3 text-sm font-semibold text-sage-700 bg-sage-50 border-2 border-sage-300 border-dashed rounded-xl hover:bg-sage-100 hover:border-sage-400 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-sage-500 disabled:opacity-50 disabled:cursor-not-allowed transition-all"
                     >
                         <div className="flex items-center justify-center gap-2">
                             <Plus className="w-5 h-5" />
@@ -476,7 +476,7 @@ export const SplitBlModal = ({ isOpen, onClose, onConfirm, items, loading = fals
                             <button
                                 onClick={handleConfirm}
                                 disabled={loading || !isFormValid}
-                                className="px-5 py-2.5 text-sm font-semibold text-white bg-blue-600 rounded-lg hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed shadow-sm hover:shadow transition-all"
+                                className="px-5 py-2.5 text-sm font-semibold text-white bg-sage-500 rounded-lg hover:bg-sage-600 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-sage-500 disabled:opacity-50 disabled:cursor-not-allowed shadow-sm hover:shadow transition-all"
                             >
                                 {loading ? (
                                     <div className="flex items-center gap-2">
@@ -496,9 +496,9 @@ export const SplitBlModal = ({ isOpen, onClose, onConfirm, items, loading = fals
 
                 <DragOverlay>
                     {activeItem ? (
-                        <div className="bg-white border-2 border-blue-500 rounded-lg p-3 shadow-2xl opacity-90">
+                        <div className="bg-white border-2 border-sage-500 rounded-lg p-3 shadow-2xl opacity-90">
                             <div className="flex items-start gap-3">
-                                <GripVertical className="w-5 h-5 text-blue-500 mt-1" />
+                                <GripVertical className="w-5 h-5 text-sage-500 mt-1" />
                                 <div className="flex-1">
                                     <div className="font-semibold text-gray-900 text-sm">
                                         {activeItem.product?.name || 'Produit inconnu'}

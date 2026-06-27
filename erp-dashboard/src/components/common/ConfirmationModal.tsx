@@ -118,7 +118,7 @@ export const ConfirmationModal: React.FC<ConfirmationModalProps> = ({
                                     <div className={`p-3 rounded-full shrink-0 ${variant === 'danger' ? 'bg-red-100 text-red-600' :
                                         variant === 'warning' ? 'bg-amber-100 text-amber-600' :
                                             variant === 'sage' ? 'bg-emerald-100 text-emerald-600' :
-                                                'bg-blue-100 text-blue-600'
+                                                'bg-sage-100 text-sage-600'
                                         }`}>
                                         <AlertTriangle className="w-6 h-6" />
                                     </div>
@@ -165,7 +165,7 @@ export const ConfirmationModal: React.FC<ConfirmationModalProps> = ({
                                     className={`px-4 py-2 text-sm font-medium text-white rounded-lg shadow-sm focus:ring-2 focus:ring-offset-2 transition-all flex items-center gap-2 ${variant === 'danger' ? 'bg-red-600 hover:bg-red-700 focus:ring-red-500' :
                                         variant === 'warning' ? 'bg-amber-600 hover:bg-amber-700 focus:ring-amber-500' :
                                             variant === 'sage' ? 'bg-emerald-600 hover:bg-emerald-700 focus:ring-emerald-500' :
-                                                'bg-blue-600 hover:bg-blue-700 focus:ring-blue-500'
+                                                'bg-sage-500 hover:bg-sage-600 focus:ring-sage-500'
                                         } ${isLoading ? 'opacity-70 cursor-not-allowed' : ''}`}
                                 >
                                     {isLoading && <Loader2 className="w-4 h-4 animate-spin" />}

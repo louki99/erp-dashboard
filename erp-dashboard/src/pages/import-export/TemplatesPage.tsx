@@ -81,7 +81,7 @@ export const TemplatesPage = () => {
 
     const getTypeColor = (type: string) => {
         switch (type) {
-            case 'import': return 'bg-blue-100 text-blue-700';
+            case 'import': return 'bg-sage-100 text-sage-700';
             case 'export': return 'bg-green-100 text-green-700';
             case 'both': return 'bg-purple-100 text-purple-700';
             default: return 'bg-gray-100 text-gray-700';
@@ -171,7 +171,7 @@ export const TemplatesPage = () => {
                 <div className="flex items-center gap-1">
                     <button
                         onClick={() => navigate(`/import-export/templates/${params.data.id}`)}
-                        className="p-1 text-blue-600 hover:bg-blue-50 rounded"
+                        className="p-1 text-sage-600 hover:bg-sage-50 rounded"
                         title="Voir détails"
                     >
                         <Eye className="w-4 h-4" />

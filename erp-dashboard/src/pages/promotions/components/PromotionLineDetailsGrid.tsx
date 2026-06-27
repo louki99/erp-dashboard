@@ -308,12 +308,12 @@ export const PromotionLineDetailsGrid = ({ lineIndex }: PromotionLineDetailsGrid
 
     return (
         <div className="h-full flex flex-col">
-            <div className="flex justify-between items-center bg-gradient-to-r from-blue-50 to-white px-4 py-3 border-b border-gray-200">
+            <div className="flex justify-between items-center bg-gradient-to-r from-sage-50 to-white px-4 py-3 border-b border-gray-200">
                 <div className="flex-1">
                     <div className="flex items-center gap-2 mb-1">
                         <h3 className="text-sm font-semibold text-gray-900">Paliers de Remise</h3>
                         {breakpointType === BreakpointType.VALUE_BASED && (
-                            <span className="text-xs px-2 py-0.5 bg-blue-100 text-blue-700 rounded-full">Seuils basés sur valeur (MAD)</span>
+                            <span className="text-xs px-2 py-0.5 bg-sage-100 text-sage-700 rounded-full">Seuils basés sur valeur (MAD)</span>
                         )}
                         {breakpointType === BreakpointType.QUANTITY_BASED && (
                             <span className="text-xs px-2 py-0.5 bg-green-100 text-green-700 rounded-full">Seuils basés sur quantité</span>
@@ -334,7 +334,7 @@ export const PromotionLineDetailsGrid = ({ lineIndex }: PromotionLineDetailsGrid
                 <button
                     type="button"
                     onClick={addDetail}
-                    className="text-xs flex items-center gap-1 px-3 py-1.5 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors shadow-sm ml-4"
+                    className="text-xs flex items-center gap-1 px-3 py-1.5 bg-sage-500 text-white rounded-md hover:bg-sage-600 transition-colors shadow-sm ml-4"
                 >
                     <Plus className="w-3 h-3" /> Ajouter un Palier
                 </button>

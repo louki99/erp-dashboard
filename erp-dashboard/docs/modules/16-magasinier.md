@@ -85,25 +85,67 @@ Dispatcher drags confirmed BCs into a Mission (create_delivery_mission)
    [Magasinier: start_preparation]
          │
          ▼
-  BP: in_progress
-  Mission's BLs: in_preparation
+  BP: in_progress  ◄── while here, the dispatcher can pull the mission back to draft via
+  Mission's BLs:        reopen_delivery_mission (Module 15 §8.6) — BP → cancelled, see §3
+  in_preparation
          │
    [update_preparation — item quantities incrementally]
          │
-   [complete_preparation]
+   [complete_preparation]                       OR   [report_shortage]  (optional escalation,
+         │                                             mid-pick, skips straight to
+         │                                             awaiting_shortage_review — §6.7)
          │
-         ├─── No shortage ──► BP: completed_full  ─┐
-         │                                          ├─► Mission's BLs: ready
-         └─── Shortage ─────► BP: completed_partial ┘    Warehouse Transfer (CENTRAL→VAN)
-                                      │                   auto-created right here
-                               [Dispatcher: accept_partial_preparation]
+         ├─── No shortage ──► BP: completed_full
+         │                         │
+         │                         ├─► Mission's BLs: ready
+         │                         └─► WarehouseTransfer created 'pending' (items only —
+         │                              NO stock movement yet, see the gate below)
+         │
+         └─── Shortage ─────► BP: completed_partial
+                                   │   Mission: awaiting_shortage_review (new 2026-06-23 — set
+                                   │   automatically, atomically, the instant the BP finishes
+                                   │   short). BLs stay exactly where they are
+                                   │   (in_preparation/batched) — NOT ready, NO transfer.
+                                   │   The rider cannot depart on an incomplete pick.
+                                   ▼
+                          [Dispatcher: review_partial_preparation]
                                       │
-                              BP: shortage_accepted ──[auto-chained, same call]──►
+                              BP: awaiting_shortage_review (Mission: still awaiting_shortage_review)
                                       │
-                              BP: shortage_split_done (backlog BC(s) re-injected for the
-                                      │                 missing delta — see below)
-                                      ▼
-                                Mission: ready
+                    ┌─────────────────┴─────────────────┐
+                    ▼                                     ▼
+       [Dispatcher: accept_partial_preparation,   [Dispatcher: request_rework]
+        metadata.allocations REQUIRED — see                │
+        Module 15 §10, the dispatcher           BP: partial_rework_requested
+        manually picks which BL loses           Mission: in_preparation (you're picking
+        stock, not the system]                  again — request_rework moves it back here)
+                    │                                     │
+        BP: shortage_accepted                              │
+        ──[auto-chained, same call,                         │
+           dispatcher's allocations]──►        [Magasinier: continue_preparation]
+        BP: shortage_split_done                             │
+        (backlog BC(s) re-injected exactly                  │
+         per the chosen allocations)
+                    │                                       │
+                    │                          BP: completed_full, Mission: ready
+                    │                            (or still completed_partial, Mission: back
+                    │                             to awaiting_shortage_review — loop back
+                    │                             to dispatcher)
+                    ▼                                       │
+         Mission: ready, WarehouseTransfer        Mission: ready, WarehouseTransfer
+         created 'pending' — same gate below      created 'pending' — same gate below
+                    │                                       │
+                    └─────────────────┬─────────────────────┘
+                                       ▼
+                          Mission: ready, WT: pending
+                                       │
+                         [Rider: POST .../warehouse-transfers/{id}/accept]
+                                       │   ◄── THIS is what physically moves the stock
+                                       │       (CENTRAL availability → VAN), not
+                                       │       complete_preparation/continue_preparation/
+                                       │       split_remaining_quantity. See the fix note below.
+                                       ▼
+                              WT: accepted, stock moved
 ```
 
 > **There is no more manual "generate BP" or "allocate stock" step.** Both used to be
@@ -113,10 +155,48 @@ Dispatcher drags confirmed BCs into a Mission (create_delivery_mission)
 > BP that already exists with stock already reserved — there is nothing to create or allocate
 > from the warehouse side anymore.
 >
-> **Warehouse Transfer is now automatic.** Until this migration, the dispatcher manually
-> triggered a CENTRAL→VAN transfer once the rider accepted the BCH. Now,
-> `complete_preparation` creates it itself the moment the BP finishes (via
-> `WarehouseTransferService::createFromMission()`) — see [§6.5](#65-complete-preparation).
+> **Warehouse Transfer is now automatic — but only when the BP is fully prepared.** Until this
+> migration, the dispatcher manually triggered a CENTRAL→VAN transfer once the rider accepted the
+> BCH. Now, `complete_preparation` creates the WT itself, but only when the BP finishes
+> `completed_full` (via `WarehouseTransferService::createFromMission()`) — see
+> [§6.5](#65-complete-preparation).
+>
+> **Fixed 2026-06-23 — three real bugs, found auditing the dispatcher↔magasinier handoff:**
+> 1. **Mission/BLs used to leak to `ready` on a shortage.** `complete_preparation` advanced the
+>    mission's BLs to `ready` unconditionally, regardless of `completed_full` vs
+>    `completed_partial`. Fixed — BLs (and the WT) now only advance when the BP is
+>    `completed_full`. On a shortage, the BLs correctly stay `in_preparation`/`batched` until
+>    the dispatcher resolves it (`accept_partial_preparation` or `request_rework` +
+>    `continue_preparation`) — see the diagram above and Module 15 §10.
+> 2. **The real stock movement (CENTRAL availability → VAN) used to execute immediately at WT
+>    creation** — i.e. the moment you, the magasinier, finished picking, before the rider had
+>    done anything. If the rider rejected the mission or it needed adjusting, the stock books
+>    were already wrong. Fixed: the WT is now created `pending` (items only, no stock touched).
+>    **The actual stock movement only happens when the rider explicitly accepts the mission**
+>    on their app (`POST /backend/dispatcher/warehouse-transfers/{id}/accept`, Module 15 §12c) —
+>    this is now the real "transfer of responsibility" moment, atomic, idempotency-guarded
+>    (rejects a second call once no longer `pending`).
+> 3. **(Later same day) The mission used to just silently sit at `in_preparation` on a
+>    shortage** — same value as "still being picked", giving the dispatcher no real signal to
+>    act on and no way to filter/count missions stuck on a shortage. Fixed: new explicit mission
+>    status `awaiting_shortage_review`, set atomically the instant the BP finishes
+>    `completed_partial`. `request_rework` moves it back to `in_preparation` (you're picking
+>    again); a `continue_preparation` attempt that's still short loops it back to
+>    `awaiting_shortage_review` instead of stalling at `in_preparation`. Required widening
+>    `delivery_missions.status` from `varchar(20)` to `varchar(40)` — the new value didn't fit.
+> 4. **(Later still) `split_remaining_quantity` stopped deciding on its own which customer
+>    loses stock.** A dispatcher flagged that the auto-split (greedy, first-BL-first across the
+>    mission's BLs) was making a commercial call the system has no business making. Fixed:
+>    `accept_partial_preparation` now requires `metadata.allocations:
+>    [{ bl_id, product_id, quantity }]` — the dispatcher's explicit choice, sourced from
+>    `review_partial_preparation`'s new `shortage_details[].affected_bls`. This doesn't touch
+>    anything magasinier-side directly, but it's why a BP's eventual `shortage_split_done`
+>    backlog now lands against whichever BL/customer the dispatcher picked, not whichever BL
+>    happened to be first in the list.
+>
+> All four fixes verified live end-to-end against a real WSL Postgres instance, including the
+> full shortage → rework → still-short → rework → fully-resolved → ready state machine, and a
+> two-BL shortage where the dispatcher's chosen BL (not the first one) was the one reduced.
 
 > **Added 2026-06-17 — shortage backlog re-injection (was previously a real gap):**
 > Before this date, `accept_partial_preparation` left the BP parked at `shortage_accepted`
@@ -148,6 +228,35 @@ Dispatcher drags confirmed BCs into a Mission (create_delivery_mission)
 > those keys are gone; use `backlog.backlog_orders`/`backlog.backlog_orders_count` instead**, and
 > each entry now has `id`/`order_code`/`parent_order_id`/`parent_order_code`/`items_count`/
 > `total_quantity` (no `delivery_number`/`parent_delivery_note_id` anymore).
+
+> **Fixed 2026-06-23 — the dispatcher's shortage-resolution flow was broken end-to-end,
+> 4 separate bugs deep, found while auditing the dispatcher↔magasinier handoff:**
+> 1. **`completed_partial` was unreachable.** `complete_preparation` hard-required every short
+>    line to already have `shortage_reported_at` set (only settable via `report_shortage`), but
+>    `report_shortage` itself immediately moves the BP to `awaiting_shortage_review` — so there
+>    was no sequence of calls that could ever land a BP at `completed_partial`. Fixed: `complete_preparation`
+>    now auto-fills the shortage fields itself when missing — see [§6.5](#65-complete-preparation).
+> 2. **`accept_partial_preparation` crashed.** It auto-chains `split_remaining_quantity`
+>    (added 2026-06-17, see below), which accessed `$bp->logisticsBatch`/`$bp->bonChargement` —
+>    relations deleted by the mission migration — and threw `BadMethodCallException` every time.
+>    This means the whole accept-and-split path has been completely broken since 2026-06-21 and
+>    no test exercised it until today. Fixed to resolve the branch via `$bp->deliveryMission`.
+> 3. **Payload-key bug, 4 decisions:** `accept_partial_preparation` (`acceptance_reason`),
+>    `request_rework` (`rework_reason`), `report_shortage` (`shortage_items`), and
+>    `continue_preparation` (`additional_items`) all read their field straight from the request's
+>    top-level `data`, not `data.metadata` — but their own `schema()` definitions and every curl
+>    example in this doc send these fields under `metadata`. `accept_partial_preparation` masked
+>    this silently (fell back to a generic default reason, losing the dispatcher's real text);
+>    `request_rework` hard-failed with `rework_reason_required` even when a reason was sent. Fixed
+>    to check `metadata` first, same fix pattern as `reject_preparation` (2026-06-22).
+> 4. **`continue_preparation` always crashed on its `StockMovement::create()`** — it used
+>    `type: "preparation_continued"`, a value not in `stock_movements`' CHECK constraint. Fixed to
+>    `type: "sale"`. See [§6.8](#68-continue-preparation-rework).
+>
+> All four verified live end-to-end against a real WSL Postgres instance (transaction + rollback):
+> direct shortage completion → `completed_partial`, `review_partial_preparation` →
+> `accept_partial_preparation` (auto-chain, real backlog BC created, no crash), and separately
+> `request_rework` → `continue_preparation` → `completed_full`.
 
 > **Added 2026-06-18 — branch scoping bugs fixed across the whole module:** the 3NF
 > normalization migration dropped `branch_code` columns in favor of `branch_id` on several
@@ -235,6 +344,7 @@ DechargeReconciliationRequest: approved — VAN→depot stock transfer executed
 | `shortage_split_done` | Shortage items released back into Workspace 1 as a backlog BC (`Order`, `bc_status: confirmed`) | Ready for loading — terminal state for an accepted shortage |
 | `shortage_accepted` | Dispatcher accepted shortage | Transient as of 2026-06-17 — immediately auto-chains to `shortage_split_done` in the same `accept_partial_preparation` call; only observable mid-transaction |
 | `rejected` | Rejected by Magasinier | Mission/BLs revert to `draft` — dispatcher re-runs `confirm_delivery_mission` once resolved |
+| `cancelled` | **New 2026-06-22.** Mission pulled back to draft by the dispatcher mid-preparation (`reopen_delivery_mission`, Module 15 §8.6) — e.g. a salesperson needs to edit a BC already inside the mission. Kept for audit, never deleted | Terminal for this BP — a brand-new BP is generated when the dispatcher re-confirms the mission |
 
 ### Décharge (UnloadOrder) statuses
 
@@ -604,6 +714,18 @@ placeholder "DEPOT" location.
 
 Finalizes the preparation (`complete_preparation` decision). All item quantities must be set. If any `prepared_quantity < requested_quantity`, the BP is marked `completed_partial` (shortage).
 
+> **Fixed 2026-06-23 — calling this directly with a shortfall, with no prior `report_shortage`
+> call, now works.** It used to hard-reject with `shortage_not_reported` unless `report_shortage`
+> ([§6.7](#67-report-shortage-explicit)) had already been called for every short line — but
+> `report_shortage` itself immediately moves the BP to `awaiting_shortage_review`, which made it
+> impossible to ever call `complete_preparation` afterward (status no longer `in_progress`). In
+> practice this meant `completed_partial` could **never be reached** through the normal
+> finish-picking flow. Fixed: `complete_preparation` now auto-fills `shortage_quantity`/
+> `shortage_reason: "not_specified"`/`shortage_reported_at` for any short line that wasn't
+> already reported, instead of blocking. `report_shortage` is unchanged — it's still the
+> separate, optional **mid-pick escalation** path (see [§6.7](#67-report-shortage-explicit)),
+> not a prerequisite.
+
 ```bash
 curl -X PUT https://api.omni360.cloud/api/backend/magasinier/preparations/88/save \
   -H "Authorization: Bearer {TOKEN}" \
@@ -699,13 +821,19 @@ curl -X PUT https://api.omni360.cloud/api/backend/magasinier/preparations/88/sav
 **Side effects (no shortage):**
 - BP → `completed_full`
 - The mission's BLs → `ready`
-- Warehouse Transfer (CENTRAL → VAN) auto-created
+- Warehouse Transfer created — `status: pending`, items only. **No stock is moved yet** — the
+  CENTRAL→VAN movement only happens once the rider accepts (Module 15 §12c). Mission → `ready`
+  (ready for the rider, not yet "transfer executed")
 - `PreparationCompletedEvent` fired
 
 **Side effects (with shortage):**
-- BP → `completed_partial`, `warehouse_transfer` is `null` — no transfer is created until the
-  shortage is resolved
-- Dispatcher must run shortage review/balance actions (see Module 15) before a transfer can be generated
+- BP → `completed_partial`, `warehouse_transfer` is `null` — **the mission and its BLs stay
+  exactly where they were** (`in_preparation`/`batched`) — not `ready`. No transfer is created
+  until the shortage is fully resolved
+- Dispatcher must run shortage review/balance actions (§10 of Module 15) — once resolved
+  (`accept_partial_preparation`'s auto-chained split, or `request_rework` →
+  `continue_preparation` reaching `completed_full`), the WT is generated at that point instead,
+  same `pending`/no-stock-movement-yet semantics as above
 
 ---
 
@@ -747,15 +875,19 @@ curl -X POST https://api.omni360.cloud/api/backend/magasinier/preparations/88/re
 }
 ```
 
-**Side effects:** (changed with the mission migration — there is no more BCH to revert)
-- BP → `rejected`
+**Side effects:** (changed with the mission migration — there is no more BCH to revert). All of
+the below happens inside a single `DB::transaction()` — atomic, all-or-nothing, confirmed
+QA-validatable as a single all-or-nothing rollback (`app/Decisions/Warehouse/RejectPreparationDecision.php:60-114`):
+- BP → `rejected` — **kept in DB for audit trail, never deleted**
 - The mission reverts → `draft`
 - The mission's BLs revert → `draft`
-- The orders that fed those BLs are **not** released back to "Commandes en attente" — they stay
-  tied to the mission/BLs. This is a resubmittable state, not a full rollback (compare
-  `cancel_delivery_mission`, Module 15, which does fully release orders) — the dispatcher can
-  re-run `confirm_delivery_mission` once the rejection issue is resolved, which re-allocates
-  stock and regenerates a fresh BP.
+- The orders (BCs) that fed those BLs are **not** released back to "Commandes en attente" — they
+  stay tied to the same mission/BLs (same driver/vehicle assignment). This is a deliberate,
+  re-submittable state, not a full rollback (compare `cancel_delivery_mission`, Module 15, which
+  does fully release orders) — the dispatcher sees the mission flip back to `draft` in their
+  workspace, fixes the issue (e.g. corrects a reference or note), then re-runs
+  `confirm_delivery_mission` (Module 15 §8.2), which re-allocates stock and generates a brand-new
+  BP for the magasinier.
 
 ---
 
@@ -763,7 +895,18 @@ curl -X POST https://api.omni360.cloud/api/backend/magasinier/preparations/88/re
 
 `POST /backend/workflow/bon-preparation/{id}/execute` with `decision: "report_shortage"`
 
-**Not previously documented.** An alternative, more granular way to declare a shortage mid-pick — rather than waiting until [Complete Preparation](#65-complete-preparation), the Magasinier can report a shortage on specific lines as soon as it's discovered. BP must be `pending` or `in_progress`.
+An alternative, more granular way to declare a shortage mid-pick — rather than waiting until
+[Complete Preparation](#65-complete-preparation), the Magasinier can report a shortage on
+specific lines as soon as it's discovered. BP must be `pending` or `in_progress`.
+
+> **Not a prerequisite for `complete_preparation`.** These are two independent ways to surface a
+> shortage, not a two-step sequence — calling `report_shortage` immediately jumps the BP to
+> `awaiting_shortage_review` (skipping `completed_partial`/`review_partial_preparation`
+> entirely), so it should only be used when the magasinier wants to escalate to the dispatcher
+> **before** finishing the rest of the pick (e.g. a critical/perishable item is definitely
+> unavailable). If the magasinier just wants to finish picking and report the shortfall at the
+> end, call `complete_preparation` ([§6.5](#65-complete-preparation)) directly with the lower
+> quantity — no need to call this first.
 
 ```bash
 curl -X POST https://api.omni360.cloud/api/backend/workflow/bon-preparation/88/execute \
@@ -799,11 +942,19 @@ curl -X POST https://api.omni360.cloud/api/backend/workflow/bon-preparation/88/e
 | `shortage_items[].can_fulfill_later` | no | `boolean` | |
 | `shortage_items[].estimated_availability` | no | `date` | |
 
-**Response `200`:**
+**Request body note:** send `shortage_items` nested under top-level `metadata` exactly as in the
+curl example above. (**Fixed 2026-06-23** — the decision used to read this field from the wrong
+place internally and would silently see an empty list when sent this way; sending it correctly
+now actually works end-to-end, verified live.)
+
+**Response `200`:** (corrected 2026-06-23 — the response payload is under **`output`**, not
+`data`, matching every other decision in this doc)
 ```json
 {
   "success": true,
-  "data": {
+  "message": "Decision executed successfully",
+  "decision": "report_shortage",
+  "output": {
     "bp_id": 88,
     "bp_number": "BP-2026-00088",
     "bp_status": "awaiting_shortage_review",
@@ -855,11 +1006,26 @@ curl -X POST https://api.omni360.cloud/api/backend/workflow/bon-preparation/88/e
 
 **Guard:** BP must be `partial_rework_requested`. Each line is also capped to actual `available_quantity` in stock — if stock is still insufficient, that line is silently skipped (check `updated_items` in the response to see what was actually applied).
 
-**Response `200`:**
+**Request body note:** send `additional_items` nested under top-level `metadata` exactly as in
+the curl example above. (Same fix as §6.7.)
+
+> **Fixed 2026-06-23 — this decision was completely broken until today**, two separate bugs deep:
+> (1) the `additional_items` payload-key bug above meant the request body was silently ignored
+> (`no_additional_items` validation failure); (2) once that was fixed, the stock movement it logs
+> used `type: "preparation_continued"`, a value that **isn't in `stock_movements`' CHECK
+> constraint** (allowed: `purchase`/`sale`/`transfer_in`/`transfer_out`/`adjustment`/
+> `reservation`/`release`/`reservation_release`/`return`/`cancellation`) — every call threw a
+> Postgres constraint violation. Now uses `type: "sale"`, the same type `DeductStockAction` uses
+> for the equivalent normal-preparation deduction. Verified live end-to-end (rework → continue →
+> `completed_full`).
+
+**Response `200`:** (corrected 2026-06-23 — payload is under **`output`**, not `data`)
 ```json
 {
   "success": true,
-  "data": {
+  "message": "Decision executed successfully",
+  "decision": "continue_preparation",
+  "output": {
     "bp_id": 88,
     "bp_number": "BP-2026-00088",
     "bp_status": "completed_full",
@@ -879,12 +1045,41 @@ curl -X POST https://api.omni360.cloud/api/backend/workflow/bon-preparation/88/e
         "new_shortage": 4
       }
     ],
+    "warehouse_transfer": null,
     "message": "Additional items prepared - shortage reduced but still exists"
   }
 }
 ```
 
+> **New 2026-06-23 — `warehouse_transfer`.** When `is_now_complete: true` (shortage fully
+> reworked away), the mission's BLs move to `ready` and a Warehouse Transfer is generated here
+> — `status: pending`, same no-stock-movement-yet semantics as [§6.5](#65-complete-preparation).
+> Stays `null` if the rework still leaves a shortage (`bp_status` still `completed_partial`).
+
 `bp_status` resolves to `completed_full` if shortage reaches zero, otherwise stays `completed_partial`.
+
+---
+
+### 6.9 Print / Download BP PDF
+
+See [Module 15 §12e — Document Printing & PDF Generation](15-dispatcher.md#12e-document-printing--pdf-generation) for the full spec (endpoint, query params, cache TTL, version-control gap).
+
+**Quick reference for the Magasinier "Print BP" button:**
+
+```
+GET /api/backend/documents/bp/{id}           → inline (opens in browser tab)
+GET /api/backend/documents/bp/{id}/download  → attachment (save to disk)
+```
+
+- `{id}` is the numeric **preparation order ID** (not the `bp_number` string).
+- Always append `?force=1` immediately after any `complete_preparation` or
+  `continue_preparation` call to flush the cache and get a PDF reflecting the final
+  `prepared_quantity` values. Without this, the cached PDF from earlier in the preparation
+  flow may still be served.
+- `?prices=0` hides unit prices and totals — useful for the warehouse physical copy.
+- `?watermark=DRAFT` while the BP is still `in_progress`; no watermark when `completed_full`.
+
+**No batch print endpoint exists** — to print all BLs for a mission, see Module 15 §12e.
 
 ---
 
@@ -2341,13 +2536,69 @@ curl -X POST "https://api.omni360.cloud/api/backend/workflow/decharge/9/execute"
 `app/Models/PreparationOrder.php`, `app/Services/Dispatcher/BlAllocationService.php`,
 `app/Services/Dispatcher/MissionPreparationGeneratorService.php`,
 `app/Services/Delivery/DeliveryLocationResolver.php`,
-`app/Services/WarehouseTransferService.php`, `docs/modules/planning_refactor_schema.md`*  
-*Last updated: 2026-06-22 — full rewrite for the BC → DeliveryMission architecture migration.
+`app/Services/WarehouseTransferService.php`, `app/Decisions/Dispatcher/AcceptPartialPreparationDecision.php`,
+`app/Decisions/Dispatcher/RequestReworkDecision.php`, `app/Decisions/Dispatcher/ReviewPartialPreparationDecision.php`,
+`app/Decisions/Dispatcher/SplitRemainingQuantityDecision.php`, `app/Http/Controllers/Backend/WarehouseTransferController.php`,
+`app/Models/DeliveryMission.php`, `database/migrations/2026_07_20_110000_widen_delivery_missions_status_column.php`,
+`docs/modules/planning_refactor_schema.md`*
+
+*Last updated: 2026-06-24 — three bugs in the magasinier preparation flow found and fixed during deep audit:*
+1. *`start_preparation` — mission BLs were never moved to `in_preparation` (§6.3 side effects).
+   `$bp->deliveryNotes` resolves via the dropped `preparation_delivery_notes` pivot (always empty
+   for mission BPs). Fixed to use `$bp->deliveryMission->deliveryNotes()` directly (same pattern
+   already used in `complete_preparation`). BL-status filter in `complete_preparation` (§6.5),
+   `continue_preparation` (§6.8), and `split_remaining_quantity` (Module 15 §10) updated to accept
+   `in_preparation` as well as `batched` so they remain correct after BLs enter that status.*
+2. *`continue_preparation` (§6.8) — stock arithmetic error: decremented `reserved_quantity` by the
+   additional rework quantity. Rework picks from **un-reserved** available stock that arrived after
+   the original `confirm_delivery_mission` allocation — `reserved_quantity` must remain unchanged;
+   only `quantity` and the derived `available_quantity` are updated.*
+3. *`continue_preparation` (§6.8) — never traced back to `delivery_note_items.prepared_quantity`
+   after updating the BP item. This meant `createFromMission()` would build the WT with the old
+   partial amount (written by `complete_preparation`) instead of the rework-corrected total. Fixed
+   with the same `delivery_note_item_id → DeliveryNoteItem::update(['prepared_quantity' => …])`
+   write that `complete_preparation` already performs.*
+
+*Last updated: 2026-06-23 (newest pass) — `split_remaining_quantity` (Module 15 §10) no longer
+auto-decides which BL loses stock on a shortage — the dispatcher must now arbitrate manually via
+`accept_partial_preparation`'s `metadata.allocations`. Doesn't change any magasinier-facing
+endpoint directly, but updated the §2 pipeline diagram since the `shortage_split_done` step is
+no longer a silent system decision. See Module 15's changelog for full detail.
+
+*Last updated: 2026-06-23 (latest pass) — new explicit mission status
+`awaiting_shortage_review` (§2): a `completed_partial` BP now atomically blocks its mission in
+this status instead of silently leaving it at `in_preparation` — the mission can't reach
+`ready` until the dispatcher arbitrates. `request_rework` moves it back to `in_preparation`;
+a `continue_preparation` attempt still left short loops it back to
+`awaiting_shortage_review`. Required widening `delivery_missions.status` from `varchar(20)` to
+`varchar(40)`. Verified live across the full state machine.
+
+*Last updated: 2026-06-23 (second pass) — fixed the Mission-Ready/Warehouse-Transfer timing
+(§2, §6.5, §6.8): a shortage BP used to still advance the mission's BLs to `ready`
+unconditionally (no guard on `completed_full` vs `completed_partial`); and the real stock
+movement (CENTRAL availability → VAN) used to execute immediately when the WT was created — i.e.
+the moment the magasinier finished picking, not when the rider actually accepted the mission. Both
+fixed: BLs/WT now only advance on `completed_full` (or once a shortage is resolved via
+`accept_partial_preparation`/`continue_preparation`), and the WT is created `pending` with the
+real stock movement deferred to `POST /backend/dispatcher/warehouse-transfers/{id}/accept`
+(Module 15 §12c) — the rider's explicit "accept" action. Verified live end-to-end.
+
+*Last updated: 2026-06-23 (first pass) — audited and fixed the full dispatcher↔magasinier shortage-resolution
+flow (§2, §6.5, §6.7, §6.8): `completed_partial` was unreachable (a guard required
+`report_shortage` first, but `report_shortage` itself skips past `completed_partial`);
+`accept_partial_preparation` crashed every time via its `split_remaining_quantity` auto-chain
+(dead `logisticsBatch`/`bonChargement` relations); 4 decisions
+(`accept_partial_preparation`/`request_rework`/`report_shortage`/`continue_preparation`) silently
+ignored their `metadata`-nested payload fields; `continue_preparation`'s stock movement violated
+a CHECK constraint on every call. All fixed and verified live end-to-end. See the inline
+"Fixed 2026-06-23" callouts for full detail.
+
+*Previous update: 2026-06-22 — full rewrite for the BC → DeliveryMission architecture migration.
 The old BC → DO → LOT → BP → BCH pipeline is removed; `shipments`, `delivery_orders`,
 `logistics_batches` are dropped. `start_preparation`/`update_preparation`/`complete_preparation`/
 `reject_preparation`/`continue_preparation` now operate against a mission-linked BP
 (`PreparationOrder.deliveryMission`, not the removed `bonChargement`/`logisticsBatch`
-relations) — several of these decisions had crashed on the dead relations until today's fix.
+relations) — several of these decisions had crashed on the dead relations until that fix.
 `allocate_delivery_note` and `generate_preparation_for_mission` are removed entirely, folded
 into `confirm_delivery_mission`'s atomic execution (Module 15). `complete_preparation` now
 auto-creates the CENTRAL→VAN warehouse transfer. The "BC → BP Exception Flow" section is

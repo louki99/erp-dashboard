@@ -103,7 +103,7 @@ export function ValidationRuleManager({ template, onAddRule, onUpdateRule, onRem
                 {!showAddForm && (
                     <button
                         onClick={() => setShowAddForm(true)}
-                        className="inline-flex items-center px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white text-sm rounded-lg transition-colors"
+                        className="inline-flex items-center px-3 py-1.5 bg-sage-500 hover:bg-sage-600 text-white text-sm rounded-lg transition-colors"
                     >
                         <Plus className="w-4 h-4 mr-1" />
                         Add Rule
@@ -127,7 +127,7 @@ export function ValidationRuleManager({ template, onAddRule, onUpdateRule, onRem
                                     type="text"
                                     value={formData.rule_code}
                                     onChange={(e) => setFormData({ ...formData, rule_code: e.target.value })}
-                                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
+                                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-sage-500 focus:border-transparent text-sm"
                                     placeholder="CHECK_CREDIT"
                                 />
                             </div>
@@ -139,7 +139,7 @@ export function ValidationRuleManager({ template, onAddRule, onUpdateRule, onRem
                                     type="number"
                                     value={formData.order}
                                     onChange={(e) => setFormData({ ...formData, order: Number(e.target.value) })}
-                                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
+                                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-sage-500 focus:border-transparent text-sm"
                                     min="1"
                                 />
                             </div>
@@ -153,7 +153,7 @@ export function ValidationRuleManager({ template, onAddRule, onUpdateRule, onRem
                                 type="text"
                                 value={formData.rule_name}
                                 onChange={(e) => setFormData({ ...formData, rule_name: e.target.value })}
-                                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
+                                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-sage-500 focus:border-transparent text-sm"
                                 placeholder="Check Credit Limit"
                             />
                         </div>
@@ -166,7 +166,7 @@ export function ValidationRuleManager({ template, onAddRule, onUpdateRule, onRem
                                 type="text"
                                 value={formData.validator_class}
                                 onChange={(e) => setFormData({ ...formData, validator_class: e.target.value })}
-                                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
+                                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-sage-500 focus:border-transparent text-sm"
                                 placeholder="App\Validators\CreditValidator"
                             />
                         </div>
@@ -179,7 +179,7 @@ export function ValidationRuleManager({ template, onAddRule, onUpdateRule, onRem
                                 value={formData.description}
                                 onChange={(e) => setFormData({ ...formData, description: e.target.value })}
                                 rows={2}
-                                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
+                                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-sage-500 focus:border-transparent text-sm"
                                 placeholder="Validate partner credit limit..."
                             />
                         </div>
@@ -190,7 +190,7 @@ export function ValidationRuleManager({ template, onAddRule, onUpdateRule, onRem
                                     type="checkbox"
                                     checked={formData.is_required}
                                     onChange={(e) => setFormData({ ...formData, is_required: e.target.checked })}
-                                    className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                                    className="w-4 h-4 text-sage-600 border-gray-300 rounded focus:ring-sage-500"
                                 />
                                 <span className="text-sm text-gray-700">Required</span>
                             </label>
@@ -199,7 +199,7 @@ export function ValidationRuleManager({ template, onAddRule, onUpdateRule, onRem
                                     type="checkbox"
                                     checked={formData.stop_on_failure}
                                     onChange={(e) => setFormData({ ...formData, stop_on_failure: e.target.checked })}
-                                    className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                                    className="w-4 h-4 text-sage-600 border-gray-300 rounded focus:ring-sage-500"
                                 />
                                 <span className="text-sm text-gray-700">Stop on Failure</span>
                             </label>
@@ -209,7 +209,7 @@ export function ValidationRuleManager({ template, onAddRule, onUpdateRule, onRem
                             <button
                                 onClick={handleSubmit}
                                 disabled={submitting}
-                                className="inline-flex items-center px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm rounded-lg transition-colors disabled:opacity-50"
+                                className="inline-flex items-center px-4 py-2 bg-sage-500 hover:bg-sage-600 text-white text-sm rounded-lg transition-colors disabled:opacity-50"
                             >
                                 {submitting ? (
                                     <>
@@ -276,7 +276,7 @@ export function ValidationRuleManager({ template, onAddRule, onUpdateRule, onRem
                                 <div className="flex items-center gap-1">
                                     <button
                                         onClick={() => handleEdit(rule)}
-                                        className="p-2 text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
+                                        className="p-2 text-sage-600 hover:bg-sage-50 rounded-lg transition-colors"
                                         title="Edit rule"
                                     >
                                         <Edit className="w-4 h-4" />

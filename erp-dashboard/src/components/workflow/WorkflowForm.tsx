@@ -77,7 +77,7 @@ export function WorkflowForm({ workflow, onSubmit, onCancel }: WorkflowFormProps
                                 },
                             })}
                             disabled={isEdit}
-                            className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent disabled:bg-gray-100 disabled:cursor-not-allowed"
+                            className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-sage-500 focus:border-transparent disabled:bg-gray-100 disabled:cursor-not-allowed"
                             placeholder="BC, BL, BCH, BP"
                         />
                         {errors.code && (
@@ -99,7 +99,7 @@ export function WorkflowForm({ workflow, onSubmit, onCancel }: WorkflowFormProps
                                 required: 'Name is required',
                                 maxLength: { value: 255, message: 'Name must be less than 255 characters' },
                             })}
-                            className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                            className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-sage-500 focus:border-transparent"
                             placeholder="Bon de Commande Workflow"
                         />
                         {errors.name && (
@@ -115,7 +115,7 @@ export function WorkflowForm({ workflow, onSubmit, onCancel }: WorkflowFormProps
                         <textarea
                             {...register('description')}
                             rows={4}
-                            className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                            className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-sage-500 focus:border-transparent"
                             placeholder="Describe the purpose of this workflow..."
                         />
                     </div>
@@ -126,7 +126,7 @@ export function WorkflowForm({ workflow, onSubmit, onCancel }: WorkflowFormProps
                             type="checkbox"
                             id="is_active"
                             {...register('is_active')}
-                            className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                            className="w-4 h-4 text-sage-600 border-gray-300 rounded focus:ring-sage-500"
                         />
                         <label htmlFor="is_active" className="text-sm font-medium text-gray-700">
                             Active (workflow can be used to create new tasks)
@@ -146,7 +146,7 @@ export function WorkflowForm({ workflow, onSubmit, onCancel }: WorkflowFormProps
                         <button
                             type="submit"
                             disabled={submitting}
-                            className="inline-flex items-center px-6 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors disabled:opacity-50"
+                            className="inline-flex items-center px-6 py-2 bg-sage-500 hover:bg-sage-600 text-white rounded-lg transition-colors disabled:opacity-50"
                         >
                             {submitting ? (
                                 <>

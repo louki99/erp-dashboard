@@ -78,7 +78,7 @@ export function DependencyManager({ template, allTemplates, onAddDependency, onR
                 {!showAddForm && availableTemplates.length > 0 && (
                     <button
                         onClick={() => setShowAddForm(true)}
-                        className="inline-flex items-center px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white text-sm rounded-lg transition-colors"
+                        className="inline-flex items-center px-3 py-1.5 bg-sage-500 hover:bg-sage-600 text-white text-sm rounded-lg transition-colors"
                     >
                         <Plus className="w-4 h-4 mr-1" />
                         Add Dependency
@@ -97,7 +97,7 @@ export function DependencyManager({ template, allTemplates, onAddDependency, onR
                             <select
                                 value={selectedTemplateId}
                                 onChange={(e) => setSelectedTemplateId(e.target.value ? Number(e.target.value) : '')}
-                                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-sage-500 focus:border-transparent"
                             >
                                 <option value="">Select template...</option>
                                 {availableTemplates.map((t) => (
@@ -138,7 +138,7 @@ export function DependencyManager({ template, allTemplates, onAddDependency, onR
                             <button
                                 onClick={handleAddDependency}
                                 disabled={submitting || !selectedTemplateId}
-                                className="inline-flex items-center px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm rounded-lg transition-colors disabled:opacity-50"
+                                className="inline-flex items-center px-4 py-2 bg-sage-500 hover:bg-sage-600 text-white text-sm rounded-lg transition-colors disabled:opacity-50"
                             >
                                 {submitting ? (
                                     <>

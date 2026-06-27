@@ -63,7 +63,7 @@ export const SearchSelectDropdown = ({
       </button>
 
       {open && !disabled && (
-          <div className="absolute z-20 mt-1 w-full bg-white border border-gray-200 rounded-lg shadow-lg overflow-hidden">
+          <div className="absolute z-50 mt-1 w-full bg-white border border-gray-200 rounded-lg shadow-lg overflow-hidden">
             <div className="p-2 border-b border-gray-100">
               <div className="relative">
                 <Search className="absolute left-2 top-1/2 -translate-y-1/2 w-3 h-3 text-gray-400" />
@@ -89,14 +89,14 @@ export const SearchSelectDropdown = ({
                       type="button"
                       onClick={() => { onChange(o.id); setOpen(false); setQuery(''); }}
                       className={`w-full flex items-center justify-between gap-2 px-2.5 py-2 text-xs text-left hover:bg-gray-50 ${
-                        isSelected ? 'bg-blue-50' : ''
+                        isSelected ? 'bg-sage-50' : ''
                       }`}
                     >
                       <span className="min-w-0">
                         <span className="block truncate font-medium text-gray-800">{o.label}</span>
                         {o.sublabel && <span className="block truncate text-gray-400 text-[10px]">{o.sublabel}</span>}
                       </span>
-                      {isSelected && <Check size={12} className="text-blue-600 shrink-0" />}
+                      {isSelected && <Check size={12} className="text-sage-600 shrink-0" />}
                     </button>
                   );
                 })

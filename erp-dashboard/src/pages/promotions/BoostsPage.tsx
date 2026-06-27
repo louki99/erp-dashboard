@@ -168,7 +168,7 @@ export const BoostsPage = () => {
             minWidth: 200,
             cellRenderer: (params: any) => (
                 <div className="flex items-center gap-2 h-full">
-                    <Package className="w-4 h-4 text-blue-500" />
+                    <Package className="w-4 h-4 text-sage-500" />
                     <span className="text-gray-900">{getProductFamilyName(params.value)}</span>
                 </div>
             )
@@ -216,7 +216,7 @@ export const BoostsPage = () => {
                     <div className="flex items-center justify-center gap-1 h-full">
                         <button
                             onClick={() => setSelectedBoost(boost)}
-                            className="p-1.5 hover:bg-blue-50 rounded text-blue-600 transition-colors"
+                            className="p-1.5 hover:bg-sage-50 rounded text-sage-600 transition-colors"
                             title="Voir détails"
                         >
                             <Eye className="w-4 h-4" />
@@ -312,8 +312,8 @@ export const BoostsPage = () => {
                                     <label className="block text-sm font-medium text-gray-700 mb-2">
                                         Famille Produit
                                     </label>
-                                    <div className="flex items-center gap-2 p-3 bg-blue-50 rounded-lg">
-                                        <Package className="w-5 h-5 text-blue-500" />
+                                    <div className="flex items-center gap-2 p-3 bg-sage-50 rounded-lg">
+                                        <Package className="w-5 h-5 text-sage-500" />
                                         <span className="text-gray-900 font-medium">
                                             {getProductFamilyName(selectedBoost.product_family_id)}
                                         </span>

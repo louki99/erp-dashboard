@@ -32,19 +32,37 @@ export type BlStatus =
   | 'returned'
   | 'cancelled';
 
+// docs §10 (dispatcher) — full shortage-resolution flow added 2026-06-23:
+// completed_partial --[review_partial_preparation]--> awaiting_shortage_review
+//   --[accept_partial_preparation]--> shortage_accepted --(auto-chained)--> shortage_split_done
+//   --[request_rework]--> partial_rework_requested --(magasinier: continue_preparation)--> completed_full | completed_partial
 export type BpStatus =
   | 'pending'
   | 'in_progress'
   | 'completed_full'
   | 'completed_partial'
   | 'shortage_accepted'
+  | 'shortage_split_done'
   | 'awaiting_shortage_review'
+  | 'partial_rework_requested'
   | 'rejected';
 
 // docs §3 "Delivery Mission statuses" — the new top-level pipeline status.
+// `awaiting_shortage_review` added 2026-06-23 — backend closed a real state-machine gap: the
+// mission used to stay `in_preparation` (passively, indistinguishable from "still picking
+// normally") through the whole completed_partial → review/accept/rework loop, which is why this
+// app's own mission-card shortage panel previously had to derive "needs review" purely from the
+// nested BP's status. Now the mission itself flips to this status atomically (same transaction as
+// the BP update) the moment completed_partial is reached, and back to in_preparation on
+// request_rework, then either ready (fully resolved) or back to awaiting_shortage_review (still
+// short) on the magasinier's continue_preparation. NOTE: not yet reflected in docs/modules/
+// 15-dispatcher.md §3/§5 on disk as of this writing (still only lists the original 6 values) —
+// flagged back to backend, this enum is built directly off their chat description pending the doc
+// catching up.
 export type DeliveryMissionStatus =
   | 'draft'
   | 'in_preparation'
+  | 'awaiting_shortage_review'
   | 'ready'
   | 'in_transit'
   | 'completed'
@@ -160,6 +178,7 @@ export interface DeliveryNote {
   is_quantity_locked?: boolean;
   partner: { id: number; name: string; code: string };
   order?: { id: number; order_code: string; bc_status: string } | null;
+  orders?: Array<{ id: number; order_code: string; bc_status: string }> | null;
   rider?: Rider | null;
   dispatcher?: { id: number; name: string } | null;
   items?: DeliveryNoteItem[];
@@ -181,6 +200,7 @@ export interface PreparationOrderItem {
   shortage_reported_at?: string | null;
   // do_item removed from the response (docs §8 BP note) — items now relate directly to the
   // mission's aggregated BL items, not a per-DO breakdown.
+  product?: { id: number; name: string; code?: string };
 }
 
 export interface PreparationOrder {
@@ -192,9 +212,13 @@ export interface PreparationOrder {
   shortage_acknowledged?: boolean;
   preparation_efficiency?: number | null;
   magasinier?: { id: number; name: string } | null;
-  // Replaces the old `shipment` (Shipment/BCH) field — a BP now belongs to a mission.
+  // Replaces the old `shipment` (Shipment/BCH) field — a BP now belongs to a mission. Field name
+  // confirmed `delivery_mission` (not `mission`) on the live shortage-queue response, docs §10.
   delivery_mission_id?: number | null;
-  mission?: Pick<DeliveryMission, 'id' | 'mission_number' | 'status'> | null;
+  delivery_mission?: (Pick<DeliveryMission, 'id' | 'mission_number' | 'status'> & {
+    branch_code?: string;
+    rider?: Pick<Rider, 'id' | 'name'> | null;
+  }) | null;
   items?: PreparationOrderItem[];
   created_at: string;
   prepared_at?: string | null;
@@ -294,11 +318,12 @@ export interface DispatcherOrder {
 
   order_products?: Array<{
     id: number;
+    order_id?: number;
     product_id: number;
-    quantity: number;
-    unit_price: number;
-    total_price?: number;
-    product?: { id: number; name: string; sku: string } & ProductLogistics;
+    quantity: number | string;  // backend returns string e.g. "10.0000"
+    price: number;              // base unit price
+    final_price?: number;       // unit price after promo — prefer over price
+    product?: { id: number; name: string; code?: string; sku?: string } & ProductLogistics;
   }>;
 }
 
@@ -320,6 +345,7 @@ export interface DeliveryMission {
   status: DeliveryMissionStatus;
   started_at?: string | null;
   closed_at?: string | null;
+  delivery_date?: string | null;
   notes?: string | null;
   delivery_notes?: DeliveryNote[];
   bl_count?: number;
@@ -342,6 +368,10 @@ export interface CreateDeliveryMissionPayload {
   // derives it from the selected orders' branch_id when not supplied.
   branch_code?: string;
   notes?: string;
+  // Planned delivery date for all BLs in this mission (YYYY-MM-DD).
+  // Backend confirmed live 2026-06-24 — stored on delivery_missions.delivery_date,
+  // propagated to each delivery_notes.delivery_date in the same call.
+  delivery_date?: string;
 }
 
 /** `GET /backend/workflow/delivery-mission/{id}` response shape (docs §8.8) */
@@ -382,6 +412,9 @@ export interface DispatcherDashboardData {
     // bch_in_preparation/bch_prepared (docs §5).
     missions_draft: number;
     missions_in_preparation: number;
+    // New 2026-06-23, alongside the `awaiting_shortage_review` mission status itself — not yet in
+    // docs §5 on disk, built directly off backend's chat description.
+    missions_awaiting_shortage_review: number;
     missions_ready: number;
     missions_in_transit: number;
     bp_pending: number;
@@ -481,6 +514,99 @@ export interface BalanceAdjustment {
   bl_item_id: number;
   new_quantity: number;
   reason?: string;
+}
+
+// ─── Preparation shortage resolution (docs §10, fixed/verified live 2026-06-23) ────────────────
+// 3 decisions on `bon-preparation`, all via POST /workflow/bon-preparation/{id}/execute:
+// review_partial_preparation (analysis only) → accept_partial_preparation (auto-chains a backlog
+// BC split) or request_rework (sends back to the magasinier). All three were broken/silently
+// dropping their metadata fields before this fix — see DecisionActionsBar's FIELD_META and the
+// `metadata` nesting convention already established for every other module.
+
+export interface ReviewPartialPreparationOutput {
+  bp_id: number;
+  bp_status: BpStatus;
+  mission_id?: number;
+  analysis: {
+    total_requested: number;
+    total_prepared: number;
+    total_shortage: number;
+    shortage_percentage: number;
+    shortage_value: number;
+    is_critical: boolean;
+    critical_items_count: number;
+    shortage_items_count: number;
+  };
+  shortage_details: Array<{
+    product_id: number;
+    product_name: string;
+    requested_quantity: number;
+    prepared_quantity: number;
+    shortage_quantity: number;
+    unit_price: number;
+    shortage_value: number;
+    // New 2026-06-23 — every mission BL that ordered this product, with how much of *that BL's*
+    // allocation could be cut. Raw material for accept_partial_preparation's now-required
+    // `metadata.allocations` — the dispatcher chooses explicitly, no more system auto-split.
+    // IMPORTANT: only returned by review_partial_preparation's own execution output — there is no
+    // separate read endpoint, so this is lost if the page reloads after review but before accept.
+    affected_bls: Array<{
+      bl_id: number;
+      delivery_number: string;
+      partner_id: number;
+      partner_name: string;
+      bl_item_id: number;
+      allocated_quantity: number;
+    }>;
+  }>;
+  critical_items: unknown[];
+  recommended_action: 'accept_and_split' | 'request_rework' | string;
+  available_actions: Array<{ action: string; decision: string; label: string; available: boolean }>;
+  decision_guidance?: string;
+}
+
+export interface AcceptPartialPreparationOutput {
+  bp_id: number;
+  bp_status: BpStatus;
+  mission_id?: number;
+  total_prepared: number;
+  total_shortage: number;
+  shortage_percentage: number;
+  accepted_items: Array<{ product_id: number; product_name: string; prepared_quantity: string | number; shortage_quantity: string | number; shortage_reason?: string }>;
+  acceptance_reason: string;
+  next_actions?: Record<string, string>;
+  // Nested result of the auto-chained split_remaining_quantity — the BP actually ends at
+  // shortage_split_done, not shortage_accepted (that status is only observable mid-transaction).
+  backlog?: {
+    bp_status: BpStatus;
+    original_bls_count: number;
+    backlog_orders_count: number;
+    backlog_orders: Array<{ id: number; order_code: string; parent_order_id?: number; parent_order_code?: string; items_count: number; total_quantity: number }>;
+    total_shortage_released: number;
+    // `pending` (not null) once every BL on the mission is settled — same WT gate as the
+    // no-shortage path (§2/§12c): stock still untouched until the rider accepts the transfer.
+    warehouse_transfer?: { id: number; transfer_number: string; status: string } | null;
+    message?: string;
+  };
+}
+
+export interface RequestReworkOutput {
+  bp_id: number;
+  bp_status: BpStatus;
+  mission_id?: number;
+  rework_count: number;
+  rework_reason: string;
+  shortage_items: Array<{ product_id: number; product_name: string; shortage_quantity: number; shortage_reason?: string }>;
+  message?: string;
+}
+
+// GET /dispatcher/preparations/shortage-queue's own envelope is {success, ui, data} (raw
+// paginator under data) — different from the {success, message, decision, output} decision
+// envelope used everywhere else, since it's a plain listing route, not a decision execution.
+export interface ShortageQueueResponse {
+  success: boolean;
+  ui?: { fr?: { title?: string; description?: string; status_labels?: Record<string, string> } };
+  data: PaginatedResponse<PreparationOrder>;
 }
 
 // ─── Warehouse Transfer (WT) ─────────────────────────────────────────────────
@@ -643,12 +769,13 @@ export type DeliveryMissionDecisionKey =
   // for_mission — one atomic call: reserves stock for every BL, generates the BP, draft →
   // in_preparation directly. See ConfirmDeliveryMissionOutput for its output shape.
   | 'confirm_delivery_mission'
+  | 'reopen_delivery_mission'
   | 'start_delivery_mission'
   | 'complete_delivery_mission'
   | 'update_delivery_mission'
   | 'cancel_delivery_mission';
 
-export type DoDecisionFieldType = 'text' | 'number' | 'date' | 'textarea';
+export type DoDecisionFieldType = 'text' | 'number' | 'date' | 'textarea' | 'boolean';
 
 export interface DoDecisionField {
   name: string;

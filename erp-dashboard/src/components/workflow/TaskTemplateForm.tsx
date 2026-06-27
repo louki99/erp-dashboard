@@ -112,7 +112,7 @@ export function TaskTemplateForm({ workflowId, template, onSubmit, onCancel, max
                                     },
                                 })}
                                 disabled={isEdit}
-                                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent disabled:bg-gray-100"
+                                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-sage-500 focus:border-transparent disabled:bg-gray-100"
                                 placeholder="ADV_REVIEW"
                             />
                             {errors.code && (
@@ -127,7 +127,7 @@ export function TaskTemplateForm({ workflowId, template, onSubmit, onCancel, max
                             </label>
                             <select
                                 {...register('task_type', { required: 'Task type is required' })}
-                                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-sage-500 focus:border-transparent"
                             >
                                 <option value="">Select type...</option>
                                 {TASK_TYPES.map((type) => (
@@ -150,7 +150,7 @@ export function TaskTemplateForm({ workflowId, template, onSubmit, onCancel, max
                         <input
                             type="text"
                             {...register('name', { required: 'Name is required' })}
-                            className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                            className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-sage-500 focus:border-transparent"
                             placeholder="ADV Review and Validation"
                         />
                         {errors.name && (
@@ -166,7 +166,7 @@ export function TaskTemplateForm({ workflowId, template, onSubmit, onCancel, max
                         <textarea
                             {...register('description')}
                             rows={3}
-                            className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                            className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-sage-500 focus:border-transparent"
                             placeholder="Describe what this task does..."
                         />
                     </div>
@@ -183,7 +183,7 @@ export function TaskTemplateForm({ workflowId, template, onSubmit, onCancel, max
                                     required: 'Order is required',
                                     min: { value: 1, message: 'Order must be at least 1' },
                                 })}
-                                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-sage-500 focus:border-transparent"
                             />
                             {errors.order && (
                                 <p className="mt-1 text-sm text-red-600">{errors.order.message}</p>
@@ -200,7 +200,7 @@ export function TaskTemplateForm({ workflowId, template, onSubmit, onCancel, max
                                 {...register('timeout_minutes', {
                                     min: { value: 1, message: 'Timeout must be at least 1 minute' },
                                 })}
-                                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-sage-500 focus:border-transparent"
                                 placeholder="30"
                             />
                             {errors.timeout_minutes && (
@@ -241,7 +241,7 @@ export function TaskTemplateForm({ workflowId, template, onSubmit, onCancel, max
                             <input
                                 type="text"
                                 {...register('assignment_target')}
-                                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-sage-500 focus:border-transparent"
                                 placeholder={
                                     assignmentType === 'role'
                                         ? 'adv, dispatcher, magasinier'
@@ -265,7 +265,7 @@ export function TaskTemplateForm({ workflowId, template, onSubmit, onCancel, max
                                 type="checkbox"
                                 id="auto_complete"
                                 {...register('auto_complete')}
-                                className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                                className="w-4 h-4 text-sage-600 border-gray-300 rounded focus:ring-sage-500"
                             />
                             <label htmlFor="auto_complete" className="text-sm font-medium text-gray-700">
                                 Auto-complete (system tasks only)
@@ -277,7 +277,7 @@ export function TaskTemplateForm({ workflowId, template, onSubmit, onCancel, max
                                 type="checkbox"
                                 id="is_active"
                                 {...register('is_active')}
-                                className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                                className="w-4 h-4 text-sage-600 border-gray-300 rounded focus:ring-sage-500"
                             />
                             <label htmlFor="is_active" className="text-sm font-medium text-gray-700">
                                 Active (template can be used in workflows)
@@ -298,7 +298,7 @@ export function TaskTemplateForm({ workflowId, template, onSubmit, onCancel, max
                         <button
                             type="submit"
                             disabled={submitting}
-                            className="inline-flex items-center px-6 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors disabled:opacity-50"
+                            className="inline-flex items-center px-6 py-2 bg-sage-500 hover:bg-sage-600 text-white rounded-lg transition-colors disabled:opacity-50"
                         >
                             {submitting ? (
                                 <>

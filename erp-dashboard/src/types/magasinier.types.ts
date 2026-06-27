@@ -16,10 +16,14 @@ export type BonPreparationStatus =
 // logisticsBatch fields were removed from every Magasinier response (preparations list, BP
 // detail, dashboard) and replaced by `delivery_mission` — a BP now belongs to a mission, the same
 // as a BL does on the dispatcher side. Do not reintroduce BonChargement/LogisticsBatch here.
+export type PreparationsScope = 'active' | 'rupture_watch' | 'history' | 'all';
+
 export interface PreparationDeliveryMission {
     id: number;
     mission_number: string;
     status: string;
+    branch_code?: string;
+    delivery_date?: string | null;
     rider?: { id: number; name: string; phone?: string } | null;
     delivery_notes?: Array<{ id: number; delivery_number: string; status?: string; partner?: { id: number; name: string } }>;
 }
@@ -75,14 +79,17 @@ export interface Magasinier {
     email?: string;
 }
 
+// Real field names verified against docs §8.1 — `minimum_quantity`/`maximum_quantity`, not
+// `min_stock_level` (a guessed name that never matched the live response).
 export interface Stock {
     id: number;
     product_id: number;
+    warehouse_code?: string;
     quantity: number;
     reserved_quantity: number;
     available_quantity: number;
-    min_stock_level?: number;
-    minimum_quantity?: number;
+    minimum_quantity: number;
+    maximum_quantity?: number;
     product?: Product;
 }
 
@@ -130,20 +137,41 @@ export interface PreparationsResponse {
     list_scope_help?: Record<string, string>;
 }
 
+// GET /magasinier/preparations — new history endpoint (docs §6.0, 2026-06-24).
+// `counts` is per-status totals AFTER date/search but BEFORE scope/status filter — use for tab badges.
+export interface PreparationsAllResponse {
+    data: BonPreparation[];
+    meta: {
+        current_page: number;
+        last_page: number;
+        per_page: number;
+        total: number;
+        from?: number;
+        to?: number;
+    };
+    counts: Record<string, number>;
+}
+
 // GET /magasinier/preparations/{id} also returns the BP flat, no wrapper (docs §6.2).
 export type BonPreparationDetailResponse = BonPreparation;
 
+// GET /magasinier/stock and /stock/low-stock both return the raw Laravel paginator directly
+// (docs §8.1/§8.2) — flat, no success/data wrapper. Same pattern bug as PreparationsResponse had:
+// the old nested `data.stock.data` shape never matched the live response.
 export interface StockResponse {
-    success: boolean;
-    data?: {
-        stock: {
-            data: Stock[];
-            current_page: number;
-            last_page: number;
-            per_page: number;
-            total: number;
-        };
-    };
+    current_page: number;
+    last_page?: number;
+    per_page: number;
+    total: number;
+    data: Stock[];
+}
+
+export interface StockMovementsResponse {
+    current_page: number;
+    last_page?: number;
+    per_page: number;
+    total: number;
+    data: StockMovement[];
 }
 
 // Uniform decision response envelope, 2026-06-22 breaking change (docs §6 intro): every BP

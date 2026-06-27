@@ -94,7 +94,7 @@ const RecentPartnerRow = ({ partner, onNavigate }: { partner: Partner; onNavigat
         onClick={onNavigate}
         className="w-full flex gap-3 items-center py-2.5 border-b border-gray-50 last:border-0 hover:bg-gray-50/50 rounded px-1 transition-colors text-left"
     >
-        <div className="w-8 h-8 bg-gradient-to-br from-indigo-400 to-blue-500 rounded-lg flex items-center justify-center text-white text-xs font-bold shrink-0">
+        <div className="w-8 h-8 bg-gradient-to-br from-sage-400 to-sage-500 rounded-lg flex items-center justify-center text-white text-xs font-bold shrink-0">
             {partner.name.charAt(0).toUpperCase()}
         </div>
         <div className="flex-1 min-w-0">
@@ -215,8 +215,8 @@ const AdvDashboardContent = () => {
                     value={n(stats.pending_partners)}
                     badge="Partenaires"
                     icon={Users}
-                    iconBg="bg-blue-100"
-                    iconColor="text-blue-600"
+                    iconBg="bg-sage-100"
+                    iconColor="text-sage-600"
                     onClick={() => navigate('/adv/partners')}
                     alert={n(stats.pending_partners) > 0}
                 />
@@ -233,13 +233,13 @@ const AdvDashboardContent = () => {
             </div>
 
             {/* Encours global banner */}
-            <div className="bg-gradient-to-r from-slate-800 to-indigo-900 rounded-xl p-5 text-white flex items-center justify-between shadow-lg">
+            <div className="bg-gradient-to-r from-slate-800 to-sage-900 rounded-xl p-5 text-white flex items-center justify-between shadow-lg">
                 <div>
-                    <p className="text-indigo-300 text-xs font-medium uppercase tracking-wider mb-1">Encours Global</p>
+                    <p className="text-sage-300 text-xs font-medium uppercase tracking-wider mb-1">Encours Global</p>
                     <p className="text-3xl font-black">{n(stats.total_credit_exposure).toLocaleString('fr-FR')} Dh</p>
                 </div>
                 <div className="text-right">
-                    <p className="text-indigo-300 text-xs font-medium uppercase tracking-wider mb-1">Crédit Disponible</p>
+                    <p className="text-sage-300 text-xs font-medium uppercase tracking-wider mb-1">Crédit Disponible</p>
                     <p className="text-2xl font-bold text-emerald-300">{n(stats.available_credit).toLocaleString('fr-FR')} Dh</p>
                 </div>
                 <button

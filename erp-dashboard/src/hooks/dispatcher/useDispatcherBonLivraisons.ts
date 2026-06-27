@@ -35,8 +35,8 @@ export const useDispatcherBonLivraisonsList = (filters?: {
   return { data, loading, error, refetch: fetch };
 };
 
-// §7.2/§7.3 (`/draft`, `/confirmed` sub-routes) are confirmed BROKEN — they reference the dropped
-// `shipments` table. Use the generic list with a status filter instead (§7.1, unaffected).
+// §7.2/§7.3 (`/draft`, `/confirmed` sub-routes) — fixed 2026-06-23, functional again.
+// These hooks use the generic list (§7.1) which is equivalent and handles both statuses fine.
 export const useDispatcherDraftBonLivraisons = () => {
   const [data, setData] = useState<PaginatedResponse<DeliveryNote> | null>(null);
   const [loading, setLoading] = useState(true);

@@ -35,7 +35,7 @@ export const LeftPanel: React.FC<LeftPanelProps> = ({
                     type="text" value={searchInput}
                     onChange={(e) => handleSearch(e.target.value)}
                     placeholder="Rechercher un tarif..."
-                    className="w-full pl-8 pr-8 py-1.5 text-xs border border-gray-200 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-gray-50"
+                    className="w-full pl-8 pr-8 py-1.5 text-xs border border-gray-200 rounded-md focus:outline-none focus:ring-2 focus:ring-sage-500 focus:border-transparent bg-gray-50"
                 />
                 {searchInput && (
                     <button onClick={() => handleSearch('')} className="absolute right-2 top-1/2 -translate-y-1/2 p-0.5 rounded hover:bg-gray-200">
@@ -140,7 +140,7 @@ export const MainPanel: React.FC<MainPanelProps> = ({
                             <div className="min-w-0 flex-1">
                                 <div className="flex items-center gap-2 flex-wrap">
                                     <h1 className="text-lg sm:text-xl font-bold text-gray-900 truncate">{selected.name}</h1>
-                                    <span className="px-2 py-0.5 text-xs font-mono bg-blue-50 text-blue-700 rounded">{selected.code}</span>
+                                    <span className="px-2 py-0.5 text-xs font-mono bg-sage-50 text-sage-700 rounded">{selected.code}</span>
                                 </div>
                                 <div className="flex items-center gap-3 text-xs text-gray-500 mt-0.5">
                                     <span>Rang: <strong>{selected.rank}</strong></span>
@@ -222,14 +222,14 @@ const InfoSection: React.FC<{ detail: PriceList | undefined; selected: PriceList
                     <div className="text-xs text-gray-500 mb-1">Nom</div>
                     <div className="text-lg font-bold text-gray-900">{d.name}</div>
                 </div>
-                <div className="p-3 rounded-lg border border-blue-100 bg-blue-50 shadow-sm">
-                    <div className="text-xs text-blue-600 mb-1 font-medium">Rang</div>
-                    <div className="text-lg font-bold text-blue-700">{d.rank}</div>
+                <div className="p-3 rounded-lg border border-sage-100 bg-sage-50 shadow-sm">
+                    <div className="text-xs text-sage-600 mb-1 font-medium">Rang</div>
+                    <div className="text-lg font-bold text-sage-700">{d.rank}</div>
                 </div>
             </div>
             <div className="flex justify-end">
                 <button onClick={() => { setEditingPL(d); setPlForm({ code: d.code, name: d.name, rank: d.rank }); setShowCreatePLModal(true); }}
-                    className="px-3 py-1.5 text-xs bg-blue-50 text-blue-700 rounded-lg hover:bg-blue-100 transition-colors flex items-center gap-1 font-medium">
+                    className="px-3 py-1.5 text-xs bg-sage-50 text-sage-700 rounded-lg hover:bg-sage-100 transition-colors flex items-center gap-1 font-medium">
                     <Edit className="w-3.5 h-3.5" /> Modifier
                 </button>
             </div>
@@ -409,8 +409,8 @@ const OverridesSection: React.FC<{
 
 const EmptyState = () => (
     <div className="flex-1 flex flex-col items-center justify-center text-gray-400 bg-slate-50/50">
-        <div className="w-20 h-20 rounded-2xl bg-gradient-to-br from-blue-50 to-indigo-100 flex items-center justify-center mb-4 shadow-sm">
-            <DollarSign className="w-10 h-10 text-blue-400" />
+        <div className="w-20 h-20 rounded-2xl bg-gradient-to-br from-sage-50 to-sage-100 flex items-center justify-center mb-4 shadow-sm">
+            <DollarSign className="w-10 h-10 text-sage-400" />
         </div>
         <p className="text-base font-medium text-gray-500 mb-1">Gestion des Tarifs</p>
         <p className="text-sm text-gray-400 mb-4 max-w-xs text-center">
@@ -430,8 +430,8 @@ const EmptyState = () => (
                 <span>Dérogations partenaires</span>
             </div>
             <div className="flex items-center gap-2">
-                <div className="w-5 h-5 rounded bg-blue-100 flex items-center justify-center">
-                    <Eye className="w-3 h-3 text-blue-600" />
+                <div className="w-5 h-5 rounded bg-sage-100 flex items-center justify-center">
+                    <Eye className="w-3 h-3 text-sage-600" />
                 </div>
                 <span>Prévisualisation de prix effectifs</span>
             </div>

@@ -607,7 +607,7 @@ export const PricingManagementPage = () => {
         {
             headerName: '', width: 150, cellRenderer: (params: any) => (
                 <div className="flex items-center justify-end gap-1">
-                    <button onClick={() => handleEditLine(params.data)} className="p-1 hover:bg-gray-100 rounded text-blue-600" title="Éditer">
+                    <button onClick={() => handleEditLine(params.data)} className="p-1 hover:bg-gray-100 rounded text-sage-600" title="Éditer">
                         <Edit2 className="w-3.5 h-3.5" />
                     </button>
                     <button onClick={() => handleDuplicateLine(params.data)} className="p-1 hover:bg-gray-100 rounded text-gray-500" title="Dupliquer">
@@ -697,7 +697,7 @@ export const PricingManagementPage = () => {
         {
             headerName: '', width: 80, cellRenderer: (params: any) => (
                 <div className="flex items-center justify-end gap-1">
-                    <button onClick={() => handleEditOverride(params.data)} className="p-1 hover:bg-gray-100 rounded text-blue-600"><Edit2 className="w-3.5 h-3.5" /></button>
+                    <button onClick={() => handleEditOverride(params.data)} className="p-1 hover:bg-gray-100 rounded text-sage-600"><Edit2 className="w-3.5 h-3.5" /></button>
                     <button onClick={() => handleDeleteOverride(params.data.id)} className="p-1 hover:bg-gray-100 rounded text-red-600"><Trash2 className="w-3.5 h-3.5" /></button>
                 </div>
             ), sortable: false, filter: false
@@ -778,7 +778,7 @@ export const PricingManagementPage = () => {
                         <div className="px-3 pt-3 pb-2.5 border-b border-gray-100 shrink-0">
                             <div className="flex items-center justify-between mb-2">
                                 <h1 className="text-sm font-bold text-gray-900 tracking-tight">Listes de Prix</h1>
-                                <span className="px-1.5 py-0.5 text-[10px] font-semibold rounded-full bg-blue-50 text-blue-600">
+                                <span className="px-1.5 py-0.5 text-[10px] font-semibold rounded-full bg-sage-50 text-sage-600">
                                     {priceLists.length}
                                 </span>
                             </div>
@@ -789,7 +789,7 @@ export const PricingManagementPage = () => {
                                     placeholder="Rechercher..."
                                     value={searchQuery}
                                     onChange={(e) => handleSearch(e.target.value)}
-                                    className="w-full pl-8 pr-8 py-1.5 text-xs border border-gray-200 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-50"
+                                    className="w-full pl-8 pr-8 py-1.5 text-xs border border-gray-200 rounded-md focus:outline-none focus:ring-2 focus:ring-sage-500 bg-gray-50"
                                 />
                                 {searchQuery && (
                                     <button
@@ -824,13 +824,13 @@ export const PricingManagementPage = () => {
                                 <div className="bg-white px-5 py-3.5 border-b border-gray-200 shrink-0">
                                     <div className="flex items-start justify-between">
                                         <div className="flex items-center gap-3.5">
-                                            <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-blue-500 to-blue-600 flex items-center justify-center text-white text-sm font-bold shadow-sm">
+                                            <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-sage-500 to-sage-600 flex items-center justify-center text-white text-sm font-bold shadow-sm">
                                                 {priceListDetail.code?.slice(0, 2) || 'PL'}
                                             </div>
                                             <div>
                                                 <div className="flex items-center gap-2">
                                                     <h1 className="text-lg font-bold text-gray-900 tracking-tight">{priceListDetail.name}</h1>
-                                                    <span className="px-1.5 py-0.5 text-[10px] font-mono bg-blue-50 text-blue-600 rounded-md border border-blue-100">
+                                                    <span className="px-1.5 py-0.5 text-[10px] font-mono bg-sage-50 text-sage-600 rounded-md border border-sage-100">
                                                         {priceListDetail.code}
                                                     </span>
                                                 </div>
@@ -853,7 +853,7 @@ export const PricingManagementPage = () => {
                                             >
                                                 <RefreshCw className="w-4 h-4" />
                                             </button>
-                                            <button onClick={() => handleEditPL(priceListDetail)} className="p-1.5 rounded-lg hover:bg-blue-50 text-blue-600 transition-colors" title="Modifier">
+                                            <button onClick={() => handleEditPL(priceListDetail)} className="p-1.5 rounded-lg hover:bg-sage-50 text-sage-600 transition-colors" title="Modifier">
                                                 <Edit2 className="w-4 h-4" />
                                             </button>
                                             <button
@@ -935,7 +935,7 @@ export const PricingManagementPage = () => {
                                                         {priceListDetail.lines?.length ?? 0}
                                                     </span>
                                                 </h3>
-                                                <button onClick={handleCreateLine} className="text-xs flex items-center gap-1.5 text-white bg-blue-600 hover:bg-blue-700 px-3 py-1.5 rounded-lg shadow-sm transition-colors">
+                                                <button onClick={handleCreateLine} className="text-xs flex items-center gap-1.5 text-white bg-sage-500 hover:bg-sage-600 px-3 py-1.5 rounded-lg shadow-sm transition-colors">
                                                     <Plus className="w-3 h-3" /> Nouvelle Ligne
                                                 </button>
                                             </div>
@@ -1063,7 +1063,7 @@ export const PricingManagementPage = () => {
                                                     <button onClick={handleOpenPreview} className="text-xs flex items-center gap-1 text-gray-600 hover:text-gray-800 bg-gray-50 px-2 py-1 rounded-md">
                                                         <Eye className="w-3 h-3" /> Prévisualiser un prix
                                                     </button>
-                                                    <button onClick={handleCreateOverride} className="text-xs flex items-center gap-1 text-blue-600 hover:text-blue-700 bg-blue-50 px-2 py-1 rounded-md">
+                                                    <button onClick={handleCreateOverride} className="text-xs flex items-center gap-1 text-sage-600 hover:text-sage-700 bg-sage-50 px-2 py-1 rounded-md">
                                                         <Plus className="w-3 h-3" /> Nouvelle Dérogation
                                                     </button>
                                                 </div>
@@ -1102,7 +1102,7 @@ export const PricingManagementPage = () => {
                                                         });
                                                         setPackagingOpen(true);
                                                     }}
-                                                    className="text-xs flex items-center gap-1 text-blue-600 hover:text-blue-700 bg-blue-50 px-2 py-1 rounded-md"
+                                                    className="text-xs flex items-center gap-1 text-sage-600 hover:text-sage-700 bg-sage-50 px-2 py-1 rounded-md"
                                                 >
                                                     <Plus className="w-3 h-3" /> Nouveau prix
                                                 </button>

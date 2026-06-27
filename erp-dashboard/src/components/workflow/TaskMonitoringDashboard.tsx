@@ -59,7 +59,7 @@ export function TaskMonitoringDashboard({
     if (loading) {
         return (
             <div className="flex items-center justify-center py-12">
-                <Loader2 className="w-8 h-8 animate-spin text-blue-600" />
+                <Loader2 className="w-8 h-8 animate-spin text-sage-600" />
             </div>
         );
     }
@@ -83,7 +83,7 @@ export function TaskMonitoringDashboard({
             {/* Header */}
             <div className="flex items-center justify-between">
                 <div className="flex items-center gap-3">
-                    <BarChart3 className="w-6 h-6 text-blue-600" />
+                    <BarChart3 className="w-6 h-6 text-sage-600" />
                     <h2 className="text-xl font-semibold text-gray-900">
                         Task Monitoring Dashboard
                     </h2>
@@ -109,9 +109,9 @@ export function TaskMonitoringDashboard({
                 <div className="bg-white border border-gray-200 rounded-lg p-4">
                     <div className="flex items-center justify-between mb-2">
                         <span className="text-sm text-gray-600">Active Tasks</span>
-                        <Clock className="w-5 h-5 text-blue-400" />
+                        <Clock className="w-5 h-5 text-sage-400" />
                     </div>
-                    <div className="text-2xl font-bold text-blue-600">{activeTasksCount}</div>
+                    <div className="text-2xl font-bold text-sage-600">{activeTasksCount}</div>
                     <div className="text-xs text-gray-500 mt-1">
                         {statistics.ready} ready, {statistics.in_progress} in progress
                     </div>
@@ -184,7 +184,7 @@ export function TaskMonitoringDashboard({
                         <div className="w-32 text-sm text-gray-600">In Progress</div>
                         <div className="flex-1 bg-gray-200 rounded-full h-6 relative">
                             <div 
-                                className="bg-blue-500 h-6 rounded-full flex items-center justify-end pr-2"
+                                className="bg-sage-500 h-6 rounded-full flex items-center justify-end pr-2"
                                 style={{ width: `${(statistics.in_progress / statistics.total) * 100}%` }}
                             >
                                 <span className="text-xs text-white font-medium">
@@ -229,14 +229,14 @@ export function TaskMonitoringDashboard({
             </div>
 
             {/* Quick Actions */}
-            <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+            <div className="bg-sage-50 border border-sage-200 rounded-lg p-4">
                 <div className="flex items-start gap-3">
-                    <AlertCircle className="w-5 h-5 text-blue-600 mt-0.5" />
+                    <AlertCircle className="w-5 h-5 text-sage-600 mt-0.5" />
                     <div className="flex-1">
-                        <h4 className="text-sm font-semibold text-blue-900 mb-1">
+                        <h4 className="text-sm font-semibold text-sage-900 mb-1">
                             Monitoring Tips
                         </h4>
-                        <ul className="text-xs text-blue-800 space-y-1">
+                        <ul className="text-xs text-sage-800 space-y-1">
                             <li>• Dashboard auto-refreshes every {refreshInterval / 1000} seconds</li>
                             <li>• {activeTasksCount} tasks require attention</li>
                             {statistics.failed > 0 && (

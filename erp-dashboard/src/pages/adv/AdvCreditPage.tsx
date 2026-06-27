@@ -51,7 +51,7 @@ const ActionItem = ({ icon: Icon, label, onClick, variant = 'default', disabled 
     const variants = {
         default: "text-gray-400 hover:text-gray-700 dark:text-gray-500 dark:hover:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800",
         danger: "text-gray-400 hover:text-red-600 dark:hover:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/10",
-        primary: "text-gray-400 hover:text-blue-600 dark:hover:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/10",
+        primary: "text-gray-400 hover:text-sage-600 dark:hover:text-sage-400 hover:bg-sage-50 dark:hover:bg-sage-900/10",
         sage: "text-sage-500 hover:text-sage-700 dark:text-sage-400 dark:hover:text-sage-200 hover:bg-sage-50 dark:hover:bg-sage-900/20"
     };
 
@@ -297,7 +297,7 @@ const AdvCreditContent = () => {
             headerName: 'Code',
             width: 120,
             pinned: 'left',
-            cellClass: 'font-mono font-bold text-blue-600',
+            cellClass: 'font-mono font-bold text-sage-600',
         },
         {
             field: 'name',
@@ -394,7 +394,7 @@ const AdvCreditContent = () => {
         <div className="flex flex-col h-full bg-white dark:bg-gray-900 border-r border-gray-200 dark:border-gray-800 w-full">
             <div className="p-4 border-b border-gray-200 dark:border-gray-800 flex justify-between items-center bg-gray-50/50">
                 <h2 className="font-bold text-gray-900 dark:text-white">Gestion Crédit</h2>
-                <div className="text-xs px-2 py-1 bg-blue-100 text-blue-700 rounded-full font-medium">
+                <div className="text-xs px-2 py-1 bg-sage-100 text-sage-700 rounded-full font-medium">
                     {partnersList.length} partenaires
                 </div>
             </div>

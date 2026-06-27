@@ -22,7 +22,7 @@ export const TaskList: React.FC<TaskListProps> = ({
     if (loading) {
         return (
             <div className="flex items-center justify-center py-12">
-                <Loader2 className="w-8 h-8 animate-spin text-blue-600" />
+                <Loader2 className="w-8 h-8 animate-spin text-sage-600" />
             </div>
         );
     }

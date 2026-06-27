@@ -13,12 +13,12 @@ export const WorkflowProgressBar: React.FC<WorkflowProgressBarProps> = ({ progre
         <div className="bg-white rounded-lg border border-gray-200 p-4">
             <div className="flex items-center justify-between mb-3">
                 <h3 className="text-sm font-semibold text-gray-900">Progression du workflow</h3>
-                <span className="text-2xl font-bold text-blue-600">{Math.round(progress_percentage)}%</span>
+                <span className="text-2xl font-bold text-sage-600">{Math.round(progress_percentage)}%</span>
             </div>
 
             <div className="w-full bg-gray-200 rounded-full h-3 mb-4">
                 <div
-                    className="bg-gradient-to-r from-blue-500 to-blue-600 h-3 rounded-full transition-all duration-500"
+                    className="bg-gradient-to-r from-sage-500 to-sage-600 h-3 rounded-full transition-all duration-500"
                     style={{ width: `${progress_percentage}%` }}
                 />
             </div>
@@ -47,10 +47,10 @@ export const WorkflowProgressBar: React.FC<WorkflowProgressBarProps> = ({ progre
                         </div>
                     </div>
                     <div className="flex items-center gap-2">
-                        <Circle className="w-4 h-4 text-blue-600" />
+                        <Circle className="w-4 h-4 text-sage-600" />
                         <div>
                             <div className="text-xs text-gray-500">Prêtes</div>
-                            <div className="text-sm font-semibold text-blue-600">{ready}</div>
+                            <div className="text-sm font-semibold text-sage-600">{ready}</div>
                         </div>
                     </div>
                     <div className="flex items-center gap-2">

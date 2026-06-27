@@ -221,9 +221,9 @@ const DecisionDialog = ({ action, isOpen, isLoading, onClose, onSubmit }: Decisi
                 {/* Fields */}
                 <div className="px-6 py-5 space-y-4">
                     {fields.length === 0 ? (
-                        <div className="flex items-center gap-2.5 p-3 bg-blue-50 border border-blue-100 rounded-xl">
-                            <Info className="w-4 h-4 text-blue-500 shrink-0" />
-                            <p className="text-xs text-blue-700">Confirmez-vous l'exécution de cette action ?</p>
+                        <div className="flex items-center gap-2.5 p-3 bg-sage-50 border border-sage-100 rounded-xl">
+                            <Info className="w-4 h-4 text-sage-500 shrink-0" />
+                            <p className="text-xs text-sage-700">Confirmez-vous l'exécution de cette action ?</p>
                         </div>
                     ) : (
                         fields.map(f => (
@@ -306,7 +306,7 @@ export function BCWorkflowActions({ orderId, onSuccess }: BCWorkflowActionsProps
                     <span className="text-xs text-gray-400">{workflowState.current_step_name}</span>
                 </div>
                 <span className={cn('text-[10px] font-semibold px-2 py-0.5 rounded-full ring-1',
-                    workflowState.workflow_status === 'in_progress' ? 'bg-blue-50 text-blue-600 ring-blue-200'
+                    workflowState.workflow_status === 'in_progress' ? 'bg-sage-50 text-sage-600 ring-sage-200'
                         : workflowState.workflow_status === 'completed' ? 'bg-emerald-50 text-emerald-600 ring-emerald-200'
                             : 'bg-gray-50 text-gray-500 ring-gray-200'
                 )}>

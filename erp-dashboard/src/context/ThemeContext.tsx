@@ -14,13 +14,19 @@ export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     const [loading, setLoading] = useState(true);
     const { isAuthenticated } = useAuth();
 
-    const applyTheme = (primaryColor: string) => {
+    const applyTheme = (primaryColor: string, secondaryColor?: string) => {
         const palette = generateSagePalette(primaryColor);
         const root = document.documentElement;
 
+        // Derived palette tokens (--sage-*, --primary, --ring)
         Object.entries(palette).forEach(([key, value]) => {
             root.style.setProperty(key, value);
         });
+
+        // Direct CSS custom properties — branch-scoped since 2026-06-26 (theme-endpoint-migration).
+        // These are the canonical tokens that components should reference.
+        root.style.setProperty('--color-primary', primaryColor);
+        if (secondaryColor) root.style.setProperty('--color-secondary', secondaryColor);
     };
 
     const refreshTheme = async () => {
@@ -28,12 +34,11 @@ export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
             setLoading(false);
             return;
         }
-        
+
         try {
             const response = await settingsApi.getThemeSettings();
             if (response.success && response.data.primary_color) {
-                applyTheme(response.data.primary_color);
-                // Can also handle direction or secondary color here if needed
+                applyTheme(response.data.primary_color, response.data.secondary_color);
                 if (response.data.direction) {
                     document.documentElement.dir = response.data.direction;
                 }

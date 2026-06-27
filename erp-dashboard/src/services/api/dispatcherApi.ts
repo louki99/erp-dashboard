@@ -21,6 +21,7 @@ import type {
   UpdateBlPayload,
   OrdersPendingFilters,
   DoDecisionsResponse,
+  ShortageQueueResponse,
 } from '@/types/dispatcher.types';
 
 const BASE = '/api/backend/dispatcher';
@@ -73,9 +74,9 @@ export const dispatcherApi = {
       return r.data as PaginatedResponse<DeliveryNote>;
     },
 
-    // §7.2/§7.3 (`/draft`, `/confirmed`) are confirmed BROKEN — they reference the dropped
-    // `shipments`/`shipment_deliveries` tables and will throw a DB error. Use the generic list
-    // with a status filter instead (§7.1, unaffected by the 2026-06-20 migration).
+    // §7.2/§7.3 (`/draft`, `/confirmed`) — fixed 2026-06-23 (were broken after the migration,
+    // now functional). The generic list with a status filter (§7.1) also works and is preferred
+    // for parameterized filtering; these shortcuts are kept for backward compatibility.
     getById: async (id: number): Promise<DeliveryNote> => {
       const r = await apiClient.get<DeliveryNote>(`${BASE}/bon-livraisons/${id}`);
       return r.data;
@@ -131,12 +132,41 @@ export const dispatcherApi = {
     },
   },
 
-  // ─── Shortage Queue ──────────────────────────────────────────────────────
+  // ─── Shortage Queue & resolution (docs §10, fixed/verified live 2026-06-23) ────────────────
   preparations: {
+    // Fixed 2026-06-23 — this used to crash (whereHas on dropped logisticsBatch/bonChargement
+    // relations). Response envelope is { success, ui, data: <paginator> }, not a flat paginator
+    // like every other list endpoint — `data` itself holds the page, not the row array directly.
     getShortageQueue: async (params?: { page?: number }): Promise<PaginatedResponse<PreparationOrder>> => {
-      const r = await apiClient.get<PaginatedResponse<PreparationOrder>>(
+      const r = await apiClient.get<ShortageQueueResponse>(
         `${BASE}/preparations/shortage-queue`,
         { params }
+      );
+      return r.data.data;
+    },
+
+    // Generic decision list for a BP — same "How to check available decisions" pattern as every
+    // other model (docs §16). Drives review_partial_preparation / accept_partial_preparation /
+    // request_rework dynamically via DecisionActionsBar, same as everywhere else in this app.
+    getDecisions: async (id: number): Promise<DoDecisionsResponse> => {
+      const r = await apiClient.get<DoDecisionsResponse>(`${WORKFLOW}/bon-preparation/${id}/decisions`);
+      return r.data;
+    },
+
+    // review_partial_preparation (no body) / accept_partial_preparation (metadata.
+    // acceptance_reason, metadata.force_accept?) / request_rework (metadata.rework_reason) — all
+    // 3 were fixed 2026-06-23: accept/rework previously read their text field from the wrong
+    // payload location and silently dropped it (or hard-failed) — `metadata` nesting is the
+    // confirmed-correct convention here too, same as every other decision in this app.
+    executeDecision: async (
+      id: number,
+      decision: string,
+      extra?: Record<string, unknown>
+    ): Promise<ApiSuccessResponse> => {
+      const r = await apiClient.post<ApiSuccessResponse>(
+        `${WORKFLOW}/bon-preparation/${id}/execute`,
+        { decision, metadata: extra ?? {} },
+        { headers: { 'Idempotency-Key': mkKey(`bp:${id}:${decision}`) } }
       );
       return r.data;
     },

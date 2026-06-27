@@ -19,7 +19,7 @@ export function SLADashboard({ className }: SLADashboardProps) {
     if (loading && !statistics) {
         return (
             <div className={cn('flex items-center justify-center p-8', className)}>
-                <Loader2 className="w-8 h-8 animate-spin text-blue-600" />
+                <Loader2 className="w-8 h-8 animate-spin text-sage-600" />
             </div>
         );
     }
@@ -89,7 +89,7 @@ export function SLADashboard({ className }: SLADashboardProps) {
                         </h3>
                         <button
                             onClick={refetch}
-                            className="text-sm text-blue-600 hover:text-blue-700"
+                            className="text-sm text-sage-600 hover:text-sage-700"
                         >
                             Refresh
                         </button>
@@ -135,14 +135,14 @@ function StatCard({ title, value, icon: Icon, color, total }: StatCardProps) {
         green: 'bg-green-50 border-green-200 text-green-700',
         orange: 'bg-orange-50 border-orange-200 text-orange-700',
         red: 'bg-red-50 border-red-200 text-red-700',
-        blue: 'bg-blue-50 border-blue-200 text-blue-700',
+        blue: 'bg-sage-50 border-sage-200 text-sage-700',
     };
 
     const iconColorClasses = {
         green: 'text-green-600',
         orange: 'text-orange-600',
         red: 'text-red-600',
-        blue: 'text-blue-600',
+        blue: 'text-sage-600',
     };
 
     return (

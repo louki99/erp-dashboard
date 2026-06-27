@@ -38,11 +38,11 @@ export const WorkflowStepNode = memo(({ data, selected }: WorkflowStepNodeProps)
 
         if (is_initial) {
             return {
-                border: 'border-blue-500',
-                bg: 'bg-blue-50 dark:bg-blue-900/20',
+                border: 'border-sage-500',
+                bg: 'bg-sage-50 dark:bg-sage-900/20',
                 icon: Circle,
-                iconColor: 'text-blue-600 dark:text-blue-400',
-                iconBg: 'bg-blue-100 dark:bg-blue-900/40',
+                iconColor: 'text-sage-600 dark:text-sage-400',
+                iconBg: 'bg-sage-100 dark:bg-sage-900/40',
             };
         }
 
@@ -108,7 +108,7 @@ export const WorkflowStepNode = memo(({ data, selected }: WorkflowStepNodeProps)
                     {/* Badges */}
                     <div className="flex flex-wrap gap-1.5 mt-2">
                         {is_initial && (
-                            <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300">
+                            <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-sage-100 text-sage-700 dark:bg-sage-900/40 dark:text-sage-300">
                                 Initial
                             </span>
                         )}

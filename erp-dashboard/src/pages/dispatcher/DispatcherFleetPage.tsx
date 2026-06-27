@@ -50,7 +50,7 @@ const RiderRow = ({
     <button
       onClick={onClick}
       className={`w-full text-left p-3 rounded-xl border transition-all flex items-center gap-3 ${
-        selected ? 'border-blue-400 bg-blue-50/60 shadow-sm' : 'border-gray-100 bg-white hover:border-gray-200 hover:bg-gray-50'
+        selected ? 'border-sage-400 bg-sage-50/60 shadow-sm' : 'border-gray-100 bg-white hover:border-gray-200 hover:bg-gray-50'
       }`}
     >
       <div className="relative shrink-0">
@@ -100,7 +100,7 @@ const VehicleRow = ({
   <button
     onClick={onClick}
     className={`w-full text-left p-3 rounded-xl border transition-all flex items-center gap-3 ${
-      selected ? 'border-blue-400 bg-blue-50/60 shadow-sm' : 'border-gray-100 bg-white hover:border-gray-200 hover:bg-gray-50'
+      selected ? 'border-sage-400 bg-sage-50/60 shadow-sm' : 'border-gray-100 bg-white hover:border-gray-200 hover:bg-gray-50'
     }`}
   >
     <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${assignedRider ? 'bg-gradient-to-br from-emerald-500 to-teal-600' : 'bg-gray-200'}`}>
@@ -146,7 +146,7 @@ const CapacityStat = ({
       <div className="text-xs font-bold text-gray-800">{value}</div>
       <div className="text-[10px] text-gray-400">{label}</div>
       {secondaryValue && (
-        <div className="text-[10px] text-blue-600 font-semibold mt-1 pt-1 border-t border-gray-200">
+        <div className="text-[10px] text-sage-600 font-semibold mt-1 pt-1 border-t border-gray-200">
           {secondaryLabel}: {secondaryValue}
         </div>
       )}
@@ -327,7 +327,7 @@ const AssignVehicleModal = ({
                     type="button"
                     onClick={() => setVehicleId(v.id)}
                     className={`w-full text-left p-3 rounded-xl border-2 transition-all ${
-                      isSelected ? 'border-blue-500 bg-blue-50 shadow-sm' : 'border-gray-200 bg-white hover:border-gray-300 hover:bg-gray-50'
+                      isSelected ? 'border-sage-500 bg-sage-50 shadow-sm' : 'border-gray-200 bg-white hover:border-gray-300 hover:bg-gray-50'
                     }`}
                   >
                     <div className="flex items-center justify-between gap-2">
@@ -337,7 +337,7 @@ const AssignVehicleModal = ({
                       </span>
                       <span
                         className={`w-4 h-4 rounded-full border-2 shrink-0 flex items-center justify-center ${
-                          isSelected ? 'border-blue-500 bg-blue-500' : 'border-gray-300'
+                          isSelected ? 'border-sage-500 bg-sage-500' : 'border-gray-300'
                         }`}
                       >
                         {isSelected && <span className="w-1.5 h-1.5 rounded-full bg-white" />}
@@ -395,7 +395,7 @@ const AssignVehicleModal = ({
           <button
             onClick={handleSubmit}
             disabled={vehicleId === '' || loading}
-            className="flex-1 flex items-center justify-center gap-2 py-2.5 text-sm font-semibold rounded-lg bg-blue-600 hover:bg-blue-700 text-white shadow-sm disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+            className="flex-1 flex items-center justify-center gap-2 py-2.5 text-sm font-semibold rounded-lg bg-sage-500 hover:bg-sage-600 text-white shadow-sm disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
           >
             {loading ? <Loader2 size={14} className="animate-spin" /> : <Plus size={14} />}
             Assigner
@@ -483,7 +483,7 @@ const AssignRiderModal = ({
                     type="button"
                     onClick={() => setRiderId(r.id)}
                     className={`w-full text-left p-3 rounded-xl border-2 transition-all flex items-center gap-3 ${
-                      isSelected ? 'border-blue-500 bg-blue-50 shadow-sm' : 'border-gray-200 bg-white hover:border-gray-300 hover:bg-gray-50'
+                      isSelected ? 'border-sage-500 bg-sage-50 shadow-sm' : 'border-gray-200 bg-white hover:border-gray-300 hover:bg-gray-50'
                     }`}
                   >
                     <div className="w-8 h-8 rounded-full bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center text-[10px] font-bold text-white shrink-0">
@@ -495,7 +495,7 @@ const AssignRiderModal = ({
                     </div>
                     <span
                       className={`w-4 h-4 rounded-full border-2 shrink-0 flex items-center justify-center ${
-                        isSelected ? 'border-blue-500 bg-blue-500' : 'border-gray-300'
+                        isSelected ? 'border-sage-500 bg-sage-500' : 'border-gray-300'
                       }`}
                     >
                       {isSelected && <span className="w-1.5 h-1.5 rounded-full bg-white" />}
@@ -547,7 +547,7 @@ const AssignRiderModal = ({
           <button
             onClick={handleSubmit}
             disabled={riderId === '' || loading}
-            className="flex-1 flex items-center justify-center gap-2 py-2.5 text-sm font-semibold rounded-lg bg-blue-600 hover:bg-blue-700 text-white shadow-sm disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+            className="flex-1 flex items-center justify-center gap-2 py-2.5 text-sm font-semibold rounded-lg bg-sage-500 hover:bg-sage-600 text-white shadow-sm disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
           >
             {loading ? <Loader2 size={14} className="animate-spin" /> : <Plus size={14} />}
             Assigner
@@ -658,7 +658,7 @@ const EditAssignmentModal = ({
           <button
             onClick={handleSubmit}
             disabled={loading}
-            className="flex-1 flex items-center justify-center gap-2 py-2.5 text-sm font-semibold rounded-lg bg-blue-600 hover:bg-blue-700 text-white shadow-sm disabled:opacity-40 transition-colors"
+            className="flex-1 flex items-center justify-center gap-2 py-2.5 text-sm font-semibold rounded-lg bg-sage-500 hover:bg-sage-600 text-white shadow-sm disabled:opacity-40 transition-colors"
           >
             {loading ? <Loader2 size={14} className="animate-spin" /> : <Pencil size={14} />}
             Enregistrer
@@ -774,7 +774,7 @@ export const DispatcherFleetPage = () => {
     <div className="h-full bg-white flex flex-col">
       <div className="p-4 border-b border-gray-100">
         <h1 className="text-sm font-bold text-gray-900 flex items-center gap-2">
-          <UserCircle2 size={18} className="text-blue-600" /> Flotte & Livreurs
+          <UserCircle2 size={18} className="text-sage-600" /> Flotte & Livreurs
         </h1>
 
         <div className="flex gap-1 mt-3 p-1 bg-gray-100 rounded-lg">
@@ -803,7 +803,7 @@ export const DispatcherFleetPage = () => {
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             placeholder={viewMode === 'riders' ? 'Rechercher un livreur...' : 'Rechercher un véhicule...'}
-            className="w-full pl-9 pr-3 py-2 text-sm border border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-200 focus:border-blue-400 outline-none"
+            className="w-full pl-9 pr-3 py-2 text-sm border border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-200 focus:border-sage-400 outline-none"
           />
         </div>
         {viewMode === 'riders' && (
@@ -949,7 +949,7 @@ export const DispatcherFleetPage = () => {
           {!selectedVehicleRider && (
             <button
               onClick={() => setShowAssignRiderModal(true)}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-blue-600 text-white text-xs font-bold shadow-sm hover:bg-blue-700"
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-sage-500 text-white text-xs font-bold shadow-sm hover:bg-sage-600"
             >
               <Plus size={13} /> Assigner un livreur
             </button>
@@ -1074,7 +1074,7 @@ export const DispatcherFleetPage = () => {
               {!selectedRider.vehicles?.[0] && (
                 <button
                   onClick={() => setShowAssignModal(true)}
-                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-blue-600 text-white text-xs font-bold shadow-sm hover:bg-blue-700"
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-sage-500 text-white text-xs font-bold shadow-sm hover:bg-sage-600"
                 >
                   <Plus size={13} /> Assigner un véhicule
                 </button>
@@ -1098,7 +1098,7 @@ export const DispatcherFleetPage = () => {
           </div>
 
           {/* Info note */}
-          <div className="flex items-start gap-2.5 p-3 rounded-lg bg-blue-50 border border-blue-100">
+          <div className="flex items-start gap-2.5 p-3 rounded-lg bg-sage-50 border border-blue-100">
             <Info size={14} className="text-blue-500 mt-0.5 shrink-0" />
             <p className="text-xs text-blue-800 leading-relaxed">
               L'assignation véhicule↔livreur est indépendante du Bon de Chargement — assigner un véhicule ici le rend disponible dans les listes déroulantes de création BCH partout dans le module.

@@ -21,7 +21,7 @@ export const WorkflowTaskList: React.FC<WorkflowTaskListProps> = ({
         return (
             <div className="bg-white rounded-lg border border-gray-200 p-4">
                 <div className="flex items-center justify-center py-4">
-                    <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-blue-600"></div>
+                    <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-sage-500"></div>
                 </div>
             </div>
         );
@@ -33,7 +33,7 @@ export const WorkflowTaskList: React.FC<WorkflowTaskListProps> = ({
 
     const statusConfig = {
         pending: { icon: Circle, color: 'text-gray-400', bg: 'bg-gray-100', label: 'En attente' },
-        ready: { icon: Clock, color: 'text-blue-600', bg: 'bg-blue-100', label: 'Prêt' },
+        ready: { icon: Clock, color: 'text-sage-600', bg: 'bg-sage-100', label: 'Prêt' },
         in_progress: { icon: Clock, color: 'text-yellow-600', bg: 'bg-yellow-100', label: 'En cours' },
         completed: { icon: CheckCircle, color: 'text-green-600', bg: 'bg-green-100', label: 'Terminé' },
         failed: { icon: XCircle, color: 'text-red-600', bg: 'bg-red-100', label: 'Échoué' },
@@ -42,16 +42,16 @@ export const WorkflowTaskList: React.FC<WorkflowTaskListProps> = ({
 
     return (
         <div className="bg-white rounded-lg border border-gray-200 overflow-hidden">
-            <div className="px-4 py-3 bg-gradient-to-r from-blue-50 to-white border-b border-gray-200">
+            <div className="px-4 py-3 bg-gradient-to-r from-sage-50 to-white border-b border-gray-200">
                 <div className="flex items-center justify-between">
                     <h3 className="font-semibold text-gray-900 text-sm">Progression du workflow</h3>
-                    <span className="text-sm font-bold text-blue-600">
+                    <span className="text-sm font-bold text-sage-600">
                         {Math.round(progress.progress_percentage)}%
                     </span>
                 </div>
                 <div className="w-full bg-gray-200 rounded-full h-2 mt-2">
                     <div
-                        className="bg-gradient-to-r from-blue-500 to-blue-600 h-2 rounded-full transition-all duration-500"
+                        className="bg-gradient-to-r from-sage-500 to-sage-600 h-2 rounded-full transition-all duration-500"
                         style={{ width: `${progress.progress_percentage}%` }}
                     />
                 </div>
@@ -66,7 +66,7 @@ export const WorkflowTaskList: React.FC<WorkflowTaskListProps> = ({
                     return (
                         <div
                             key={task.id}
-                            className={`px-4 py-3 ${isActive ? 'bg-blue-50/50' : ''} hover:bg-gray-50 transition-colors`}
+                            className={`px-4 py-3 ${isActive ? 'bg-sage-50/50' : ''} hover:bg-gray-50 transition-colors`}
                         >
                             <div className="flex items-start gap-3">
                                 <div className="flex items-center gap-2 min-w-0 flex-1">

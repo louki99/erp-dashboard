@@ -89,7 +89,7 @@ const GEO_TYPE_VILLE  = '400'; // Ville   → mapped to partner.city
 
 // ─── Styles ──────────────────────────────────────────────────────────────────
 
-const inputCls = 'w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400 transition-colors bg-white placeholder:text-gray-300';
+const inputCls = 'w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-sage-500/20 focus:border-sage-400 transition-colors bg-white placeholder:text-gray-300';
 const inputErrCls = 'w-full px-3 py-2 border border-red-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-red-500/20 focus:border-red-400 transition-colors bg-red-50/40 placeholder:text-gray-300';
 const labelCls = 'block text-[10px] font-bold text-gray-500 mb-1 uppercase tracking-widest';
 
@@ -185,19 +185,19 @@ const CancelConfirmDialog: React.FC<CancelConfirmDialogProps> = ({
                         disabled={savingDraft}
                         className={cn(
                             'w-full flex items-start gap-4 px-4 py-3.5 rounded-xl border-2 transition-all text-left',
-                            'border-blue-200 bg-blue-50 hover:bg-blue-100 hover:border-blue-300',
+                            'border-sage-200 bg-sage-50 hover:bg-sage-100 hover:border-sage-300',
                             savingDraft && 'opacity-60 cursor-not-allowed',
                         )}
                     >
-                        <div className="w-9 h-9 rounded-lg bg-blue-600 flex items-center justify-center shrink-0 mt-0.5">
+                        <div className="w-9 h-9 rounded-lg bg-sage-500 flex items-center justify-center shrink-0 mt-0.5">
                             {savingDraft
                                 ? <Loader2 className="w-4 h-4 text-white animate-spin" />
                                 : <BookOpen className="w-4 h-4 text-white" />
                             }
                         </div>
                         <div>
-                            <p className="text-sm font-semibold text-blue-900">Enregistrer comme brouillon</p>
-                            <p className="text-xs text-blue-600 mt-0.5">
+                            <p className="text-sm font-semibold text-sage-900">Enregistrer comme brouillon</p>
+                            <p className="text-xs text-sage-600 mt-0.5">
                                 Vos données seront sauvegardées localement. Vous pourrez reprendre plus tard.
                             </p>
                         </div>
@@ -860,13 +860,13 @@ export const PartnerFormPanel: React.FC<PartnerFormPanelProps> = ({
             <div
                 className={cn(
                     'flex items-center justify-between p-4 rounded-xl border-2 transition-all cursor-pointer',
-                    withAccount ? 'border-indigo-300 bg-indigo-50' : 'border-gray-200 bg-gray-50 hover:border-gray-300',
+                    withAccount ? 'border-sage-300 bg-sage-50' : 'border-gray-200 bg-gray-50 hover:border-gray-300',
                 )}
                 onClick={() => setWithAccount(v => !v)}
             >
                 <div className="flex items-center gap-3">
                     <div className={cn('w-9 h-9 rounded-xl flex items-center justify-center transition-colors',
-                        withAccount ? 'bg-indigo-600' : 'bg-gray-300')}>
+                        withAccount ? 'bg-sage-500' : 'bg-gray-300')}>
                         <User className="w-4 h-4 text-white" />
                     </div>
                     <div>
@@ -879,13 +879,13 @@ export const PartnerFormPanel: React.FC<PartnerFormPanelProps> = ({
                     </div>
                 </div>
                 {withAccount
-                    ? <ToggleRight className="w-7 h-7 text-indigo-600 shrink-0" />
+                    ? <ToggleRight className="w-7 h-7 text-sage-600 shrink-0" />
                     : <ToggleLeft  className="w-7 h-7 text-gray-400 shrink-0" />
                 }
             </div>
 
             {withAccount && (
-            <SectionCard icon={User} title="Identifiants de connexion" subtitle="Accès au compte B2B du partenaire" color="text-indigo-600 bg-indigo-50">
+            <SectionCard icon={User} title="Identifiants de connexion" subtitle="Accès au compte B2B du partenaire" color="text-sage-600 bg-sage-50">
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-4">
                     <FormField label="Prénom" required error={errors['auth.name']}>
                         <input type="text" value={auth.name || ''} onChange={e => ua('name', e.target.value)}
@@ -993,7 +993,7 @@ export const PartnerFormPanel: React.FC<PartnerFormPanelProps> = ({
 
     const renderIdentityTab = () => (
         <div className="space-y-4">
-            <SectionCard icon={Briefcase} title="Profil partenaire" color="text-blue-600 bg-blue-50">
+            <SectionCard icon={Briefcase} title="Profil partenaire" color="text-sage-600 bg-sage-50">
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-4">
                     <FormField label="Code" hint="Laissez vide pour générer automatiquement">
                         <input type="text" value={pForm.code || ''} onChange={e => up('code', e.target.value)}
@@ -1012,7 +1012,7 @@ export const PartnerFormPanel: React.FC<PartnerFormPanelProps> = ({
                                 className={cn(
                                     'flex items-center gap-2 px-3 py-2 text-xs font-semibold rounded-lg border transition-all',
                                     pForm.status === opt.value
-                                        ? `${STATUS_STYLES[opt.value]} ring-2 ring-offset-1 ring-blue-300 shadow-sm`
+                                        ? `${STATUS_STYLES[opt.value]} ring-2 ring-offset-1 ring-sage-300 shadow-sm`
                                         : 'bg-white text-gray-500 border-gray-200 hover:bg-gray-50'
                                 )}>
                                 <span className={cn('w-2 h-2 rounded-full', opt.dot)} />
@@ -1048,7 +1048,7 @@ export const PartnerFormPanel: React.FC<PartnerFormPanelProps> = ({
                                 type="range" min={0} max={100} step={1}
                                 value={pForm.risk_score ?? 0}
                                 onChange={e => up('risk_score', Number(e.target.value))}
-                                className="w-full accent-blue-600"
+                                className="w-full accent-sage-600"
                             />
                             <div className="flex justify-between text-[10px] text-gray-400">
                                 <span>0 — Aucun risque</span>
@@ -1068,7 +1068,7 @@ export const PartnerFormPanel: React.FC<PartnerFormPanelProps> = ({
 
     const renderCommercialTab = () => (
         <div className="space-y-4">
-            <SectionCard icon={DollarSign} title="Tarification" color="text-indigo-600 bg-indigo-50">
+            <SectionCard icon={DollarSign} title="Tarification" color="text-sage-600 bg-sage-50">
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                     <FormField label="Liste de prix">
                         <SearchableSelect options={priceListOptions} value={pForm.price_list_id}
@@ -1167,7 +1167,7 @@ export const PartnerFormPanel: React.FC<PartnerFormPanelProps> = ({
 
             {/* ── Geo zone selector (business hierarchy) ───────────────────── */}
             {(masterData?.geo_areas?.length ?? 0) > 0 && (
-                <SectionCard icon={MapPin} title="Zone commerciale" subtitle="Sélectionnez la zone de découpage métier" color="text-indigo-500 bg-indigo-50">
+                <SectionCard icon={MapPin} title="Zone commerciale" subtitle="Sélectionnez la zone de découpage métier" color="text-sage-500 bg-sage-50">
                     <DynamicGeoSelector
                         geoAreas={masterData!.geo_areas}
                         geoAreaTypes={masterData!.geo_area_types}
@@ -1349,8 +1349,8 @@ export const PartnerFormPanel: React.FC<PartnerFormPanelProps> = ({
             <SectionCard icon={Settings} title="Options POS & Visibilité" color="text-gray-600 bg-gray-100">
                 <div className="flex items-center justify-between p-3 rounded-xl border border-gray-200 bg-white">
                     <div className="flex items-center gap-3">
-                        <div className="w-8 h-8 rounded-lg bg-blue-50 flex items-center justify-center">
-                            <Tag className="w-4 h-4 text-blue-500" />
+                        <div className="w-8 h-8 rounded-lg bg-sage-50 flex items-center justify-center">
+                            <Tag className="w-4 h-4 text-sage-500" />
                         </div>
                         <div>
                             <p className="text-sm font-semibold text-gray-800">Visible sur le point de vente (POS)</p>
@@ -1422,7 +1422,7 @@ export const PartnerFormPanel: React.FC<PartnerFormPanelProps> = ({
         <div
             className={cn(
                 'flex-1 flex flex-col bg-white min-w-0 overflow-hidden relative',
-                dragOver && 'ring-2 ring-inset ring-indigo-400',
+                dragOver && 'ring-2 ring-inset ring-sage-400',
             )}
             onDragOver={handleFormDragOver}
             onDragLeave={handleFormDragLeave}
@@ -1432,12 +1432,12 @@ export const PartnerFormPanel: React.FC<PartnerFormPanelProps> = ({
             {dragOver && (
                 <div className="absolute inset-0 z-50 flex flex-col items-center justify-center gap-4 pointer-events-none"
                     style={{ background: 'rgba(99,102,241,0.10)', backdropFilter: 'blur(2px)' }}>
-                    <div className="w-20 h-20 rounded-2xl bg-indigo-600 flex items-center justify-center shadow-2xl">
+                    <div className="w-20 h-20 rounded-2xl bg-sage-500 flex items-center justify-center shadow-2xl">
                         <Upload className="w-9 h-9 text-white" />
                     </div>
                     <div className="text-center">
-                        <p className="text-lg font-bold text-indigo-700">Déposez le fichier .partner</p>
-                        <p className="text-sm text-indigo-500 mt-1">Les champs seront pré-remplis automatiquement</p>
+                        <p className="text-lg font-bold text-sage-700">Déposez le fichier .partner</p>
+                        <p className="text-sm text-sage-500 mt-1">Les champs seront pré-remplis automatiquement</p>
                     </div>
                 </div>
             )}
@@ -1449,7 +1449,7 @@ export const PartnerFormPanel: React.FC<PartnerFormPanelProps> = ({
                 </button>
                 <div className={cn(
                     'w-9 h-9 rounded-xl flex items-center justify-center text-white font-bold text-sm shrink-0 shadow-sm',
-                    isCreate ? 'bg-gradient-to-br from-emerald-500 to-teal-600' : 'bg-gradient-to-br from-blue-500 to-indigo-600'
+                    isCreate ? 'bg-gradient-to-br from-emerald-500 to-teal-600' : 'bg-gradient-to-br from-sage-500 to-sage-600'
                 )}>
                     {isCreate ? <Plus className="w-4 h-4" /> : (partner?.name?.charAt(0)?.toUpperCase() || 'P')}
                 </div>
@@ -1471,7 +1471,7 @@ export const PartnerFormPanel: React.FC<PartnerFormPanelProps> = ({
                     <button
                         type="button"
                         onClick={() => { setPreloadedFile(null); setShowImportDialog(true); }}
-                        className="hidden sm:flex items-center gap-1.5 px-3 py-1.5 text-sm text-indigo-600 hover:text-indigo-800 hover:bg-indigo-50 rounded-lg transition-colors border border-indigo-200"
+                        className="hidden sm:flex items-center gap-1.5 px-3 py-1.5 text-sm text-sage-600 hover:text-sage-800 hover:bg-sage-50 rounded-lg transition-colors border border-sage-200"
                         title="Importer depuis un fichier .partner"
                     >
                         <Upload className="w-3.5 h-3.5" />
@@ -1490,7 +1490,7 @@ export const PartnerFormPanel: React.FC<PartnerFormPanelProps> = ({
                         <X className="w-4 h-4" /> Annuler
                     </button>
                     <button onClick={handleSubmit} disabled={saving}
-                        className="px-4 py-1.5 text-sm text-white bg-blue-600 hover:bg-blue-700 rounded-lg transition-colors flex items-center gap-1.5 disabled:opacity-50 disabled:cursor-not-allowed shadow-sm">
+                        className="px-4 py-1.5 text-sm text-white bg-sage-500 hover:bg-sage-600 rounded-lg transition-colors flex items-center gap-1.5 disabled:opacity-50 disabled:cursor-not-allowed shadow-sm">
                         {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
                         {isCreate ? 'Créer' : 'Enregistrer'}
                     </button>
@@ -1500,7 +1500,7 @@ export const PartnerFormPanel: React.FC<PartnerFormPanelProps> = ({
             {/* ── Loading ─────────────────────────────────────── */}
             {masterDataLoading ? (
                 <div className="flex-1 flex flex-col items-center justify-center gap-3 text-gray-400">
-                    <Loader2 className="w-7 h-7 animate-spin text-blue-400" />
+                    <Loader2 className="w-7 h-7 animate-spin text-sage-400" />
                     <span className="text-sm">Chargement du formulaire...</span>
                 </div>
             ) : (
@@ -1549,11 +1549,11 @@ export const PartnerFormPanel: React.FC<PartnerFormPanelProps> = ({
                                 <button key={t.id} type="button" onClick={() => setActiveTab(t.id)}
                                     className={cn(
                                         'flex items-center gap-1 px-2 py-1 text-xs rounded-md transition-colors',
-                                        activeTab === t.id ? 'bg-blue-50 text-blue-600 font-semibold' : 'text-gray-400 hover:text-gray-600',
+                                        activeTab === t.id ? 'bg-sage-50 text-sage-600 font-semibold' : 'text-gray-400 hover:text-gray-600',
                                         tabsWithErrors.has(t.id) && 'text-red-500'
                                     )}>
                                     <span className={cn('w-4 h-4 rounded-full flex items-center justify-center text-[9px] font-bold shrink-0',
-                                        activeTab === t.id ? 'bg-blue-100 text-blue-600' : 'bg-gray-100 text-gray-500',
+                                        activeTab === t.id ? 'bg-sage-100 text-sage-600' : 'bg-gray-100 text-gray-500',
                                         tabsWithErrors.has(t.id) && 'bg-red-100 text-red-500'
                                     )}>{i + 1}</span>
                                     <span className="hidden sm:inline">{t.label}</span>
@@ -1565,7 +1565,7 @@ export const PartnerFormPanel: React.FC<PartnerFormPanelProps> = ({
                                 Annuler
                             </button>
                             <button onClick={handleSubmit} disabled={saving}
-                                className="px-5 py-2 text-sm text-white bg-blue-600 hover:bg-blue-700 rounded-lg transition-colors flex items-center gap-1.5 disabled:opacity-50 disabled:cursor-not-allowed shadow-sm">
+                                className="px-5 py-2 text-sm text-white bg-sage-500 hover:bg-sage-600 rounded-lg transition-colors flex items-center gap-1.5 disabled:opacity-50 disabled:cursor-not-allowed shadow-sm">
                                 {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
                                 {isCreate ? 'Créer le partenaire' : 'Enregistrer les modifications'}
                             </button>

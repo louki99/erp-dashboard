@@ -22,10 +22,10 @@ const ModalWrapper: React.FC<{ onClose: () => void; children: React.ReactNode; w
     </div>
 );
 
-const ModalHeader: React.FC<{ icon: React.ElementType; title: string; onClose: () => void; iconColor?: string }> = ({ icon: Icon, title, onClose, iconColor = 'bg-blue-50 text-blue-600' }) => (
+const ModalHeader: React.FC<{ icon: React.ElementType; title: string; onClose: () => void; iconColor?: string }> = ({ icon: Icon, title, onClose, iconColor = 'bg-sage-50 text-sage-600' }) => (
     <div className="flex items-center justify-between p-4 border-b border-gray-100">
         <div className="flex items-center gap-2">
-            <div className={`w-8 h-8 rounded-lg flex items-center justify-center ${iconColor.includes('bg-') ? iconColor : 'bg-blue-50 text-blue-600'}`}>
+            <div className={`w-8 h-8 rounded-lg flex items-center justify-center ${iconColor.includes('bg-') ? iconColor : 'bg-sage-50 text-sage-600'}`}>
                 <Icon className="w-4 h-4" />
             </div>
             <h2 className="text-lg font-semibold text-gray-900">{title}</h2>
@@ -44,7 +44,7 @@ const ModalFooter: React.FC<{
     <div className="flex items-center justify-end gap-2 p-4 border-t border-gray-100">
         <button onClick={onClose} className="px-4 py-2 text-sm text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded-lg transition-colors">Annuler</button>
         <button onClick={onSubmit} disabled={loading}
-            className={`px-4 py-2 text-sm text-white rounded-lg disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center gap-2 ${variant === 'danger' ? 'bg-red-600 hover:bg-red-700' : 'bg-blue-600 hover:bg-blue-700'
+            className={`px-4 py-2 text-sm text-white rounded-lg disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center gap-2 ${variant === 'danger' ? 'bg-red-600 hover:bg-red-700' : 'bg-sage-500 hover:bg-sage-600'
                 }`}>
             {loading && <Loader2 className="w-4 h-4 animate-spin" />}
             {label}
@@ -59,7 +59,7 @@ const Field: React.FC<{ label: string; required?: boolean; children: React.React
     </div>
 );
 
-const inputCls = "w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm";
+const inputCls = "w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-sage-500 text-sm";
 const selectCls = `${inputCls} bg-white`;
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -253,7 +253,7 @@ export const ModalStatus: React.FC<ModalStatusProps> = ({ partner, form, setForm
             </Field>
             <label className="flex items-center gap-2 text-sm text-gray-600">
                 <input type="checkbox" checked={form.notify_partner || false} onChange={e => setForm((p: any) => ({ ...p, notify_partner: e.target.checked }))}
-                    className="rounded border-gray-300 text-blue-600 focus:ring-blue-500" />
+                    className="rounded border-gray-300 text-sage-600 focus:ring-sage-500" />
                 Notifier le partenaire
             </label>
         </div>

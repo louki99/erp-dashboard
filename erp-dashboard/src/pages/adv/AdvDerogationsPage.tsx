@@ -286,7 +286,7 @@ const AdvDerogationsContent = () => {
             headerName: 'N° BC',
             width: 130,
             valueGetter: (params) => params.data?.order?.order_number || '-',
-            cellClass: 'font-mono font-bold text-blue-600',
+            cellClass: 'font-mono font-bold text-sage-600',
         },
         {
             headerName: 'Partenaire',
@@ -411,7 +411,7 @@ const AdvDerogationsContent = () => {
                     ))}
                 </div>
                 
-                <div className="text-xs px-2 py-1 bg-blue-100 text-blue-700 rounded-full font-medium inline-block">
+                <div className="text-xs px-2 py-1 bg-sage-100 text-sage-700 rounded-full font-medium inline-block">
                     {derogationsList.length} dérogation{derogationsList.length > 1 ? 's' : ''}
                 </div>
             </div>

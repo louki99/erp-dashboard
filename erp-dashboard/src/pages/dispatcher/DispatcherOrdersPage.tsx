@@ -5,12 +5,15 @@ import {
     Calendar, User, MapPin, Loader2,
     AlertCircle, Map, List, Route, Navigation, Phone, Clock,
     ArrowUpDown, ExternalLink, CreditCard, Banknote, ChevronDown,
-    PanelRightClose, PanelRightOpen,
+    PanelRightClose, PanelRightOpen, Maximize2, SlidersHorizontal,
+    Printer, Download,
 } from 'lucide-react';
+import { openPdf, downloadPdf } from '@/utils/pdfUtils';
 import { useNavigate } from 'react-router-dom';
 
 import { MasterLayout } from '@/components/layout/MasterLayout';
 import { DataGrid } from '@/components/common/DataGrid';
+import { Modal } from '@/components/common/Modal';
 import { OrdersMapView } from '@/components/dispatcher/OrdersMapView';
 import type { MapBbox } from '@/components/dispatcher/OrdersMapView';
 import {
@@ -123,20 +126,20 @@ const FilterSection = ({ icon, label, isActive, open, onToggle, children }: Filt
             type="button"
             onClick={onToggle}
             className={`w-full flex items-center gap-2 px-3 py-2.5 text-left transition-colors ${
-                open ? 'bg-indigo-50' : 'bg-white hover:bg-gray-50'
+                open ? 'bg-sage-50' : 'bg-white hover:bg-gray-50'
             }`}
         >
-            <span className={`${open ? 'text-indigo-600' : 'text-gray-400'} transition-colors`}>
+            <span className={`${open ? 'text-sage-600' : 'text-gray-400'} transition-colors`}>
                 {icon}
             </span>
-            <span className={`flex-1 text-xs font-semibold uppercase tracking-wide ${open ? 'text-indigo-700' : 'text-gray-600'}`}>
+            <span className={`flex-1 text-xs font-semibold uppercase tracking-wide ${open ? 'text-sage-700' : 'text-gray-600'}`}>
                 {label}
             </span>
             {isActive && !open && (
-                <span className="w-2 h-2 rounded-full bg-indigo-500 shrink-0" />
+                <span className="w-2 h-2 rounded-full bg-sage-500 shrink-0" />
             )}
             {isActive && open && (
-                <span className="px-1.5 py-0.5 bg-indigo-100 text-indigo-700 text-xs font-bold rounded-full leading-none">
+                <span className="px-1.5 py-0.5 bg-sage-100 text-sage-700 text-xs font-bold rounded-full leading-none">
                     actif
                 </span>
             )}
@@ -163,7 +166,7 @@ const CollapsedFilterStrip = ({ activeCount, onOpen }: { activeCount: number; on
         <button
             onClick={onOpen}
             title="Afficher les filtres"
-            className="p-2 rounded-xl bg-indigo-50 hover:bg-indigo-100 text-indigo-600 transition-colors"
+            className="p-2 rounded-xl bg-sage-50 hover:bg-sage-100 text-sage-600 transition-colors"
         >
             <PanelRightOpen className="w-4 h-4" />
         </button>
@@ -173,7 +176,7 @@ const CollapsedFilterStrip = ({ activeCount, onOpen }: { activeCount: number; on
                 <Filter className="w-4 h-4" />
             </div>
             {activeCount > 0 && (
-                <span className="absolute -top-1 -right-1 w-4 h-4 bg-indigo-600 text-white text-[9px] font-bold rounded-full flex items-center justify-center leading-none">
+                <span className="absolute -top-1 -right-1 w-4 h-4 bg-sage-500 text-white text-[9px] font-bold rounded-full flex items-center justify-center leading-none">
                     {activeCount}
                 </span>
             )}
@@ -216,21 +219,21 @@ const FilterPanel = ({ filters, onChange, onReset, onClose, activeCount }: Filte
     return (
         <div className="h-full bg-white border-l border-gray-100 flex flex-col">
             {/* Header */}
-            <div className="px-3 py-3 border-b border-gray-100 flex items-center gap-2 shrink-0">
+            <div className="px-3 py-3.5 border-b border-gray-100 flex items-center gap-2 shrink-0 bg-gradient-to-r from-indigo-50/60 to-white">
                 {/* Close sidebar */}
                 <button
                     onClick={onClose}
                     title="Masquer les filtres"
-                    className="p-1.5 rounded-lg hover:bg-gray-100 text-gray-400 hover:text-gray-600 transition-colors shrink-0"
+                    className="p-1.5 rounded-lg hover:bg-white text-gray-400 hover:text-gray-600 transition-colors shrink-0"
                 >
                     <PanelRightClose className="w-4 h-4" />
                 </button>
 
-                <Filter className="w-3.5 h-3.5 text-indigo-600 shrink-0" />
-                <span className="text-sm font-semibold text-gray-900 flex-1">Filtres</span>
+                <SlidersHorizontal className="w-3.5 h-3.5 text-sage-600 shrink-0" />
+                <span className="text-sm font-bold text-gray-900 flex-1 tracking-tight">Filtres</span>
 
                 {activeCount > 0 && (
-                    <span className="px-1.5 py-0.5 bg-indigo-600 text-white text-xs rounded-full font-bold leading-none shrink-0">
+                    <span className="px-1.5 py-0.5 bg-sage-500 text-white text-xs rounded-full font-bold leading-none shrink-0">
                         {activeCount}
                     </span>
                 )}
@@ -368,7 +371,7 @@ const FilterPanel = ({ filters, onChange, onReset, onClose, activeCount }: Filte
                                     onClick={() => onChange({ sort_dir: d })}
                                     className={`py-1.5 text-xs font-semibold rounded-lg border transition-colors ${
                                         (filters.sort_dir ?? 'desc') === d
-                                            ? 'bg-indigo-600 text-white border-indigo-600'
+                                            ? 'bg-sage-500 text-white border-sage-500'
                                             : 'bg-white text-gray-600 border-gray-200 hover:border-indigo-300'
                                     }`}
                                 >
@@ -402,12 +405,20 @@ const SectionCard = ({ icon, title, color, children }: { icon: React.ReactNode; 
     </div>
 );
 
-const OrderDetailPanel = ({ order, loading }: { order: DispatcherOrder | null; loading: boolean }) => {
+const OrderDetailPanel = ({
+    order,
+    loading,
+    onExpand,
+}: {
+    order: DispatcherOrder | null;
+    loading: boolean;
+    onExpand?: () => void;
+}) => {
     if (loading) {
         return (
             <div className="h-full flex items-center justify-center bg-slate-50">
                 <div className="flex flex-col items-center gap-3 text-gray-400">
-                    <Loader2 className="w-7 h-7 animate-spin text-indigo-400" />
+                    <Loader2 className="w-7 h-7 animate-spin text-sage-400" />
                     <span className="text-sm">Chargement du bon de commande…</span>
                 </div>
             </div>
@@ -434,21 +445,46 @@ const OrderDetailPanel = ({ order, loading }: { order: DispatcherOrder | null; l
                         <div className="text-xl font-bold text-gray-900 tracking-tight">{order.order_code}</div>
                     </div>
                     <div className="flex flex-col items-end gap-2">
-                        <BCStatusBadge status={order.bc_status} />
+                        <div className="flex items-center gap-1.5">
+                            {onExpand && (
+                                <button
+                                    onClick={onExpand}
+                                    title="Agrandir"
+                                    className="p-1.5 rounded-lg hover:bg-gray-100 text-gray-400 hover:text-sage-600 transition-colors"
+                                >
+                                    <Maximize2 className="w-3.5 h-3.5" />
+                                </button>
+                            )}
+                            <button
+                                onClick={() => openPdf('bc', order.id, { force: true })}
+                                title="Imprimer le BC (PDF)"
+                                className="p-1.5 rounded-lg hover:bg-sage-50 text-gray-400 hover:text-sage-600 transition-colors"
+                            >
+                                <Printer className="w-3.5 h-3.5" />
+                            </button>
+                            <button
+                                onClick={() => downloadPdf('bc', order.id)}
+                                title="Télécharger le BC (PDF)"
+                                className="p-1.5 rounded-lg hover:bg-sage-50 text-gray-400 hover:text-sage-600 transition-colors"
+                            >
+                                <Download className="w-3.5 h-3.5" />
+                            </button>
+                            <BCStatusBadge status={order.bc_status} />
+                        </div>
                         {assigned && <AssignedBadge />}
                     </div>
                 </div>
 
                 {/* Amount breakdown */}
-                <div className="bg-indigo-50 rounded-xl border border-indigo-100 p-3 mb-3">
+                <div className="bg-sage-50 rounded-xl border border-sage-100 p-3 mb-3">
                     {order.sub_total != null && (
-                        <div className="flex justify-between text-xs text-indigo-700 mb-1">
+                        <div className="flex justify-between text-xs text-sage-700 mb-1">
                             <span>Montant HT</span>
                             <span className="font-semibold">{fmtAmount(order.sub_total)}</span>
                         </div>
                     )}
                     {order.tax_amount != null && Number(order.tax_amount) > 0 && (
-                        <div className="flex justify-between text-xs text-indigo-600 mb-1">
+                        <div className="flex justify-between text-xs text-sage-600 mb-1">
                             <span>TVA</span>
                             <span className="font-semibold">{fmtAmount(order.tax_amount)}</span>
                         </div>
@@ -553,7 +589,7 @@ const OrderDetailPanel = ({ order, loading }: { order: DispatcherOrder | null; l
                             href={`https://www.openstreetmap.org/?mlat=${order.partner.geo_lat}&mlon=${order.partner.geo_lng}#map=16`}
                             target="_blank"
                             rel="noreferrer"
-                            className="flex items-center gap-1 text-xs text-indigo-600 hover:text-indigo-800 font-medium"
+                            className="flex items-center gap-1 text-xs text-sage-600 hover:text-sage-800 font-medium"
                         >
                             <ExternalLink className="w-3 h-3" />
                             Voir sur carte
@@ -566,7 +602,7 @@ const OrderDetailPanel = ({ order, loading }: { order: DispatcherOrder | null; l
             {/* Salesperson */}
             {sp && (
                 <SectionCard
-                    icon={<User className="w-4 h-4 text-blue-600" />}
+                    icon={<User className="w-4 h-4 text-sage-600" />}
                     title="Commercial"
                     color="bg-blue-100"
                 >
@@ -576,7 +612,7 @@ const OrderDetailPanel = ({ order, loading }: { order: DispatcherOrder | null; l
                         <div className="flex justify-between items-center">
                             <span className="text-xs text-gray-500">Téléphone</span>
                             <a href={`tel:${sp.phone}`}
-                                className="flex items-center gap-1 text-xs text-indigo-600 hover:text-indigo-800 font-medium">
+                                className="flex items-center gap-1 text-xs text-sage-600 hover:text-sage-800 font-medium">
                                 <Phone className="w-3 h-3" /> {sp.phone}
                             </a>
                         </div>
@@ -612,7 +648,7 @@ const OrderDetailPanel = ({ order, loading }: { order: DispatcherOrder | null; l
                                         {p.quantity} × {Number(p.unit_price).toLocaleString('fr-FR')}
                                     </div>
                                     {p.total_price != null && (
-                                        <div className="text-xs text-indigo-600 font-semibold">
+                                        <div className="text-xs text-sage-600 font-semibold">
                                             {Number(p.total_price).toLocaleString('fr-FR')} MAD
                                         </div>
                                     )}
@@ -668,6 +704,7 @@ export const DispatcherOrdersPage = () => {
     const [filterPanelOpen, setFilterPanelOpen] = useState<boolean>(loadFilterOpen);
     const [selectedId, setSelectedId] = useState<number | null>(null);
     const [selectedRows, setSelectedRows] = useState<DispatcherOrder[]>([]);
+    const [detailModalOpen, setDetailModalOpen] = useState(false);
     const searchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
     // Persist all UI preferences
@@ -716,6 +753,29 @@ export const DispatcherOrdersPage = () => {
         }
     }, []);
 
+    // Removable chips summarizing every active filter at a glance — visible regardless of whether
+    // the filter panel itself is open or collapsed, so the dispatcher never loses track of what's
+    // narrowing the list.
+    const activeFilterChips = useMemo(() => {
+        const chips: Array<{ key: string; label: string; onRemove: () => void }> = [];
+        if (search) chips.push({ key: 'search', label: `« ${search} »`, onRemove: () => setSearch('') });
+        if (filters.date_from || filters.date_to) {
+            chips.push({
+                key: 'period',
+                label: `${filters.date_from ?? '…'} → ${filters.date_to ?? '…'}`,
+                onRemove: () => handleFilterChange({ date_from: undefined, date_to: undefined }),
+            });
+        }
+        if (filters.delivery_zone) chips.push({ key: 'zone', label: `Zone: ${filters.delivery_zone}`, onRemove: () => handleFilterChange({ delivery_zone: undefined }) });
+        if (filters.geo_area_id) chips.push({ key: 'geo', label: `Secteur #${filters.geo_area_id}`, onRemove: () => handleFilterChange({ geo_area_id: undefined }) });
+        if (filters.itinerary_id) chips.push({ key: 'itin', label: `Tournée #${filters.itinerary_id}`, onRemove: () => handleFilterChange({ itinerary_id: undefined }) });
+        if (filters.salesperson_id) chips.push({ key: 'sp', label: `Commercial #${filters.salesperson_id}`, onRemove: () => handleFilterChange({ salesperson_id: undefined }) });
+        if (filters.sort_by) chips.push({ key: 'sort', label: `Tri: ${filters.sort_by}`, onRemove: () => handleFilterChange({ sort_by: undefined }) });
+        if (filters.lat_min != null) chips.push({ key: 'bbox', label: 'Zone carte', onRemove: () => handleBboxChange(null) });
+        return chips;
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [search, filters]);
+
     const columnDefs = useMemo<ColDef[]>(() => [
         {
             field: 'order_code',
@@ -723,7 +783,7 @@ export const DispatcherOrdersPage = () => {
             width: 185,
             cellRenderer: (p: { value: string; data: DispatcherOrder }) => (
                 <div className="flex items-center gap-1.5 min-w-0">
-                    <span className="font-semibold text-indigo-700 truncate">{p.value ?? '—'}</span>
+                    <span className="font-semibold text-sage-700 truncate">{p.value ?? '—'}</span>
                     {p.data?.canal && <CanalBadge canal={p.data.canal} />}
                     {isAssigned(p.data) && <Clock className="w-3 h-3 text-amber-500 shrink-0" />}
                 </div>
@@ -734,7 +794,7 @@ export const DispatcherOrdersPage = () => {
             headerName: 'Code Client',
             width: 115,
             cellRenderer: (p: { value?: string }) => (
-                <span className="font-mono text-xs font-semibold text-indigo-700">{p.value ?? '—'}</span>
+                <span className="font-mono text-xs font-semibold text-sage-700">{p.value ?? '—'}</span>
             ),
         },
         {
@@ -794,13 +854,46 @@ export const DispatcherOrdersPage = () => {
                 <span className="text-xs text-gray-500">{fmtDate(p.value ?? p.data?.confirmed_at)}</span>
             ),
         },
+        {
+            headerName: '',
+            width: 48,
+            sortable: false,
+            filter: false,
+            cellRenderer: (p: { data: DispatcherOrder }) => (
+                <button
+                    onClick={(e) => {
+                        e.stopPropagation();
+                        if (!p.data) return;
+                        setSelectedId(p.data.id);
+                        setDetailModalOpen(true);
+                    }}
+                    title="Voir le détail complet"
+                    className="p-1 rounded-lg hover:bg-sage-50 text-gray-300 hover:text-sage-600 transition-colors"
+                >
+                    <Maximize2 className="w-3.5 h-3.5" />
+                </button>
+            ),
+        },
     ], []);
 
     const handleRowClick = (row: DispatcherOrder) => setSelectedId(row.id);
+    // Double-click is a more deliberate "show me everything" gesture than a single click, which
+    // already does double duty (select for the right panel + toggle the multi-select checkbox in
+    // list mode) — opens the same detail content in a focused modal instead of just the side panel.
+    const handleRowDoubleClick = (row: DispatcherOrder) => {
+        setSelectedId(row.id);
+        setDetailModalOpen(true);
+    };
     const handleSelectionChanged = useCallback((rows: DispatcherOrder[]) => setSelectedRows(rows), []);
     // BC → Mission planning now happens in the dedicated workspace (drag&drop + rider/vehicle
-    // picker, docs §8.1) — this page just hands off the navigation, no inline creation anymore.
-    const goToMissionWorkspace = () => navigate('/dispatcher/workspace/missions');
+    // picker, docs §8.1) — this page hands off the current selection via navigation state so it
+    // doesn't have to be rebuilt from scratch over there. State only, not a query param: it's a
+    // one-shot handoff, not something that should survive a refresh or be bookmarkable.
+    const goToMissionWorkspace = () => {
+        navigate('/dispatcher/workspace/missions', {
+            state: selectedRows.length > 0 ? { preselectedOrderIds: selectedRows.map((o) => o.id) } : undefined,
+        });
+    };
 
     return (
         <>
@@ -811,7 +904,7 @@ export const DispatcherOrdersPage = () => {
                         <div className="px-4 pt-4 pb-3 border-b border-gray-100 shrink-0">
                             <div className="flex items-center justify-between mb-3">
                                 <div>
-                                    <h1 className="text-sm font-bold text-gray-900">Commandes BC</h1>
+                                    <h1 className="text-sm font-extrabold text-transparent bg-clip-text bg-gradient-to-r from-gray-900 to-sage-700 tracking-tight">Commandes BC</h1>
                                     <p className="text-xs text-gray-400 mt-0.5">
                                         {loading ? '…' : `${totalCount} commande${totalCount !== 1 ? 's' : ''} confirmée${totalCount !== 1 ? 's' : ''}`}
                                     </p>
@@ -821,14 +914,14 @@ export const DispatcherOrdersPage = () => {
                                     <div className="flex rounded-lg border border-gray-200 overflow-hidden">
                                         <button
                                             onClick={() => setViewMode('list')}
-                                            className={`p-1.5 ${viewMode === 'list' ? 'bg-indigo-600 text-white' : 'text-gray-400 hover:bg-gray-50'}`}
+                                            className={`p-1.5 ${viewMode === 'list' ? 'bg-sage-500 text-white' : 'text-gray-400 hover:bg-gray-50'}`}
                                             title="Vue liste"
                                         >
                                             <List className="w-3.5 h-3.5" />
                                         </button>
                                         <button
                                             onClick={() => setViewMode('map')}
-                                            className={`p-1.5 ${viewMode === 'map' ? 'bg-indigo-600 text-white' : 'text-gray-400 hover:bg-gray-50'}`}
+                                            className={`p-1.5 ${viewMode === 'map' ? 'bg-sage-500 text-white' : 'text-gray-400 hover:bg-gray-50'}`}
                                             title="Vue carte"
                                         >
                                             <Map className="w-3.5 h-3.5" />
@@ -850,16 +943,38 @@ export const DispatcherOrdersPage = () => {
                                     className="w-full pl-8 pr-3 py-2 text-xs border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none"
                                 />
                             </div>
+
+                            {/* Active filter chips — visible whether or not the filter panel is open */}
+                            {activeFilterChips.length > 0 && (
+                                <div className="flex flex-wrap gap-1.5 mt-2.5">
+                                    {activeFilterChips.map((chip) => (
+                                        <button
+                                            key={chip.key}
+                                            onClick={chip.onRemove}
+                                            className="group flex items-center gap-1 pl-2.5 pr-1.5 py-1 bg-sage-50 hover:bg-sage-100 border border-sage-100 text-sage-700 text-xs font-medium rounded-full transition-colors"
+                                        >
+                                            <span className="truncate max-w-[140px]">{chip.label}</span>
+                                            <X className="w-3 h-3 text-sage-400 group-hover:text-sage-700 shrink-0" />
+                                        </button>
+                                    ))}
+                                    <button
+                                        onClick={handleReset}
+                                        className="text-xs font-semibold text-gray-400 hover:text-red-600 px-1.5 transition-colors"
+                                    >
+                                        Tout effacer
+                                    </button>
+                                </div>
+                            )}
                         </div>
 
                         {/* Selection bar */}
                         {selectedRows.length > 0 && (
-                            <div className="px-3 py-2 bg-indigo-600 flex items-center justify-between shrink-0">
+                            <div className="px-3 py-2 bg-sage-500 flex items-center justify-between shrink-0">
                                 <span className="text-xs font-semibold text-white">
                                     {selectedRows.length} sélectionnée{selectedRows.length > 1 ? 's' : ''}
                                 </span>
                                 <button onClick={goToMissionWorkspace}
-                                    className="flex items-center gap-1.5 px-3 py-1 bg-white text-indigo-700 text-xs font-bold rounded-lg hover:bg-indigo-50 transition-colors">
+                                    className="flex items-center gap-1.5 px-3 py-1 bg-white text-sage-700 text-xs font-bold rounded-lg hover:bg-sage-50 transition-colors">
                                     <Plus className="w-3.5 h-3.5" /> Planifier (Mission)
                                 </button>
                             </div>
@@ -913,13 +1028,14 @@ export const DispatcherOrdersPage = () => {
                                         columnDefs={columnDefs}
                                         loading={loading}
                                         onRowSelected={handleRowClick}
+                                        onRowDoubleClicked={handleRowDoubleClick}
                                         rowSelection="multiple"
                                         onSelectionChanged={handleSelectionChanged}
                                         getRowClass={(p) =>
                                             isAssigned(p.data)
                                                 ? 'bg-amber-50 text-gray-500'
                                                 : p.data?.id === selectedId
-                                                ? 'bg-indigo-50'
+                                                ? 'bg-sage-50'
                                                 : ''
                                         }
                                     />
@@ -952,11 +1068,11 @@ export const DispatcherOrdersPage = () => {
                                 <Package2 className="w-12 h-12 text-indigo-200 mx-auto mb-3" />
                                 <p className="text-sm font-medium text-gray-600">Sélectionnez une commande</p>
                                 <p className="text-xs text-gray-400 mt-1">
-                                    Cliquez sur une ligne ou un pin pour voir les détails
+                                    Cliquez sur une ligne ou un pin pour un aperçu, double-cliquez pour le détail complet
                                 </p>
                                 {selectedRows.length > 0 && (
                                     <button onClick={goToMissionWorkspace}
-                                        className="mt-4 w-full flex items-center justify-center gap-2 py-2.5 px-4 bg-indigo-600 text-white text-sm font-semibold rounded-xl hover:bg-indigo-700 transition-colors">
+                                        className="mt-4 w-full flex items-center justify-center gap-2 py-2.5 px-4 bg-sage-500 text-white text-sm font-semibold rounded-xl hover:bg-sage-600 transition-colors">
                                         <Plus className="w-4 h-4" />
                                         Planifier une mission ({selectedRows.length})
                                         <ChevronRight className="w-4 h-4" />
@@ -965,7 +1081,7 @@ export const DispatcherOrdersPage = () => {
                             </div>
                         </div>
                     ) : (
-                        <OrderDetailPanel order={detail} loading={detailLoading} />
+                        <OrderDetailPanel order={detail} loading={detailLoading} onExpand={() => setDetailModalOpen(true)} />
                     )
                 }
                 rightContent={
@@ -985,6 +1101,15 @@ export const DispatcherOrdersPage = () => {
                     )
                 }
             />
+
+            <Modal
+                isOpen={detailModalOpen}
+                onClose={() => setDetailModalOpen(false)}
+                title={detail?.order_code ?? 'Détail de la commande'}
+                size="xl"
+            >
+                <OrderDetailPanel order={detail} loading={detailLoading} />
+            </Modal>
         </>
     );
 };

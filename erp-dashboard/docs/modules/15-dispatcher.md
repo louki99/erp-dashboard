@@ -34,7 +34,7 @@
    - [Mission Detail](#88-mission-detail)
    - [Batch Preview (virtual, read-only)](#89-batch-preview-virtual-read-only)
 9. [Delivery Orders (DO) — REMOVED](#9-delivery-orders-do--removed)
-10. [Preparations — Shortage Queue](#10-preparations--shortage-queue)
+10. [Preparations — Shortage Resolution Flow](#10-preparations--shortage-resolution-flow)
 11. [Decharges (Returns & Cancellations)](#11-decharges)
 12. [Riders & Vehicles](#12-riders--vehicles)
     - [Warehouse Transfers](#12c-warehouse-transfers)
@@ -128,10 +128,20 @@ ADV confirms order (BC)
          │                       once the BP is already completed/rejected — race-condition
          │                       guard re-checked inside the transaction.)
          ▼
-  BP completed → BLs → ready → WarehouseTransfer (CENTRAL → VAN) auto-created by
-         │         WarehouseTransferService::createFromMission() — see §12c
+  BP: completed_full → BLs → ready → WarehouseTransfer created 'pending' (items only —
+         │              NO stock movement yet) by WarehouseTransferService::createFromMission()
+         │              — see §12c. (BP: completed_partial → Mission: awaiting_shortage_review,
+         │              new 2026-06-23 — BLs stay exactly where they are, NO WT, the rider
+         │              cannot depart. See §10 for the shortage-resolution flow, which moves
+         │              the mission to 'ready' once the shortage is resolved instead.)
          ▼
-  Mission: ready
+  Mission: ready, WT: pending
+         │
+    [Rider: POST .../warehouse-transfers/{id}/accept]  ◄── THIS is what physically moves the
+         │   stock (CENTRAL availability → VAN), not complete_preparation — fixed 2026-06-23,
+         │   see §12c. Idempotency-guarded: only callable while WT is still 'pending'.
+         ▼
+  WT: accepted, stock moved
          │
     [start_delivery_mission]  (rider departs — mission must be 'ready')
          ▼
@@ -185,8 +195,9 @@ deferred, see the note at the end of §8 and the comments in `config/decisions.p
 | Value | Meaning | Set by |
 |---|---|---|
 | `draft` | Created via Drag&Drop; BLs generated in draft, no stock touched. Also reachable FROM `in_preparation` via `reopen_delivery_mission` | `create_delivery_mission` / `reopen_delivery_mission` |
-| `in_preparation` | BLs allocated/confirmed, BP generated (atomically), Magasinier picking | `confirm_delivery_mission` |
-| `ready` | BP completed, warehouse transfer (depot → van) generated | auto, on BP completion (`CompletePreparationDecision` → `WarehouseTransferService::createFromMission()`) |
+| `in_preparation` | BLs allocated/confirmed, BP generated (atomically), Magasinier picking. Also reachable FROM `awaiting_shortage_review` via `request_rework` (magasinier is actively working again) | `confirm_delivery_mission` / `request_rework` |
+| `awaiting_shortage_review` | **New 2026-06-23.** BP finished `completed_partial` — mission is **blocked here**, cannot reach `ready`, until the dispatcher arbitrates (§10: `review_partial_preparation` → `accept_partial_preparation`/`request_rework`). A `continue_preparation` rework attempt that still leaves a shortage loops back here instead of silently sitting at `in_preparation` | auto, set by `CompletePreparationDecision` on a shortage; re-set by `continue_preparation` if a rework attempt is still short |
+| `ready` | BP completed (fully, or shortage resolved), warehouse transfer (depot → van) generated `pending` | auto, on BP completion (`CompletePreparationDecision`/`SplitRemainingQuantityDecision`/`ContinuePreparationDecision` → `WarehouseTransferService::createFromMission()`) |
 | `in_transit` | Rider departed | `start_delivery_mission` |
 | `completed` | All deliveries done, stats computed | `complete_delivery_mission` |
 | `cancelled` | Abandoned before completion (only reachable from `draft`) | `cancel_delivery_mission` |
@@ -201,7 +212,7 @@ deferred, see the note at the end of §8 and the comments in `config/decisions.p
 | `completed_partial` | Shortage — partial preparation |
 | `shortage_accepted` | Dispatcher accepted shortage |
 | `awaiting_shortage_review` | Pending dispatcher decision |
-| `rejected` | Rejected by Magasinier |
+| `rejected` | Rejected by Magasinier (`reject_preparation`, Module 16 §6.6) — **mission and all its BLs automatically revert to `draft`** in the same atomic transaction, but the mission's BCs are **not** released back to "Commandes en attente" (resubmittable state, not a full rollback). The dispatcher sees the mission flip back to draft in their workspace, fixes the issue, then re-runs `confirm_delivery_mission` (§8.2) to get a fresh BP |
 | `cancelled` | Cancelled by `reopen_delivery_mission` (dispatcher pulled the mission back to draft to edit a BC) — kept for audit, never deleted |
 
 ---
@@ -245,6 +256,7 @@ curl https://api.omni360.cloud/api/backend/dispatcher/dashboard \
 
     "missions_draft": 2,
     "missions_in_preparation": 1,
+    "missions_awaiting_shortage_review": 1,
     "missions_ready": 1,
     "missions_in_transit": 3,
 
@@ -283,7 +295,7 @@ curl https://api.omni360.cloud/api/backend/dispatcher/dashboard \
 | Field | Description |
 |---|---|
 | `pipeline.bc_confirmed` | BCs confirmed by ADV, not yet dispatched into a mission |
-| `pipeline.missions_draft` / `missions_in_preparation` / `missions_ready` / `missions_in_transit` | Delivery missions by status (branch-scoped) |
+| `pipeline.missions_draft` / `missions_in_preparation` / `missions_awaiting_shortage_review` / `missions_ready` / `missions_in_transit` | Delivery missions by status (branch-scoped). `missions_awaiting_shortage_review` is new 2026-06-23 — missions blocked pending a shortage decision, see §3/§10 |
 | `pipeline.bp_shortage_queue` | BPs in `completed_partial`/`awaiting_shortage_review` |
 | `pipeline.bl_draft` / `bl_confirmed` / `bl_ready` | BLs by status |
 | `alerts.overdue_deliveries` | BLs in `in_transit`/`loaded`/`confirmed` whose `delivery_date` has passed |
@@ -390,30 +402,34 @@ curl "https://api.omni360.cloud/api/backend/dispatcher/bon-livraisons?status=dra
 
 ---
 
-### 7.2 Draft BLs ⚠️ broken — references dropped tables
+### 7.2 Draft BLs
 
 `GET /backend/dispatcher/bon-livraisons/draft`
 
-> **Not migrated — calling this will error.** `DispatcherController::draftBls()` still filters
-> `->whereDoesntHave('bonChargements')`, and `DeliveryNote::bonChargements()` is still defined as
-> `belongsToMany(Shipment::class, 'shipment_deliveries')` — both `shipments` and
-> `shipment_deliveries` are dropped tables (§2). This endpoint was not updated as part of the
-> 2026-06-20 migration and will throw a DB error (`relation "shipments" does not exist` or
-> similar) if called. Do not build against it. There is no replacement endpoint yet — for the
-> mission-based flow, fetch draft BLs via `GET /backend/dispatcher/bon-livraisons?status=draft`
-> (§7.1) instead, which does not depend on the broken relation.
+Returns branch-scoped BLs in `draft`, `preparing`, or `prepared` status. **Fixed and functional.**
+`DispatcherController::draftBls()` no longer references `bonChargements` or `shipment_deliveries`
+(the broken filter that existed before the 2026-06-20 migration was removed in the same pass).
+The query is now a plain `->whereIn('status', ['draft', 'preparing', 'prepared'])` scoped by
+`branch_code`.
+
+> **Note:** `'preparing'` and `'prepared'` are legacy status strings not present in the
+> `BlStatus` enum — they will silently match no rows in the current schema. The effective
+> filter is `status = 'draft'`. Prefer `GET /backend/dispatcher/bon-livraisons?status=draft`
+> (§7.1) for parameterized status filtering rather than this dedicated shortcut.
 
 ---
 
-### 7.3 Confirmed BLs ⚠️ broken — references dropped tables
+### 7.3 Confirmed BLs
 
 `GET /backend/dispatcher/bon-livraisons/confirmed`
 
-> **Not migrated — calling this will error.** `DispatcherController::confirmedBls()` filters
-> `->whereNull('logistics_batch_id')->whereDoesntHave('bonChargements')` — both
-> `delivery_notes.logistics_batch_id` and the `bonChargements` relation reference dropped tables
-> (`logistics_batches`, `shipments`/`shipment_deliveries`). Same gap as §7.2 — use
-> `GET /backend/dispatcher/bon-livraisons?status=confirmed` (§7.1) instead.
+Returns branch-scoped BLs in `confirmed` status. **Fixed and functional.**
+`DispatcherController::confirmedBls()` no longer references `logistics_batch_id` or
+`bonChargements` (the filters that would have broken it were removed in the 2026-06-20 migration
+pass). The query is a plain `->where('status', 'confirmed')` scoped by `branch_code`.
+
+> Prefer `GET /backend/dispatcher/bon-livraisons?status=confirmed` (§7.1) if you also need
+> other statuses in the same request. This shortcut is kept for backward compatibility.
 
 ---
 
@@ -1180,20 +1196,285 @@ from the `products` aggregation but still listed in `missions`.
 
 ---
 
-## 10. Preparations — Shortage Queue ⚠️ broken — references dropped relations
+## 10. Preparations — Shortage Resolution Flow
 
 `GET /backend/dispatcher/preparations/shortage-queue`
 
-> **Not migrated — calling this will error.** `DispatcherController::preparationsShortageQueue()`
-> still calls `->whereHas('logisticsBatch', ...)` and `->whereHas('bonChargement', ...)` on
-> `PreparationOrder` — both relations were **explicitly removed** from the model on 2026-06-20
-> (see `App\Models\PreparationOrder`'s own docblock comment: `shipment() / deliveryOrder() /
-> bonChargement() REMOVED 2026-06-20 — ... Use deliveryMission()`). Calling either relation name
-> now throws `BadMethodCallException`. This endpoint was not updated as part of the migration —
-> do not build against it until it's fixed to scope by `deliveryMission` instead. Flag to backend.
+Lists BPs that need a dispatcher decision after the magasinier reported a shortage — the
+dispatcher's worklist for the right-hand side of the shortage flow described in
+[Module 16 §2](16-magasinier.md#2-warehouse-pipeline-overview).
+
+> **Fixed 2026-06-23 — this used to crash.** `DispatcherController::preparationsShortageQueue()`
+> called `->whereHas('logisticsBatch', ...)`/`->whereHas('bonChargement', ...)` on
+> `PreparationOrder` — both relations were removed from the model on 2026-06-20 (mission
+> migration), so every call threw `BadMethodCallException`. Fixed to scope by
+> `deliveryMission.branch_code` instead. Verified live (200, correct shape, no crash).
+
+```bash
+curl "https://api.omni360.cloud/api/backend/dispatcher/preparations/shortage-queue" \
+  -H "Authorization: Bearer {TOKEN}"
+```
+
+**Response `200`:**
+```json
+{
+  "success": true,
+  "ui": {
+    "fr": {
+      "title": "File rupture — BP",
+      "description": "Examiner la pénurie → accepter / reprise → split reliquats. Utiliser GET/POST workflow bon-preparation/{id}/decisions|execute.",
+      "status_labels": {
+        "completed_partial": "Rupture signalée (en attente examen dispatch)",
+        "awaiting_shortage_review": "En attente décision (accepter / reprise)",
+        "shortage_accepted": "À splitter (reliquats / BL backorder)"
+      }
+    }
+  },
+  "data": {
+    "current_page": 1,
+    "data": [
+      {
+        "id": 88,
+        "bp_number": "LODA000-A01-000088",
+        "status": "completed_partial",
+        "delivery_mission": { "id": 22, "mission_number": "MSN-20260622-0003", "branch_code": "A0001", "rider": { "id": 9, "name": "Youssef Livreur" } },
+        "items": [
+          { "id": 3001, "product_id": 55, "requested_quantity": 40, "prepared_quantity": 30, "shortage_quantity": 10, "shortage_reason": "out_of_stock", "product": { "id": 55, "name": "Huile Végétale 5L", "code": "HUI-VEG-5L" } }
+        ]
+      }
+    ],
+    "total": 1
+  }
+}
+```
+
+> Note this endpoint's own envelope is `{success, ui, data}` (raw paginator under `data`), unlike
+> the workflow-decision endpoints below which use `{success, message, decision, output}` — it's a
+> plain `DispatcherController` listing route, not a decision execution.
+
+### Resolving a shortage — 3 decisions, all on `bon-preparation`
+
+Once a BP lands in this queue (status `completed_partial`), the dispatcher works it through.
+**The mission moves in lockstep, on its own status track** (`awaiting_shortage_review`, new
+2026-06-23) — it's blocked there too, separate from the BP's own state, and is what actually
+prevents the rider from departing:
+
+```
+BP: completed_partial          Mission: awaiting_shortage_review (set automatically the
+       │                                 instant the BP finished short — see §3)
+  [review_partial_preparation]   — analysis only, no side effect besides the status move
+       │                            below; returns a recommended_action + shortage_details
+       ▼
+BP: awaiting_shortage_review    Mission: still awaiting_shortage_review
+       │
+       ├──[accept_partial_preparation]──► BP: shortage_accepted ──[auto-chained,
+       │    requires `metadata.acceptance_reason`         same call]──► BP: shortage_split_done
+       │    AND `metadata.allocations` (new 2026-06-23           (stock released exactly per
+       │    — see below, the dispatcher's manual choice            your allocations, shortage
+       │    of which BL(s) lose stock, NOT computed by              delta re-injected as backlog
+       │    the system) — soft limits overridable with              BC(s) per the BLs you
+       │    `metadata.force_accept: true`)                          chose — Workspace 1)
+       │                                                  Mission: ready, WT: pending
+       │                                                  (same gate as §2/§12c — stock
+       │                                                  still untouched until rider accepts)
+       │
+       └──[request_rework]──► BP: partial_rework_requested  Mission: in_preparation (magasinier
+            requires `metadata.rework_reason`                is actively working again)
+            (min 5 chars). Max 2 reworks per BP.       ──[Magasinier: continue_preparation,
+                                                          Module 16 §6.8]──►
+                                                  BP: completed_full, Mission: ready, WT: pending
+                                                       (or still completed_partial, Mission: back
+                                                        to awaiting_shortage_review — loop back
+                                                        to this queue)
+```
+
+#### `POST /backend/workflow/bon-preparation/{id}/execute` — `review_partial_preparation`
+
+Pure analysis — computes shortage value/percentage, flags critical items (reason
+`critical_item`/`perishable`/`frozen`), and recommends `accept_and_split` or `request_rework`.
+No request body. BP must be `completed_partial`.
+
+> **Changed 2026-06-23 — `shortage_details[].affected_bls`.** Each shortage line now also lists
+> every mission BL that ordered that product, with how much of *that BL's* allocation could be
+> cut (`bl_id`, `delivery_number`, `partner_name`, `allocated_quantity`). This is the raw
+> material for building `accept_partial_preparation`'s `allocations` payload (below) — **the
+> system no longer decides on its own which customer loses stock on a shortage; the dispatcher
+> must choose explicitly from this list.**
+
+```bash
+curl -X POST "https://api.omni360.cloud/api/backend/workflow/bon-preparation/88/execute" \
+  -H "Authorization: Bearer {TOKEN}" -H "Content-Type: application/json" \
+  -H "Idempotency-Key: bp:88:review:$(date +%s)" \
+  -d '{"decision": "review_partial_preparation"}'
+```
+
+**Response `200`:**
+```json
+{
+  "success": true,
+  "decision": "review_partial_preparation",
+  "output": {
+    "bp_id": 88,
+    "bp_status": "awaiting_shortage_review",
+    "mission_id": 22,
+    "analysis": { "total_requested": 64, "total_prepared": 54, "total_shortage": 10, "shortage_percentage": 15.63, "shortage_value": 184.5, "is_critical": false, "critical_items_count": 0, "shortage_items_count": 1 },
+    "shortage_details": [{
+      "product_id": 55, "product_name": "Huile Végétale 5L", "requested_quantity": 40, "prepared_quantity": 30, "shortage_quantity": 10, "unit_price": 18.45, "shortage_value": 184.5,
+      "affected_bls": [
+        { "bl_id": 501, "delivery_number": "BLA000-A01-000501", "partner_id": 12, "partner_name": "Supermarché Atlas", "bl_item_id": 2001, "allocated_quantity": 6 },
+        { "bl_id": 502, "delivery_number": "BLA000-A01-000502", "partner_id": 18, "partner_name": "Épicerie Bensaid", "bl_item_id": 2002, "allocated_quantity": 4 }
+      ]
+    }],
+    "critical_items": [],
+    "recommended_action": "accept_and_split",
+    "available_actions": [
+      { "action": "accept_partial", "decision": "accept_partial_preparation", "label": "Accept Partial Preparation", "available": true },
+      { "action": "request_rework", "decision": "request_rework", "label": "Request Additional Preparation", "available": true }
+    ],
+    "decision_guidance": "Low shortage percentage (15.63%). Safe to accept and split to backorder."
+  }
+}
+```
+
+#### `POST /backend/workflow/bon-preparation/{id}/execute` — `accept_partial_preparation`
+
+Accepts the shortfall as final and, **in the same call**, auto-chains `split_remaining_quantity`
+— releases the reserved stock for the shorted quantity and re-injects it as a new backlog `Order`
+(`bc_status: confirmed`) landing in [§6 Orders](#6-orders-bc--dispatch), ready for the next
+mission planning pass.
+
+> **Fixed 2026-06-23 — this crashed every time before today.** The auto-chained
+> `split_remaining_quantity` accessed `$bp->logisticsBatch`/`$bp->bonChargement` (relations
+> removed in the mission migration) and threw `BadMethodCallException` — the entire
+> accept-and-split path has been broken since 2026-06-21 with nothing exercising it until this
+> audit. Also fixed: `acceptance_reason`/`force_accept` were read from the wrong payload location
+> and silently ignored (the response always showed a generic default reason regardless of what
+> was sent) — send them under `metadata` as shown below; that now actually works.
 >
-> Intended behavior (once fixed): lists BPs in shortage states (`completed_partial`,
-> `awaiting_shortage_review`, `shortage_accepted`) that require the dispatcher to take action.
+> **Changed 2026-06-23 (same day, second pass) — `metadata.allocations` is now required,
+> auto-split is gone.** Until this pass, `split_remaining_quantity` decided on its own which
+> BL(s) lost stock — a greedy, first-BL-first depletion across the mission's BLs, no business
+> input. **That's a commercial decision, not a system one** — it now requires the dispatcher to
+> explicitly choose, via `metadata.allocations: [{ bl_id, product_id, quantity }]`, built from
+> `review_partial_preparation`'s `shortage_details[].affected_bls` (above). Validated strictly:
+> every `bl_id` must belong to this mission, every `product_id` must be one of the BP's shortage
+> lines, no single allocation may exceed that BL's `allocated_quantity`, and **the allocations
+> for each product must sum to EXACTLY that product's shortage quantity** — every unit of the
+> shortage must be assigned to one specific BL, no partial coverage, no silent leftover.
+> Omitting `allocations` now fails fast with a clean `allocations_required` violation instead of
+> the old silent system-chosen split.
+
+```bash
+curl -X POST "https://api.omni360.cloud/api/backend/workflow/bon-preparation/88/execute" \
+  -H "Authorization: Bearer {TOKEN}" -H "Content-Type: application/json" \
+  -H "Idempotency-Key: bp:88:accept:$(date +%s)" \
+  -d '{
+    "decision": "accept_partial_preparation",
+    "metadata": {
+      "acceptance_reason": "Pénurie acceptée commercialement, client informé.",
+      "allocations": [
+        { "bl_id": 502, "product_id": 55, "quantity": 10 }
+      ]
+    }
+  }'
+```
+
+**Constraint:** BP must be `awaiting_shortage_review`. Soft limits (overridable with
+`metadata.force_accept: true`): shortage % ≤ `erp.partial_preparation_accept.max_shortage_percentage`
+(default 20), shortage value ≤ `...max_shortage_value` (default 500), and critical-reason lines
+require force-accept regardless of percentage. `metadata.allocations` non-empty and exactly
+covering every shortage product (see above).
+
+**Response `200`:** (verified live — dispatcher chose to deduct the full shortage from BL 502
+specifically, not BL 501, and the backend honored that choice exactly: BL 501 untouched, BL 502
+reduced, the backlog BC created against BL 502's partner/order)
+```json
+{
+  "success": true,
+  "decision": "accept_partial_preparation",
+  "output": {
+    "bp_id": 88,
+    "bp_status": "shortage_accepted",
+    "mission_id": 22,
+    "total_prepared": 54,
+    "total_shortage": 10,
+    "shortage_percentage": 15.63,
+    "accepted_items": [{ "product_id": 55, "product_name": "Huile Végétale 5L", "prepared_quantity": "30.000", "shortage_quantity": "10.000", "shortage_reason": "not_specified" }],
+    "acceptance_reason": "Pénurie acceptée commercialement, client informé.",
+    "next_actions": { "proceed": "Finalize BLs with prepared quantities, then create BCH" },
+    "backlog": {
+      "bp_status": "shortage_split_done",
+      "original_bls_count": 2,
+      "backlog_orders_count": 1,
+      "backlog_orders": [{ "id": 318, "order_code": "BC-BL-...", "parent_order_id": 201, "parent_order_code": "BCA000-A01-000201", "items_count": 1, "total_quantity": 10 }],
+      "total_shortage_released": 10,
+      "warehouse_transfer": null,
+      "message": "1 backlog BC(s) created for shortage items"
+    }
+  }
+}
+```
+
+`output.backlog` is the nested result of the auto-chained `split_remaining_quantity` — the BP
+ends at `shortage_split_done`, **not** `shortage_accepted` (that status is only observable
+mid-transaction). The backlog order lands directly in `GET /backend/dispatcher/orders/pending`
+(§6), same pool as a normal salesperson order, ready for the next `create_delivery_mission` pass.
+`backlog.warehouse_transfer` is `pending` (not `null`) once every BL on the mission is settled —
+same gate as the no-shortage path, see §2/§12c.
+
+**Response `422` — missing allocations:**
+```json
+{
+  "success": false,
+  "error": "decision_denied",
+  "message": "Validation failed",
+  "violations": [{
+    "constraint": "allocations_required",
+    "reason": "No manual allocation provided. Specify which BL(s) lose stock per shortage product: allocations: [{ bl_id, product_id, quantity }]. See review_partial_preparation's shortage_details[].affected_bls."
+  }]
+}
+```
+
+#### `POST /backend/workflow/bon-preparation/{id}/execute` — `request_rework`
+
+Sends the BP back to the magasinier instead of accepting the shortfall — for when more stock has
+since arrived, or the shortage needs a real second pick attempt rather than a backorder.
+
+> **Fixed 2026-06-23 — `rework_reason` was read from the wrong payload location** and the call
+> always hard-failed with `rework_reason_required` even when a reason was sent under `metadata`
+> (the documented/intended way). Fixed — send it under `metadata` as shown below.
+
+```bash
+curl -X POST "https://api.omni360.cloud/api/backend/workflow/bon-preparation/88/execute" \
+  -H "Authorization: Bearer {TOKEN}" -H "Content-Type: application/json" \
+  -H "Idempotency-Key: bp:88:rework:$(date +%s)" \
+  -d '{"decision": "request_rework", "metadata": {"rework_reason": "Stock réapprovisionné ce matin, merci de finaliser le picking."}}'
+```
+
+**Constraint:** BP must be `awaiting_shortage_review` or `completed_partial`. Max 2 reworks per
+BP (`max_rework_reached` violation past that).
+
+**Response `200`:**
+```json
+{
+  "success": true,
+  "decision": "request_rework",
+  "output": {
+    "bp_id": 88,
+    "bp_status": "partial_rework_requested",
+    "mission_id": 22,
+    "rework_count": 1,
+    "rework_reason": "Stock réapprovisionné ce matin, merci de finaliser le picking.",
+    "shortage_items": [{ "product_id": 55, "product_name": "Huile Végétale 5L", "shortage_quantity": 10, "shortage_reason": "not_specified" }],
+    "message": "Rework requested. Magasinier will be notified to prepare shortage items."
+  }
+}
+```
+
+The magasinier picks up from here with `continue_preparation` — see
+[Module 16 §6.8](16-magasinier.md#68-continue-preparation-rework). That call lands the BP back at
+`completed_full` (shortage fully resolved) or `completed_partial` (still short — loops back to
+this queue for another `review_partial_preparation` pass).
 
 ---
 
@@ -1326,9 +1607,37 @@ frontend needs live availability.
 > dispatcher-triggered endpoint. There is **no more `POST .../warehouse-transfers/from-bch/{bchId}`**
 > (BCH is gone) and **no equivalent `from-mission` endpoint either** — WT creation is now fully
 > internal: `WarehouseTransferService::createFromMission()` is called automatically by
-> `CompletePreparationDecision` the moment the mission's BP is completed (see §8.2/§2). The
-> dispatcher only ever **reads** WTs (list/detail) and can **accept**/**reject** one; they never
-> "create" one through the API.
+> `CompletePreparationDecision` the moment the mission's BP is **fully** completed (see §8.2/§2).
+> The dispatcher only ever **reads** WTs (list/detail) and can **accept**/**reject** one; they
+> never "create" one through the API.
+>
+> **Fixed 2026-06-23 — two real bugs in the creation/timing logic, found auditing the
+> dispatcher↔magasinier handoff:**
+> 1. **WT/mission-ready leaked through on a shortage.** `complete_preparation` used to advance
+>    the mission's BLs to `ready` and call `createFromMission()` **unconditionally**, regardless
+>    of whether the BP finished `completed_full` or `completed_partial`. A shortage BP correctly
+>    showed `warehouse_transfer: null` in its own response (because `createFromMission()` itself
+>    happened to fail for an unrelated reason in testing), but the **BLs still flipped to
+>    `ready`** — there was no actual guard. Fixed: BLs only move to `ready` and the WT is only
+>    created when the BP is `completed_full`. On a shortage, the mission/BLs now correctly stay
+>    `in_preparation`/`batched` until the dispatcher resolves it — see §10. Once resolved
+>    (`accept_partial_preparation`'s auto-chained `split_remaining_quantity`, or `request_rework`
+>    → magasinier's `continue_preparation` reaching `completed_full`), the WT is now generated at
+>    that point instead.
+> 2. **The real stock movement used to execute too early.** `createFromMission()` used to call
+>    `StockService::transferFromCentralToVan()` (the actual CENTRAL-availability-down /
+>    VAN-stock-up movement) **immediately**, the moment the WT row was created — i.e. the moment
+>    the magasinier finished picking, before the rider had done anything. If the rider rejected
+>    the mission or it needed re-adjusting, the stock books were already wrong. Fixed: the WT is
+>    now created `pending` with its items, but the real stock movement is **deferred to
+>    `POST .../warehouse-transfers/{id}/accept`** (below) — the rider explicitly accepting the
+>    mission on their app is what now triggers it, atomically, inside a `DB::transaction()`.
+>
+> Both verified live end-to-end (real WSL Postgres, transaction + rollback): a shortage BP no
+> longer advances the mission/BLs to `ready` or creates a WT; a fully-prepared BP creates a
+> `pending` WT with stock left untouched; calling `accept` is what then moves the stock
+> (verified via direct before/after `stocks.quantity` comparison); calling `accept` twice is
+> correctly rejected the second time (`422`, transfer no longer `pending`).
 
 A **Warehouse Transfer** (WT) moves stock from the **depot to a rider's van** (CENTRAL → VAN),
 one per mission, keyed by `delivery_mission_id` (not `shipment_id` anymore — that column still
@@ -1431,6 +1740,13 @@ curl "https://api.omni360.cloud/api/backend/dispatcher/warehouse-transfers/5" \
 
 ### `POST /backend/dispatcher/warehouse-transfers/{id}/accept` ⚡
 
+The rider's "Accepter la mission" action — also reachable from the dispatcher backoffice, no
+role restriction beyond standard auth. **This is the action that physically moves the stock**
+(see the 2026-06-23 fix note above): rebuilds the per-product quantities from the WT's own
+already-persisted items, then calls `StockService::transferFromCentralToVan()` for real —
+depot `available_quantity` drops, the van's `Stock` row is created/incremented — all inside one
+`DB::transaction()`, before flipping the WT to `accepted`.
+
 ```bash
 curl -X POST "https://api.omni360.cloud/api/backend/dispatcher/warehouse-transfers/5/accept" \
   -H "Authorization: Bearer {TOKEN}" \
@@ -1439,9 +1755,25 @@ curl -X POST "https://api.omni360.cloud/api/backend/dispatcher/warehouse-transfe
   -d '{}'
 ```
 
-Sets `status: accepted`, `accepted_by: <user id>`, `accepted_at: now()`, `progress_level: 50`. No body required, no status guard in the controller (callable from any status — be careful, this is not currently gated to `pending` only).
+**Fixed 2026-06-23 — now status-gated.** Sets `status: accepted`, `accepted_by: <user id>`,
+`accepted_at: now()`, `progress_level: 50`. **Must be `pending`** — calling it again (or on an
+already-`accepted`/`rejected` transfer) now correctly returns `422` instead of silently
+re-running (which used to risk re-deducting stock before this fix moved the deduction here and
+added the guard alongside it).
 
-**Response `200`:** `{"success": true, "message": "..."}`.
+**Response `200`:**
+```json
+{
+  "success": true,
+  "message": "Warehouse transfer accepted",
+  "warehouse_transfer": { "id": 5, "status": "accepted", "accepted_by": 9, "accepted_at": "2026-06-23T14:00:00Z", "items": [ "..." ] }
+}
+```
+
+**Response `422` — not pending:**
+```json
+{ "success": false, "message": "Transfer must be pending to be accepted. Current status: accepted" }
+```
 
 ### `POST /backend/dispatcher/warehouse-transfers/{id}/reject` ⚡
 
@@ -1467,11 +1799,12 @@ curl -X POST "https://api.omni360.cloud/api/backend/dispatcher/warehouse-transfe
   reject were.
 - No manual/arbitrary transfer creation, and no dispatcher-triggered "create" endpoint at all
   anymore (see the note above) — creation is 100% internal to `complete_preparation`.
-- `accept`/`reject` have **no status guard** (no check that the transfer is currently `pending`
-  before transitioning) and **no idempotency replay check** beyond the header requirement —
-  unlike the BL/Delivery-Mission decision engine, this controller does direct `$model->update()`
-  calls, not the `Decision` class pattern used elsewhere in this doc. Flag to backend if you need
-  the same guarantees (constraint checks, replay-safe responses) as the rest of the dispatcher API.
+- `accept` **does** have a status guard (fixed 2026-06-23 — returns `422` if not `pending`; see
+  the note above). `reject` still has **no status guard** — it sets `status: rejected` directly
+  regardless of the current status. Neither has idempotency replay semantics — unlike the
+  BL/Delivery-Mission decision engine, this controller does direct `$model->update()` calls.
+  Flag to backend if you need the same replay-safe `200` guarantees as the rest of the dispatcher
+  API, or if `reject` needs a status pre-check added.
 
 ### Real `warehouse_transfers` status values (from code, not invented)
 
@@ -1688,6 +2021,199 @@ pivot table; don't expect those columns on raw `Vehicle` model attributes.
 
 ---
 
+## 12e. Document Printing & PDF Generation
+
+All ERP document types share a single unified PDF endpoint. No client-side PDF rendering —
+everything happens server-side via a Gotenberg microservice (HTML → PDF). Auth required on all
+routes below (standard `Authorization: Bearer <token>`).
+
+### Architecture
+
+```
+GET /api/backend/documents/{type}/{id}
+         │
+         ▼
+DocumentController → DocumentService
+         │
+         ├─ DocumentDataResolver     loads model + relations → template data array
+         ├─ DocumentBrandingService  resolves company/branch logo, colors, legal details
+         ├─ Blade render             resources/views/documents/{type}.blade.php
+         ├─ DocumentRenderer         sends HTML to Gotenberg → PDF binary
+         └─ Storage cache            documents/{type}/{id}.pdf  (default TTL: 60 min)
+```
+
+### Single-document endpoints
+
+| Method | Path | Response |
+|---|---|---|
+| `GET` | `/api/backend/documents/{type}/{id}` | PDF binary, `Content-Disposition: inline` (opens in browser tab) |
+| `GET` | `/api/backend/documents/{type}/{id}/download` | PDF binary, `Content-Disposition: attachment` (saves to disk) |
+
+**Supported `{type}` values (accessible via API):**
+
+| Type | Document | Model / Primary Key |
+|---|---|---|
+| `bc` | Bon de Commande | `orders.id` |
+| `bp` | Bon de Préparation | `preparation_orders.id` |
+| `bl` | Bon de Livraison | `delivery_notes.id` |
+| `bch` | Bon de Chargement *(legacy BCH/Shipment)* | `shipments.id` — **dead, model dropped** |
+| `do` | Delivery Order *(legacy)* | `delivery_orders.id` — **dead, model dropped** |
+| `lot` | Logistics Batch *(legacy)* | `logistics_batches.id` — **dead, model dropped** |
+
+> **Live types for the current mission pipeline: `bc`, `bp`, `bl` only.** `bch`/`do`/`lot` are
+> still registered in `DocumentController::ALLOWED_TYPES` but their underlying tables were
+> dropped by the 2026-06-22 migration — calling them returns a 500 (`findOrFail` fails).
+> Do not expose buttons for those three types.
+
+**Query parameters (all optional):**
+
+| Parameter | Type | Effect |
+|---|---|---|
+| `force=1` | boolean | Bypass the disk cache — always re-render. Use after any mutation that changes the document content (shortage arbitration, rework, quantity correction). |
+| `watermark=TEXT` | string | Overlay the text as a diagonal stamp (uppercased). Common values: `DRAFT`, `ANNULÉ`, `COPIE`. |
+| `prices=0` | boolean | Hide unit prices and totals, overriding the branch setting. Useful for the warehouse copy of a BL. |
+| `compact=1` | boolean | Compact layout (fewer columns) — supported by templates that check this flag. |
+| `details=1` | boolean | Detailed layout — supported by `lot`; default `false` for lot (ignored for others). |
+
+**Examples:**
+
+```bash
+# Open BC #42 inline in a browser tab
+curl "https://api.omni360.cloud/api/backend/documents/bc/42" \
+  -H "Authorization: Bearer {TOKEN}" \
+  --output -
+
+# Download BP #88 as a file attachment, bypassing cache
+curl "https://api.omni360.cloud/api/backend/documents/bp/88/download?force=1" \
+  -H "Authorization: Bearer {TOKEN}" \
+  --output "BP-88.pdf"
+
+# BL #501 without prices (warehouse copy)
+curl "https://api.omni360.cloud/api/backend/documents/bl/501?prices=0" \
+  -H "Authorization: Bearer {TOKEN}" \
+  --output -
+
+# BL #501 with DRAFT watermark
+curl "https://api.omni360.cloud/api/backend/documents/bl/501?watermark=DRAFT" \
+  -H "Authorization: Bearer {TOKEN}" \
+  --output -
+```
+
+**Frontend pattern:**
+
+```typescript
+// Open in new tab (inline)
+const openPdf = (type: 'bc' | 'bp' | 'bl', id: number, opts?: { force?: boolean; watermark?: string; prices?: boolean }) => {
+  const params = new URLSearchParams();
+  if (opts?.force)     params.set('force', '1');
+  if (opts?.watermark) params.set('watermark', opts.watermark);
+  if (opts?.prices === false) params.set('prices', '0');
+  window.open(`/api/backend/documents/${type}/${id}?${params}`, '_blank');
+};
+
+// Force download
+const downloadPdf = (type: 'bc' | 'bp' | 'bl', id: number) => {
+  window.location.href = `/api/backend/documents/${type}/${id}/download`;
+};
+```
+
+**Response `400` — unknown type:**
+```json
+{ "message": "Unknown document type: mission. Allowed: bc, do, lot, bp, bch, bl" }
+```
+
+**Response `404` — ID not found:** standard Laravel 404 JSON.
+
+---
+
+### Legacy BP print route (web, no auth)
+
+`GET /print-bp/{bpNumber}` — takes the **BP number string** (e.g. `LODA000-A01-000088`), not a
+numeric ID. Renders `documents.bon_preparation` via `JSReportOrderController`. Publicly
+accessible (no Bearer token), served as an HTML→PDF via Gotenberg.
+
+> **Do not build new UI against this route.** It was never updated for the mission migration
+> (references `shipment_id` in the payload, now always null), and it uses raw `DB::table()`
+> queries that bypass Eloquent. It exists for backward compatibility with QR-code scannable
+> print labels that encode the BP number. Prefer `GET /api/backend/documents/bp/{id}` for any
+> new "Print BP" button.
+
+---
+
+### PDF cache & version control
+
+PDFs are cached to disk (`storage/app/documents/{type}/{id}.pdf`) on first render, with a
+configurable TTL (default: **60 minutes**). The cache is also auto-invalidated when the
+underlying Blade template file changes on disk (mtime comparison), so a template deploy
+flushes all cached PDFs for that type automatically.
+
+**There is no automatic cache invalidation when document data changes** (e.g. after
+`complete_preparation` updates `prepared_quantity`, or after `split_remaining_quantity`
+truncates a BL's `allocated_quantity`). The cached PDF remains stale until the TTL expires
+or a `?force=1` request comes in.
+
+**Rule for the UI:** always append `?force=1` immediately after any mutation that changes
+document content:
+
+| Trigger | Document(s) to force-refresh |
+|---|---|
+| `complete_preparation` (full) | `bp/{id}`, all `bl/{id}` in mission |
+| `complete_preparation` (shortage) | `bp/{id}` |
+| `accept_partial_preparation` / `split_remaining_quantity` | `bp/{id}`, affected `bl/{id}` |
+| `continue_preparation` | `bp/{id}`, all `bl/{id}` in mission (if `completed_full`) |
+| `reject_preparation` | `bp/{id}` |
+| Dispatcher edits a BC (`update_delivery_mission`) | `bc/{orderId}`, `bl/{blId}` |
+
+There is **no server-side version history** — only one cached PDF per document exists at a
+time. The `?force=1` re-render overwrites the previous cache. If you need a point-in-time
+PDF snapshot (e.g., "the BL before the shortage was split"), download it with
+`/download?force=1` immediately at that point and store it client-side or in your own file
+storage — the server will not keep the previous version.
+
+---
+
+### Batch/Mission print — real gap
+
+**There is no endpoint to print all BLs (or the BP + all BLs) of a mission in one PDF or
+ZIP.** No `GET /documents/mission/{id}` route exists, no batch-print controller, no ZIP
+generation endpoint. Confirmed by full route audit (`routes/backend.php` + `routes/web.php`).
+
+To implement "Print all for mission" today, the frontend must:
+1. `GET /api/backend/dispatcher/delivery-missions/{id}` — retrieve the mission's BL IDs
+   (from `delivery_notes[]`)
+2. Fetch each PDF individually: `GET /api/backend/documents/bl/{blId}?force=1`
+3. Merge them client-side (e.g. `pdf-lib`, `pdfjs-dist`) or open each in a separate tab
+
+> If multi-PDF merging client-side is impractical, request a `POST /api/backend/documents/batch`
+> endpoint from backend — the implementation would loop over the IDs, call
+> `DocumentService::generate()` per document, and concatenate via Gotenberg's merge API. Raise
+> this as a backend ticket before building the "Print Mission" button.
+
+---
+
+### BP document — known limitations (mission-based BPs)
+
+The `bp` Blade template was designed for the old LOT/BCH flow. Fields that are now always empty
+for mission-based BPs (fixed 2026-06-24 so they no longer crash, but they render blank):
+
+| Template field | Old source | Mission-based value |
+|---|---|---|
+| `batch_number` | `logistics_batches.batch_number` | `""` (table dropped) |
+| `bch_number` | `shipments.shipment_number` | `""` (table dropped) |
+
+Fields that now resolve correctly for mission-based BPs:
+
+| Template field | Source |
+|---|---|
+| `driver` | `deliveryMission.rider.name` → fallback `assigned_picker` |
+| `branch_code` | `deliveryMission.branch_code` → fallback `bp.branch_code` |
+| `mission_number` | `deliveryMission.mission_number` *(new field, 2026-06-24)* |
+
+If the `bp` Blade template currently renders `batch_number` or `bch_number` in a visible header
+field, flag to backend to replace them with `mission_number` — the data key is already there.
+
+---
+
 ## 13. Error Handling
 
 | HTTP Status | Meaning | Common cause |
@@ -1749,6 +2275,7 @@ type BlStatus =
 type DeliveryMissionStatus =
   | 'draft'
   | 'in_preparation'
+  | 'awaiting_shortage_review' // new 2026-06-23 — see §3/§10
   | 'ready'
   | 'in_transit'
   | 'completed'
@@ -1878,6 +2405,7 @@ interface DispatcherDashboard {
     bc_confirmed: number;
     missions_draft: number;
     missions_in_preparation: number;
+    missions_awaiting_shortage_review: number;
     missions_ready: number;
     missions_in_transit: number;
     bp_pending: number;
@@ -2214,10 +2742,13 @@ curl -X POST https://api.omni360.cloud/api/backend/workflow/delivery-mission/0/e
 | `start_preparation` | magasinier, warehouse, admin | low | Magasinier starts picking |
 | `update_preparation` | magasinier, warehouse, admin | low | Update items while picking |
 | `complete_preparation` | magasinier, warehouse, admin | medium | All items picked. On the mission flow, this is also where the warehouse transfer is auto-created (§12c) |
-| `reject_preparation` | magasinier, warehouse, admin | medium | Magasinier rejects BP |
+| `reject_preparation` | magasinier, warehouse, admin | medium | Magasinier rejects BP → mission & its BLs auto-revert to `draft` (BCs stay attached, not released). See §3 BP statuses and Module 16 §6.6 |
 | `report_shortage` | magasinier, warehouse, admin | medium | Mark partial pick with shortage details |
 | `continue_preparation` | magasinier, warehouse, admin | low | Resume a paused preparation |
-| `review_partial_preparation` | dispatcher, admin | medium | Dispatcher shortage resolution (operates on BP, not BCH — BCH no longer exists) |
+| `review_partial_preparation` | dispatcher, admin | medium | Dispatcher shortage resolution (operates on BP, not BCH — BCH no longer exists). See §10 |
+| `accept_partial_preparation` | dispatcher, admin | medium | Accepts the shortfall, auto-chains `split_remaining_quantity`. See §10 |
+| `request_rework` | dispatcher, admin | high | Sends the BP back to the magasinier for a second pick attempt (max 2x). See §10 |
+| `split_remaining_quantity` | dispatcher, admin | medium | Internal — only ever called via `accept_partial_preparation`'s auto-chain, not meant to be called directly. Requires the dispatcher's `metadata.allocations` (new 2026-06-23 — no more auto-computed split). See §10 |
 
 `create_bp_from_orders`/`create_bp_from_bls` are **removed** — a BP is now always created
 atomically by `confirm_delivery_mission` (delivery-mission modelType, §8.2), never directly from
@@ -2235,35 +2766,48 @@ curl "https://api.omni360.cloud/api/backend/workflow/delivery-mission/14/decisio
   -H "Authorization: Bearer {TOKEN}"
 ```
 
-**Response `200`:**
+**Response `200`:** (corrected to match `WorkflowController::getDecisions()` — the array only
+ever contains decisions that **passed** their gate; there is no `available: false` entry for a
+blocked one, it's simply omitted)
 ```json
 {
   "success": true,
-  "model": "bon-livraison",
-  "subject_id": 501,
+  "model_type": "bon-livraison",
+  "model_id": 501,
+  "current_state": "draft",
   "decisions": [
     {
-      "key": "confirm_delivery",
+      "decision": "confirm_delivery",
       "label": "Confirmer la livraison",
-      "available": true,
-      "constraints": []
-    },
-    {
-      "key": "cancel_delivery",
-      "label": "Annuler la livraison",
-      "available": false,
-      "constraints": [
-        {
-          "name": "rider_assigned",
-          "reason": "Assign a rider before you can cancel"
-        }
-      ]
+      "description": "...",
+      "intent": "CONFIRM",
+      "confirm": true,
+      "danger": false,
+      "fields": []
     }
   ]
 }
 ```
 
-> `available: true` with empty `constraints` means the decision can be executed immediately. `available: false` means the constraints listed must be resolved first.
+> Use this array to render the action buttons for a record dynamically — `decision` is the value
+> to send back as `decision` in `POST .../execute`, `fields` describes the form (`name`/`type`/
+> `required`/`label`) so you don't need to hardcode input fields per decision.
+
+> **Fixed 2026-06-23 — gating used to only check role/branch, not the record's actual status.**
+> By default a decision's `validate()` (where most status checks like "BP must be
+> `in_progress`" live) only runs at **execution** time, not during this listing call — the
+> listing only ever checked role/branch policy. This meant, for the `bon-preparation` decisions
+> in particular, **every decision showed as "available" regardless of the BP's real status** —
+> e.g. `request_rework` kept showing even after the 2-rework cap was hit, and a fully terminal
+> BP (`completed_full`/`shortage_split_done`) still showed phantom buttons for actions that would
+> immediately fail on click. Fixed for all 9 `bon-preparation` decisions
+> (`start_preparation`/`update_preparation`/`complete_preparation`/`reject_preparation`/
+> `report_shortage`/`continue_preparation`/`review_partial_preparation`/
+> `accept_partial_preparation`/`request_rework`) — status/count gates now run during listing too,
+> while pure field-presence checks (e.g. "a reason is required") still only enforce at execution
+> time, not at listing time (so the button still shows, you just can't submit it empty).
+> Verified live: a BP with `rework_count: 2` now correctly omits `request_rework` from the list;
+> a `completed_full`/`shortage_split_done` BP now returns an empty `decisions` array.
 
 ---
 
@@ -2512,7 +3056,62 @@ Order (BC)
 
 *Generated from source: `app/Http/Controllers/Backend/DispatcherController.php`, `app/Http/Controllers/Backend/WorkflowController.php`, `app/Decisions/Dispatcher/`, `app/Models/DeliveryMission.php`, `app/Models/PreparationOrder.php`, `app/Services/Dispatcher/MissionBlGeneratorService.php`, `app/Services/Dispatcher/MissionRollbackService.php`, `app/Services/WarehouseTransferService.php`, `routes/backend.php`, `config/decisions.php`, `database/migrations/`, `app/Enums/BlStatus.php`, `docs/modules/planning_refactor_schema.md`*
 
-*Last updated: 2026-06-22 —*
+*Last updated: 2026-06-24 — four backend bugs found and fixed during deep audit:*
+1. *`start_preparation` never moved mission BLs to `in_preparation` — `$bp->deliveryNotes` is a
+   `belongsToMany` via the dropped `preparation_delivery_notes` pivot, always empty for
+   mission BPs. Fixed: resolves via `$bp->deliveryMission->deliveryNotes()` instead. Side effect:
+   downstream BL-status filters in `CompletePreparationDecision`, `ContinuePreparationDecision`,
+   and `SplitRemainingQuantityDecision` that expected BLs still in `batched` status at completion
+   time have been updated to also accept `in_preparation`.*
+2. *`continue_preparation` stock arithmetic was wrong — decremented `stock.reserved_quantity` by
+   the additional picked quantity, but rework picks from **un-reserved** available stock (stock
+   that wasn't allocatable at `confirm_delivery_mission` time). Only `stock.quantity` and the
+   derived `stock.available_quantity` should change; `reserved_quantity` is unchanged.*
+3. *`continue_preparation` never updated `delivery_note_items.prepared_quantity` — without this,
+   `WarehouseTransferService::createFromMission()` (called when the rework brings the BP to
+   `completed_full`) would build the WT with the old partial-pick quantity from the initial
+   `complete_preparation` call instead of the rework-corrected amount.*
+4. *§7.2 and §7.3 were incorrectly labeled "broken — references dropped tables". Code audit
+   confirmed neither `draftBls()` nor `confirmedBls()` references `bonChargements` or
+   `logistics_batch_id` in the current codebase — those filters were already removed in the
+   2026-06-20 migration pass. Warnings removed; sections updated.*
+
+*Last updated: 2026-06-23 (newest pass) — `split_remaining_quantity` no longer auto-computes
+which BL loses stock on a shortage (§10): that was a greedy, system-decided, first-BL-first
+depletion — now a hard requirement on `accept_partial_preparation`'s `metadata.allocations:
+[{ bl_id, product_id, quantity }]`, the dispatcher's explicit manual choice, validated to
+exactly cover the shortage per product without exceeding any BL's allocation.
+`review_partial_preparation`'s `shortage_details[]` now includes `affected_bls` (which mission
+BLs ordered each shorted product, and how much of each could be cut) — the data needed to build
+that payload. Missing `allocations` now fails fast with a clean violation instead of a generic
+error. Verified live: the dispatcher's choice of BL is honored exactly (the untouched BL stays
+untouched, the chosen one is reduced, the backlog BC lands against the chosen BL's order).
+
+*Last updated: 2026-06-23 (latest pass) — new `DeliveryMission` status
+`awaiting_shortage_review` (§3): a `completed_partial` BP now explicitly blocks the mission in
+this status (set atomically by `CompletePreparationDecision`) instead of silently leaving it at
+`in_preparation` — the mission can no longer reach `ready` until the dispatcher arbitrates.
+`request_rework` moves the mission back to `in_preparation`; a `continue_preparation` attempt
+that's still short loops it back to `awaiting_shortage_review`. New dashboard counter
+`pipeline.missions_awaiting_shortage_review` (§5). Required widening
+`delivery_missions.status` from `varchar(20)` to `varchar(40)` (the new value didn't fit) —
+verified live end-to-end across the full state machine (shortage → rework → still-short →
+rework → fully resolved → ready).
+
+*Last updated: 2026-06-23 (second pass) — audited and fixed the dispatcher's shortage-resolution flow (§10):
+`GET /dispatcher/preparations/shortage-queue` crashed on every call (dead `logisticsBatch`/
+`bonChargement` relations, same pattern as the 2026-06-22 magasinier fixes) — fixed to scope by
+`deliveryMission.branch_code`. `accept_partial_preparation` crashed every time via its
+`split_remaining_quantity` auto-chain for the same reason. `accept_partial_preparation` and
+`request_rework` silently ignored their `metadata`-nested payload fields
+(`acceptance_reason`/`force_accept`/`rework_reason`) — fixed. §10 rewritten from a "broken, do
+not use" stub into a full walkthrough of `review_partial_preparation` →
+`accept_partial_preparation`/`request_rework` → `split_remaining_quantity`, with real
+verified-live response shapes; decision registry (§16) updated to list all of them. See
+[Module 16](16-magasinier.md)'s matching changelog for the magasinier-side half of this fix
+(`completed_partial` was unreachable; `continue_preparation` was also broken two bugs deep).*
+
+*Previous update: 2026-06-22 —*
 1. *`allocate_delivery_note` and `generate_preparation_for_mission` (removed 2026-06-21) folded into one atomic `confirm_delivery_mission` (§8.2) — sections, examples, the decision registry, and TypeScript types updated throughout to stop referencing the removed decisions.*
 2. *New `update_delivery_mission` fields `add_order_ids`/`remove_order_ids` (§8.5) — detach/re-attach a single BC from a draft mission's merged BL without touching the whole BL, for when a salesperson needs to edit a BC already inside a mission.*
 3. *New `reopen_delivery_mission` decision (§8.6) — atomic rollback from `in_preparation` back to `draft`: cancels the BP (`status: cancelled`, kept for audit), releases reserved stock, BLs → draft. Blocked once the BP is no longer `pending`/`in_progress` (race-condition guard, re-checked inside the transaction). Required a new migration adding `cancelled` to `preparation_orders`' status CHECK constraint.*

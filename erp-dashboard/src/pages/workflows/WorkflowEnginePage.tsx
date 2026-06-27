@@ -43,10 +43,10 @@ export function WorkflowEnginePage() {
             </div>
 
             {/* Info Banner */}
-            <div className="bg-blue-50 dark:bg-blue-900/20 rounded-lg border border-blue-200 dark:border-blue-800 p-4">
+            <div className="bg-sage-50 dark:bg-sage-900/20 rounded-lg border border-sage-200 dark:border-sage-800 p-4">
                 <div className="flex items-start gap-3">
-                    <Info className="w-5 h-5 text-blue-600 dark:text-blue-400 shrink-0 mt-0.5" />
-                    <div className="text-sm text-blue-900 dark:text-blue-200">
+                    <Info className="w-5 h-5 text-sage-600 dark:text-sage-400 shrink-0 mt-0.5" />
+                    <div className="text-sm text-sage-900 dark:text-sage-200">
                         <strong>Demo Page:</strong> This page demonstrates the new Workflow Engine with React Flow.
                         It uses example data (BC Validation workflow, Order ID 115). Connect to the backend API to see real workflow data.
                     </div>
@@ -119,7 +119,7 @@ export function WorkflowEnginePage() {
                             </div>
                         </div>
                         <div>
-                            <div className="text-2xl font-bold text-blue-600">
+                            <div className="text-2xl font-bold text-sage-600">
                                 {graph.edges.length}
                             </div>
                             <div className="text-xs text-gray-600 dark:text-gray-400">

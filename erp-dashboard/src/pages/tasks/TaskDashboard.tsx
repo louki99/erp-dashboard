@@ -59,8 +59,8 @@ export const TaskDashboard = () => {
             label: 'Tâches prêtes',
             value: tasks?.filter((t) => t.status === 'ready').length || 0,
             icon: ListTodo,
-            color: 'text-blue-600',
-            bgColor: 'bg-blue-100',
+            color: 'text-sage-600',
+            bgColor: 'bg-sage-100',
         },
         {
             label: 'En cours',
@@ -122,7 +122,7 @@ export const TaskDashboard = () => {
                                     onClick={() => setFilters({ status: 'ready' })}
                                     className={`px-4 py-2 rounded-lg transition-colors ${
                                         filters.status === 'ready'
-                                            ? 'bg-blue-600 text-white'
+                                            ? 'bg-sage-500 text-white'
                                             : 'bg-white text-gray-700 border border-gray-300 hover:bg-gray-50'
                                     }`}
                                 >
@@ -132,7 +132,7 @@ export const TaskDashboard = () => {
                                     onClick={() => setFilters({ status: 'in_progress' })}
                                     className={`px-4 py-2 rounded-lg transition-colors ${
                                         filters.status === 'in_progress'
-                                            ? 'bg-blue-600 text-white'
+                                            ? 'bg-sage-500 text-white'
                                             : 'bg-white text-gray-700 border border-gray-300 hover:bg-gray-50'
                                     }`}
                                 >
@@ -142,7 +142,7 @@ export const TaskDashboard = () => {
                                     onClick={() => setFilters({ status: 'completed' })}
                                     className={`px-4 py-2 rounded-lg transition-colors ${
                                         filters.status === 'completed'
-                                            ? 'bg-blue-600 text-white'
+                                            ? 'bg-sage-500 text-white'
                                             : 'bg-white text-gray-700 border border-gray-300 hover:bg-gray-50'
                                     }`}
                                 >
