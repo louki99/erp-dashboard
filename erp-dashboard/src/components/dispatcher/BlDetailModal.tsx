@@ -3,7 +3,10 @@ import { Loader2, Package, FileText, User, ChevronDown, ChevronUp } from 'lucide
 
 import { Modal } from '@/components/common/Modal';
 import { dispatcherApi } from '@/services/api/dispatcherApi';
+import apiClient from '@/services/api/client';
 import type { DeliveryNote, DispatcherOrder, BlStatus } from '@/types/dispatcher.types';
+import { WorkflowHistory } from '@/components/workflow/WorkflowHistory';
+import type { WorkflowHistory as WorkflowHistoryType } from '@/services/api/workflowStateApi';
 
 const BL_STATUS_LABEL: Record<string, string> = {
   draft: 'Brouillon', confirmed: 'Confirmé', batched: 'En lot',
@@ -22,15 +25,54 @@ export const BlDetailModal = ({ blId, onClose }: { blId: number | null; onClose:
   const [showFullOrder, setShowFullOrder] = useState(false);
   const [order, setOrder] = useState<DispatcherOrder | null>(null);
   const [loadingOrder, setLoadingOrder] = useState(false);
+  const [historyLink, setHistoryLink] = useState<string | null>(null);
+  const [history, setHistory] = useState<WorkflowHistoryType[]>([]);
+  const [showHistory, setShowHistory] = useState(false);
+  const [loadingHistory, setLoadingHistory] = useState(false);
 
   useEffect(() => {
-    if (!blId) { setBl(null); setShowFullOrder(false); setOrder(null); return; }
+    if (!blId) {
+      setBl(null);
+      setShowFullOrder(false);
+      setOrder(null);
+      setHistoryLink(null);
+      setHistory([]);
+      setShowHistory(false);
+      return;
+    }
     setLoading(true);
-    dispatcherApi.bonLivraisons.getById(blId)
-      .then(setBl)
-      .catch(() => setBl(null))
+    dispatcherApi.bonLivraisons.getContext(blId)
+      .then((res) => {
+        // Handle both flat DeliveryNote and wrapped { bl, items } structures
+        const data = res.detail as any;
+        if (data && data.bl) {
+          setBl({ ...data.bl, items: data.items || data.bl.items });
+        } else {
+          setBl(data);
+        }
+        setHistoryLink(res._links?.history ?? null);
+      })
+      .catch(() => {
+        setBl(null);
+        setHistoryLink(null);
+      })
       .finally(() => setLoading(false));
   }, [blId]);
+
+  const handleFetchHistory = async () => {
+    setShowHistory((v) => !v);
+    if (!history.length && historyLink && !showHistory) {
+      setLoadingHistory(true);
+      try {
+        const res = await apiClient.get<{ success: boolean; history: WorkflowHistoryType[] }>(historyLink);
+        setHistory(res.data.history || []);
+      } catch (err) {
+        setHistory([]);
+      } finally {
+        setLoadingHistory(false);
+      }
+    }
+  };
 
   const handleExpandOrder = () => {
     setShowFullOrder((v) => !v);
@@ -54,12 +96,31 @@ export const BlDetailModal = ({ blId, onClose }: { blId: number | null; onClose:
           <p className="text-sm text-gray-400 text-center py-8">BL introuvable</p>
         ) : (
           <>
-            <div className="flex items-center gap-2">
-              <span className="px-2 py-0.5 rounded-full text-xs font-semibold bg-blue-100 text-blue-700">
-                {BL_STATUS_LABEL[bl.status as BlStatus] ?? bl.status}
-              </span>
-              <span className="text-sm text-gray-500">{bl.partner.name}</span>
+            <div className="flex items-center justify-between gap-2">
+              <div className="flex items-center gap-2">
+                <span className="px-2 py-0.5 rounded-full text-xs font-semibold bg-blue-100 text-blue-700">
+                  {BL_STATUS_LABEL[bl.status as BlStatus] ?? bl.status}
+                </span>
+                <span className="text-sm text-gray-500">{bl.partner.name}</span>
+              </div>
+
+              {historyLink && (
+                <button
+                  onClick={handleFetchHistory}
+                  className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-gray-600 bg-gray-50 hover:bg-gray-100 border border-gray-200 rounded-lg transition-colors"
+                >
+                  <FileText size={12} />
+                  Historique
+                  {showHistory ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
+                </button>
+              )}
             </div>
+
+            {showHistory && (
+              <div className="mt-4">
+                <WorkflowHistory history={history} isLoading={loadingHistory} />
+              </div>
+            )}
 
             <div className="grid grid-cols-2 gap-3 text-sm">
               <div className="p-3 rounded-lg bg-gray-50 border border-gray-100">
@@ -152,7 +213,7 @@ export const BlDetailModal = ({ blId, onClose }: { blId: number | null; onClose:
                                 <tr key={p.id}>
                                   <td className="px-2 py-1.5">{p.product?.name ?? `#${p.product_id}`}</td>
                                   <td className="px-2 py-1.5 text-right">{p.quantity}</td>
-                                  <td className="px-2 py-1.5 text-right">{Number(p.unit_price).toLocaleString()} Dh</td>
+                                  <td className="px-2 py-1.5 text-right">{Number(p.final_price ?? p.price).toLocaleString()} Dh</td>
                                 </tr>
                               ))}
                             </tbody>

@@ -2,7 +2,6 @@
 export { WorkflowVisualization } from './WorkflowVisualization';
 export { WorkflowTemplateCard } from './WorkflowTemplateCard';
 export { WorkflowForm } from './WorkflowForm';
-export { EnhancedWorkflowForm } from './EnhancedWorkflowForm';
 export { BulkTaskActions } from './BulkTaskActions';
 export { TaskMoveDialog } from './TaskMoveDialog';
 export { TaskMonitoringDashboard } from './TaskMonitoringDashboard';

@@ -214,6 +214,34 @@ export interface WorkflowTransitionDefinition {
 }
 
 // ============================================================================
+// Transition Rule Types (Ledger Table — docs §5/§8/§9)
+// ============================================================================
+
+export interface ConditionGroup {
+    operator: 'AND' | 'OR';
+    conditions: Array<string | { class: string; parameters: Record<string, any> }>;
+}
+
+export interface TransitionRule {
+    id: number;
+    workflow_step_id: number;
+    target_step_code: string;
+    priority: number;
+    is_active: boolean;
+    condition_group: ConditionGroup;
+}
+
+export interface WorkflowDetailResponse {
+    workflow: WorkflowDefinition;
+    steps: WorkflowStepDefinition[];
+    stats: {
+        total_instances: number;
+        active_instances: number;
+        completed_instances: number;
+    };
+}
+
+// ============================================================================
 // History Types
 // ============================================================================
 

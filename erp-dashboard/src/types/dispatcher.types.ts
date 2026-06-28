@@ -358,6 +358,7 @@ export interface DeliveryMission {
   total_cod_collected?: number;
   delivery_rate?: number;
   created_at: string;
+  _decisions?: DoDecisionItem[];
 }
 
 export interface CreateDeliveryMissionPayload {
@@ -802,6 +803,20 @@ export interface DoDecisionsResponse {
   current_step_name?: string | null;
   workflow_status?: string | null;
   decisions: DoDecisionItem[];
+}
+
+export interface WorkflowContextResponse<TDetail> {
+  model_status: string;
+  shortage_phase?: string | null;
+  model_detail_url?: string;
+  detail: TDetail;
+  decisions: DoDecisionItem[];
+  _links?: {
+    self?: string;
+    decisions?: string;
+    execute?: string;
+    history?: string;
+  };
 }
 
 export interface OrdersPendingFilters {

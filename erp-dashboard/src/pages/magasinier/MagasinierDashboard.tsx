@@ -4,7 +4,6 @@ import { useNavigate } from 'react-router-dom';
 import toast from 'react-hot-toast';
 import { magasinierApi } from '@/services/api/magasinierApi';
 import type { BonPreparationStatus, DashboardStats } from '@/types/magasinier.types';
-import { TaskWidget } from '@/components/tasks';
 
 const PENDING_BP_STATUS_LABEL: Partial<Record<BonPreparationStatus, string>> = {
     pending: 'En attente',
@@ -128,18 +127,6 @@ export const MagasinierDashboard = () => {
                         </div>
                     );
                 })}
-            </div>
-
-            {/* Task Workflow Widget */}
-            <div className="mb-8">
-                <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-1">
-                    <TaskWidget
-                        workflowType="bp"
-                        title="Mes tâches de préparation"
-                        maxTasks={5}
-                        showViewAll={true}
-                    />
-                </div>
             </div>
 
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">

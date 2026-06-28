@@ -106,17 +106,8 @@ const ITEM_PERMISSIONS: Record<string, string> = {
     'Monitoring': 'admin.monitoring.view',
     'Paramètres Généraux': 'admin.settings.view',
     
-    // Tasks & Workflows
-    'Tableau de bord Tâches': 'admin.tasks.dashboard',
-    'Tâches prêtes': 'admin.tasks.my-tasks',
-    'Tâches en cours': 'admin.tasks.my-tasks',
-    'Tâches terminées': 'admin.tasks.my-tasks',
-    'Progression workflows': 'admin.tasks.workflow.progress',
-    'Statistiques workflows': 'admin.tasks.workflow.progress',
-    'Templates de workflow': 'view-workflows',
+    // Workflows (Admin)
     'Gestion des workflows': 'view-workflows',
-    'Gestion des tâches': 'admin.tasks.index',
-    'Workflow Engine Test': 'view-workflows',
     
     // Import/Export
     'Tableau de bord Import/Export': 'admin.import-export.dashboard',
@@ -289,32 +280,16 @@ const MENU_DATA: ModuleData[] = [
         ]
     },
     {
-        id: 'tasks',
-        label: 'Tâches & Workflows',
+        id: 'workflows',
+        label: 'Workflows & Règles',
         icon: ListTodo,
-        description: 'Gestion des tâches et workflows - Suivi et exécution des processus métier',
+        description: 'Administration du moteur de règles dynamiques',
         requiredPermission: 'admin.tasks',
         requiredRole: 'tasks',
         categories: [
             {
-                title: 'Tableau de Bord',
-                items: ['Tableau de bord Tâches']
-            },
-            {
-                title: 'Mes Tâches',
-                items: ['Tâches prêtes', 'Tâches en cours', 'Tâches terminées']
-            },
-            {
-                title: 'Workflows',
-                items: ['Progression workflows', 'Statistiques workflows']
-            },
-            {
                 title: 'Administration',
-                items: ['Templates de workflow', 'Gestion des workflows', 'Gestion des tâches']
-            },
-            {
-                title: 'Test & Demo',
-                items: ['Workflow Engine Test']
+                items: ['Gestion des workflows']
             }
         ]
     },
@@ -683,17 +658,8 @@ export const MegaMenu: React.FC<MegaMenuProps> = ({ isOpen, onClose, initialSear
         'Monitoring': '/admin/monitoring',
         'Paramètres Généraux': '/settings',
 
-        // Tasks & Workflows Module Routes
-        'Tableau de bord Tâches': '/tasks',
-        'Tâches prêtes': '/tasks?status=ready',
-        'Tâches en cours': '/tasks?status=in_progress',
-        'Tâches terminées': '/tasks?status=completed',
-        'Progression workflows': '/admin/monitoring',
-        'Statistiques workflows': '/admin/monitoring',
-        'Templates de workflow': '/workflows',
+        // Workflows Module Routes
         'Gestion des workflows': '/workflows',
-        'Gestion des tâches': '/admin/monitoring',
-        'Workflow Engine Test': '/workflows/engine',
 
         // Import/Export Module Routes
         'Tableau de bord Import/Export': '/import-export',

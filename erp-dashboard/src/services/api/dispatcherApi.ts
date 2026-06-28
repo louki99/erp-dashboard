@@ -22,6 +22,7 @@ import type {
   OrdersPendingFilters,
   DoDecisionsResponse,
   ShortageQueueResponse,
+  WorkflowContextResponse,
 } from '@/types/dispatcher.types';
 
 const BASE = '/api/backend/dispatcher';
@@ -114,6 +115,11 @@ export const dispatcherApi = {
       return r.data;
     },
 
+    getContext: async (id: number): Promise<WorkflowContextResponse<DeliveryNote>> => {
+      const r = await apiClient.get<WorkflowContextResponse<DeliveryNote>>(`${WORKFLOW}/bon-livraison/${id}/context`);
+      return r.data;
+    },
+
     // BL workflow via engine (confirm_delivery, update_delivery, etc.). Fields must nest under
     // `metadata` — confirmed by backend 2026-06-17 (docs §16): every *Decision::validate()/
     // doExecute() reads $context->data['metadata'], so a flat payload is silently ignored. This is
@@ -150,6 +156,11 @@ export const dispatcherApi = {
     // request_rework dynamically via DecisionActionsBar, same as everywhere else in this app.
     getDecisions: async (id: number): Promise<DoDecisionsResponse> => {
       const r = await apiClient.get<DoDecisionsResponse>(`${WORKFLOW}/bon-preparation/${id}/decisions`);
+      return r.data;
+    },
+
+    getContext: async (id: number): Promise<WorkflowContextResponse<PreparationOrder>> => {
+      const r = await apiClient.get<WorkflowContextResponse<PreparationOrder>>(`${WORKFLOW}/bon-preparation/${id}/context`);
       return r.data;
     },
 
@@ -235,6 +246,11 @@ export const dispatcherApi = {
     // type is `delivery-mission` (also accepted as `mission`, normalized server-side).
     getDecisions: async (id: number): Promise<DoDecisionsResponse> => {
       const r = await apiClient.get<DoDecisionsResponse>(`${WORKFLOW}/delivery-mission/${id}/decisions`);
+      return r.data;
+    },
+
+    getContext: async (id: number): Promise<WorkflowContextResponse<DeliveryMissionDetailResponse>> => {
+      const r = await apiClient.get<WorkflowContextResponse<DeliveryMissionDetailResponse>>(`${WORKFLOW}/delivery-mission/${id}/context`);
       return r.data;
     },
 

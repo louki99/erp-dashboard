@@ -11,11 +11,11 @@ export interface LayoutOptions {
 }
 
 const DEFAULT_OPTIONS: Required<LayoutOptions> = {
-    direction: 'TB', // Top to Bottom
-    nodeWidth: 250,
-    nodeHeight: 100,
-    rankSep: 100, // Vertical spacing between ranks
-    nodeSep: 80, // Horizontal spacing between nodes
+    direction: 'LR', // Left to Right makes more sense for timelines/workflows
+    nodeWidth: 320,
+    nodeHeight: 120,
+    rankSep: 150, // More horizontal spacing between ranks
+    nodeSep: 100, // More vertical spacing between nodes
 };
 
 /**
@@ -97,9 +97,8 @@ export function calculateWorkflowLayout(
  * @returns Recommended layout direction
  */
 export function getRecommendedDirection(nodeCount: number): 'TB' | 'LR' {
-    // For simple workflows (< 5 nodes), use top-to-bottom
-    // For complex workflows, use left-to-right for better horizontal space
-    return nodeCount < 5 ? 'TB' : 'LR';
+    // For workflows, LR is generally more readable and takes up widescreen space better.
+    return 'LR';
 }
 
 /**

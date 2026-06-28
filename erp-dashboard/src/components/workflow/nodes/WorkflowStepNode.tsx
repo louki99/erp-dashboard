@@ -82,8 +82,8 @@ export const WorkflowStepNode = memo(({ data, selected }: WorkflowStepNodeProps)
             {/* Handles for connections */}
             <Handle
                 type="target"
-                position={Position.Top}
-                className="!bg-gray-400 !w-2 !h-2"
+                position={Position.Left}
+                className="!bg-sage-400 !w-3 !h-3 !border-2 !border-white"
             />
 
             {/* Node Content */}
@@ -138,8 +138,8 @@ export const WorkflowStepNode = memo(({ data, selected }: WorkflowStepNodeProps)
             {/* Handle for outgoing connections */}
             <Handle
                 type="source"
-                position={Position.Bottom}
-                className="!bg-gray-400 !w-2 !h-2"
+                position={Position.Right}
+                className="!bg-sage-400 !w-3 !h-3 !border-2 !border-white"
             />
         </div>
     );

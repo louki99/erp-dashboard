@@ -1,9 +1,7 @@
 import apiClient from './client';
 import type {
     WorkflowGraph,
-    WorkflowGraphResponse,
     WorkflowInstanceDetail,
-    WorkflowInstanceResponse,
     WorkflowInstanceByModelResponse,
     CreateWorkflowInstanceRequest,
     CreateWorkflowInstanceResponse,
@@ -11,6 +9,10 @@ import type {
     TransitionResponse,
     WorkflowHistoryResponse,
     WorkflowDefinition,
+    WorkflowStepDefinition,
+    WorkflowTransitionDefinition,
+    WorkflowDetailResponse,
+    TransitionRule,
 } from '@/types/workflowEngine.types';
 
 const BASE_URL = '/api/backend';
@@ -162,21 +164,68 @@ export const workflowEngineApi = {
      * GET /workflows
      */
     getAllWorkflows: async (): Promise<WorkflowDefinition[]> => {
-        const response = await apiClient.get<{ success: boolean; workflows: WorkflowDefinition[] }>(
-            `${BASE_URL}/workflows`
+        // Admin endpoint uses Laravel pagination
+        const response = await apiClient.get<{ data: WorkflowDefinition[] }>(
+            `${BASE_URL}/workflow-config`
         );
-        return response.data.workflows;
+        return response.data.data;
     },
 
     /**
      * Get workflow definition by ID
-     * GET /workflows/{workflowId}
+     * GET /workflow-config/{workflowId}
      */
     getWorkflowById: async (workflowId: number): Promise<WorkflowDefinition> => {
-        const response = await apiClient.get<{ success: boolean; workflow: WorkflowDefinition }>(
-            `${BASE_URL}/workflows/${workflowId}`
+        const response = await apiClient.get<WorkflowDetailResponse>(
+            `${BASE_URL}/workflow-config/${workflowId}`
         );
         return response.data.workflow;
+    },
+
+    /**
+     * Get full workflow detail including steps and stats
+     * GET /workflow-config/{workflowId}
+     */
+    getWorkflowDetail: async (workflowId: number): Promise<WorkflowDetailResponse> => {
+        const response = await apiClient.get<WorkflowDetailResponse>(
+            `${BASE_URL}/workflow-config/${workflowId}`
+        );
+        return response.data;
+    },
+
+    /**
+     * Get transition rules for a step (Ledger Table — docs §5/§9)
+     * GET /api/workflow-steps/{stepId}/rules  ← no /backend/ prefix!
+     */
+    getStepRules: async (stepId: number): Promise<TransitionRule[]> => {
+        const response = await apiClient.get<TransitionRule[]>(
+            `/api/workflow-steps/${stepId}/rules`
+        );
+        return response.data;
+    },
+
+    /**
+     * Update a transition rule — toggle is_active or change condition_group (docs §5/§9)
+     * PUT /api/workflow-steps/{stepId}/rules/{ruleId}  ← no /backend/ prefix!
+     */
+    updateStepRule: async (stepId: number, ruleId: number, data: Partial<TransitionRule>): Promise<TransitionRule> => {
+        const response = await apiClient.put<TransitionRule>(
+            `/api/workflow-steps/${stepId}/rules/${ruleId}`,
+            data
+        );
+        return response.data;
+    },
+
+    /**
+     * Create a transition rule
+     * POST /api/workflow-steps/{stepId}/rules  ← no /backend/ prefix!
+     */
+    createStepRule: async (stepId: number, data: Partial<TransitionRule>): Promise<TransitionRule> => {
+        const response = await apiClient.post<TransitionRule>(
+            `/api/workflow-steps/${stepId}/rules`,
+            data
+        );
+        return response.data;
     },
 
     /**
@@ -188,6 +237,70 @@ export const workflowEngineApi = {
             `${BASE_URL}/workflows/by-code/${code}`
         );
         return response.data.workflow;
+    },
+
+    // ------------------------------------------------------------------------
+    // Administration & Builder API (CRUD for Engine Definitions)
+    // ------------------------------------------------------------------------
+
+    createWorkflow: async (data: Partial<WorkflowDefinition>): Promise<WorkflowDefinition> => {
+        const response = await apiClient.post<{ success: boolean; workflow: WorkflowDefinition }>(
+            `${BASE_URL}/workflow-config`,
+            data
+        );
+        return response.data.workflow;
+    },
+
+    updateWorkflow: async (id: number, data: Partial<WorkflowDefinition>): Promise<WorkflowDefinition> => {
+        const response = await apiClient.put<{ success: boolean; workflow: WorkflowDefinition }>(
+            `${BASE_URL}/workflow-config/${id}`,
+            data
+        );
+        return response.data.workflow;
+    },
+
+    deleteWorkflow: async (id: number): Promise<void> => {
+        await apiClient.delete(`${BASE_URL}/workflow-config/${id}`);
+    },
+
+    createStep: async (workflowId: number, data: Partial<WorkflowStepDefinition>): Promise<WorkflowStepDefinition> => {
+        const response = await apiClient.post<{ success: boolean; step: WorkflowStepDefinition }>(
+            `${BASE_URL}/workflow-config/${workflowId}/steps`,
+            data
+        );
+        return response.data.step;
+    },
+
+    updateStep: async (workflowId: number, stepId: number, data: Partial<WorkflowStepDefinition>): Promise<WorkflowStepDefinition> => {
+        const response = await apiClient.put<{ success: boolean; step: WorkflowStepDefinition }>(
+            `${BASE_URL}/workflow-config/${workflowId}/steps/${stepId}`,
+            data
+        );
+        return response.data.step;
+    },
+
+    deleteStep: async (workflowId: number, stepId: number): Promise<void> => {
+        await apiClient.delete(`${BASE_URL}/workflow-config/${workflowId}/steps/${stepId}`);
+    },
+
+    createTransition: async (workflowId: number, data: Partial<WorkflowTransitionDefinition>): Promise<WorkflowTransitionDefinition> => {
+        const response = await apiClient.post<{ success: boolean; transition: WorkflowTransitionDefinition }>(
+            `${BASE_URL}/workflow-config/${workflowId}/transitions`,
+            data
+        );
+        return response.data.transition;
+    },
+
+    updateTransition: async (workflowId: number, transitionId: number, data: Partial<WorkflowTransitionDefinition>): Promise<WorkflowTransitionDefinition> => {
+        const response = await apiClient.put<{ success: boolean; transition: WorkflowTransitionDefinition }>(
+            `${BASE_URL}/workflow-config/${workflowId}/transitions/${transitionId}`,
+            data
+        );
+        return response.data.transition;
+    },
+
+    deleteTransition: async (workflowId: number, transitionId: number): Promise<void> => {
+        await apiClient.delete(`${BASE_URL}/workflow-config/${workflowId}/transitions/${transitionId}`);
     },
 
     /**

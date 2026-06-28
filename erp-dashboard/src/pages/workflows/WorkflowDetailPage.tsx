@@ -1,90 +1,142 @@
-import { useState } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { MasterLayout } from '@/components/layout/MasterLayout';
-import { WorkflowVisualization } from '@/components/workflow/WorkflowVisualization';
-import { EnhancedWorkflowForm } from '@/components/workflow/EnhancedWorkflowForm';
-import { TaskTemplateForm } from '@/components/workflow/TaskTemplateForm';
-import { useWorkflowDetail, useWorkflowStatistics } from '@/hooks/workflow/useWorkflowTemplates';
-import {
-    ArrowLeft,
-    Edit,
-    Plus,
-    Trash2,
-    Loader2,
-    AlertCircle,
-    CheckCircle,
-    XCircle,
-    BarChart3,
-    Settings,
-    Eye,
-    ListTodo,
-} from 'lucide-react';
+import { WorkflowEngineVisualization } from '@/components/workflow/WorkflowEngineVisualization';
+import { workflowEngineApi } from '@/services/api/workflowEngineApi';
+import type { WorkflowDefinition, WorkflowStepDefinition, TransitionRule } from '@/types/workflowEngine.types';
+import { Loader2, ArrowLeft, Settings, AlertCircle, FileText, Component } from 'lucide-react';
 import toast from 'react-hot-toast';
-import { workflowApi } from '@/services/api/workflowApi';
-import type { WorkflowTemplateCreateRequest, TaskTemplateCreateRequest } from '@/types/task.types';
+import { useWorkflowEngine } from '@/hooks/workflow/useWorkflowEngine';
+import { TransitionRulesTable } from '@/components/workflow/TransitionRulesTable';
+import { TransitionRuleModal } from '@/components/workflow/TransitionRuleModal';
 
 export function WorkflowDetailPage() {
     const { id } = useParams<{ id: string }>();
     const navigate = useNavigate();
     const workflowId = id ? parseInt(id) : null;
-    const { workflow, loading, error, refetch } = useWorkflowDetail(workflowId);
-    const { statistics, loading: statsLoading } = useWorkflowStatistics(workflowId);
-    const [activeTab, setActiveTab] = useState<'visualization' | 'templates' | 'tasks' | 'statistics'>('visualization');
-    const [deleting, setDeleting] = useState(false);
-    const [showEditForm, setShowEditForm] = useState(false);
-    const [showCreateTemplateForm, setShowCreateTemplateForm] = useState(false);
 
-    const handleToggleActive = async () => {
-        if (!workflow) return;
+    const [workflow, setWorkflow] = useState<WorkflowDefinition | null>(null);
+    const [steps, setSteps] = useState<WorkflowStepDefinition[]>([]);
+    const [rules, setRules] = useState<TransitionRule[]>([]);
+    const [loading, setLoading] = useState(true);
+    const [loadingRules, setLoadingRules] = useState(false);
+    const [togglingRuleId, setTogglingRuleId] = useState<number | null>(null);
 
-        try {
-            await workflowApi.update(workflow.id, { is_active: !workflow.is_active });
-            toast.success(`Workflow ${workflow.is_active ? 'deactivated' : 'activated'} successfully`);
-            refetch();
-        } catch (err: any) {
-            toast.error(err.response?.data?.message || 'Failed to update workflow');
-        }
-    };
+    const [activeViewTab, setActiveViewTab] = useState<'diagram' | 'ledger'>('diagram');
+    const [isModalOpen, setIsModalOpen] = useState(false);
+    const [modalData, setModalData] = useState<any>(null);
 
-    const handleDelete = async () => {
-        if (!workflow) return;
+    const { graph } = useWorkflowEngine({
+        workflowId: workflowId || undefined,
+        autoFetch: true,
+    });
 
-        const confirmed = window.confirm(
-            `Are you sure you want to delete "${workflow.name}"? This action cannot be undone.`
-        );
-
-        if (!confirmed) return;
-
-        try {
-            setDeleting(true);
-            await workflowApi.delete(workflow.id);
-            toast.success('Workflow deleted successfully');
-            navigate('/workflows');
-        } catch (err: any) {
-            toast.error(err.response?.data?.message || 'Failed to delete workflow');
-        } finally {
-            setDeleting(false);
-        }
-    };
-
-    const handleUpdateWorkflow = async (data: WorkflowTemplateCreateRequest) => {
-        if (!workflow) return;
-        await workflowApi.update(workflow.id, data);
-        toast.success('Workflow updated successfully');
-        refetch();
-        setShowEditForm(false);
-    };
-
-    const handleShowCreateTemplateForm = () => {
-        setShowCreateTemplateForm(true);
-    };
-
-    const handleCreateTemplate = async (data: TaskTemplateCreateRequest) => {
+    // Load workflow definition + steps
+    useEffect(() => {
         if (!workflowId) return;
-        await workflowApi.createTemplate(workflowId, data);
-        toast.success('Template created successfully');
-        refetch();
-        setShowCreateTemplateForm(false);
+        setLoading(true);
+        workflowEngineApi.getWorkflowDetail(workflowId)
+            .then(({ workflow: wf, steps: st }) => {
+                setWorkflow(wf);
+                setSteps(st || []);
+            })
+            .catch((err) => toast.error(err.message || 'Failed to load workflow'))
+            .finally(() => setLoading(false));
+    }, [workflowId]);
+
+    // Load all rules for all steps when switching to ledger tab
+    const loadRules = useCallback(async () => {
+        if (!steps.length) return;
+        setLoadingRules(true);
+        try {
+            const allRules = await Promise.all(
+                steps.map(step => workflowEngineApi.getStepRules(step.id).catch(() => []))
+            );
+            setRules(allRules.flat());
+        } catch {
+            toast.error('Failed to load transition rules');
+        } finally {
+            setLoadingRules(false);
+        }
+    }, [steps]);
+
+    useEffect(() => {
+        if (activeViewTab === 'ledger' && steps.length && rules.length === 0) {
+            loadRules();
+        }
+    }, [activeViewTab, steps.length, rules.length, loadRules]);
+
+    const handleAddRule = () => {
+        setModalData(null);
+        setIsModalOpen(true);
+    };
+
+    const handleEditRule = (rule: TransitionRule) => {
+        const conditions = rule.condition_group?.conditions ?? [];
+        // Normalise legacy string conditions to object form
+        const normalisedConditions = conditions.map(c =>
+            typeof c === 'string'
+                ? { class: c, parameters: {} }
+                : c
+        );
+        setModalData({
+            id: rule.id,
+            // resolve source step code from step ID
+            source: steps.find(s => s.id === rule.workflow_step_id)?.code ?? String(rule.workflow_step_id),
+            target: rule.target_step_code,
+            priority: rule.priority,
+            is_active: rule.is_active,
+            operator: rule.condition_group?.operator ?? 'AND',
+            conditions: normalisedConditions,
+        });
+        setIsModalOpen(true);
+    };
+
+    const handleToggleRule = async (rule: TransitionRule) => {
+        setTogglingRuleId(rule.id);
+        try {
+            const updated = await workflowEngineApi.updateStepRule(
+                rule.workflow_step_id,
+                rule.id,
+                { is_active: !rule.is_active }
+            );
+            setRules(prev => prev.map(r => r.id === updated.id ? updated : r));
+            toast.success(`Rule ${updated.is_active ? 'activated' : 'deactivated'}`);
+        } catch (err: any) {
+            toast.error(err.response?.data?.message || 'Failed to update rule');
+        } finally {
+            setTogglingRuleId(null);
+        }
+    };
+
+    const handleSaveRule = async (data: any) => {
+        const sourceStep = steps.find(s => s.code === data.source);
+        if (!sourceStep) {
+            throw new Error(`Step "${data.source}" not found`);
+        }
+
+        const payload = {
+            target_step_code: data.target,
+            is_active: data.is_active,
+            priority: data.priority,
+            condition_group: {
+                operator: data.operator,
+                conditions: data.conditions,
+            },
+        };
+
+        if (data.id) {
+            // Edit existing rule
+            const updated = await workflowEngineApi.updateStepRule(sourceStep.id, data.id, payload);
+            setRules(prev => prev.map(r => r.id === updated.id ? updated : r));
+            toast.success('Transition rule updated');
+        } else {
+            // New rule
+            await workflowEngineApi.createStepRule(sourceStep.id, payload);
+            await loadRules();
+            toast.success('Transition rule created');
+        }
+        setIsModalOpen(false);
     };
 
     if (loading) {
@@ -99,377 +151,123 @@ export function WorkflowDetailPage() {
         );
     }
 
-    if (error || !workflow) {
+    if (!workflow) {
         return (
             <MasterLayout
                 mainContent={
-                    <div className="p-6">
-                        <div className="bg-red-50 border border-red-200 rounded-lg p-4">
-                            <div className="flex items-center gap-3">
-                                <AlertCircle className="w-5 h-5 text-red-600" />
-                                <div>
-                                    <h3 className="font-medium text-red-900">Error Loading Workflow</h3>
-                                    <p className="text-sm text-red-700 mt-1">
-                                        {error || 'Workflow not found'}
-                                    </p>
-                                </div>
-                                <button
-                                    onClick={() => navigate('/workflows')}
-                                    className="ml-auto px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg transition-colors"
-                                >
-                                    Back to Workflows
-                                </button>
-                            </div>
-                        </div>
+                    <div className="flex flex-col items-center justify-center h-full gap-4">
+                        <AlertCircle className="w-12 h-12 text-gray-400" />
+                        <h2 className="text-xl font-bold text-gray-700">Workflow Not Found</h2>
+                        <button onClick={() => navigate('/workflows')} className="text-sage-600 hover:underline">
+                            Back to Workflows
+                        </button>
                     </div>
                 }
             />
         );
     }
 
-    const templates = workflow.templates || [];
-    const activeTemplates = templates.filter((t) => t.is_active);
-
     return (
         <MasterLayout
             mainContent={
-                <div className="h-full overflow-y-auto">
-                    <div className="p-6">
-                        {/* Header */}
-                        <div className="mb-6">
+                <div className="flex flex-col h-full bg-white relative">
+                    {/* Header */}
+                    <div className="flex items-center justify-between p-4 border-b border-gray-200">
+                        <div className="flex items-center gap-4">
                             <button
                                 onClick={() => navigate('/workflows')}
-                                className="inline-flex items-center text-gray-600 hover:text-gray-900 mb-4"
+                                className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
                             >
-                                <ArrowLeft className="w-4 h-4 mr-2" />
-                                Back to Workflows
+                                <ArrowLeft className="w-5 h-5 text-gray-600" />
                             </button>
-
-                            <div className="flex items-start justify-between">
-                                <div className="flex-1">
-                                    <div className="flex items-center gap-3 mb-2">
-                                        <h1 className="text-2xl font-bold text-gray-900">{workflow.name}</h1>
-                                        {workflow.is_active ? (
-                                            <span className="inline-flex items-center px-3 py-1 rounded-full text-sm font-medium bg-green-100 text-green-800">
-                                                <CheckCircle className="w-4 h-4 mr-1" />
-                                                Active
-                                            </span>
-                                        ) : (
-                                            <span className="inline-flex items-center px-3 py-1 rounded-full text-sm font-medium bg-gray-100 text-gray-800">
-                                                <XCircle className="w-4 h-4 mr-1" />
-                                                Inactive
-                                            </span>
-                                        )}
-                                        <span className="inline-flex items-center px-3 py-1 rounded-full text-sm font-medium bg-sage-100 text-sage-800">
-                                            Version {workflow.version}
-                                        </span>
-                                    </div>
-                                    <p className="text-gray-600">{workflow.description || 'No description'}</p>
-                                    <div className="flex items-center gap-4 mt-3 text-sm text-gray-500">
-                                        <span>Code: {workflow.code}</span>
-                                        <span>•</span>
-                                        <span>Templates: {activeTemplates.length}/{templates.length}</span>
-                                        <span>•</span>
-                                        <span>Updated: {new Date(workflow.updated_at).toLocaleDateString()}</span>
-                                    </div>
-                                </div>
-
-                                <div className="flex items-center gap-2">
-                                    <button
-                                        onClick={handleToggleActive}
-                                        className="inline-flex items-center px-4 py-2 bg-white border border-gray-300 hover:bg-gray-50 text-gray-700 rounded-lg transition-colors"
-                                    >
-                                        <Settings className="w-4 h-4 mr-2" />
-                                        {workflow.is_active ? 'Deactivate' : 'Activate'}
-                                    </button>
-                                    <button
-                                        onClick={() => setShowEditForm(true)}
-                                        className="inline-flex items-center px-4 py-2 bg-white border border-gray-300 hover:bg-gray-50 text-gray-700 rounded-lg transition-colors"
-                                    >
-                                        <Edit className="w-4 h-4 mr-2" />
-                                        Edit
-                                    </button>
-                                    <button
-                                        onClick={handleDelete}
-                                        disabled={deleting}
-                                        className="inline-flex items-center px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg transition-colors disabled:opacity-50"
-                                    >
-                                        {deleting ? (
-                                            <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                                        ) : (
-                                            <Trash2 className="w-4 h-4 mr-2" />
-                                        )}
-                                        Delete
-                                    </button>
-                                </div>
+                            <div>
+                                <h1 className="text-xl font-bold text-gray-900 flex items-center gap-2">
+                                    {workflow.name}
+                                    <span className="text-xs px-2 py-0.5 rounded-full bg-gray-100 text-gray-600 font-medium">
+                                        {workflow.code}
+                                    </span>
+                                </h1>
+                                <p className="text-sm text-gray-500">{workflow.description}</p>
                             </div>
                         </div>
 
-                        {/* Tabs */}
-                        <div className="border-b border-gray-200 mb-6">
-                            <div className="flex gap-6">
-                                <button
-                                    onClick={() => setActiveTab('visualization')}
-                                    className={`pb-3 px-1 font-medium transition-colors relative ${
-                                        activeTab === 'visualization'
-                                            ? 'text-sage-600'
-                                            : 'text-gray-600 hover:text-gray-900'
-                                    }`}
-                                >
-                                    <Eye className="w-4 h-4 inline mr-2" />
-                                    Visualization
-                                    {activeTab === 'visualization' && (
-                                        <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-sage-500"></div>
-                                    )}
-                                </button>
-                                <button
-                                    onClick={() => setActiveTab('templates')}
-                                    className={`pb-3 px-1 font-medium transition-colors relative ${
-                                        activeTab === 'templates'
-                                            ? 'text-sage-600'
-                                            : 'text-gray-600 hover:text-gray-900'
-                                    }`}
-                                >
-                                    <Settings className="w-4 h-4 inline mr-2" />
-                                    Templates ({templates.length})
-                                    {activeTab === 'templates' && (
-                                        <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-sage-500"></div>
-                                    )}
-                                </button>
-                                <button
-                                    onClick={() => setActiveTab('tasks')}
-                                    className={`pb-3 px-1 font-medium transition-colors relative ${
-                                        activeTab === 'tasks'
-                                            ? 'text-sage-600'
-                                            : 'text-gray-600 hover:text-gray-900'
-                                    }`}
-                                >
-                                    <ListTodo className="w-4 h-4 inline mr-2" />
-                                    Tasks
-                                    {activeTab === 'tasks' && (
-                                        <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-sage-500"></div>
-                                    )}
-                                </button>
-                                <button
-                                    onClick={() => setActiveTab('statistics')}
-                                    className={`pb-3 px-1 font-medium transition-colors relative ${
-                                        activeTab === 'statistics'
-                                            ? 'text-sage-600'
-                                            : 'text-gray-600 hover:text-gray-900'
-                                    }`}
-                                >
-                                    <BarChart3 className="w-4 h-4 inline mr-2" />
-                                    Statistics
-                                    {activeTab === 'statistics' && (
-                                        <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-sage-500"></div>
-                                    )}
-                                </button>
-                            </div>
-                        </div>
-
-                        {/* Tab Content */}
-                        {activeTab === 'visualization' && (
-                            <div>
-                                <div className="mb-4 flex items-center justify-between">
-                                    <h2 className="text-lg font-semibold text-gray-900">Workflow Flow</h2>
-                                    <button
-                                        onClick={handleShowCreateTemplateForm}
-                                        className="inline-flex items-center px-4 py-2 bg-sage-500 hover:bg-sage-600 text-white rounded-lg transition-colors"
-                                    >
-                                        <Plus className="w-4 h-4 mr-2" />
-                                        Add Template
-                                    </button>
-                                </div>
-                                <WorkflowVisualization
-                                    templates={templates}
-                                    mode="template"
-                                    onNodeClick={(nodeId) => {
-                                        const template = templates.find((t) => t.id.toString() === nodeId);
-                                        if (template) {
-                                            navigate(`/workflows/${workflow.id}/templates/${template.id}`);
-                                        }
-                                    }}
-                                />
-                            </div>
-                        )}
-
-                        {activeTab === 'templates' && (
-                            <div>
-                                <div className="mb-4 flex items-center justify-between">
-                                    <h2 className="text-lg font-semibold text-gray-900">Task Templates</h2>
-                                    <button
-                                        onClick={handleShowCreateTemplateForm}
-                                        className="inline-flex items-center px-4 py-2 bg-sage-500 hover:bg-sage-600 text-white rounded-lg transition-colors"
-                                    >
-                                        <Plus className="w-4 h-4 mr-2" />
-                                        Add Template
-                                    </button>
-                                </div>
-
-                                {templates.length === 0 ? (
-                                    <div className="text-center py-12 bg-gray-50 rounded-lg border-2 border-dashed border-gray-300">
-                                        <Settings className="w-12 h-12 text-gray-400 mx-auto mb-3" />
-                                        <h3 className="text-lg font-medium text-gray-900 mb-1">
-                                            No templates yet
-                                        </h3>
-                                        <p className="text-gray-600 mb-4">
-                                            Create task templates to define your workflow
-                                        </p>
-                                        <button
-                                            onClick={handleShowCreateTemplateForm}
-                                            className="inline-flex items-center px-4 py-2 bg-sage-500 hover:bg-sage-600 text-white rounded-lg transition-colors"
-                                        >
-                                            <Plus className="w-4 h-4 mr-2" />
-                                            Create First Template
-                                        </button>
-                                    </div>
-                                ) : (
-                                    <div className="space-y-3">
-                                        {templates.map((template) => (
-                                            <div
-                                                key={template.id}
-                                                className="bg-white border border-gray-200 rounded-lg p-4 hover:border-sage-400 transition-colors cursor-pointer"
-                                                onClick={() =>
-                                                    navigate(`/workflows/${workflow.id}/templates/${template.id}`)
-                                                }
-                                            >
-                                                <div className="flex items-start justify-between">
-                                                    <div className="flex-1">
-                                                        <div className="flex items-center gap-2 mb-1">
-                                                            <h3 className="font-semibold text-gray-900">
-                                                                {template.name}
-                                                            </h3>
-                                                            {template.is_active ? (
-                                                                <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-green-100 text-green-800">
-                                                                    Active
-                                                                </span>
-                                                            ) : (
-                                                                <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-gray-100 text-gray-800">
-                                                                    Inactive
-                                                                </span>
-                                                            )}
-                                                            <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-sage-100 text-sage-800">
-                                                                {template.task_type}
-                                                            </span>
-                                                        </div>
-                                                        <p className="text-sm text-gray-600">
-                                                            {template.description || 'No description'}
-                                                        </p>
-                                                        <div className="flex items-center gap-4 mt-2 text-xs text-gray-500">
-                                                            <span>Order: {template.order}</span>
-                                                            {template.timeout_minutes && (
-                                                                <>
-                                                                    <span>•</span>
-                                                                    <span>Timeout: {template.timeout_minutes}min</span>
-                                                                </>
-                                                            )}
-                                                            <span>•</span>
-                                                            <span>Assignment: {template.assignment_type}</span>
-                                                            {template.dependencies && template.dependencies.length > 0 && (
-                                                                <>
-                                                                    <span>•</span>
-                                                                    <span>
-                                                                        Dependencies: {template.dependencies.length}
-                                                                    </span>
-                                                                </>
-                                                            )}
-                                                        </div>
-                                                    </div>
-                                                </div>
-                                            </div>
-                                        ))}
-                                    </div>
+                        <div className="flex bg-gray-100 p-1 rounded-lg">
+                            <button
+                                onClick={() => setActiveViewTab('diagram')}
+                                className={`flex items-center gap-2 px-4 py-2 rounded-md text-sm font-medium transition-all ${
+                                    activeViewTab === 'diagram'
+                                        ? 'bg-white text-gray-900 shadow-sm'
+                                        : 'text-gray-600 hover:text-gray-900'
+                                }`}
+                            >
+                                <Component className="w-4 h-4" />
+                                Diagram Visualizer
+                            </button>
+                            <button
+                                onClick={() => setActiveViewTab('ledger')}
+                                className={`flex items-center gap-2 px-4 py-2 rounded-md text-sm font-medium transition-all ${
+                                    activeViewTab === 'ledger'
+                                        ? 'bg-white text-gray-900 shadow-sm'
+                                        : 'text-gray-600 hover:text-gray-900'
+                                }`}
+                            >
+                                <FileText className="w-4 h-4" />
+                                Rule Ledger
+                                {rules.length > 0 && (
+                                    <span className="ml-1 px-1.5 py-0.5 rounded-full bg-sage-100 text-sage-700 text-xs font-semibold">
+                                        {rules.length}
+                                    </span>
                                 )}
-                            </div>
-                        )}
+                            </button>
+                        </div>
+                    </div>
 
-                        {activeTab === 'tasks' && (
-                            <div>
-                                <h2 className="text-lg font-semibold text-gray-900 mb-4">Workflow Task Instances</h2>
-                                <div className="bg-sage-50 border border-sage-200 rounded-lg p-6 text-center">
-                                    <ListTodo className="w-12 h-12 text-sage-600 mx-auto mb-3" />
-                                    <h3 className="text-lg font-medium text-sage-900 mb-2">
-                                        Task Instance Tracking
+                    <div className="flex flex-1 overflow-hidden relative bg-gray-50 p-4">
+                        {activeViewTab === 'diagram' ? (
+                            <div className="flex-1 bg-white rounded-lg border border-gray-200 shadow-sm flex flex-col overflow-hidden">
+                                <div className="p-3 border-b border-gray-100 bg-gray-50 flex items-center justify-between">
+                                    <h3 className="text-sm font-semibold text-gray-700 flex items-center gap-2">
+                                        <Settings className="w-4 h-4" />
+                                        Workflow Diagram (Read-Only)
                                     </h3>
-                                    <p className="text-sm text-sage-700 mb-4">
-                                        This section shows actual task instances created from this workflow template.
-                                        Task instances are created when workflows are initialized for specific entities (Orders, BL, etc.).
+                                    <p className="text-xs text-gray-500">
+                                        Use the Rule Ledger tab to configure transition constraints.
                                     </p>
-                                    <div className="text-xs text-sage-600 space-y-1">
-                                        <p>• View task instances by navigating to the Tasks Dashboard</p>
-                                        <p>• Filter by workflow type to see tasks from this workflow</p>
-                                        <p>• Monitor task progress and completion status</p>
-                                    </div>
-                                    <button
-                                        onClick={() => navigate('/tasks')}
-                                        className="mt-4 inline-flex items-center px-4 py-2 bg-sage-500 hover:bg-sage-600 text-white rounded-lg transition-colors"
-                                    >
-                                        <ListTodo className="w-4 h-4 mr-2" />
-                                        Go to Tasks Dashboard
-                                    </button>
+                                </div>
+                                <div className="flex-1 relative">
+                                    {workflowId && (
+                                        <WorkflowEngineVisualization
+                                            workflowId={workflowId}
+                                            height="100%"
+                                        />
+                                    )}
                                 </div>
                             </div>
-                        )}
-
-                        {activeTab === 'statistics' && (
-                            <div>
-                                <h2 className="text-lg font-semibold text-gray-900 mb-4">Workflow Statistics</h2>
-                                {statsLoading ? (
-                                    <div className="flex items-center justify-center py-12">
-                                        <Loader2 className="w-8 h-8 animate-spin text-sage-600" />
-                                    </div>
-                                ) : statistics ? (
-                                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-                                        <div className="bg-white border border-gray-200 rounded-lg p-4">
-                                            <div className="text-sm text-gray-600 mb-1">Total Templates</div>
-                                            <div className="text-2xl font-bold text-gray-900">
-                                                {statistics.templates?.total || 0}
-                                            </div>
-                                        </div>
-                                        <div className="bg-white border border-gray-200 rounded-lg p-4">
-                                            <div className="text-sm text-gray-600 mb-1">Active Templates</div>
-                                            <div className="text-2xl font-bold text-green-600">
-                                                {statistics.templates?.active || 0}
-                                            </div>
-                                        </div>
-                                        <div className="bg-white border border-gray-200 rounded-lg p-4">
-                                            <div className="text-sm text-gray-600 mb-1">Total Instances</div>
-                                            <div className="text-2xl font-bold text-sage-600">
-                                                {statistics.usage?.total_instances || 0}
-                                            </div>
-                                        </div>
-                                        <div className="bg-white border border-gray-200 rounded-lg p-4">
-                                            <div className="text-sm text-gray-600 mb-1">Dependencies</div>
-                                            <div className="text-2xl font-bold text-purple-600">
-                                                {statistics.dependencies || 0}
-                                            </div>
-                                        </div>
-                                    </div>
-                                ) : (
-                                    <div className="text-center py-12 text-gray-500">No statistics available</div>
-                                )}
+                        ) : loadingRules ? (
+                            <div className="flex-1 flex items-center justify-center">
+                                <Loader2 className="w-6 h-6 animate-spin text-sage-600" />
                             </div>
+                        ) : (
+                            <TransitionRulesTable
+                                workflow={workflow}
+                                graph={graph}
+                                rules={rules}
+                                togglingRuleId={togglingRuleId}
+                                onAddRule={handleAddRule}
+                                onEditRule={handleEditRule}
+                                onToggleRule={handleToggleRule}
+                            />
                         )}
                     </div>
 
-                    {/* Edit Workflow Form */}
-                    {showEditForm && workflow && (
-                        <EnhancedWorkflowForm
-                            workflow={workflow}
-                            onSubmit={handleUpdateWorkflow}
-                            onCancel={() => setShowEditForm(false)}
-                        />
-                    )}
-
-                    {/* Create Template Form */}
-                    {showCreateTemplateForm && (
-                        <TaskTemplateForm
-                            workflowId={workflow.id}
-                            onSubmit={handleCreateTemplate}
-                            onCancel={() => setShowCreateTemplateForm(false)}
-                            maxOrder={Math.max(...templates.map((t) => t.order), 0)}
-                        />
-                    )}
+                    <TransitionRuleModal
+                        open={isModalOpen}
+                        onOpenChange={setIsModalOpen}
+                        workflow={workflow}
+                        graph={graph}
+                        initialData={modalData}
+                        onSave={handleSaveRule}
+                    />
                 </div>
             }
         />

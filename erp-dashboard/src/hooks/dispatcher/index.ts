@@ -34,7 +34,7 @@ export { useDispatcherShortageQueue } from './useDispatcherShortageQueue';
 
 export {
   useDeliveryMissionsList,
-  useDeliveryMissionDetail,
+  useDeliveryMissionContext,
   useCreateDeliveryMission,
   useMissionDecisions,
   useExecuteMissionDecision,

@@ -46,15 +46,10 @@ import { ExportPage } from '@/pages/import-export/ExportPage';
 import { BatchHistoryPage } from '@/pages/import-export/BatchHistoryPage';
 import { TemplatesPage } from '@/pages/import-export/TemplatesPage';
 import { TemplateDetailPage } from '@/pages/import-export/TemplateDetailPage';
-import { TaskDashboard } from '@/pages/tasks/TaskDashboard';
-import { TaskDetailPage } from '@/pages/tasks/TaskDetailPage';
 import { WorkflowTemplatesPage } from '@/pages/workflows/WorkflowTemplatesPage';
 import { WorkflowDetailPage } from '@/pages/workflows/WorkflowDetailPage';
 import { WorkflowCreatePage } from './pages/workflows/WorkflowCreatePage';
-import { TaskTemplateDetailPage } from './pages/workflows/TaskTemplateDetailPage';
-import { WorkflowMonitoringPage } from '@/pages/workflows/WorkflowMonitoringPage';
-import { WorkflowEnginePage } from '@/pages/workflows/WorkflowEnginePage';
-import { AdminMonitoringDashboard } from '@/pages/admin/AdminMonitoringDashboard';
+
 import { StockManagementPage } from '@/pages/stock/StockManagementPage';
 import { PricingManagementPage } from '@/pages/pricing/PricingManagementPage';
 import { CustomFieldsPage } from '@/pages/custom-fields/CustomFieldsPage';
@@ -364,18 +359,6 @@ function AppRoutes() {
         </ProtectedRoute>
       } />
 
-      {/* Task Workflow Management Routes */}
-      <Route path="/tasks" element={
-        <ProtectedRoute requiredPermission={PERMISSIONS.TASKS.DASHBOARD}>
-          <TaskDashboard />
-        </ProtectedRoute>
-      } />
-      <Route path="/tasks/:taskId" element={
-        <ProtectedRoute requiredPermission={PERMISSIONS.TASKS.SHOW}>
-          <TaskDetailPage />
-        </ProtectedRoute>
-      } />
-
       {/* Workflow Template Management Routes */}
       <Route path="/workflows" element={
         <ProtectedRoute requiredPermission={PERMISSIONS.WORKFLOW_TEMPLATES.INDEX}>
@@ -392,21 +375,7 @@ function AppRoutes() {
           <WorkflowDetailPage />
         </ProtectedRoute>
       } />
-      <Route path="/workflows/:workflowId/templates/:templateId" element={
-        <ProtectedRoute requiredPermission={PERMISSIONS.WORKFLOW_TEMPLATES.TASKS_SHOW}>
-          <TaskTemplateDetailPage />
-        </ProtectedRoute>
-      } />
-      <Route path="/workflows/monitoring" element={
-        <ProtectedRoute requiredPermission={PERMISSIONS.WORKFLOW_TEMPLATES.INDEX}>
-          <WorkflowMonitoringPage />
-        </ProtectedRoute>
-      } />
-      <Route path="/workflows/engine" element={
-        <ProtectedRoute>
-          <WorkflowEnginePage />
-        </ProtectedRoute>
-      } />
+
 
       {/* Stock Management Module */}
       <Route path="/stock-management" element={
@@ -429,12 +398,6 @@ function AppRoutes() {
         </ProtectedRoute>
       } />
 
-      {/* Admin Monitoring Dashboard */}
-      <Route path="/admin/monitoring" element={
-        <ProtectedRoute requiredPermission={PERMISSIONS.DASHBOARD.VIEW}>
-          <AdminMonitoringDashboard />
-        </ProtectedRoute>
-      } />
 
       {/* Catch all */}
       <Route path="*" element={<Navigate to="/dashboard" replace />} />

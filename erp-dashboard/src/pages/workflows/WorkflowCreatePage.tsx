@@ -1,15 +1,15 @@
 import { useNavigate } from 'react-router-dom';
 import { MasterLayout } from '@/components/layout/MasterLayout';
-import { EnhancedWorkflowForm } from '@/components/workflow/EnhancedWorkflowForm';
-import { workflowApi } from '@/services/api/workflowApi';
+import { WorkflowForm } from '@/components/workflow/WorkflowForm';
+import { workflowEngineApi } from '@/services/api/workflowEngineApi';
 import { ArrowLeft } from 'lucide-react';
-import type { WorkflowTemplateCreateRequest } from '@/types/task.types';
+import type { WorkflowDefinition } from '@/types/workflowEngine.types';
 
 export function WorkflowCreatePage() {
     const navigate = useNavigate();
 
-    const handleSubmit = async (data: WorkflowTemplateCreateRequest) => {
-        const workflow = await workflowApi.create(data);
+    const handleSubmit = async (data: Partial<WorkflowDefinition>) => {
+        const workflow = await workflowEngineApi.createWorkflow(data);
         navigate(`/workflows/${workflow.id}`);
     };
 
@@ -26,7 +26,7 @@ export function WorkflowCreatePage() {
                             Back to Workflows
                         </button>
 
-                        <EnhancedWorkflowForm
+                        <WorkflowForm
                             onSubmit={handleSubmit}
                             onCancel={() => navigate('/workflows')}
                         />

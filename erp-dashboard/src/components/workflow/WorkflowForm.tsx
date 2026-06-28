@@ -1,12 +1,12 @@
 import { useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { X, Loader2, Save } from 'lucide-react';
-import type { WorkflowDefinition, WorkflowTemplateCreateRequest } from '@/types/task.types';
+import type { WorkflowDefinition } from '@/types/workflowEngine.types';
 import toast from 'react-hot-toast';
 
 interface WorkflowFormProps {
     workflow?: WorkflowDefinition;
-    onSubmit: (data: WorkflowTemplateCreateRequest) => Promise<void>;
+    onSubmit: (data: Partial<WorkflowDefinition>) => Promise<void>;
     onCancel: () => void;
 }
 
@@ -18,7 +18,7 @@ export function WorkflowForm({ workflow, onSubmit, onCancel }: WorkflowFormProps
         register,
         handleSubmit,
         formState: { errors },
-    } = useForm<WorkflowTemplateCreateRequest>({
+    } = useForm<Partial<WorkflowDefinition>>({
         defaultValues: workflow
             ? {
                   code: workflow.code,
@@ -31,7 +31,7 @@ export function WorkflowForm({ workflow, onSubmit, onCancel }: WorkflowFormProps
               },
     });
 
-    const onFormSubmit = async (data: WorkflowTemplateCreateRequest) => {
+    const onFormSubmit = async (data: Partial<WorkflowDefinition>) => {
         try {
             setSubmitting(true);
             await onSubmit(data);

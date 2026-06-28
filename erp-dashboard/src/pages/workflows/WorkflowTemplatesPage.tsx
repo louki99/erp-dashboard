@@ -10,7 +10,7 @@ export function WorkflowTemplatesPage() {
     const { workflows, loading, error, refetch } = useWorkflowTemplates();
     const [filter, setFilter] = useState<'all' | 'active' | 'inactive'>('all');
 
-    const filteredWorkflows = workflows.filter((w) => {
+    const filteredWorkflows = (workflows || []).filter((w) => {
         if (filter === 'active') return w.is_active;
         if (filter === 'inactive') return !w.is_active;
         return true;

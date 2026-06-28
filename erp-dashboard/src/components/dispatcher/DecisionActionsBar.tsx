@@ -574,7 +574,7 @@ const DecisionFormModal = ({
 };
 
 export type DecisionExecutor = (id: number, decision: string, extra?: Record<string, unknown>) => Promise<{ success: boolean; message: string; output?: unknown }>;
-export type DecisionsFetcher = (id: number) => Promise<DoDecisionsResponse>;
+export type DecisionsFetcher = (id: number) => Promise<{ decisions: DoDecisionItem[] }>;
 
 /**
  * Model-agnostic "available decisions" action bar — fetches the live decision list for a
@@ -585,6 +585,7 @@ export const DecisionActionsBar = ({
   subjectId,
   subjectLabel,
   fetchDecisions,
+  decisions: passedDecisions,
   executeDecision,
   onActionDone,
   compact = false,
@@ -593,7 +594,8 @@ export const DecisionActionsBar = ({
 }: {
   subjectId: number;
   subjectLabel: string;
-  fetchDecisions: DecisionsFetcher;
+  fetchDecisions?: DecisionsFetcher;
+  decisions?: DoDecisionItem[];
   executeDecision: DecisionExecutor;
   onActionDone: () => void;
   compact?: boolean;
@@ -605,20 +607,23 @@ export const DecisionActionsBar = ({
   // goes through the normal dynamic flow; this only opts out specific, named decisions.
   customDecisionHandlers?: Record<string, () => void>;
 }) => {
-  const [decisions, setDecisions] = useState<DoDecisionItem[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [fetchedDecisions, setFetchedDecisions] = useState<DoDecisionItem[]>([]);
+  const [loading, setLoading] = useState(!!fetchDecisions && !passedDecisions);
   const [executing, setExecuting] = useState(false);
   const [activeDecision, setActiveDecision] = useState<DoDecisionItem | null>(null);
 
+  const decisions = passedDecisions ?? fetchedDecisions;
+
   const refetch = () => {
+    if (!fetchDecisions) return;
     setLoading(true);
     fetchDecisions(subjectId)
-      .then((res) => setDecisions(res.decisions ?? []))
-      .catch(() => setDecisions([]))
+      .then((res) => setFetchedDecisions(res.decisions ?? []))
+      .catch(() => setFetchedDecisions([]))
       .finally(() => setLoading(false));
   };
 
-  useEffect(() => { refetch(); }, [subjectId]);
+  useEffect(() => { refetch(); }, [subjectId, fetchDecisions]);
 
   const run = async (decision: string, extra?: Record<string, unknown>) => {
     setExecuting(true);
@@ -708,7 +713,7 @@ export const DecisionActionsBar = ({
         // fail; there are no further decisions possible from a terminal state anyway.
         const isTerminal = /^(cancel|complete)_/.test(decision);
         if (isTerminal) {
-          setDecisions([]);
+          if (!passedDecisions) setFetchedDecisions([]);
         } else {
           refetch();
         }

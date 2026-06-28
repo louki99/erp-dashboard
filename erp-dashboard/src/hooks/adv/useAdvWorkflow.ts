@@ -12,7 +12,25 @@ export function useAdvWorkflow(orderId: number) {
 
     const { data: workflowState, isLoading: isLoadingState, refetch: refetchState } = useQuery({
         queryKey: ['workflow', 'bon-commande', orderId, 'state'],
-        queryFn: () => workflowStateApi.bonCommande.getDecisions(orderId),
+        queryFn: async () => {
+            const ctx = await workflowStateApi.bonCommande.getContext(orderId);
+            return {
+                success: true,
+                current_state: ctx.model_status,
+                workflow_status: ctx.model_status,
+                actions: (ctx.decisions || []).map(item => ({
+                    action: item.decision || (item as any).action,
+                    label: item.label,
+                    description: item.description,
+                    intent: item.intent,
+                    confirm: item.confirm ?? true,
+                    danger: item.danger ?? false,
+                    fields: item.fields ?? [],
+                    metadata: { can_execute: true },
+                })),
+                detail: ctx.detail,
+            };
+        },
         enabled: !!orderId && isAuthenticated,
         refetchInterval: isAuthenticated ? 5000 : false,
     });

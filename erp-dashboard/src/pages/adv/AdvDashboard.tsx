@@ -137,15 +137,14 @@ const AdvDashboardContent = () => {
     }
 
     const stats: DashboardStats = {
-        pending_partners: 0,
-        pending_review: 0,
-        on_hold: 0,
-        pending_derogations: 0,
-        confirmed_today: 0,
-        blocked_partners: 0,
-        total_credit_exposure: 0,
-        available_credit: 0,
-        ...(data.stats ?? {}),
+        pending_partners: data.stats?.pending_partners ?? 0,
+        pending_review: data.stats?.pending_review ?? 0,
+        on_hold: data.stats?.on_hold ?? 0,
+        pending_derogations: data.stats?.pending_derogations ?? 0,
+        confirmed_today: data.stats?.confirmed_today ?? 0,
+        blocked_partners: data.stats?.blocked_partners ?? 0,
+        total_credit_exposure: data.stats?.total_credit_exposure ?? 0,
+        available_credit: data.stats?.available_credit ?? 0,
     };
 
     const creditAlerts = Array.isArray(data.creditAlerts) ? data.creditAlerts : [];
@@ -251,7 +250,6 @@ const AdvDashboardContent = () => {
             </div>
 
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                {/* Left — Tasks + Pending BCs */}
                 <div className="lg:col-span-2 space-y-5">
                     <TaskWidget
                         workflowType="bc"

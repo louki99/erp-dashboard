@@ -6,6 +6,7 @@ import type {
   DeliveryMission,
   DeliveryMissionDetailResponse,
   DoDecisionsResponse,
+  WorkflowContextResponse,
 } from '@/types/dispatcher.types';
 
 // ⚠️ WORKAROUND: there is NO `GET /backend/dispatcher/delivery-missions` list endpoint anywhere
@@ -39,8 +40,10 @@ export const useDeliveryMissionsList = (filters?: { status?: string }) => {
         missionIds.map((id) => dispatcherApi.deliveryMissions.getDetail(id).catch(() => null))
       );
       let missions = details
-        .filter((d): d is DeliveryMissionDetailResponse => d != null)
-        .map((d) => ({ ...d.mission, delivery_notes: d.delivery_notes, preparation_order: d.preparation_order }));
+        .filter((d): d is DeliveryMissionDetailResponse => d != null && d.mission != null)
+        .map((d) => {
+          return { ...d.mission, delivery_notes: d.delivery_notes, preparation_order: d.preparation_order };
+        });
       if (filters?.status) {
         missions = missions.filter((m) => m.status === filters.status);
       }
@@ -57,8 +60,8 @@ export const useDeliveryMissionsList = (filters?: { status?: string }) => {
   return { data, loading, error, refetch: fetch };
 };
 
-export const useDeliveryMissionDetail = (id: number | null) => {
-  const [data, setData] = useState<DeliveryMissionDetailResponse | null>(null);
+export const useDeliveryMissionContext = (id: number | null) => {
+  const [data, setData] = useState<WorkflowContextResponse<DeliveryMissionDetailResponse> | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -67,9 +70,9 @@ export const useDeliveryMissionDetail = (id: number | null) => {
     setLoading(true);
     setError(null);
     try {
-      setData(await dispatcherApi.deliveryMissions.getDetail(id));
+      setData(await dispatcherApi.deliveryMissions.getContext(id));
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Erreur chargement mission');
+      setError(e instanceof Error ? e.message : 'Erreur chargement mission context');
     } finally {
       setLoading(false);
     }

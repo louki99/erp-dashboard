@@ -7,6 +7,7 @@ import ReactFlow, {
     useEdgesState,
     MarkerType,
     type Node,
+    type Edge,
 } from 'reactflow';
 import 'reactflow/dist/style.css';
 import { WorkflowStepNode } from './nodes/WorkflowStepNode';
@@ -14,6 +15,14 @@ import { useWorkflowEngine } from '@/hooks/workflow/useWorkflowEngine';
 import { useWorkflowLayout } from '@/hooks/workflow/useWorkflowLayout';
 import { Loader2, AlertCircle } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import type { WorkflowNode } from '@/types/workflowEngine.types';
+
+// Helper to identify global exception terminal nodes
+const isGlobalExceptionNode = (node: WorkflowNode | undefined): boolean => {
+    if (!node) return false;
+    const searchString = `${node.id} ${node.data?.label}`.toLowerCase();
+    return ['cancel', 'reject', 'annul', 'rejet'].some(term => searchString.includes(term));
+};
 
 const nodeTypes = {
     workflowStep: WorkflowStepNode,
@@ -21,15 +30,13 @@ const nodeTypes = {
 
 export interface WorkflowEngineVisualizationProps {
     workflowId?: number;
-    workflowCode?: string;
     instanceId?: number;
     modelType?: string;
     modelId?: number;
-    height?: string;
     className?: string;
-    onNodeClick?: (stepCode: string) => void;
     showMiniMap?: boolean;
     showControls?: boolean;
+    height?: string | number;
 }
 
 /**
@@ -38,13 +45,11 @@ export interface WorkflowEngineVisualizationProps {
  */
 export function WorkflowEngineVisualization({
     workflowId,
-    workflowCode,
     instanceId,
     modelType,
     modelId,
     height = '600px',
     className,
-    onNodeClick,
     showMiniMap = true,
     showControls = true,
 }: WorkflowEngineVisualizationProps) {
@@ -56,7 +61,6 @@ export function WorkflowEngineVisualization({
         error,
     } = useWorkflowEngine({
         workflowId,
-        workflowCode,
         instanceId,
         modelType,
         modelId,
@@ -76,10 +80,20 @@ export function WorkflowEngineVisualization({
         }));
     }, [graph?.nodes, currentStep]);
 
+    // Filter edges before layout to hide global exceptions
+    // Global exceptions are edges where target node is an exception node
+    const visibleEdges = useMemo(() => {
+        if (!graph?.edges || !enhancedNodes) return [];
+        return graph.edges.filter(edge => {
+            const targetNode = enhancedNodes.find(n => n.id === edge.target);
+            return !isGlobalExceptionNode(targetNode);
+        });
+    }, [graph?.edges, enhancedNodes]);
+
     // Calculate layout
     const { nodes: layoutedNodes, edges: layoutedEdges } = useWorkflowLayout(
         enhancedNodes,
-        graph?.edges || [],
+        visibleEdges,
         { autoDirection: true }
     );
 
@@ -95,25 +109,32 @@ export function WorkflowEngineVisualization({
     const reactFlowEdges = useMemo(() => {
         return layoutedEdges.map(edge => ({
             ...edge,
-            type: 'smoothstep',
-            animated: false,
+            type: 'smoothstep', // Right-angle routing
+            animated: true, // Keep standard flow animation
             style: {
-                stroke: '#9ca3af',
+                stroke: '#64748b',
                 strokeWidth: 2,
             },
             markerEnd: {
                 type: MarkerType.ArrowClosed,
-                color: '#9ca3af',
+                color: '#64748b',
+                width: 20,
+                height: 20,
             },
             labelStyle: {
-                fill: '#374151',
-                fontSize: 11,
+                fill: '#0f172a',
+                fontSize: 12,
                 fontWeight: 600,
             },
             labelBgStyle: {
-                fill: '#ffffff',
-                fillOpacity: 0.9,
+                fill: '#f8fafc',
+                fillOpacity: 1,
+                stroke: '#cbd5e1',
+                strokeWidth: 1,
+                rx: 4,
+                ry: 4,
             },
+            labelBgPadding: [8, 4] as [number, number],
         }));
     }, [layoutedEdges]);
 
@@ -129,15 +150,6 @@ export function WorkflowEngineVisualization({
     useMemo(() => {
         setEdges(reactFlowEdges);
     }, [reactFlowEdges, setEdges]);
-
-    const handleNodeClick = useCallback(
-        (_event: React.MouseEvent, node: Node) => {
-            if (onNodeClick) {
-                onNodeClick(node.id);
-            }
-        },
-        [onNodeClick]
-    );
 
     // Loading state
     if (isLoading) {
@@ -213,10 +225,9 @@ export function WorkflowEngineVisualization({
                 edges={edges}
                 onNodesChange={onNodesChange}
                 onEdgesChange={onEdgesChange}
-                onNodeClick={handleNodeClick}
                 nodeTypes={nodeTypes}
                 fitView
-                attributionPosition="bottom-right"
+                fitViewOptions={{ padding: 0.2 }}
                 minZoom={0.3}
                 maxZoom={1.5}
                 defaultEdgeOptions={{

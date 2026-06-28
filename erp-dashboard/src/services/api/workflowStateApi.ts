@@ -1,4 +1,5 @@
 import apiClient from './client';
+import type { WorkflowContextResponse, DispatcherOrder } from '@/types/dispatcher.types';
 
 export interface WorkflowField {
     name: string;
@@ -40,15 +41,37 @@ export interface WorkflowTransitionRequest {
     metadata?: Record<string, any>;
     force?: boolean;
     fields?: Record<string, any>;
+    idempotencyKey?: string;
+    override_guard_warning?: boolean;
 }
 
 export interface WorkflowTransitionResponse {
     success: boolean;
     message: string;
-    current_state: string;
-    previous_state: string;
+    current_state?: string;
+    previous_state?: string;
+    new_status?: string;
     metadata?: Record<string, any>;
     warnings?: string[];
+    // Idempotency: 409 with success:true means already executed (docs §12)
+    idempotent?: boolean;
+    // Guard warning: success:false + guard_warning:true means user must confirm (docs §7)
+    guard_warning?: boolean;
+    guard_key?: string;
+    severity?: 'warn' | 'block';
+    can_override?: boolean;
+    // Violations: 422 from constraint failures (docs §4/§11)
+    violations?: Array<{
+        constraint: string;
+        reason: string;
+        metadata?: {
+            rule?: string;
+            can_request_override?: boolean;
+            available?: number;
+            required?: number;
+            [key: string]: any;
+        };
+    }>;
 }
 
 export interface WorkflowHistory {
@@ -113,14 +136,39 @@ export const workflowStateApi = {
             };
         },
 
+        getContext: async (orderId: number): Promise<WorkflowContextResponse<DispatcherOrder>> => {
+            const response = await apiClient.get<WorkflowContextResponse<DispatcherOrder>>(
+                `${BACKEND_WORKFLOW_BASE}/bon-commande/${orderId}/context`
+            );
+            return response.data;
+        },
+
         execute: async (orderId: number, data: WorkflowTransitionRequest): Promise<WorkflowTransitionResponse> => {
+            const headers: Record<string, string> = {};
+            if (data.idempotencyKey) headers['Idempotency-Key'] = data.idempotencyKey;
+
             const response = await apiClient.post<WorkflowTransitionResponse>(
                 `${BACKEND_WORKFLOW_BASE}/bon-commande/${orderId}/execute`,
                 {
                     decision: data.action,
-                    force: data.force,
-                    // Spread dynamic fields (justification, reason, payment_term_id, etc.)
-                    ...(data.fields ?? {}),
+                    metadata: {
+                        ...(data.fields ?? {}),
+                        ...(data.comment ? { comment: data.comment } : {}),
+                        ...(data.override_guard_warning ? { override_guard_warning: true } : {}),
+                    },
+                },
+                { headers }
+            );
+            return response.data;
+        },
+
+        // Dry-run: validate a decision without executing it (docs §4 /validate)
+        validate: async (orderId: number, data: WorkflowTransitionRequest): Promise<WorkflowTransitionResponse> => {
+            const response = await apiClient.post<WorkflowTransitionResponse>(
+                `${BACKEND_WORKFLOW_BASE}/bon-commande/${orderId}/validate`,
+                {
+                    decision: data.action,
+                    metadata: { ...(data.fields ?? {}), ...(data.comment ? { comment: data.comment } : {}) },
                 }
             );
             return response.data;

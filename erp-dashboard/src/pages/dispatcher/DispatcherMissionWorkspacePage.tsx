@@ -319,7 +319,7 @@ const MissionShortagePanel = ({
         <DecisionActionsBar
           subjectId={bp.id}
           subjectLabel={bp.bp_number}
-          fetchDecisions={dispatcherApi.preparations.getDecisions}
+          fetchDecisions={dispatcherApi.preparations.getContext}
           executeDecision={executeDecisionWithCapture}
           onActionDone={onRefresh}
           compact
@@ -531,9 +531,17 @@ const MissionCard = ({
           Rejetée par le magasinier (BP {mission.preparation_order?.bp_number}) — corrigez puis confirmez à nouveau pour générer un nouveau BP.
         </div>
       )}
-      <button
+      <div
         onClick={() => setExpanded((v) => !v)}
-        className="w-full px-4 py-3 flex items-center justify-between hover:bg-gray-50 transition-colors"
+        className="w-full px-4 py-3 flex items-center justify-between hover:bg-gray-50 transition-colors cursor-pointer"
+        role="button"
+        tabIndex={0}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault();
+            setExpanded((v) => !v);
+          }
+        }}
       >
         <div className="flex items-center gap-3 min-w-0">
           <Route className="w-4 h-4 text-blue-500 shrink-0" />
@@ -569,14 +577,14 @@ const MissionCard = ({
           </div>
         </div>
         {expanded ? <ChevronUp size={16} className="text-gray-400 shrink-0" /> : <ChevronDown size={16} className="text-gray-400 shrink-0" />}
-      </button>
+      </div>
 
       {expanded && (
         <div className="px-4 pb-4 border-t border-gray-100 pt-3 space-y-3">
           <DecisionActionsBar
             subjectId={mission.id}
             subjectLabel={mission.mission_number}
-            fetchDecisions={dispatcherApi.deliveryMissions.getDecisions}
+            fetchDecisions={() => dispatcherApi.deliveryMissions.getDecisions(mission.id)}
             executeDecision={dispatcherApi.deliveryMissions.executeDecision}
             onActionDone={onRefresh}
             missionContext={{
@@ -799,7 +807,7 @@ const BcDetailModal = ({ orderId, onClose }: { orderId: number; onClose: () => v
   const fmtDate = (d?: string | null) =>
     d ? new Date(d).toLocaleDateString('fr-FR', { day: '2-digit', month: 'short', year: 'numeric' }) : '—';
 
-  const sp   = order?.salesperson_data?.salesperson ?? order?.salesperson ?? null;
+  const sp = (order?.salesperson_data?.salesperson ?? order?.salesperson ?? null) as { name: string; code?: string; phone?: string; id?: number } | null;
   const itin = order?.partner?.active_itineraries?.[0] ?? null;
   const fm   = order?.financial_metadata;
   const area = order?.partner?.geo_area;

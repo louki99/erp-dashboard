@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
-import { workflowApi } from '@/services/api/workflowApi';
-import type { WorkflowDefinition } from '@/types/task.types';
+import { workflowEngineApi } from '@/services/api/workflowEngineApi';
+import type { WorkflowDefinition } from '@/types/workflowEngine.types';
 import toast from 'react-hot-toast';
 
 export function useWorkflowTemplates() {
@@ -12,8 +12,8 @@ export function useWorkflowTemplates() {
         try {
             setLoading(true);
             setError(null);
-            const data = await workflowApi.getAll();
-            setWorkflows(data);
+            const data = await workflowEngineApi.getAllWorkflows();
+            setWorkflows(data || []);
         } catch (err: any) {
             const errorMessage = err.response?.data?.message || 'Failed to load workflows';
             setError(errorMessage);
@@ -49,8 +49,8 @@ export function useWorkflowDetail(workflowId: number | null) {
         try {
             setLoading(true);
             setError(null);
-            const data = await workflowApi.getById(workflowId);
-            setWorkflow(data);
+            const data = await workflowEngineApi.getWorkflowById(workflowId);
+            setWorkflow(data || null);
         } catch (err: any) {
             const errorMessage = err.response?.data?.message || 'Failed to load workflow';
             setError(errorMessage);
@@ -72,38 +72,4 @@ export function useWorkflowDetail(workflowId: number | null) {
     };
 }
 
-export function useWorkflowStatistics(workflowId: number | null) {
-    const [statistics, setStatistics] = useState<any>(null);
-    const [loading, setLoading] = useState(false);
-    const [error, setError] = useState<string | null>(null);
-
-    const fetchStatistics = useCallback(async () => {
-        if (!workflowId) {
-            setStatistics(null);
-            return;
-        }
-
-        try {
-            setLoading(true);
-            setError(null);
-            const data = await workflowApi.getStatistics(workflowId);
-            setStatistics(data);
-        } catch (err: any) {
-            const errorMessage = err.response?.data?.message || 'Failed to load statistics';
-            setError(errorMessage);
-        } finally {
-            setLoading(false);
-        }
-    }, [workflowId]);
-
-    useEffect(() => {
-        fetchStatistics();
-    }, [fetchStatistics]);
-
-    return {
-        statistics,
-        loading,
-        error,
-        refetch: fetchStatistics,
-    };
-}
+// Note: useWorkflowStatistics is removed as it's not supported by workflowEngineApi yet.
