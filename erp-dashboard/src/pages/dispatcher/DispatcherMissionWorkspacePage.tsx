@@ -416,7 +416,40 @@ const MissionCard = ({
   // Auto-expand on first render if there's already a shortage waiting — the arbitrage panel is
   // useless to the dispatcher hidden behind a collapsed card. Only the initial mount matters here
   // (useState's lazy initializer runs once); afterwards the dispatcher's manual collapse wins.
-  const [expanded, setExpanded] = useState(defaultExpanded || needsShortageReview);
+  // Draft + no rider = auto-planned. Manual creation always requires a rider up front,
+  // so rider_id === null on a draft is a reliable signal even if is_auto_planned is missing.
+  const isAutoPlanned = mission.is_auto_planned || mission.planning_run_id != null || (isDraftMission && mission.rider_id == null);
+  const needsRiderAssignment = isDraftMission && mission.rider_id == null;
+
+  const [expanded, setExpanded] = useState(defaultExpanded || needsShortageReview || needsRiderAssignment);
+  const [assigningRider, setAssigningRider] = useState(false);
+  const [assignRiderId, setAssignRiderId] = useState<number | ''>('');
+  const [assignVehicleId, setAssignVehicleId] = useState<number | ''>('');
+  const { data: ridersForAssign, loading: ridersForAssignLoading } = useRidersWithVehicles({ status: 'active' });
+  const selectedAssignRider = ridersForAssign.find((r) => r.id === assignRiderId);
+  const assignRiderVehicles = selectedAssignRider?.vehicles ?? [];
+
+  const handleRiderAssign = async () => {
+    if (assignRiderId === '' || assignVehicleId === '') {
+      toast.error('Sélectionnez un livreur et un véhicule');
+      return;
+    }
+    setAssigningRider(true);
+    try {
+      await dispatcherApi.deliveryMissions.executeDecision(mission.id, 'update_delivery_mission', {
+        rider_id: assignRiderId,
+        vehicle_id: assignVehicleId,
+      });
+      toast.success('Livreur assigné — vous pouvez maintenant confirmer la mission');
+      setAssignRiderId('');
+      setAssignVehicleId('');
+      onRefresh();
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Échec de l'assignation");
+    } finally {
+      setAssigningRider(false);
+    }
+  };
 
   // ─── Bulk BL cancellation ────────────────────────────────────────────────
   // No bulk-cancel endpoint exists (docs §7.7 is per-BL) — selecting several BLs and clicking
@@ -512,9 +545,18 @@ const MissionCard = ({
           ? 'border-emerald-400 ring-2 ring-emerald-200'
           : showRejectHighlight
           ? 'border-red-300 ring-2 ring-red-100'
+          : needsRiderAssignment
+          ? 'border-violet-300 ring-2 ring-violet-100'
+          : isAutoPlanned
+          ? 'border-violet-200'
           : 'border-gray-200'
       }`}
     >
+      {/* Auto-planned accent strip */}
+      {isAutoPlanned && !showAcceptHighlight && !showRejectHighlight && (
+        <div className="h-1 bg-gradient-to-r from-violet-500 to-purple-400" />
+      )}
+
       {showAcceptHighlight && (
         <div className="px-4 py-1.5 bg-emerald-50 text-emerald-700 text-[11px] font-semibold flex items-center gap-1.5">
           <CheckCircle2 size={11} /> Relâchez pour ajouter cette BC à la mission
@@ -523,6 +565,12 @@ const MissionCard = ({
       {showRejectHighlight && (
         <div className="px-4 py-1.5 bg-red-50 text-red-700 text-[11px] font-semibold flex items-center gap-1.5">
           <AlertTriangle size={11} /> Mission non modifiable (statut « {MISSION_STATUS_LABEL[mission.status] ?? mission.status} »)
+        </div>
+      )}
+      {needsRiderAssignment && !showAcceptHighlight && !showRejectHighlight && (
+        <div className="px-4 py-1.5 bg-violet-50 text-violet-700 text-[11px] font-semibold flex items-center gap-1.5 border-b border-violet-100">
+          <Sparkles size={11} className="shrink-0" />
+          Mission auto-planifiée — livreur à assigner avant confirmation
         </div>
       )}
       {isRejectedByMagasinier && (
@@ -560,6 +608,16 @@ const MissionCard = ({
               {needsShortageReview && mission.status !== 'awaiting_shortage_review' && (
                 <span className="flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-red-100 text-red-700">
                   <AlertTriangle size={10} /> Rupture à examiner
+                </span>
+              )}
+              {isAutoPlanned && (
+                <span className="flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-violet-100 text-violet-700">
+                  <Sparkles size={10} /> Auto
+                </span>
+              )}
+              {needsRiderAssignment && (
+                <span className="flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-amber-100 text-amber-700">
+                  <User size={10} /> Livreur requis
                 </span>
               )}
             </div>
@@ -603,6 +661,62 @@ const MissionCard = ({
               }),
             }}
           />
+
+          {needsRiderAssignment && (
+            <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 space-y-3">
+              <div className="flex items-start gap-2.5">
+                <div className="p-1.5 bg-amber-100 rounded-lg shrink-0">
+                  <User className="w-4 h-4 text-amber-600" />
+                </div>
+                <div>
+                  <p className="text-sm font-semibold text-amber-800">Livreur non assigné</p>
+                  <p className="text-xs text-amber-600 mt-0.5">
+                    Mission auto-planifiée — assignez un livreur et un véhicule avant de confirmer.
+                  </p>
+                </div>
+              </div>
+              <div className="flex items-end gap-2 flex-wrap">
+                <div className="flex-1 min-w-[160px]">
+                  <label className="text-[11px] text-amber-700 font-medium mb-1 block">Livreur</label>
+                  <SearchSelectDropdown
+                    placeholder={ridersForAssignLoading ? 'Chargement…' : 'Sélectionner un livreur'}
+                    options={ridersForAssign.map((r) => ({ value: r.id, label: r.name }))}
+                    value={assignRiderId}
+                    onChange={(id) => {
+                      setAssignRiderId(id as number);
+                      setAssignVehicleId('');
+                      const vs = ridersForAssign.find((r) => r.id === id)?.vehicles ?? [];
+                      if (vs.length === 1) setAssignVehicleId(vs[0].id);
+                    }}
+                    disabled={ridersForAssignLoading}
+                  />
+                </div>
+                {assignRiderId !== '' && assignRiderVehicles.length > 1 && (
+                  <div className="flex-1 min-w-[140px]">
+                    <label className="text-[11px] text-amber-700 font-medium mb-1 block">Véhicule</label>
+                    <SearchSelectDropdown
+                      placeholder="Véhicule"
+                      options={assignRiderVehicles.map((v) => ({
+                        value: v.id,
+                        label: v.plate_number ?? v.plate ?? `#${v.id}`,
+                        sublabel: [v.make, v.model].filter(Boolean).join(' ') || undefined,
+                      }))}
+                      value={assignVehicleId}
+                      onChange={(id) => setAssignVehicleId(id as number)}
+                    />
+                  </div>
+                )}
+                <button
+                  onClick={handleRiderAssign}
+                  disabled={assigningRider || assignRiderId === '' || assignVehicleId === ''}
+                  className="flex items-center gap-1.5 px-4 py-2 text-xs font-semibold bg-amber-600 text-white rounded-lg hover:bg-amber-700 disabled:opacity-50 whitespace-nowrap"
+                >
+                  {assigningRider ? <Loader2 size={12} className="animate-spin" /> : <CheckCircle2 size={12} />}
+                  Assigner
+                </button>
+              </div>
+            </div>
+          )}
 
           {needsShortageReview && mission.preparation_order && (
             <MissionShortagePanel bp={mission.preparation_order} onRefresh={onRefresh} />

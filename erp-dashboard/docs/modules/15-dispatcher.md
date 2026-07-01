@@ -45,6 +45,7 @@
 16. [Decision Registry](#16-decision-registry)
 17. [Database Schema Reference](#17-database-schema-reference)
 18. [Entity Relationship Summary](#18-entity-relationship-summary)
+19. [Mission Planning Templates (Auto-planning / "Mission Vide")](#19-mission-planning-templates-auto-planning--mission-vide)
 
 ---
 
@@ -2056,14 +2057,14 @@ DocumentController → DocumentService
 | `bc` | Bon de Commande | `orders.id` |
 | `bp` | Bon de Préparation | `preparation_orders.id` |
 | `bl` | Bon de Livraison | `delivery_notes.id` |
-| `bch` | Bon de Chargement *(legacy BCH/Shipment)* | `shipments.id` — **dead, model dropped** |
-| `do` | Delivery Order *(legacy)* | `delivery_orders.id` — **dead, model dropped** |
-| `lot` | Logistics Batch *(legacy)* | `logistics_batches.id` — **dead, model dropped** |
+| `bch` | Bon de Chargement *(legacy BCH/Shipment)* | `shipments.id` — **removed 2026-06-22** |
+| `do` | Delivery Order *(legacy)* | `delivery_orders.id` — **removed 2026-06-22** |
+| `lot` | Logistics Batch *(legacy)* | `logistics_batches.id` — **removed 2026-06-22** |
 
-> **Live types for the current mission pipeline: `bc`, `bp`, `bl` only.** `bch`/`do`/`lot` are
-> still registered in `DocumentController::ALLOWED_TYPES` but their underlying tables were
-> dropped by the 2026-06-22 migration — calling them returns a 500 (`findOrFail` fails).
-> Do not expose buttons for those three types.
+> **Live types for the current mission pipeline: `bc`, `bp`, `bl` only.** `bch`/`do`/`lot`
+> were removed from `DocumentController::ALLOWED_TYPES` on 2026-06-24 — calling any of them
+> now returns **`410 Gone`** with a message pointing to the correct alternative (was a raw
+> `500` DB crash before this fix). Do not expose buttons for those three types.
 
 **Query parameters (all optional):**
 
@@ -2119,7 +2120,12 @@ const downloadPdf = (type: 'bc' | 'bp' | 'bl', id: number) => {
 
 **Response `400` — unknown type:**
 ```json
-{ "message": "Unknown document type: mission. Allowed: bc, do, lot, bp, bch, bl" }
+{ "message": "Unknown document type: mission. Allowed: bc, bp, bl" }
+```
+
+**Response `410` — removed type (`bch`, `do`, `lot`):**
+```json
+{ "message": "Document type 'bch' was removed on 2026-06-22 (underlying table dropped). Live types: bc, bp, bl" }
 ```
 
 **Response `404` — ID not found:** standard Laravel 404 JSON.
@@ -2142,10 +2148,10 @@ accessible (no Bearer token), served as an HTML→PDF via Gotenberg.
 
 ### PDF cache & version control
 
-PDFs are cached to disk (`storage/app/documents/{type}/{id}.pdf`) on first render, with a
-configurable TTL (default: **60 minutes**). The cache is also auto-invalidated when the
-underlying Blade template file changes on disk (mtime comparison), so a template deploy
-flushes all cached PDFs for that type automatically.
+PDFs are generated on first request, then cached to **MinIO** (`documents/{type}/{id}.pdf`,
+configurable via `DOCUMENT_STORAGE_DISK`) with a TTL (default: **60 minutes**, `DOCUMENT_CACHE_TTL`).
+The cache is also auto-invalidated when the underlying Blade template file changes on disk
+(mtime comparison), so a template deploy flushes all cached PDFs for that type automatically.
 
 **There is no automatic cache invalidation when document data changes** (e.g. after
 `complete_preparation` updates `prepared_quantity`, or after `split_remaining_quantity`
@@ -2155,14 +2161,15 @@ or a `?force=1` request comes in.
 **Rule for the UI:** always append `?force=1` immediately after any mutation that changes
 document content:
 
-| Trigger | Document(s) to force-refresh |
-|---|---|
-| `complete_preparation` (full) | `bp/{id}`, all `bl/{id}` in mission |
-| `complete_preparation` (shortage) | `bp/{id}` |
-| `accept_partial_preparation` / `split_remaining_quantity` | `bp/{id}`, affected `bl/{id}` |
-| `continue_preparation` | `bp/{id}`, all `bl/{id}` in mission (if `completed_full`) |
-| `reject_preparation` | `bp/{id}` |
-| Dispatcher edits a BC (`update_delivery_mission`) | `bc/{orderId}`, `bl/{blId}` |
+| Trigger | Document(s) to force-refresh | Why the content changes |
+|---|---|---|
+| `complete_preparation` (full) | `bp/{id}`, all `bl/{id}` in mission | BP: final `prepared_qty` per line. **BL: lines switch from `allocated_qty` to `prepared_qty`** — the PDF now reflects what was actually picked, not what was originally allocated |
+| `complete_preparation` (shortage) | `bp/{id}` | BP: partial `prepared_qty`. BLs not refreshed — they still show allocated qty pending dispatcher decision |
+| `accept_partial_preparation` / `split_remaining_quantity` | `bp/{id}`, affected `bl/{id}` | BL lines for the shorted product are reduced to the accepted quantity |
+| `continue_preparation` (→ `completed_full`) | `bp/{id}`, all `bl/{id}` in mission | Same as full `complete_preparation` — rework picked the remaining units |
+| `continue_preparation` (→ `completed_partial`) | `bp/{id}` | BP updated; BLs not yet final |
+| `reject_preparation` | `bp/{id}` | Status changes |
+| Dispatcher edits a BC (`update_delivery_mission`) | `bc/{orderId}`, `bl/{blId}` | Quantities or lines changed |
 
 There is **no server-side version history** — only one cached PDF per document exists at a
 time. The `?force=1` re-render overwrites the previous cache. If you need a point-in-time
@@ -2906,7 +2913,7 @@ Key columns for the entities the Dispatcher API works with. Use these when build
 |---|---|---|
 | `id` | `bigint` | Primary key |
 | `mission_number` | `varchar` | DM reference (e.g. `MSN-20260619-0001`) |
-| `rider_id` | `bigint FK` | Driver for this mission |
+| `rider_id` | `bigint FK nullable` | Driver for this mission — **nullable** since 2026-07-21: auto-planned missions are created without a rider; the dispatcher assigns one at review/confirmation time |
 | `dispatcher_id` | `bigint FK` | Dispatcher who created it |
 | `vehicle_id` | `bigint FK` | Vehicle assigned |
 | `branch_code` | `varchar` | Owning branch |
@@ -2914,6 +2921,7 @@ Key columns for the entities the Dispatcher API works with. Use these when build
 | `started_at` / `closed_at` | `timestamp` | Mission bounds, set by `start_delivery_mission`/`complete_delivery_mission` |
 | `close_notes` / `closed_by` | mixed | Set by `complete_delivery_mission` |
 | `notes` | `text` | Free text |
+| `planning_run_id` | `bigint nullable` | **New 2026-07-21.** Soft reference (no FK constraint) to `mission_planning_runs.id`. Non-null only on missions created automatically by the scheduler — use this to distinguish auto-planned missions from manually created ones. See §19 |
 | `van_stock_reconciled` / `cod_reconciled` / `returns_reconciled` | `boolean` | Reconciliation flags (`DeliveryMission::refreshReconciliation()`) |
 | `total_bls` / `delivered_bls` / `failed_bls` / `total_returns` / `total_cod_collected` | numeric | Computed by `DeliveryMission::computeStats()` on completion |
 
@@ -3051,6 +3059,504 @@ Order (BC)
 3. From `DeliveryNote.id` → fetch `/dispatcher/bon-livraisons/{id}` to get `delivery_mission`, `preparation`
 4. From `PreparationOrder.id` → fetch `/workflow/bon-preparation/{id}` for shortage analysis — payload includes `mission` (not `batch`/`bch`)
 5. From `DeliveryMission.id` → fetch `/dispatcher/warehouse-transfers?...` filtered by rider/status to find its auto-generated WT
+6. **Auto-planned missions** — `planning_run_id` non-null on the mission object signals it was created by the scheduler. Fetch `/dispatcher/mission-planning-templates` (§19) for the full template catalogue and `/dispatcher/mission-planning-runs?template_id=X` for the execution history
+
+**Auto-planning flow (new 2026-07-21):**
+
+```
+MissionPlanningTemplate (dispatcher configures)
+   │   days_of_week + trigger_time + commercials[] + partners[]
+   │
+   │   [scheduler: missions:trigger-planned, runs every minute]
+   ▼
+MissionPlanningRun (one row per fire, status: success/failed/skipped)
+   │   delivery_mission_id ──► DeliveryMission (status: draft, rider_id: null)
+   │                            planning_run_id ←──────────────────┘
+   │
+   │   [OrderObserver: bc_status → CONFIRMED, partner_id + sales_rep_id match template]
+   ▼
+DeliveryNote (BL, status: draft) ──► auto-injected into the draft mission
+   orders_injected counter incremented on MissionPlanningRun
+   │
+   [Dispatcher reviews draft mission at 08:00, assigns rider + vehicle, confirms]
+   ▼
+Normal confirm_delivery_mission flow (§8.2) →  in_preparation → ready → …
+```
+
+---
+
+---
+
+## 19. Mission Planning Templates (Auto-planning / "Mission Vide")
+
+> **Ajouté 2026-07-21 — Feature "Mission Vide".**
+> Le Dispatcher configure des templates de planification. À l'heure paramétrée, un cron job crée automatiquement une **Delivery Mission en Draft** (sans livreur). Dès qu'un BC passe au statut `CONFIRMED` et que son couple (commercial × partenaire) correspond au template, un BL Draft est automatiquement injecté dans cette mission. Le matin, le Dispatcher trouve sa mission pré-remplie, assigne un livreur et clique **Confirmer** — le flux aval est identique au §8.2.
+>
+> **Responsabilité exclusive :** seul le rôle `dispatcher` (ou `root`/`admin`) peut créer, modifier ou supprimer des templates.
+>
+> **Base URL pour cette section :** `https://api.omni360.cloud/api/backend/dispatcher/mission-planning-templates`
+
+---
+
+### 19.1 Lister les templates
+
+`GET /backend/dispatcher/mission-planning-templates`
+
+Retourne tous les templates actifs **et** inactifs de la branche du dispatcher authentifié, avec le label de planning lisible et les associations pré-chargées.
+
+**Query parameters :**
+
+| Paramètre | Type | Description |
+|---|---|---|
+| `is_active` | `boolean` | Filtrer par statut actif/inactif (`true`/`false`) |
+| `page` | `number` | Pagination — 20 par page par défaut |
+
+```bash
+curl "https://api.omni360.cloud/api/backend/dispatcher/mission-planning-templates" \
+  -H "Authorization: Bearer {TOKEN}"
+```
+
+**Response `200` :**
+```json
+{
+  "success": true,
+  "data": {
+    "current_page": 1,
+    "per_page": 20,
+    "total": 2,
+    "data": [
+      {
+        "id": 1,
+        "name": "Tournée Atlas & Bensaid — Lundi/Mercredi/Vendredi",
+        "branch_id": 2,
+        "branch": { "id": 2, "code": "A0001", "name": "Agence Casablanca Centre" },
+        "dispatcher_id": 7,
+        "dispatcher": { "id": 7, "name": "Karim Dispatcher" },
+        "is_active": true,
+        "days_of_week": [1, 3, 5],
+        "trigger_time": "04:00:00",
+        "schedule_label": "Lun, Mer, Ven à 04h00",
+        "last_triggered_at": "2026-07-21T04:00:02+00:00",
+        "notes": null,
+        "commercials": [
+          { "id": 4, "name": "Amine Commercial", "code": "USR-004" },
+          { "id": 7, "name": "Sara Commerciale", "code": "USR-007" }
+        ],
+        "partners": [
+          { "id": 12, "name": "Supermarché Atlas", "code": "PAR-00012" },
+          { "id": 18, "name": "Épicerie Bensaid", "code": "PAR-00018" }
+        ],
+        "last_run": {
+          "id": 5,
+          "status": "success",
+          "triggered_at": "2026-07-21T04:00:02+00:00",
+          "delivery_mission_id": 31,
+          "orders_injected": 3
+        },
+        "created_at": "2026-07-18T09:15:00+00:00",
+        "updated_at": "2026-07-21T04:00:02+00:00"
+      },
+      {
+        "id": 2,
+        "name": "Tournée Hebdo Zitoun",
+        "branch_id": 2,
+        "branch": { "id": 2, "code": "A0001", "name": "Agence Casablanca Centre" },
+        "dispatcher_id": 7,
+        "dispatcher": { "id": 7, "name": "Karim Dispatcher" },
+        "is_active": false,
+        "days_of_week": [],
+        "trigger_time": "05:30:00",
+        "schedule_label": "Tous les jours à 05h30",
+        "last_triggered_at": null,
+        "notes": "En pause — client en renégociation tarifaire",
+        "commercials": [
+          { "id": 4, "name": "Amine Commercial", "code": "USR-004" }
+        ],
+        "partners": [
+          { "id": 23, "name": "Cash Zitoun", "code": "PAR-00023" }
+        ],
+        "last_run": null,
+        "created_at": "2026-07-20T11:00:00+00:00",
+        "updated_at": "2026-07-20T14:30:00+00:00"
+      }
+    ]
+  }
+}
+```
+
+> **`days_of_week` :** tableau d'entiers ISO (0 = Dimanche, 1 = Lundi, …, 6 = Samedi). Un tableau vide `[]` signifie **tous les jours**.
+>
+> **`schedule_label` :** chaîne lisible calculée côté backend (`MissionPlanningTemplate::scheduleLabel()`) — à afficher directement dans le tableau de bord, pas besoin de la recalculer côté frontend.
+>
+> **`last_run` :** dernier enregistrement de `mission_planning_runs` pour ce template — peut être `null` si le template n'a encore jamais été déclenché.
+
+---
+
+### 19.2 Créer un template ⚡
+
+`POST /backend/dispatcher/mission-planning-templates`
+
+```bash
+curl -X POST "https://api.omni360.cloud/api/backend/dispatcher/mission-planning-templates" \
+  -H "Authorization: Bearer {TOKEN}" \
+  -H "Content-Type: application/json" \
+  -H "Idempotency-Key: template:create:$(date +%s)" \
+  -d '{
+    "name": "Tournée Atlas & Bensaid — Lundi/Mercredi/Vendredi",
+    "days_of_week": [1, 3, 5],
+    "trigger_time": "04:00",
+    "commercial_ids": [4, 7],
+    "partner_ids": [12, 18],
+    "notes": "Priorité clients VIP zone Centre"
+  }'
+```
+
+**Request body :**
+
+| Champ | Requis | Type | Description |
+|---|---|---|---|
+| `name` | non | `string` | max 150 chars — label libre pour identifier le template dans la liste |
+| `days_of_week` | non | `number[]` | Jours de déclenchement : `0`=Dim, `1`=Lun, …, `6`=Sam. Tableau vide `[]` = tous les jours |
+| `trigger_time` | **oui** | `string` | Heure de déclenchement au format `HH:MM` ou `HH:MM:SS` (ex: `"04:00"`) |
+| `commercial_ids` | **oui** | `number[]` | IDs des commerciaux (Users) — min 1 |
+| `partner_ids` | **oui** | `number[]` | IDs des partenaires (Partners/clients) — min 1 |
+| `notes` | non | `string` | Note libre |
+
+**Response `201` :**
+```json
+{
+  "success": true,
+  "message": "Template de planification créé",
+  "data": {
+    "id": 3,
+    "name": "Tournée Atlas & Bensaid — Lundi/Mercredi/Vendredi",
+    "branch_id": 2,
+    "is_active": true,
+    "days_of_week": [1, 3, 5],
+    "trigger_time": "04:00:00",
+    "schedule_label": "Lun, Mer, Ven à 04h00",
+    "commercial_ids": [4, 7],
+    "partner_ids": [12, 18],
+    "last_triggered_at": null,
+    "created_at": "2026-07-21T08:30:00+00:00"
+  }
+}
+```
+
+**Response `422` :** `trigger_time_required`, `commercial_ids_required`, `partner_ids_required`,
+`commercial_not_found` (avec `id` en contexte), `partner_not_found` (avec `id` en contexte),
+`invalid_time_format` (si `trigger_time` n'est pas parseable).
+
+---
+
+### 19.3 Modifier un template ⚡ (y compris Toggle actif/inactif)
+
+`PUT /backend/dispatcher/mission-planning-templates/{id}`
+
+Tous les champs sont optionnels — envoyer uniquement ce qui change. **C'est par cet endpoint que le Dispatcher active ou désactive un planning** : passer simplement `"is_active": false` pour le mettre en pause, `"is_active": true` pour le réactiver.
+
+```bash
+# Désactiver un template (Toggle OFF)
+curl -X PUT "https://api.omni360.cloud/api/backend/dispatcher/mission-planning-templates/3" \
+  -H "Authorization: Bearer {TOKEN}" \
+  -H "Content-Type: application/json" \
+  -H "Idempotency-Key: template:3:toggle:$(date +%s)" \
+  -d '{ "is_active": false }'
+```
+
+```bash
+# Reconfigurer un template (nouveau timing + nouveau pool de commerciaux)
+curl -X PUT "https://api.omni360.cloud/api/backend/dispatcher/mission-planning-templates/3" \
+  -H "Authorization: Bearer {TOKEN}" \
+  -H "Content-Type: application/json" \
+  -H "Idempotency-Key: template:3:update:$(date +%s)" \
+  -d '{
+    "name": "Tournée Atlas — Tous les jours",
+    "days_of_week": [],
+    "trigger_time": "03:30",
+    "commercial_ids": [4],
+    "partner_ids": [12, 18, 23]
+  }'
+```
+
+**Request body (tous optionnels) :**
+
+| Champ | Type | Description |
+|---|---|---|
+| `name` | `string` | max 150 chars |
+| `is_active` | `boolean` | `false` = met en pause (le cron ne déclenchera plus), `true` = réactive |
+| `days_of_week` | `number[]` | Remplace entièrement la liste des jours |
+| `trigger_time` | `string` | Nouvelle heure de déclenchement (`HH:MM`) |
+| `commercial_ids` | `number[]` | **Remplace** le pivot entier — les commerciaux retirés ne figurent plus dans le template |
+| `partner_ids` | `number[]` | **Remplace** le pivot entier |
+| `notes` | `string` | Remplace la note |
+
+> ⚠️ **`commercial_ids` et `partner_ids` sont des remplacements complets, pas des ajouts.** Pour retirer un seul commercial d'un template qui en compte trois, le frontend doit renvoyer les deux restants. Le backend fait un `sync()` Eloquent sur les pivots.
+
+**Response `200` :**
+```json
+{
+  "success": true,
+  "message": "Template mis à jour",
+  "data": {
+    "id": 3,
+    "name": "Tournée Atlas — Tous les jours",
+    "is_active": true,
+    "days_of_week": [],
+    "trigger_time": "03:30:00",
+    "schedule_label": "Tous les jours à 03h30",
+    "commercial_ids": [4],
+    "partner_ids": [12, 18, 23],
+    "updated_at": "2026-07-21T09:00:00+00:00"
+  }
+}
+```
+
+**Response `404` :** template introuvable ou appartenant à une autre branche.
+
+---
+
+### 19.4 Supprimer un template
+
+`DELETE /backend/dispatcher/mission-planning-templates/{id}`
+
+**Soft-delete** — le template n'est plus listé ni déclenché, mais l'historique des runs (`mission_planning_runs`) est conservé pour l'audit. Les missions déjà créées par ce template restent intactes.
+
+```bash
+curl -X DELETE "https://api.omni360.cloud/api/backend/dispatcher/mission-planning-templates/3" \
+  -H "Authorization: Bearer {TOKEN}" \
+  -H "Idempotency-Key: template:3:delete:$(date +%s)"
+```
+
+**Response `200` :**
+```json
+{
+  "success": true,
+  "message": "Template supprimé",
+  "data": {
+    "id": 3,
+    "deleted_at": "2026-07-21T10:00:00+00:00"
+  }
+}
+```
+
+**Response `404` :** template introuvable.
+
+---
+
+### 19.5 Comportement côté missions — ce que le frontend doit savoir
+
+#### Identifier une mission auto-planifiée
+
+Dans la réponse de `GET /backend/workflow/delivery-mission/{id}` (§8.8), une mission auto-créée expose `planning_run_id` non-null :
+
+```json
+{
+  "mission": {
+    "id": 31,
+    "mission_number": "MSN-20260721-0001",
+    "status": "draft",
+    "rider_id": null,
+    "rider": null,
+    "planning_run_id": 5,
+    "notes": "Auto-créée par le template#1 \"Tournée Atlas\" (Lun, Mer, Ven à 04h00)",
+    ...
+  }
+}
+```
+
+> **`rider_id: null` est normal** sur une mission auto-planifiée — le Dispatcher l'assigne lors de sa revue matinale. L'UI doit traiter `rider_id: null` sans erreur sur ces missions (le formulaire de confirmation doit rendre le champ livreur obligatoire à ce moment-là, pas avant).
+
+#### Lire l'historique d'exécution d'un template
+
+`GET /backend/dispatcher/mission-planning-runs?template_id={id}` — retourne la liste des runs avec leur statut (`success`/`failed`/`skipped`), le nombre de BCs injectés (`orders_injected`), et l'ID de la mission créée. Utile pour afficher une timeline dans le panneau de configuration du template.
+
+```json
+{
+  "success": true,
+  "data": [
+    {
+      "id": 5,
+      "template_id": 1,
+      "delivery_mission_id": 31,
+      "triggered_at": "2026-07-21T04:00:02+00:00",
+      "status": "success",
+      "orders_injected": 3,
+      "error_message": null
+    },
+    {
+      "id": 3,
+      "template_id": 1,
+      "delivery_mission_id": 28,
+      "triggered_at": "2026-07-19T04:00:01+00:00",
+      "status": "success",
+      "orders_injected": 1,
+      "error_message": null
+    }
+  ]
+}
+```
+
+#### BLs injectés automatiquement
+
+Les BLs auto-injectés dans une mission Draft ont leur champ `notes` préfixé : `"Auto-injecté (Mission Vide) depuis BC #BC-2026-XXXXX"`. Le Dispatcher peut les modifier, en supprimer, ou en ajouter d'autres via `update_delivery_mission` (§8.5) avant de confirmer.
+
+#### Flux de confirmation (inchangé)
+
+Une fois le Dispatcher satisfait de la mission Draft (livreur assigné, BLs vérifiés), la confirmation se fait via le décision `confirm_delivery_mission` standard (§8.2) — **aucun endpoint spécifique aux missions auto-planifiées**. Le flux aval (BP → préparation → WT → départ) est identique.
+
+---
+
+### 19.7 Vue Calendrier — Time-Series / Calendar Events
+
+`GET /backend/dispatcher/mission-planning/calendar`
+
+Endpoint dédié à la vue calendrier du Dispatcher. Retourne un tableau plat d'événements **compatible FullCalendar** (et équivalents — React Big Calendar, DHTMLX, etc.) sur la période demandée.
+
+**Deux types d'événements sont fusionnés et triés chronologiquement :**
+
+| Type | Source | Description |
+|---|---|---|
+| `past` | `mission_planning_runs` | Runs réels ayant eu lieu dans la période — date et statut exacts |
+| `future` | Calcul virtuel sur templates actifs | Prochains déclenchements projetés selon `days_of_week` + `trigger_time` — aucune écriture en base |
+
+**Règle anti-doublon :** si un run réel existe pour un couple `(template_id, date)`, la projection future correspondante est supprimée — jamais deux événements pour le même slot.
+
+**Query parameters :**
+
+| Paramètre | Requis | Type | Description |
+|---|---|---|---|
+| `start_date` | oui | `date` | Début de période, format `YYYY-MM-DD` |
+| `end_date` | oui | `date` | Fin de période — doit être ≥ `start_date` |
+
+```bash
+curl "https://api.omni360.cloud/api/backend/dispatcher/mission-planning/calendar?start_date=2026-07-01&end_date=2026-07-31" \
+  -H "Authorization: Bearer {TOKEN}"
+```
+
+**Response `200` — tableau d'événements :**
+```json
+[
+  {
+    "id": "run_15",
+    "template_id": 3,
+    "title": "Tournée Tanger Gros (Exécutée)",
+    "start": "2026-07-07T04:00:02+00:00",
+    "status": "success",
+    "type": "past",
+    "delivery_mission_id": 31,
+    "orders_injected": 12,
+    "schedule_label": "Lun, Mer, Ven à 04h00"
+  },
+  {
+    "id": "run_16",
+    "template_id": 3,
+    "title": "Tournée Tanger Gros (Exécutée)",
+    "start": "2026-07-09T04:00:01+00:00",
+    "status": "failed",
+    "type": "past",
+    "delivery_mission_id": null,
+    "orders_injected": 0,
+    "schedule_label": "Lun, Mer, Ven à 04h00"
+  },
+  {
+    "id": "template_3_proj_2026-07-14",
+    "template_id": 3,
+    "title": "Tournée Tanger Gros (Planifiée)",
+    "start": "2026-07-14T04:00:00+00:00",
+    "status": "pending",
+    "type": "future",
+    "delivery_mission_id": null,
+    "orders_injected": 0,
+    "schedule_label": "Lun, Mer, Ven à 04h00"
+  },
+  {
+    "id": "template_3_proj_2026-07-16",
+    "template_id": 3,
+    "title": "Tournée Tanger Gros (Planifiée)",
+    "start": "2026-07-16T04:00:00+00:00",
+    "status": "pending",
+    "type": "future",
+    "delivery_mission_id": null,
+    "orders_injected": 0,
+    "schedule_label": "Lun, Mer, Ven à 04h00"
+  }
+]
+```
+
+**Champs de chaque événement :**
+
+| Champ | Type | Description |
+|---|---|---|
+| `id` | `string` | Clé unique. Format : `run_{id}` (passé) ou `template_{id}_proj_{YYYY-MM-DD}` (futur) — stable, utilisable comme `eventId` FullCalendar |
+| `template_id` | `number` | ID du template source — permet de filtrer / colorer par template |
+| `title` | `string` | Libellé prêt à afficher dans le calendrier |
+| `start` | `ISO 8601` | Date+heure de l'événement. Pour les futurs : heure exacte du `trigger_time` du template |
+| `status` | `string` | `success` / `failed` / `skipped` (passé) ou `pending` (futur) |
+| `type` | `string` | `past` ou `future` — **c'est ce champ qui pilote la couleur dans l'UI** |
+| `delivery_mission_id` | `number\|null` | ID de la mission créée (passé uniquement, null si run failed ou futur) |
+| `orders_injected` | `number` | BCs auto-injectés — `0` pour les futurs |
+| `schedule_label` | `string` | Label lisible du planning (calculé backend) — à afficher dans le tooltip/popup |
+
+**Logique de coloration recommandée pour l'UI :**
+
+```
+type === "past"  && status === "success" → vert   (#22c55e)  — cliquable → détail run
+type === "past"  && status === "failed"  → rouge  (#ef4444)  — cliquable → message d'erreur
+type === "past"  && status === "skipped" → gris   (#6b7280)  — informatif
+type === "future"                        → bleu clair / pointillé (#93c5fd / dashed border)
+```
+
+**Response `422` :** `start_date` requis, `end_date` requis ou antérieur à `start_date`.
+
+> **Note scope branche :** comme tous les endpoints dispatcher, les runs et templates retournés sont scopés à la `branch_id` de l'utilisateur authentifié. Un dispatcher sans branche assignée voit l'ensemble de la company.
+>
+> **Performance :** la génération des projections futures boucle jour par jour sur la période — une plage de 3 mois avec 10 templates actifs reste < 1 ms. Pour des plages > 12 mois, envisager une pagination ou un avertissement côté UI.
+
+---
+
+### 19.6 Schéma des nouvelles tables (référence)
+
+#### `mission_planning_templates`
+
+| Colonne | Type | Description |
+|---|---|---|
+| `id` | `bigint` | Clé primaire |
+| `name` | `varchar(150) nullable` | Label libre |
+| `branch_id` | `bigint FK → branches` | Branche propriétaire |
+| `dispatcher_id` | `bigint FK → users` | Dispatcher créateur |
+| `is_active` | `boolean` | Toggle on/off |
+| `days_of_week` | `json` | Tableau d'entiers (0–6). `[]` = tous les jours |
+| `trigger_time` | `time` | Heure de déclenchement |
+| `last_triggered_at` | `timestamp nullable` | Anti-double-fire — mis à jour après chaque run réussi |
+| `notes` | `text nullable` | Note libre |
+| `deleted_at` | `timestamp nullable` | Soft-delete |
+
+#### `mission_planning_template_commercials` (pivot)
+
+| Colonne | Type | Description |
+|---|---|---|
+| `template_id` | `bigint FK` | Clé composite avec `user_id` |
+| `user_id` | `bigint FK → users` | Commercial concerné |
+
+#### `mission_planning_template_partners` (pivot)
+
+| Colonne | Type | Description |
+|---|---|---|
+| `template_id` | `bigint FK` | Clé composite avec `partner_id` |
+| `partner_id` | `bigint FK → partners` | Partenaire/client concerné |
+
+#### `mission_planning_runs` (journal d'exécution)
+
+| Colonne | Type | Description |
+|---|---|---|
+| `id` | `bigint` | Clé primaire |
+| `template_id` | `bigint FK` | Template qui a déclenché ce run |
+| `delivery_mission_id` | `bigint FK nullable` | Mission créée — null si le run a échoué avant la création |
+| `triggered_at` | `timestamp` | Heure de déclenchement effective |
+| `status` | `varchar(20)` | `pending` → `success` / `failed` / `skipped` |
+| `orders_injected` | `int` | Nombre de BCs auto-injectés dans cette mission depuis sa création |
+| `error_message` | `text nullable` | Message d'erreur si `status = failed` |
 
 ---
 
@@ -3116,5 +3622,7 @@ verified-live response shapes; decision registry (§16) updated to list all of t
 2. *New `update_delivery_mission` fields `add_order_ids`/`remove_order_ids` (§8.5) — detach/re-attach a single BC from a draft mission's merged BL without touching the whole BL, for when a salesperson needs to edit a BC already inside a mission.*
 3. *New `reopen_delivery_mission` decision (§8.6) — atomic rollback from `in_preparation` back to `draft`: cancels the BP (`status: cancelled`, kept for audit), releases reserved stock, BLs → draft. Blocked once the BP is no longer `pending`/`in_progress` (race-condition guard, re-checked inside the transaction). Required a new migration adding `cancelled` to `preparation_orders`' status CHECK constraint.*
 4. *All of the above verified live end-to-end against a real WSL Postgres instance (transaction + rollback, not assumed from code reading).*
+
+*Last updated: 2026-07-21 — **Feature "Mission Vide" (auto-planning).** Nouvelle section §19 : 4 endpoints CRUD pour les `MissionPlanningTemplate` (GET liste, POST créer, PUT modifier/toggle, DELETE soft-delete). `delivery_missions.rider_id` est maintenant nullable (les missions auto-créées démarrent sans livreur). Nouvelle colonne `planning_run_id` sur `delivery_missions` (soft-ref vers `mission_planning_runs`). §17 et §18 mis à jour pour refléter le schéma et le flux. Migrations : `2026_07_21_000000_create_mission_planning_tables` + `2026_07_21_000001_alter_delivery_missions_for_auto_planning`. Artisan command `missions:trigger-planned` (every minute, with `--dry-run` option). `OrderObserver::updated()` injecte automatiquement les BCs `CONFIRMED` dans la mission Draft du jour lorsque le couple (commercial × partenaire) matche un template actif.*
 
 *Previous update: 2026-06-20 — full rewrite for the BC → DeliveryMission architecture migration. The old BC → DO → LOT/BCH pipeline and the parallel "Dispatch V2" BC → DO → BP → BCH pipeline are both removed; `shipments`, `shipment_deliveries`, `shipment_delivery_orders`, `delivery_orders`, `delivery_order_items`, `delivery_order_orders`, `logistics_batches`, and `preparation_delivery_notes` are dropped (`database/migrations/2026_07_17_130000_drop_shipment_delivery_order_logistics_batch_tables.php`). `adjust_quantities` and `create_decharge` have no `delivery-mission` equivalent yet — explicitly deferred, see §2 and §16.*

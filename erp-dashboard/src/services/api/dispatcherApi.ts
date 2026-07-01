@@ -23,6 +23,10 @@ import type {
   DoDecisionsResponse,
   ShortageQueueResponse,
   WorkflowContextResponse,
+  MissionPlanningTemplate,
+  MissionPlanningRun,
+  CreateMissionPlanningTemplatePayload,
+  UpdateMissionPlanningTemplatePayload,
 } from '@/types/dispatcher.types';
 
 const BASE = '/api/backend/dispatcher';
@@ -215,6 +219,19 @@ export const dispatcherApi = {
 
   // ─── Delivery Missions — replaces DO + LOT + BCH/Shipment (docs §8, 2026-06-20) ─────────────
   deliveryMissions: {
+    // List endpoint — now available (was missing pre-2026-07). Returns paginated missions
+    // scoped to the dispatcher's branch. Auto-planned missions (rider: null) are included.
+    getList: async (params?: { status?: string; rider_id?: number; auto_planned?: boolean; per_page?: number; page?: number }): Promise<DeliveryMission[]> => {
+      type ListResponse =
+        | { success: boolean; data: DeliveryMission[] | { data: DeliveryMission[] } }
+        | DeliveryMission[];
+      const r = await apiClient.get<ListResponse>(`${BASE}/delivery-missions`, { params });
+      if (Array.isArray(r.data)) return r.data;
+      const body = r.data as { success: boolean; data: DeliveryMission[] | { data: DeliveryMission[] } };
+      if (Array.isArray(body.data)) return body.data;
+      return (body.data as { data: DeliveryMission[] }).data ?? [];
+    },
+
     // Dedicated REST shortcut (docs §8.1) — thin wrapper around the `create_delivery_mission`
     // workflow decision, same guards/idempotency. Drag&drop confirmed orders + rider/vehicle
     // picked up front; generates one BL per partner in the same call.
@@ -423,6 +440,101 @@ export const dispatcherApi = {
         { headers: { 'Idempotency-Key': mkKey(`wt:${id}:reject`) } }
       );
       return r.data;
+    },
+  },
+  // ─── Mission Planning Templates (docs §19, 2026-07-21) ────────────────────
+  // 4 CRUD endpoints for auto-planning ("Mission Vide"). Access: dispatcher/root/admin.
+  missionPlanningTemplates: {
+    getList: async (params?: {
+      is_active?: boolean;
+      page?: number;
+    }): Promise<PaginatedResponse<MissionPlanningTemplate>> => {
+      const r = await apiClient.get<{ success: boolean; data: PaginatedResponse<MissionPlanningTemplate> }>(
+        `${BASE}/mission-planning-templates`,
+        { params }
+      );
+      return r.data.data;
+    },
+
+    create: async (payload: CreateMissionPlanningTemplatePayload): Promise<{ success: boolean; message: string; data: MissionPlanningTemplate }> => {
+      const r = await apiClient.post<{ success: boolean; message: string; data: MissionPlanningTemplate }>(
+        `${BASE}/mission-planning-templates`,
+        payload,
+        { headers: { 'Idempotency-Key': mkKey('template:create') } }
+      );
+      return r.data;
+    },
+
+    update: async (id: number, payload: UpdateMissionPlanningTemplatePayload): Promise<{ success: boolean; message: string; data: MissionPlanningTemplate }> => {
+      const r = await apiClient.put<{ success: boolean; message: string; data: MissionPlanningTemplate }>(
+        `${BASE}/mission-planning-templates/${id}`,
+        payload,
+        { headers: { 'Idempotency-Key': mkKey(`template:${id}:update`) } }
+      );
+      return r.data;
+    },
+
+    delete: async (id: number): Promise<ApiSuccessResponse> => {
+      const r = await apiClient.delete<ApiSuccessResponse>(
+        `${BASE}/mission-planning-templates/${id}`,
+        { headers: { 'Idempotency-Key': mkKey(`template:${id}:delete`) } }
+      );
+      return r.data;
+    },
+  },
+
+  // ─── Mission Planning Runs — execution history (docs §19.5) ──────────────
+  missionPlanningRuns: {
+    getList: async (params: { template_id: number; page?: number }): Promise<MissionPlanningRun[]> => {
+      const r = await apiClient.get<
+        | { success: boolean; data: MissionPlanningRun[] | { data: MissionPlanningRun[] } }
+        | MissionPlanningRun[]
+      >(`${BASE}/mission-planning-runs`, { params });
+      if (Array.isArray(r.data)) return r.data;
+      const inner = (r.data as { success: boolean; data: MissionPlanningRun[] | { data: MissionPlanningRun[] } }).data;
+      if (Array.isArray(inner)) return inner;
+      return (inner as { data: MissionPlanningRun[] }).data ?? [];
+    },
+  },
+
+  // ─── Commercials list — for template form multi-select ────────────────────
+  // Users with commercial/salesperson role, scoped to the authenticated dispatcher's branch.
+  commercials: {
+    getList: async (): Promise<Array<{ id: number; name: string; code?: string }>> => {
+      const r = await apiClient.get<
+        { success: boolean; data: Array<{ id: number; name: string; code?: string }> }
+        | Array<{ id: number; name: string; code?: string }>
+      >(`${BASE}/commercials`);
+      if (Array.isArray(r.data)) return r.data;
+      return (r.data as { success: boolean; data: Array<{ id: number; name: string; code?: string }> }).data ?? [];
+    },
+  },
+
+  // ─── Mission planning calendar — §19.7 ───────────────────────────────────
+  missionPlanningCalendar: {
+    getList: async (params: { start_date: string; end_date: string }) => {
+      const r = await apiClient.get<import('@/types/dispatcher.types').MissionPlanningCalendarEvent[]>(
+        `${BASE}/mission-planning/calendar`, { params }
+      );
+      return Array.isArray(r.data) ? r.data : [];
+    },
+  },
+
+  // ─── Dispatcher-scoped partner list — for template form multi-select ──────
+  // GET /api/backend/dispatcher/partners — branch-scoped active partners. Handles both
+  // { success, data: [...] } and flat array response shapes defensively.
+  dispatcherPartners: {
+    getList: async (params?: { search?: string; page?: number; per_page?: number }): Promise<Array<{ id: number; name: string; code?: string }>> => {
+      const r = await apiClient.get<
+        { success: boolean; data: Array<{ id: number; name: string; code?: string }> }
+        | Array<{ id: number; name: string; code?: string }>
+      >(`${BASE}/partners`, { params });
+      if (Array.isArray(r.data)) return r.data;
+      const body = r.data as { success: boolean; data: Array<{ id: number; name: string; code?: string }> | { data: Array<{ id: number; name: string; code?: string }> } };
+      // Handle both flat array and paginated shape under `data`
+      if (Array.isArray(body.data)) return body.data;
+      const nested = body.data as { data: Array<{ id: number; name: string; code?: string }> };
+      return nested?.data ?? [];
     },
   },
 };

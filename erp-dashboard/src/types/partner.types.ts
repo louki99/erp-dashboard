@@ -55,6 +55,12 @@ export interface Partner {
     // Options
     allow_show_on_pos: boolean;
     currency?: string;
+    // Activity stats
+    total_orders_count?: number;
+    total_orders_value?: string | number;
+    average_order_value?: string | number;
+    last_order_date?: string | null;
+    last_payment_date?: string | null;
     // Relations
     price_list?: { id: number; code: string; name: string } | null;
     customer?: { id: number; user?: { id: number; name: string; email: string } } | null;
@@ -64,9 +70,65 @@ export interface Partner {
     payment_term?: { id: number; name: string; description?: string } | null;
     geo_area?: { id: number; code: string; name: string } | null;
     custom_field_values?: any[];
+    itinerary_partners?: ItineraryPartner[];
     // Timestamps
     created_at?: string;
     updated_at?: string;
+}
+
+// ─── Itinerary ────────────────────────────────────────────────────────────────
+
+export interface ItineraryPartner {
+    id: number;
+    itinerary_id: number;
+    partner_id: number;
+    rank: number;
+    visit_frequency_days: number;
+    start_time: string | null;
+    end_time: string | null;
+    is_stop_point: boolean;
+    notes: string | null;
+    itinerary?: {
+        id: number;
+        code: string;
+        name: string;
+        branch_code: string;
+        geo_area_code?: string | null;
+    };
+}
+
+// ─── Credit Control V2 ────────────────────────────────────────────────────────
+
+export type CreditExposureStatus = 'ALLOWED' | 'WARNING' | 'SOFT_BLOCK' | 'HARD_BLOCK';
+
+export interface CreditExposureResponse {
+    partner_id: number;
+    credit_limit: number;
+    open_invoices_amount: number;
+    pending_cheques_amount: number;
+    pending_effets_amount: number;
+    confirmed_orders_amount: number;
+    delivered_not_invoiced_amount: number;
+    validated_payments_amount: number;
+    credit_notes_amount: number;
+    total_exposure: number;
+    available_credit: number;
+    status: CreditExposureStatus;
+    overdue_invoice_count: number;
+    oldest_overdue_days: number;
+    risk_score: number;
+    last_recalculated_at: string;
+}
+
+export interface CreditEvent {
+    id: number;
+    event_type: string;
+    amount: number;
+    reference_type: string | null;
+    reference_id: number | null;
+    exposure_before: number;
+    exposure_after: number;
+    created_at: string;
 }
 
 // ─── API Responses ───────────────────────────────────────────────────────────
@@ -381,8 +443,84 @@ export interface CreatePartnerFullPayload {
     custom_fields?: Record<string, string>;
 }
 
+// ─── Partner Balances (§11) ───────────────────────────────────────────────────
+
+export type BalanceType = 'POINTS' | 'BUDGET_PROMO' | 'AVOIR' | string;
+export type BalanceOperation = 'set' | 'add' | 'subtract';
+
+export interface PartnerBalance {
+    id: number;
+    partner_code: string;
+    balance_type: BalanceType;
+    balance: number;
+    created_at?: string;
+    updated_at?: string;
+}
+
+export interface UpsertBalanceRequest {
+    partner_code: string;
+    balance_type: BalanceType;
+    balance: number;
+    operation: BalanceOperation;
+}
+
+// ─── Credit evaluate dry-run (§6.5) ──────────────────────────────────────────
+
+export interface CreditEvaluateResponse {
+    eligible: boolean;
+    status: CreditExposureStatus;
+    available_after?: number;
+    shortfall?: number;
+    requires_approval?: boolean;
+}
+
 // ─── Discriminated union for the form panel's onSave callback ─────────────────
 
 export type PartnerSavePayload =
     | { mode: 'create'; data: CreatePartnerFullPayload }
     | { mode: 'edit'; data: Partial<CreatePartnerRequest> };
+
+// ─── Payment Methods (§7) ─────────────────────────────────────────────────────
+
+export type PaymentMethodCode = 'CHEQUE' | 'CASH' | 'MOBILE' | 'EFFET' | 'VIREMENT' | 'CARD';
+export type PaymentMethodType = 'cash' | 'check' | 'bank_transfer' | 'mobile_money' | 'credit_card';
+
+export interface PaymentMethodRecord {
+    id: number;
+    code: PaymentMethodCode;
+    name: string;
+    type: PaymentMethodType;
+    requires_reference: boolean;
+    requires_bank: boolean;
+    is_active: boolean;
+    display_order: number;
+}
+
+// ─── Payment Override (§9) ────────────────────────────────────────────────────
+
+export type OverrideApprovalStatus = 'pending' | 'approved' | 'rejected';
+
+export interface PaymentOverride {
+    id: number;
+    document_type: 'order' | 'invoice';
+    document_id: number;
+    payment_term_id?: number | null;
+    payment_method_id?: number | null;
+    reason: string;
+    approval_status: OverrideApprovalStatus;
+    requested_by: number;
+    approved_by?: number | null;
+    comment?: string | null;
+    payment_term?: { id: number; code: string; name: string } | null;
+    payment_method?: { id: number; code: PaymentMethodCode; name: string } | null;
+    created_at: string;
+    updated_at: string;
+}
+
+export interface CreatePaymentOverrideRequest {
+    document_type: 'order' | 'invoice';
+    document_id: number;
+    payment_term_id?: number | null;
+    payment_method_id?: number | null;
+    reason: string;
+}

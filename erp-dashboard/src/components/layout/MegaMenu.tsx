@@ -226,6 +226,10 @@ const MENU_DATA: ModuleData[] = [
             {
                 title: 'Flotte & Livreurs',
                 items: ['Flotte & Livreurs']
+            },
+            {
+                title: 'Planification',
+                items: ['Planification auto']
             }
         ]
     },
@@ -631,6 +635,7 @@ export const MegaMenu: React.FC<MegaMenuProps> = ({ isOpen, onClose, initialSear
         'Décharges (liste)': '/dispatcher/decharges',
         'Transferts entrepôt (liste)': '/dispatcher/warehouse-transfers',
         'Flotte & Livreurs': '/dispatcher/fleet',
+        'Planification auto': '/dispatcher/mission-planning',
 
         // Magasinier Module Routes
         'Tableau de bord Magasinier': '/magasinier',

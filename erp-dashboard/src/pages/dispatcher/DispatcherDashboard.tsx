@@ -537,6 +537,7 @@ export const DispatcherDashboard = () => {
     { label: 'Décharges', href: '/dispatcher/decharges', icon: CheckCircle2, color: 'text-green-600 bg-green-50', desc: 'Retours & annulations' },
     { label: 'Transferts entrepôt', href: '/dispatcher/warehouse-transfers', icon: Boxes, color: 'text-teal-600 bg-teal-50', desc: 'Générés automatiquement' },
     { label: 'Flotte & Livreurs', href: '/dispatcher/fleet', icon: UserCircle2, color: 'text-rose-600 bg-rose-50', desc: 'Assignation véhicule' },
+    { label: 'Planification auto', href: '/dispatcher/mission-planning', icon: Sparkles, color: 'text-violet-600 bg-violet-50', desc: 'Templates Mission Vide' },
   ];
 
   return (

@@ -27,6 +27,7 @@ import { DispatcherMapWorkspacePage } from '@/pages/dispatcher/DispatcherMapWork
 import { DispatcherMonitorPage } from '@/pages/dispatcher/DispatcherMonitorPage';
 import { DispatcherWarehouseTransfersPage } from '@/pages/dispatcher/DispatcherWarehouseTransfersPage';
 import { DispatcherFleetPage } from '@/pages/dispatcher/DispatcherFleetPage';
+import { DispatcherMissionPlanningPage } from '@/pages/dispatcher/DispatcherMissionPlanningPage';
 import { MagasinierDashboard } from '@/pages/magasinier/MagasinierDashboard';
 import { MagasinierPreparationsPage } from '@/pages/magasinier/MagasinierPreparationsPage';
 import { MagasinierStockPage } from '@/pages/magasinier/MagasinierStockPage';
@@ -221,6 +222,12 @@ function AppRoutes() {
       <Route path="/dispatcher/fleet" element={
         <ProtectedRoute requiredRole={['dispatcher', 'root', 'admin']}>
           <DispatcherFleetPage />
+        </ProtectedRoute>
+      } />
+
+      <Route path="/dispatcher/mission-planning" element={
+        <ProtectedRoute requiredRole={['dispatcher', 'root', 'admin']}>
+          <DispatcherMissionPlanningPage />
         </ProtectedRoute>
       } />
 

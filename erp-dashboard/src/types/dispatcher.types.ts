@@ -337,7 +337,8 @@ export interface DeliveryMission {
   mission_number: string;
   branch_code: string;
   dispatcher_id?: number;
-  rider_id: number;
+  // nullable since 2026-07-21 — auto-planned missions start without a rider (docs §17/§19.5)
+  rider_id: number | null;
   vehicle_id: number;
   rider?: Rider | null;
   dispatcher?: { id: number; name: string } | null;
@@ -350,6 +351,12 @@ export interface DeliveryMission {
   delivery_notes?: DeliveryNote[];
   bl_count?: number;
   preparation_order?: Pick<PreparationOrder, 'id' | 'bp_number' | 'status' | 'items'> | null;
+  // New 2026-07-21 — non-null when this mission was auto-created by the scheduler (docs §17/§19.5).
+  // Use this to distinguish auto-planned missions from manually created ones (planning_run_id != null).
+  planning_run_id?: number | null;
+  // Explicit flag returned by GET /dispatcher/delivery-missions. Same signal as planning_run_id != null
+  // but more legible. Auto-planned missions start with rider_id: null — prompt to assign before confirm.
+  is_auto_planned?: boolean;
   // Populated by complete_delivery_mission (docs §8.5)
   total_bls?: number;
   delivered_bls?: number;
@@ -359,6 +366,85 @@ export interface DeliveryMission {
   delivery_rate?: number;
   created_at: string;
   _decisions?: DoDecisionItem[];
+}
+
+// ─── Mission Planning Templates (docs §19, new 2026-07-21) ───────────────────────────────────
+
+export interface MissionPlanningCommercial {
+  id: number;
+  name: string;
+  code?: string;
+}
+
+export interface MissionPlanningPartner {
+  id: number;
+  name: string;
+  code?: string;
+}
+
+export interface MissionPlanningRun {
+  id: number;
+  template_id: number;
+  delivery_mission_id: number | null;
+  triggered_at: string;
+  status: 'pending' | 'success' | 'failed' | 'skipped';
+  orders_injected: number;
+  error_message: string | null;
+}
+
+export interface MissionPlanningTemplate {
+  id: number;
+  name: string | null;
+  branch_id: number;
+  branch?: { id: number; code: string; name: string } | null;
+  dispatcher_id: number;
+  dispatcher?: { id: number; name: string } | null;
+  is_active: boolean;
+  // ISO day integers: 0=Sun, 1=Mon … 6=Sat. Empty array [] = every day.
+  days_of_week: number[];
+  trigger_time: string;
+  // Pre-computed human label ("Lun, Mer, Ven à 04h00") — display directly, don't recompute.
+  schedule_label: string;
+  last_triggered_at: string | null;
+  notes: string | null;
+  commercials: MissionPlanningCommercial[];
+  partners: MissionPlanningPartner[];
+  last_run: MissionPlanningRun | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface CreateMissionPlanningTemplatePayload {
+  name?: string;
+  days_of_week?: number[];
+  trigger_time: string;
+  commercial_ids: number[];
+  partner_ids: number[];
+  notes?: string;
+}
+
+export interface UpdateMissionPlanningTemplatePayload {
+  name?: string;
+  is_active?: boolean;
+  days_of_week?: number[];
+  trigger_time?: string;
+  // Full replacement — send all IDs to keep (backend does sync()).
+  commercial_ids?: number[];
+  partner_ids?: number[];
+  notes?: string;
+}
+
+/** §19.7 — Calendar event returned by GET /dispatcher/mission-planning/calendar */
+export interface MissionPlanningCalendarEvent {
+  id: string;
+  template_id: number;
+  title: string;
+  start: string;
+  status: 'success' | 'failed' | 'skipped' | 'pending';
+  type: 'past' | 'future';
+  delivery_mission_id: number | null;
+  orders_injected: number;
+  schedule_label: string;
 }
 
 export interface CreateDeliveryMissionPayload {

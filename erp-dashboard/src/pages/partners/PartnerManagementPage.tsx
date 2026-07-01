@@ -6,6 +6,10 @@ import {
     Ban, Unlock, FileText,
     CheckCircle2, XCircle, AlertTriangle, Clock, DollarSign,
     Star, ArrowUpDown, BookOpen, ChevronRight,
+    TrendingUp, ShoppingCart, Route, Link2, Unlink,
+    Activity, Zap, Wallet, Package, Truck,
+    Upload, Locate, Calculator, CheckCircle, XCircle as XCircleIcon,
+    Banknote, FileCheck2, ThumbsUp, ThumbsDown, MessageSquare,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 
@@ -21,6 +25,10 @@ import {
     usePartnerStatistics,
     usePartnerFormMasterData,
     useCreditHistory,
+    useCreditExposure,
+    useCreditEvents,
+    useRecalcCreditExposure,
+    useEvaluateCreditOrder,
     usePaymentTerms,
     useCreatePartner,
     useUpdatePartner,
@@ -34,6 +42,19 @@ import {
     useAttachPaymentTerm,
     useDetachPaymentTerm,
     useSetDefaultPaymentTerm,
+    useAvailableItineraries,
+    useAssignItinerary,
+    useRemoveFromItinerary,
+    usePartnerBalances,
+    useUpsertBalance,
+    useDeleteBalance,
+    useNearbyPartners,
+    useUploadPartnerImage,
+    usePaymentMethods,
+    usePendingOverrides,
+    useCreatePaymentOverride,
+    useApproveOverride,
+    useRejectOverride,
 } from '@/hooks/partners/usePartners';
 
 import type {
@@ -44,6 +65,10 @@ import type {
     BlockPartnerRequest,
     UpdateCreditRequest,
     PartnerSavePayload,
+    CreditExposureStatus,
+    BalanceType,
+    BalanceOperation,
+    CreatePaymentOverrideRequest,
 } from '@/types/partner.types';
 
 import {
@@ -72,6 +97,29 @@ const STATUS_ICONS: Record<PartnerStatus, React.ElementType> = {
     CLOSED: XCircle,
 };
 
+const CREDIT_EXPOSURE_COLORS: Record<CreditExposureStatus, { bg: string; text: string; border: string; label: string; bar: string }> = {
+    ALLOWED: { bg: 'bg-emerald-50', text: 'text-emerald-700', border: 'border-emerald-200', label: 'Autorisé', bar: 'bg-emerald-500' },
+    WARNING: { bg: 'bg-amber-50', text: 'text-amber-700', border: 'border-amber-200', label: 'Avertissement', bar: 'bg-amber-500' },
+    SOFT_BLOCK: { bg: 'bg-red-50', text: 'text-red-700', border: 'border-red-200', label: 'Blocage partiel', bar: 'bg-red-500' },
+    HARD_BLOCK: { bg: 'bg-red-100', text: 'text-red-900', border: 'border-red-400', label: 'Blocage total', bar: 'bg-red-700' },
+};
+
+const CREDIT_EVENT_ICONS: Record<string, { icon: string; color: string }> = {
+    INVOICE_VALIDATED: { icon: '📄', color: 'text-blue-600' },
+    PAYMENT_RECEIVED: { icon: '💳', color: 'text-emerald-600' },
+    CHEQUE_CLEARED: { icon: '✅', color: 'text-emerald-600' },
+    CHEQUE_BOUNCED: { icon: '❌', color: 'text-red-600' },
+    EFFET_DEPOSITED: { icon: '📋', color: 'text-indigo-600' },
+    ORDER_CONFIRMED: { icon: '📦', color: 'text-sage-600' },
+    ORDER_CANCELLED: { icon: '🚫', color: 'text-red-500' },
+    CREDIT_NOTE_ISSUED: { icon: '📝', color: 'text-purple-600' },
+    CREDIT_LIMIT_CHANGED: { icon: '⚙️', color: 'text-gray-600' },
+};
+
+const CHANNEL_LABELS: Record<string, string> = {
+    GMS: 'GMS', GROS: 'Gros', DETAIL: 'Détail', CHR: 'CHR', SOM_GROS: 'Semi-Gros', OTHER: 'Autre',
+};
+
 const fmtDate = (d?: string | null) => d ? new Date(d).toLocaleDateString('fr-FR', { day: '2-digit', month: 'short', year: 'numeric' }) : '—';
 const toNum = (v: any): number => { if (v == null) return 0; const n = typeof v === 'number' ? v : parseFloat(String(v)); return Number.isNaN(n) ? 0 : n; };
 const fmtNumber = (n?: number | string | null) => n != null ? toNum(n).toLocaleString('fr-FR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '—';
@@ -96,70 +144,241 @@ const PaymentTermsContent: React.FC<{
     onDetach: (id: number) => void;
     onAttach: (id: number) => void;
 }> = ({ paymentTermsData, onSetDefault, onDetach, onAttach }) => {
+    const [showModal, setShowModal] = useState(false);
+    const [search, setSearch] = useState('');
+    const [justAdded, setJustAdded] = useState<Set<number>>(new Set());
+    const searchRef = useRef<HTMLInputElement>(null);
+
     const attached = getAttachedTerms(paymentTermsData);
     const available = getAvailableTerms(paymentTermsData);
 
-    return (
-        <div className="space-y-3">
-            {/* Attached terms */}
-            <div className="text-xs font-semibold text-gray-500 mb-2">Conditions associées</div>
-            {attached.length > 0 ? (
-                <div className="space-y-1">
-                    {attached.map((term: any) => (
-                        <div key={term.id} className="flex items-center justify-between py-2 px-3 bg-white rounded-lg border border-gray-100 text-xs">
-                            <div className="flex items-center gap-2">
-                                <DollarSign className="w-3.5 h-3.5 text-gray-400" />
-                                <span className="font-medium">{term.name}</span>
-                                {term.description && <span className="text-gray-400">({term.description})</span>}
-                                {(term.pivot?.is_default || term.is_default) && (
-                                    <span className="px-1.5 py-0.5 bg-sage-50 text-sage-600 rounded text-[10px] font-medium">Défaut</span>
-                                )}
-                            </div>
-                            <div className="flex items-center gap-1">
-                                {!(term.pivot?.is_default || term.is_default) && (
-                                    <button onClick={() => onSetDefault(term.id)}
-                                        className="p-1 rounded hover:bg-sage-50 text-gray-400 hover:text-sage-600 transition-colors" title="Définir par défaut">
-                                        <Star className="w-3.5 h-3.5" />
-                                    </button>
-                                )}
-                                <button onClick={() => onDetach(term.id)}
-                                    className="p-1 rounded hover:bg-red-50 text-gray-400 hover:text-red-600 transition-colors" title="Retirer">
-                                    <X className="w-3.5 h-3.5" />
-                                </button>
-                            </div>
-                        </div>
-                    ))}
-                </div>
-            ) : (
-                <div className="text-center py-4 text-xs text-gray-400">Aucune condition associée</div>
-            )}
+    const filtered = available.filter((t: any) => {
+        const q = search.toLowerCase();
+        return (
+            t.name?.toLowerCase().includes(q) ||
+            (t.description || '').toLowerCase().includes(q) ||
+            (t.code || '').toLowerCase().includes(q)
+        );
+    });
 
-            {/* Available terms */}
-            {available.length > 0 && (
-                <div>
-                    <div className="text-xs font-semibold text-gray-500 mb-2 mt-4">Conditions disponibles</div>
-                    <div className="space-y-1">
-                        {available.map((term: any) => (
-                            <div key={term.id} className="flex items-center justify-between py-2 px-3 bg-gray-50 rounded-lg border border-gray-100 text-xs">
-                                <div className="flex items-center gap-2">
-                                    <span className="font-medium">{term.name}</span>
-                                    {term.description && <span className="text-gray-400">({term.description})</span>}
-                                    <div className="flex gap-1">
-                                        {term.is_credit && <span className="px-1 py-0.5 bg-purple-50 text-purple-600 rounded text-[9px]">Crédit</span>}
-                                        {term.is_cash && <span className="px-1 py-0.5 bg-green-50 text-green-600 rounded text-[9px]">Espèces</span>}
-                                        {term.is_bank_transfer && <span className="px-1 py-0.5 bg-sage-50 text-sage-600 rounded text-[9px]">Virement</span>}
+    useEffect(() => {
+        if (showModal) {
+            setTimeout(() => searchRef.current?.focus(), 60);
+        } else {
+            setSearch('');
+            setJustAdded(new Set());
+        }
+    }, [showModal]);
+
+    const handleAttach = (id: number) => {
+        onAttach(id);
+        setJustAdded(prev => new Set(prev).add(id));
+    };
+
+    return (
+        <>
+            <div className="space-y-2">
+                {/* Attached terms list */}
+                {attached.length > 0 ? (
+                    <div className="space-y-1.5">
+                        {attached.map((term: any) => {
+                            const isDefault = term.pivot?.is_default || term.is_default;
+                            return (
+                                <div
+                                    key={term.id}
+                                    className={`group flex items-center justify-between py-2.5 px-3 rounded-xl border text-xs transition-colors ${isDefault ? 'bg-sage-50 border-sage-200' : 'bg-white border-gray-100 hover:border-gray-200'}`}
+                                >
+                                    <div className="flex items-center gap-2.5 min-w-0 flex-1">
+                                        <div className={`w-2 h-2 rounded-full shrink-0 ${isDefault ? 'bg-sage-500' : 'bg-gray-200'}`} />
+                                        <div className="min-w-0 flex-1">
+                                            <div className="flex items-center gap-2 flex-wrap">
+                                                <span className="font-semibold text-gray-800">{term.name}</span>
+                                                {isDefault && (
+                                                    <span className="px-1.5 py-0.5 bg-sage-100 text-sage-700 rounded-full text-[10px] font-semibold">Défaut</span>
+                                                )}
+                                                <div className="flex gap-1">
+                                                    {term.is_credit && <span className="px-1.5 py-0.5 bg-purple-50 text-purple-600 rounded text-[9px] border border-purple-100">Crédit</span>}
+                                                    {term.is_cash && <span className="px-1.5 py-0.5 bg-emerald-50 text-emerald-600 rounded text-[9px] border border-emerald-100">Espèces</span>}
+                                                    {term.is_bank_transfer && <span className="px-1.5 py-0.5 bg-sky-50 text-sky-600 rounded text-[9px] border border-sky-100">Virement</span>}
+                                                </div>
+                                            </div>
+                                            {term.description && (
+                                                <div className="text-[10px] text-gray-400 mt-0.5 truncate">{term.description}</div>
+                                            )}
+                                        </div>
+                                    </div>
+                                    <div className="flex items-center gap-0.5 shrink-0 ml-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                                        {!isDefault && (
+                                            <button
+                                                onClick={() => onSetDefault(term.id)}
+                                                title="Définir par défaut"
+                                                className="p-1.5 rounded-lg hover:bg-sage-100 text-gray-400 hover:text-sage-600 transition-colors"
+                                            >
+                                                <Star className="w-3.5 h-3.5" />
+                                            </button>
+                                        )}
+                                        <button
+                                            onClick={() => onDetach(term.id)}
+                                            title="Retirer"
+                                            className="p-1.5 rounded-lg hover:bg-red-50 text-gray-300 hover:text-red-500 transition-colors"
+                                        >
+                                            <X className="w-3.5 h-3.5" />
+                                        </button>
                                     </div>
                                 </div>
-                                <button onClick={() => onAttach(term.id)}
-                                    className="flex items-center gap-1 px-2 py-1 text-[10px] bg-sage-50 text-sage-700 rounded hover:bg-sage-100 transition-colors">
-                                    <Plus className="w-3 h-3" /> Ajouter
-                                </button>
+                            );
+                        })}
+                    </div>
+                ) : (
+                    <div className="py-6 text-center border border-dashed border-gray-200 rounded-xl bg-gray-50">
+                        <DollarSign className="w-7 h-7 mx-auto mb-2 text-gray-300" />
+                        <p className="text-xs text-gray-400 font-medium">Aucune condition associée</p>
+                        <p className="text-[10px] text-gray-300 mt-0.5">Ajoutez une condition via le bouton ci-dessous</p>
+                    </div>
+                )}
+
+                {/* Open modal button */}
+                {available.length > 0 && (
+                    <button
+                        onClick={() => setShowModal(true)}
+                        className="flex items-center justify-center gap-2 w-full px-3 py-2.5 text-xs font-medium text-sage-700 bg-sage-50 hover:bg-sage-100 rounded-xl border border-dashed border-sage-300 transition-colors group"
+                    >
+                        <div className="w-5 h-5 rounded-full bg-sage-100 group-hover:bg-sage-200 flex items-center justify-center transition-colors">
+                            <Plus className="w-3 h-3 text-sage-600" />
+                        </div>
+                        Ajouter une condition
+                        <span className="ml-auto text-[10px] text-sage-500 bg-sage-100 px-1.5 py-0.5 rounded-full">{available.length}</span>
+                    </button>
+                )}
+            </div>
+
+            {/* ── Searchable Modal ─────────────────────────────────────────── */}
+            {showModal && (
+                <div className="fixed inset-0 z-[200] flex items-center justify-center p-4">
+                    {/* Backdrop */}
+                    <div
+                        className="absolute inset-0 bg-black/40 backdrop-blur-sm"
+                        onClick={() => setShowModal(false)}
+                    />
+
+                    {/* Panel */}
+                    <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-md flex flex-col overflow-hidden" style={{ maxHeight: '72vh' }}>
+
+                        {/* Header */}
+                        <div className="flex items-start justify-between px-5 pt-5 pb-4 border-b border-gray-100">
+                            <div>
+                                <h3 className="text-sm font-bold text-gray-900">Conditions de paiement</h3>
+                                <p className="text-[11px] text-gray-400 mt-0.5">
+                                    {available.length} disponible{available.length > 1 ? 's' : ''}
+                                    {attached.length > 0 && ` · ${attached.length} déjà associée${attached.length > 1 ? 's' : ''}`}
+                                </p>
                             </div>
-                        ))}
+                            <button
+                                onClick={() => setShowModal(false)}
+                                className="p-1.5 rounded-lg hover:bg-gray-100 text-gray-400 hover:text-gray-600 transition-colors -mt-1 -mr-1"
+                            >
+                                <X className="w-4 h-4" />
+                            </button>
+                        </div>
+
+                        {/* Search */}
+                        <div className="px-4 py-3 bg-gray-50 border-b border-gray-100">
+                            <div className="relative">
+                                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400 pointer-events-none" />
+                                <input
+                                    ref={searchRef}
+                                    type="text"
+                                    value={search}
+                                    onChange={e => setSearch(e.target.value)}
+                                    placeholder="Rechercher par nom, code, description…"
+                                    className="w-full pl-9 pr-8 py-2 text-xs border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-sage-500 focus:border-transparent bg-white shadow-sm"
+                                />
+                                {search && (
+                                    <button
+                                        onClick={() => setSearch('')}
+                                        className="absolute right-2.5 top-1/2 -translate-y-1/2 p-0.5 rounded-full hover:bg-gray-100 transition-colors"
+                                    >
+                                        <X className="w-3 h-3 text-gray-400" />
+                                    </button>
+                                )}
+                            </div>
+                            {search && (
+                                <p className="text-[10px] text-gray-400 mt-1.5 pl-1">
+                                    {filtered.length} résultat{filtered.length !== 1 ? 's' : ''}
+                                </p>
+                            )}
+                        </div>
+
+                        {/* List */}
+                        <div className="flex-1 overflow-y-auto divide-y divide-gray-50">
+                            {filtered.length > 0 ? (
+                                filtered.map((term: any) => {
+                                    const added = justAdded.has(term.id);
+                                    return (
+                                        <div key={term.id} className={`flex items-center gap-3 px-4 py-3.5 transition-colors ${added ? 'bg-emerald-50/60' : 'hover:bg-gray-50'}`}>
+                                            {/* Icon */}
+                                            <div className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 ${added ? 'bg-emerald-100' : 'bg-gray-100'}`}>
+                                                <DollarSign className={`w-3.5 h-3.5 ${added ? 'text-emerald-600' : 'text-gray-400'}`} />
+                                            </div>
+
+                                            {/* Info */}
+                                            <div className="flex-1 min-w-0">
+                                                <div className="flex items-center gap-1.5 flex-wrap">
+                                                    <span className="text-xs font-semibold text-gray-900">{term.name}</span>
+                                                    {term.is_credit && <span className="px-1.5 py-0.5 bg-purple-50 text-purple-600 rounded text-[9px] border border-purple-100 font-medium">Crédit</span>}
+                                                    {term.is_cash && <span className="px-1.5 py-0.5 bg-emerald-50 text-emerald-600 rounded text-[9px] border border-emerald-100 font-medium">Espèces</span>}
+                                                    {term.is_bank_transfer && <span className="px-1.5 py-0.5 bg-sky-50 text-sky-600 rounded text-[9px] border border-sky-100 font-medium">Virement</span>}
+                                                </div>
+                                                {term.description && (
+                                                    <p className="text-[10px] text-gray-400 mt-0.5 truncate">{term.description}</p>
+                                                )}
+                                            </div>
+
+                                            {/* Action */}
+                                            {added ? (
+                                                <div className="flex items-center gap-1 text-[11px] text-emerald-600 font-medium shrink-0">
+                                                    <CheckCircle2 className="w-3.5 h-3.5" />
+                                                    Ajoutée
+                                                </div>
+                                            ) : (
+                                                <button
+                                                    onClick={() => handleAttach(term.id)}
+                                                    className="flex items-center gap-1.5 px-3 py-1.5 text-[11px] font-semibold bg-sage-600 text-white rounded-lg hover:bg-sage-700 active:scale-95 transition-all shrink-0"
+                                                >
+                                                    <Plus className="w-3 h-3" />
+                                                    Ajouter
+                                                </button>
+                                            )}
+                                        </div>
+                                    );
+                                })
+                            ) : (
+                                <div className="py-12 text-center">
+                                    <div className="w-10 h-10 rounded-full bg-gray-50 flex items-center justify-center mx-auto mb-3">
+                                        <Search className="w-5 h-5 text-gray-300" />
+                                    </div>
+                                    <p className="text-xs text-gray-400 font-medium">Aucun résultat</p>
+                                    <p className="text-[10px] text-gray-300 mt-0.5">Essayez un autre terme de recherche</p>
+                                </div>
+                            )}
+                        </div>
+
+                        {/* Footer */}
+                        <div className="px-4 py-3 border-t border-gray-100 bg-gray-50/80 flex items-center justify-between">
+                            <span className="text-[10px] text-gray-400">
+                                {justAdded.size > 0 ? `${justAdded.size} condition${justAdded.size > 1 ? 's' : ''} ajoutée${justAdded.size > 1 ? 's' : ''}` : 'Cliquez sur Ajouter pour associer'}
+                            </span>
+                            <button
+                                onClick={() => setShowModal(false)}
+                                className="px-4 py-1.5 text-xs font-medium text-gray-700 bg-white border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors shadow-sm"
+                            >
+                                Fermer
+                            </button>
+                        </div>
                     </div>
                 </div>
             )}
-        </div>
+        </>
     );
 };
 
@@ -175,6 +394,41 @@ export const PartnerManagementPage = () => {
     const [filters, setFilters] = useState<PartnerFilters>({ page: 1, per_page: 20 });
     const [searchInput, setSearchInput] = useState('');
     const [statusFilter, setStatusFilter] = useState<PartnerStatus | ''>('');
+    const [channelFilter, setChannelFilter] = useState<string>('');
+
+    // Itinerary assignment panel (expanded fields)
+    const [showItineraryPanel, setShowItineraryPanel] = useState(false);
+    const [selectedItineraryId, setSelectedItineraryId] = useState<number | null>(null);
+    const [itineraryForm, setItineraryForm] = useState<{
+        rank?: number; visit_frequency_days?: number;
+        start_time?: string; end_time?: string;
+        is_stop_point?: boolean; notes?: string;
+    }>({});
+
+    // Balance form
+    const [showBalanceForm, setShowBalanceForm] = useState(false);
+    const [balanceForm, setBalanceForm] = useState<{ balance_type: BalanceType; balance: string; operation: BalanceOperation }>({ balance_type: 'POINTS', balance: '', operation: 'add' });
+
+    // Credit evaluate
+    const [evaluateAmount, setEvaluateAmount] = useState('');
+    const [showEvaluateForm, setShowEvaluateForm] = useState(false);
+
+    // Nearby partners
+    const [showNearby, setShowNearby] = useState(false);
+
+    // Payment override form
+    const [showOverrideForm, setShowOverrideForm] = useState(false);
+    const [overrideForm, setOverrideForm] = useState<{
+        document_type: 'order' | 'invoice';
+        document_id: string;
+        payment_term_id: string;
+        payment_method_id: string;
+        reason: string;
+    }>({ document_type: 'order', document_id: '', payment_term_id: '', payment_method_id: '', reason: '' });
+    const [showPendingOverrides, setShowPendingOverrides] = useState(false);
+
+    // Image upload ref
+    const imageInputRef = React.useRef<HTMLInputElement>(null);
 
     // Form mode: 'view' | 'create' | 'edit'
     const [formMode, setFormMode] = useState<'view' | 'create' | 'edit'>('view');
@@ -200,7 +454,7 @@ export const PartnerManagementPage = () => {
 
     // Sections
     const [openSections, setOpenSections] = useState<Record<string, boolean>>({
-        info: true, credit: true, contact: true, payments: true, orders: true,
+        info: true, credit: true, contact: true, payments: true, tournees: true, activite: true, soldes: true,
     });
 
     const sectionRefs = useRef<Record<string, HTMLDivElement | null>>({});
@@ -226,9 +480,32 @@ export const PartnerManagementPage = () => {
         showDetailPanel && selectedPartner ? selectedPartner.id : null
     );
 
+    const { data: creditExposureData, loading: creditExposureLoading, refetch: refetchCreditExposure } = useCreditExposure(
+        showDetailPanel && selectedPartner ? selectedPartner.id : null
+    );
+
+    const { data: creditEventsData, loading: creditEventsLoading, refetch: refetchCreditEvents } = useCreditEvents(
+        showDetailPanel && selectedPartner ? selectedPartner.id : null
+    );
+
     const { data: paymentTermsData, loading: paymentTermsLoading, refetch: refetchPaymentTerms } = usePaymentTerms(
         showDetailPanel && selectedPartner ? selectedPartner.id : null
     );
+
+    const { data: availableItineraries, loading: itinerariesLoading, fetch: fetchItineraries } = useAvailableItineraries();
+
+    const { data: balancesData, loading: balancesLoading, refetch: refetchBalances } = usePartnerBalances(
+        showDetailPanel && selectedPartner ? selectedPartner.code : null
+    );
+
+    const { evaluate: evaluateCreditFn, data: evaluateResult, loading: evaluateLoading, reset: resetEvaluate } = useEvaluateCreditOrder();
+    const { data: nearbyPartners, loading: nearbyLoading, findNearby, reset: resetNearby } = useNearbyPartners();
+    const { execute: uploadImageFn } = useUploadPartnerImage();
+    const { data: paymentMethods, loading: paymentMethodsLoading } = usePaymentMethods();
+    const { data: pendingOverrides, loading: pendingOverridesLoading, refetch: refetchPendingOverrides } = usePendingOverrides();
+    const { createOverride, loading: creatingOverride } = useCreatePaymentOverride();
+    const { approveOverride: approveOverrideFn, loading: approvingOverride } = useApproveOverride();
+    const { rejectOverride: rejectOverrideFn, loading: rejectingOverride } = useRejectOverride();
 
     // Mutations
     const { execute: createPartner, loading: creating } = useCreatePartner();
@@ -240,6 +517,11 @@ export const PartnerManagementPage = () => {
     const { execute: unblockPartnerFn } = useUnblockPartner();
     const { updateCredit, loading: updatingCredit } = useUpdateCredit();
     const { execute: recalcCreditFn } = useRecalcCredit();
+    const { execute: recalcCreditExposureFn } = useRecalcCreditExposure();
+    const { assignItinerary, loading: assigningItinerary } = useAssignItinerary();
+    const { removeFromItinerary, loading: removingItinerary } = useRemoveFromItinerary();
+    const { upsertBalance, loading: upsertingBalance } = useUpsertBalance();
+    const { execute: deleteBalanceFn, loading: deletingBalance } = useDeleteBalance();
     const { attachPaymentTerm } = useAttachPaymentTerm();
     const { detachPaymentTerm } = useDetachPaymentTerm();
     const { setDefaultPaymentTerm } = useSetDefaultPaymentTerm();
@@ -253,10 +535,14 @@ export const PartnerManagementPage = () => {
         }, 400);
     };
 
-    // ── Status filter ────────────────────────────────────────────────────────
+    // ── Status / channel filters ─────────────────────────────────────────────
     useEffect(() => {
         setFilters(prev => ({ ...prev, status: statusFilter || undefined, page: 1 }));
     }, [statusFilter]);
+
+    useEffect(() => {
+        setFilters(prev => ({ ...prev, channel: channelFilter || undefined, page: 1 }));
+    }, [channelFilter]);
 
     // ── Column defs ───────────────────────────────────────────────────────────
     const columnDefs = useMemo<ColDef[]>(() => [
@@ -311,8 +597,11 @@ export const PartnerManagementPage = () => {
     const tabs: TabItem[] = useMemo(() => [
         { id: 'info', label: 'Informations', icon: FileText },
         { id: 'credit', label: 'Crédit', icon: CreditCard },
-        { id: 'payments', label: 'Paiements', icon: DollarSign },
-        { id: 'contact', label: 'Adresse & Contact', icon: MapPin },
+        { id: 'payments', label: 'Paiements & Dérog.', icon: DollarSign },
+        { id: 'activite', label: 'Activité', icon: ShoppingCart },
+        { id: 'soldes', label: 'Soldes', icon: Wallet },
+        { id: 'contact', label: 'Contact', icon: MapPin },
+        { id: 'tournees', label: 'Tournées', icon: Route },
     ], []);
 
     // ── Row selection ─────────────────────────────────────────────────────────
@@ -546,10 +835,13 @@ export const PartnerManagementPage = () => {
         const toastId = toast.loading('Recalcul...');
         try {
             await recalcCreditFn(selectedPartner.id);
+            await recalcCreditExposureFn(selectedPartner.id).catch(() => {});
             toast.dismiss(toastId);
             toast.success('Crédit recalculé');
             refetchDetail();
             refetchCreditHistory();
+            refetchCreditExposure();
+            refetchCreditEvents();
         } catch (e: any) {
             toast.dismiss(toastId);
             toast.error(e?.response?.data?.message || 'Erreur');
@@ -582,6 +874,134 @@ export const PartnerManagementPage = () => {
             toast.success('Condition de paiement ajoutée');
             refetchPaymentTerms();
         } catch { toast.error('Erreur'); }
+    };
+
+    const handleAssignItinerary = async () => {
+        if (!selectedItineraryId || !partnerDetail) return;
+        try {
+            await assignItinerary({
+                itineraryId: selectedItineraryId,
+                data: {
+                    partner_code: partnerDetail.code,
+                    ...itineraryForm,
+                    rank: itineraryForm.rank ? Number(itineraryForm.rank) : undefined,
+                    visit_frequency_days: itineraryForm.visit_frequency_days ? Number(itineraryForm.visit_frequency_days) : undefined,
+                },
+            });
+            toast.success('Partenaire affecté à la tournée');
+            setShowItineraryPanel(false);
+            setSelectedItineraryId(null);
+            setItineraryForm({});
+            refetchDetail();
+        } catch { toast.error('Erreur lors de l\'affectation'); }
+    };
+
+    const handleUpsertBalance = async () => {
+        if (!partnerDetail || !balanceForm.balance_type || !balanceForm.balance) return;
+        try {
+            await upsertBalance({
+                partner_code: partnerDetail.code,
+                balance_type: balanceForm.balance_type,
+                balance: parseFloat(balanceForm.balance),
+                operation: balanceForm.operation,
+            });
+            toast.success('Solde mis à jour');
+            setShowBalanceForm(false);
+            setBalanceForm({ balance_type: 'POINTS', balance: '', operation: 'add' });
+            refetchBalances();
+        } catch { toast.error('Erreur mise à jour solde'); }
+    };
+
+    const handleDeleteBalance = async (id: number) => {
+        try {
+            await deleteBalanceFn(id);
+            toast.success('Solde supprimé');
+            refetchBalances();
+        } catch { toast.error('Erreur suppression solde'); }
+    };
+
+    const handleEvaluateCredit = async () => {
+        if (!selectedPartner || !evaluateAmount) return;
+        await evaluateCreditFn(selectedPartner.id, parseFloat(evaluateAmount));
+    };
+
+    const handleImageUpload = async (file: File) => {
+        if (!selectedPartner) return;
+        const toastId = toast.loading('Téléchargement...');
+        try {
+            await uploadImageFn({ id: selectedPartner.id, file });
+            toast.dismiss(toastId);
+            toast.success('Image uploadée');
+            refetchDetail();
+        } catch {
+            toast.dismiss(toastId);
+            toast.error('Erreur upload image');
+        }
+    };
+
+    const handleRemoveFromItinerary = async (itineraryId: number, itineraryPartnerId: number) => {
+        try {
+            await removeFromItinerary({ itineraryId, itineraryPartnerId });
+            toast.success('Partenaire retiré de la tournée');
+            refetchDetail();
+        } catch { toast.error('Erreur lors de la suppression'); }
+    };
+
+    const handleCreateOverride = async () => {
+        if (!overrideForm.document_id || !overrideForm.reason) {
+            toast.error('Veuillez renseigner le document et la raison');
+            return;
+        }
+        if (!overrideForm.payment_term_id && !overrideForm.payment_method_id) {
+            toast.error('Sélectionnez au moins un mode ou une condition de paiement');
+            return;
+        }
+        const toastId = toast.loading('Création de la dérogation...');
+        try {
+            await createOverride({
+                document_type: overrideForm.document_type,
+                document_id: parseInt(overrideForm.document_id, 10),
+                payment_term_id: overrideForm.payment_term_id ? parseInt(overrideForm.payment_term_id, 10) : null,
+                payment_method_id: overrideForm.payment_method_id ? parseInt(overrideForm.payment_method_id, 10) : null,
+                reason: overrideForm.reason,
+            });
+            toast.dismiss(toastId);
+            toast.success('Dérogation créée avec succès');
+            setShowOverrideForm(false);
+            setOverrideForm({ document_type: 'order', document_id: '', payment_term_id: '', payment_method_id: '', reason: '' });
+            refetchPendingOverrides();
+        } catch (e: any) {
+            toast.dismiss(toastId);
+            toast.error(e?.response?.data?.message || 'Erreur lors de la création');
+        }
+    };
+
+    const handleApproveOverride = async (id: number) => {
+        const toastId = toast.loading('Approbation...');
+        try {
+            await approveOverrideFn({ id });
+            toast.dismiss(toastId);
+            toast.success('Dérogation approuvée');
+            refetchPendingOverrides();
+        } catch (e: any) {
+            toast.dismiss(toastId);
+            toast.error(e?.response?.data?.message || 'Erreur');
+        }
+    };
+
+    const handleRejectOverride = async (id: number) => {
+        const reason = window.prompt('Raison du rejet :');
+        if (!reason) return;
+        const toastId = toast.loading('Rejet...');
+        try {
+            await rejectOverrideFn({ id, reason });
+            toast.dismiss(toastId);
+            toast.success('Dérogation rejetée');
+            refetchPendingOverrides();
+        } catch (e: any) {
+            toast.dismiss(toastId);
+            toast.error(e?.response?.data?.message || 'Erreur');
+        }
     };
 
     // Refresh all
@@ -762,6 +1182,22 @@ export const PartnerManagementPage = () => {
                                     </button>
                                 ))}
                             </div>
+
+                            {/* Channel filter pills */}
+                            <div className="flex gap-1 mt-1.5 flex-wrap">
+                                {(['', 'GMS', 'GROS', 'DETAIL', 'CHR', 'SOM_GROS', 'OTHER'] as const).map(ch => (
+                                    <button
+                                        key={ch}
+                                        onClick={() => setChannelFilter(ch)}
+                                        className={`px-2 py-0.5 text-[10px] font-medium rounded-full border transition-colors ${channelFilter === ch
+                                            ? 'bg-indigo-50 text-indigo-700 border-indigo-200'
+                                            : 'bg-white text-gray-400 border-gray-200 hover:bg-gray-50'
+                                            }`}
+                                    >
+                                        {ch === '' ? 'Canal ×' : CHANNEL_LABELS[ch] ?? ch}
+                                    </button>
+                                ))}
+                            </div>
                         </div>
 
                         {/* ── Error banner ──────────────────────────────── */}
@@ -863,13 +1299,37 @@ export const PartnerManagementPage = () => {
                                                 </div>
                                             </div>
                                         </div>
-                                        <div className="text-right shrink-0">
+                                        <div className="flex flex-col items-end gap-1.5 shrink-0">
                                             <div className={`text-xl sm:text-2xl font-bold whitespace-nowrap ${toNum(partnerDetail.credit_available) <= 0 ? 'text-red-600' : 'text-emerald-600'}`}>
                                                 {fmtNumber(partnerDetail.credit_available)}
                                                 <span className="text-xs sm:text-sm font-normal text-gray-400 ml-1">dispo.</span>
                                             </div>
+                                            <div className="flex gap-1.5">
+                                                {/* Image upload */}
+                                                <input ref={imageInputRef} type="file" accept="image/*" className="hidden"
+                                                    onChange={e => e.target.files?.[0] && handleImageUpload(e.target.files[0])} />
+                                                <button
+                                                    onClick={() => imageInputRef.current?.click()}
+                                                    className="flex items-center gap-1 px-2 py-1 text-[10px] bg-gray-100 text-gray-600 rounded-md hover:bg-gray-200 transition-colors"
+                                                    title="Uploader une image"
+                                                >
+                                                    <Upload className="w-3 h-3" />
+                                                </button>
+                                                {/* Nearby */}
+                                                <button
+                                                    onClick={() => {
+                                                        if (!partnerDetail.geo_lat || !partnerDetail.geo_lng) { toast.error('Coordonnées GPS non renseignées pour ce partenaire'); return; }
+                                                        setShowNearby(true);
+                                                        findNearby(partnerDetail.geo_lat, partnerDetail.geo_lng, 2);
+                                                    }}
+                                                    className="flex items-center gap-1 px-2 py-1 text-[10px] bg-gray-100 text-gray-600 rounded-md hover:bg-gray-200 transition-colors"
+                                                    title="Partenaires proches (2km)"
+                                                >
+                                                    <Locate className="w-3 h-3" />
+                                                </button>
+                                            </div>
                                             {detailLoading && (
-                                                <div className="mt-1 text-xs text-gray-500 flex items-center gap-1 justify-end">
+                                                <div className="text-xs text-gray-500 flex items-center gap-1">
                                                     <Loader2 className="w-3 h-3 animate-spin" /> Chargement...
                                                 </div>
                                             )}
@@ -911,6 +1371,40 @@ export const PartnerManagementPage = () => {
                                                     </div>
                                                 ))}
                                             </div>
+
+                                            {/* Activity stats strip */}
+                                            {(toNum(partnerDetail.total_orders_count) > 0 || partnerDetail.last_order_date) && (
+                                                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mb-5 p-3 bg-gradient-to-r from-slate-50 to-gray-50 rounded-xl border border-gray-100">
+                                                    <div className="text-center">
+                                                        <div className="flex items-center justify-center gap-1 mb-1">
+                                                            <ShoppingCart className="w-3 h-3 text-indigo-400" />
+                                                            <span className="text-[10px] text-gray-400">Nb commandes</span>
+                                                        </div>
+                                                        <div className="text-sm font-bold text-indigo-700">{toNum(partnerDetail.total_orders_count)}</div>
+                                                    </div>
+                                                    <div className="text-center">
+                                                        <div className="flex items-center justify-center gap-1 mb-1">
+                                                            <TrendingUp className="w-3 h-3 text-sage-400" />
+                                                            <span className="text-[10px] text-gray-400">Val. totale</span>
+                                                        </div>
+                                                        <div className="text-sm font-bold text-sage-700">{fmtNumber(partnerDetail.total_orders_value)}</div>
+                                                    </div>
+                                                    <div className="text-center">
+                                                        <div className="flex items-center justify-center gap-1 mb-1">
+                                                            <Activity className="w-3 h-3 text-amber-400" />
+                                                            <span className="text-[10px] text-gray-400">Panier moyen</span>
+                                                        </div>
+                                                        <div className="text-sm font-bold text-amber-700">{fmtNumber(partnerDetail.average_order_value)}</div>
+                                                    </div>
+                                                    <div className="text-center">
+                                                        <div className="flex items-center justify-center gap-1 mb-1">
+                                                            <Clock className="w-3 h-3 text-gray-400" />
+                                                            <span className="text-[10px] text-gray-400">Dern. commande</span>
+                                                        </div>
+                                                        <div className="text-sm font-bold text-gray-700">{fmtDate(partnerDetail.last_order_date)}</div>
+                                                    </div>
+                                                </div>
+                                            )}
 
                                             {/* Blocking alert */}
                                             {partnerDetail.status === 'BLOCKED' && (
@@ -1020,9 +1514,9 @@ export const PartnerManagementPage = () => {
 
                                     {/* ── Credit Section ─────────────── */}
                                     <div ref={el => { sectionRefs.current['credit'] = el; }}>
-                                        <SageCollapsible title="Crédit & Historique" isOpen={openSections['credit']} onOpenChange={open => toggleSection('credit', open)}>
-                                            <div className="flex items-center justify-between mb-3">
-                                                <div className="flex gap-2">
+                                        <SageCollapsible title="Crédit & Exposition financière" isOpen={openSections['credit']} onOpenChange={open => toggleSection('credit', open)}>
+                                            <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
+                                                <div className="flex gap-2 flex-wrap">
                                                     <button onClick={() => { setCreditForm({ credit_limit: toNum(partnerDetail.credit_limit) }); setShowCreditModal(true); }}
                                                         className="flex items-center gap-1 px-2.5 py-1.5 text-xs bg-sage-50 text-sage-700 rounded-md hover:bg-sage-100 transition-colors">
                                                         <Edit2 className="w-3 h-3" /> Modifier limite
@@ -1031,26 +1525,133 @@ export const PartnerManagementPage = () => {
                                                         className="flex items-center gap-1 px-2.5 py-1.5 text-xs bg-gray-50 text-gray-700 rounded-md hover:bg-gray-100 transition-colors">
                                                         <RefreshCw className="w-3 h-3" /> Recalculer
                                                     </button>
+                                                    <button onClick={() => { setShowEvaluateForm(v => !v); resetEvaluate(); setEvaluateAmount(''); }}
+                                                        className="flex items-center gap-1 px-2.5 py-1.5 text-xs bg-indigo-50 text-indigo-700 rounded-md hover:bg-indigo-100 transition-colors">
+                                                        <Calculator className="w-3 h-3" /> Simuler commande
+                                                    </button>
                                                 </div>
                                             </div>
 
-                                            {/* Credit KPIs */}
-                                            <div className="grid grid-cols-3 gap-3 mb-4">
-                                                <div className="p-3 rounded-lg border border-gray-100 bg-white shadow-sm text-center">
-                                                    <div className="text-xs text-gray-500 mb-1">Limite</div>
-                                                    <div className="text-lg font-bold text-gray-900">{fmtNumber(partnerDetail.credit_limit)}</div>
+                                            {/* Credit evaluate dry-run (§6.5) */}
+                                            {showEvaluateForm && (
+                                                <div className="mb-4 p-3 rounded-xl border border-indigo-200 bg-indigo-50/30 space-y-2">
+                                                    <div className="text-xs font-semibold text-indigo-800">Simuler l'éligibilité d'une commande</div>
+                                                    <div className="flex gap-2">
+                                                        <input
+                                                            type="number"
+                                                            value={evaluateAmount}
+                                                            onChange={e => setEvaluateAmount(e.target.value)}
+                                                            placeholder="Montant (ex: 15000)"
+                                                            className="flex-1 text-xs border border-indigo-200 rounded-md px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-white"
+                                                        />
+                                                        <button
+                                                            onClick={handleEvaluateCredit}
+                                                            disabled={!evaluateAmount || evaluateLoading}
+                                                            className="flex items-center gap-1 px-3 py-1.5 text-xs bg-indigo-600 text-white rounded-md hover:bg-indigo-700 disabled:opacity-40 transition-colors"
+                                                        >
+                                                            {evaluateLoading ? <Loader2 className="w-3 h-3 animate-spin" /> : <Calculator className="w-3 h-3" />}
+                                                            Simuler
+                                                        </button>
+                                                    </div>
+                                                    {evaluateResult && (
+                                                        <div className={`flex items-center gap-2 px-3 py-2 rounded-lg text-xs font-medium border ${evaluateResult.eligible ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-red-50 text-red-700 border-red-200'}`}>
+                                                            {evaluateResult.eligible
+                                                                ? <><CheckCircle className="w-3.5 h-3.5 shrink-0" /> Commande autorisée — crédit restant après: {fmtNumber(evaluateResult.available_after)}</>
+                                                                : <><XCircleIcon className="w-3.5 h-3.5 shrink-0" /> Commande refusée ({evaluateResult.status}) — manque: {fmtNumber(evaluateResult.shortfall)}{evaluateResult.requires_approval ? ' — dérogation requise' : ''}</>
+                                                            }
+                                                        </div>
+                                                    )}
                                                 </div>
-                                                <div className="p-3 rounded-lg border border-gray-100 bg-white shadow-sm text-center">
-                                                    <div className="text-xs text-gray-500 mb-1">Utilisé</div>
-                                                    <div className="text-lg font-bold text-amber-600">{fmtNumber(partnerDetail.credit_used)}</div>
+                                            )}
+
+                                            {/* Credit Exposure V2 Panel */}
+                                            {creditExposureLoading ? (
+                                                <div className="flex items-center justify-center py-4 text-gray-400 text-xs">
+                                                    <Loader2 className="w-4 h-4 animate-spin mr-2" /> Chargement exposition...
                                                 </div>
-                                                <div className="p-3 rounded-lg border border-gray-100 bg-white shadow-sm text-center">
-                                                    <div className="text-xs text-gray-500 mb-1">Disponible</div>
-                                                    <div className={`text-lg font-bold ${toNum(partnerDetail.credit_available) <= 0 ? 'text-red-600' : 'text-emerald-600'}`}>
-                                                        {fmtNumber(partnerDetail.credit_available)}
+                                            ) : creditExposureData ? (() => {
+                                                const exp = creditExposureData;
+                                                const colors = CREDIT_EXPOSURE_COLORS[exp.status] ?? CREDIT_EXPOSURE_COLORS.ALLOWED;
+                                                const pct = exp.credit_limit > 0 ? Math.min(100, (exp.total_exposure / exp.credit_limit) * 100) : 0;
+                                                return (
+                                                    <div className={`rounded-xl border ${colors.border} ${colors.bg} p-4 mb-4`}>
+                                                        {/* Status header */}
+                                                        <div className="flex items-center justify-between mb-3">
+                                                            <div className="flex items-center gap-2">
+                                                                <Zap className={`w-4 h-4 ${colors.text}`} />
+                                                                <span className={`text-sm font-bold ${colors.text}`}>Exposition temps réel</span>
+                                                            </div>
+                                                            <span className={`px-2.5 py-1 rounded-full text-[11px] font-bold border ${colors.border} ${colors.bg} ${colors.text}`}>
+                                                                {colors.label}
+                                                            </span>
+                                                        </div>
+
+                                                        {/* Utilization bar */}
+                                                        <div className="mb-3">
+                                                            <div className="flex justify-between text-[10px] text-gray-500 mb-1">
+                                                                <span>Exposition totale: <strong>{fmtNumber(exp.total_exposure)}</strong></span>
+                                                                <span>Limite: <strong>{fmtNumber(exp.credit_limit)}</strong></span>
+                                                            </div>
+                                                            <div className="h-2 bg-white rounded-full overflow-hidden border border-gray-200">
+                                                                <div className={`h-full rounded-full transition-all ${colors.bar}`} style={{ width: `${pct}%` }} />
+                                                            </div>
+                                                            <div className="flex justify-between text-[10px] mt-0.5">
+                                                                <span className={`font-semibold ${colors.text}`}>{pct.toFixed(1)}% utilisé</span>
+                                                                <span className="text-gray-500">Dispo: {fmtNumber(exp.available_credit)}</span>
+                                                            </div>
+                                                        </div>
+
+                                                        {/* Breakdown grid */}
+                                                        <div className="grid grid-cols-2 gap-2">
+                                                            {[
+                                                                { label: 'Factures ouvertes', value: exp.open_invoices_amount, show: exp.open_invoices_amount > 0 },
+                                                                { label: 'Chèques en attente', value: exp.pending_cheques_amount, show: exp.pending_cheques_amount > 0 },
+                                                                { label: 'Effets en attente', value: exp.pending_effets_amount, show: exp.pending_effets_amount > 0 },
+                                                                { label: 'Commandes confirmées', value: exp.confirmed_orders_amount, show: exp.confirmed_orders_amount > 0 },
+                                                                { label: 'Livré non facturé', value: exp.delivered_not_invoiced_amount, show: exp.delivered_not_invoiced_amount > 0 },
+                                                                { label: 'Avoirs', value: -exp.credit_notes_amount, show: exp.credit_notes_amount > 0 },
+                                                            ].filter(r => r.show).map(row => (
+                                                                <div key={row.label} className="flex justify-between bg-white/60 rounded-lg px-2.5 py-1.5 border border-white/80 text-xs">
+                                                                    <span className="text-gray-500 truncate mr-1">{row.label}</span>
+                                                                    <span className={`font-semibold shrink-0 ${row.value < 0 ? 'text-emerald-600' : 'text-gray-800'}`}>
+                                                                        {row.value < 0 ? '−' : ''}{fmtNumber(Math.abs(row.value))}
+                                                                    </span>
+                                                                </div>
+                                                            ))}
+                                                        </div>
+
+                                                        {/* Footer */}
+                                                        <div className="flex items-center justify-between mt-2 pt-2 border-t border-white/60">
+                                                            {exp.overdue_invoice_count > 0 && (
+                                                                <span className="text-[10px] text-red-600 font-medium flex items-center gap-1">
+                                                                    <AlertTriangle className="w-3 h-3" />
+                                                                    {exp.overdue_invoice_count} facture(s) en retard — {exp.oldest_overdue_days}j max
+                                                                </span>
+                                                            )}
+                                                            <span className="text-[10px] text-gray-400 ml-auto">
+                                                                Recalculé {fmtDate(exp.last_recalculated_at)}
+                                                            </span>
+                                                        </div>
+                                                    </div>
+                                                );
+                                            })() : (
+                                                <div className="grid grid-cols-3 gap-3 mb-4">
+                                                    <div className="p-3 rounded-lg border border-gray-100 bg-white shadow-sm text-center">
+                                                        <div className="text-xs text-gray-500 mb-1">Limite</div>
+                                                        <div className="text-lg font-bold text-gray-900">{fmtNumber(partnerDetail.credit_limit)}</div>
+                                                    </div>
+                                                    <div className="p-3 rounded-lg border border-gray-100 bg-white shadow-sm text-center">
+                                                        <div className="text-xs text-gray-500 mb-1">Utilisé</div>
+                                                        <div className="text-lg font-bold text-amber-600">{fmtNumber(partnerDetail.credit_used)}</div>
+                                                    </div>
+                                                    <div className="p-3 rounded-lg border border-gray-100 bg-white shadow-sm text-center">
+                                                        <div className="text-xs text-gray-500 mb-1">Disponible</div>
+                                                        <div className={`text-lg font-bold ${toNum(partnerDetail.credit_available) <= 0 ? 'text-red-600' : 'text-emerald-600'}`}>
+                                                            {fmtNumber(partnerDetail.credit_available)}
+                                                        </div>
                                                     </div>
                                                 </div>
-                                            </div>
+                                            )}
 
                                             {/* Credit history */}
                                             {creditHistLoading ? (
@@ -1116,24 +1717,394 @@ export const PartnerManagementPage = () => {
                                                     )}
                                                 </div>
                                             ) : null}
+
+                                            {/* Credit Events Audit Trail */}
+                                            {creditEventsLoading ? null : creditEventsData.length > 0 && (
+                                                <div className="mt-4">
+                                                    <div className="text-xs font-semibold text-gray-500 mb-2 flex items-center gap-1">
+                                                        <Activity className="w-3 h-3" /> Événements crédit
+                                                    </div>
+                                                    <div className="relative border-l-2 border-gray-100 ml-3 space-y-1">
+                                                        {creditEventsData.slice(0, 15).map(ev => {
+                                                            const meta = CREDIT_EVENT_ICONS[ev.event_type] ?? { icon: '•', color: 'text-gray-500' };
+                                                            return (
+                                                                <div key={ev.id} className="relative pl-4 -ml-px">
+                                                                    <span className="absolute -left-[7px] top-1.5 w-3 h-3 rounded-full bg-white border-2 border-gray-300 flex items-center justify-center text-[8px]" />
+                                                                    <div className="bg-white rounded-lg border border-gray-100 px-3 py-2 text-xs flex items-center justify-between">
+                                                                        <div className="flex items-center gap-2 min-w-0">
+                                                                            <span>{meta.icon}</span>
+                                                                            <span className="text-gray-600 truncate">{ev.event_type.replace(/_/g, ' ')}</span>
+                                                                            {ev.reference_type && ev.reference_id && (
+                                                                                <span className="text-gray-300 text-[10px] shrink-0">#{ev.reference_id}</span>
+                                                                            )}
+                                                                        </div>
+                                                                        <div className="flex items-center gap-3 shrink-0 ml-2">
+                                                                            <span className={`font-semibold ${ev.amount >= 0 ? 'text-red-600' : 'text-emerald-600'}`}>
+                                                                                {ev.amount >= 0 ? '+' : ''}{fmtNumber(ev.amount)}
+                                                                            </span>
+                                                                            <span className="text-gray-400 text-[10px]">{fmtDate(ev.created_at)}</span>
+                                                                        </div>
+                                                                    </div>
+                                                                </div>
+                                                            );
+                                                        })}
+                                                    </div>
+                                                </div>
+                                            )}
                                         </SageCollapsible>
                                     </div>
 
-                                    {/* ── Payment Terms Section ────────── */}
+                                    {/* ── Paiements & Dérogations ──────────── */}
                                     <div ref={el => { sectionRefs.current['payments'] = el; }}>
-                                        <SageCollapsible title="Conditions de paiement" isOpen={openSections['payments']} onOpenChange={open => toggleSection('payments', open)}>
-                                            {paymentTermsLoading ? (
-                                                <div className="flex items-center justify-center py-6 text-gray-400">
-                                                    <Loader2 className="w-5 h-5 animate-spin mr-2" /> Chargement...
+                                        <SageCollapsible title="Paiements & Dérogations" isOpen={openSections['payments']} onOpenChange={open => toggleSection('payments', open)}>
+                                            <div className="space-y-5">
+
+                                                {/* ── §6 Conditions de paiement ─────── */}
+                                                <div className="rounded-xl border border-gray-200 bg-white overflow-hidden">
+                                                    <div className="px-4 py-2.5 bg-gray-50 border-b border-gray-100 flex items-center gap-2">
+                                                        <DollarSign className="w-3.5 h-3.5 text-sage-500" />
+                                                        <span className="text-xs font-semibold text-gray-700">Conditions de paiement</span>
+                                                    </div>
+                                                    <div className="p-3">
+                                                        {paymentTermsLoading ? (
+                                                            <div className="flex items-center justify-center py-6 text-gray-400 text-xs">
+                                                                <Loader2 className="w-4 h-4 animate-spin mr-2" /> Chargement...
+                                                            </div>
+                                                        ) : paymentTermsData ? (
+                                                            <PaymentTermsContent
+                                                                paymentTermsData={paymentTermsData}
+                                                                onSetDefault={handleSetDefaultTerm}
+                                                                onDetach={handleDetachTerm}
+                                                                onAttach={handleAttachTerm}
+                                                            />
+                                                        ) : null}
+                                                    </div>
                                                 </div>
-                                            ) : paymentTermsData ? (
-                                                <PaymentTermsContent
-                                                    paymentTermsData={paymentTermsData}
-                                                    onSetDefault={handleSetDefaultTerm}
-                                                    onDetach={handleDetachTerm}
-                                                    onAttach={handleAttachTerm}
-                                                />
-                                            ) : null}
+
+                                                {/* ── §7 Modes de règlement ─────────── */}
+                                                <div className="rounded-xl border border-gray-200 bg-white overflow-hidden">
+                                                    <div className="px-4 py-2.5 bg-gray-50 border-b border-gray-100 flex items-center justify-between">
+                                                        <div className="flex items-center gap-2">
+                                                            <Banknote className="w-3.5 h-3.5 text-indigo-500" />
+                                                            <span className="text-xs font-semibold text-gray-700">Modes de règlement</span>
+                                                        </div>
+                                                        <span className="text-[10px] text-gray-400 italic">Référentiel global — non stocké sur le partenaire</span>
+                                                    </div>
+                                                    <div className="p-3">
+                                                        {paymentMethodsLoading ? (
+                                                            <div className="flex items-center gap-2 text-xs text-gray-400 py-3 justify-center">
+                                                                <Loader2 className="w-3.5 h-3.5 animate-spin" /> Chargement...
+                                                            </div>
+                                                        ) : (
+                                                            <div className="flex flex-wrap gap-2">
+                                                                {paymentMethods.map(pm => {
+                                                                    const accent: Record<string, { dot: string; bg: string; text: string; border: string }> = {
+                                                                        CASH:     { dot: 'bg-emerald-500', bg: 'bg-emerald-50',  text: 'text-emerald-800', border: 'border-emerald-200' },
+                                                                        CHEQUE:   { dot: 'bg-amber-500',   bg: 'bg-amber-50',    text: 'text-amber-800',   border: 'border-amber-200'   },
+                                                                        EFFET:    { dot: 'bg-orange-500',  bg: 'bg-orange-50',   text: 'text-orange-800',  border: 'border-orange-200'  },
+                                                                        VIREMENT: { dot: 'bg-sky-500',     bg: 'bg-sky-50',      text: 'text-sky-800',     border: 'border-sky-200'     },
+                                                                        CARD:     { dot: 'bg-violet-500',  bg: 'bg-violet-50',   text: 'text-violet-800',  border: 'border-violet-200'  },
+                                                                        MOBILE:   { dot: 'bg-rose-500',    bg: 'bg-rose-50',     text: 'text-rose-800',    border: 'border-rose-200'    },
+                                                                    };
+                                                                    const c = accent[pm.code] ?? accent.CASH;
+                                                                    return (
+                                                                        <div key={pm.id} className={`flex items-center gap-2 pl-2.5 pr-3 py-1.5 rounded-full border ${c.bg} ${c.border} ${!pm.is_active ? 'opacity-40' : ''}`}>
+                                                                            <span className={`w-2 h-2 rounded-full shrink-0 ${c.dot}`} />
+                                                                            <div className="flex items-center gap-1.5">
+                                                                                <span className={`text-xs font-bold ${c.text}`}>{pm.code}</span>
+                                                                                <span className="text-[10px] text-gray-500">{pm.name}</span>
+                                                                            </div>
+                                                                            {(pm.requires_reference || pm.requires_bank) && (
+                                                                                <div className="flex gap-1 ml-1">
+                                                                                    {pm.requires_reference && (
+                                                                                        <span className="text-[9px] px-1 py-0.5 bg-white/80 rounded border border-white text-gray-500">#réf</span>
+                                                                                    )}
+                                                                                    {pm.requires_bank && (
+                                                                                        <span className="text-[9px] px-1 py-0.5 bg-white/80 rounded border border-white text-gray-500">banque</span>
+                                                                                    )}
+                                                                                </div>
+                                                                            )}
+                                                                        </div>
+                                                                    );
+                                                                })}
+                                                            </div>
+                                                        )}
+                                                    </div>
+                                                </div>
+
+                                                {/* ── §9 Dérogations de paiement ───── */}
+                                                <div className="rounded-xl border border-gray-200 bg-white overflow-hidden">
+                                                    {/* Header */}
+                                                    <div className="px-4 py-2.5 bg-gray-50 border-b border-gray-100 flex items-center justify-between">
+                                                        <div className="flex items-center gap-2">
+                                                            <FileCheck2 className="w-3.5 h-3.5 text-violet-500" />
+                                                            <span className="text-xs font-semibold text-gray-700">Dérogations de paiement</span>
+                                                        </div>
+                                                        <div className="flex items-center gap-1.5">
+                                                            {pendingOverrides.length > 0 && (
+                                                                <span className="flex items-center gap-1 px-2 py-0.5 text-[10px] font-bold bg-amber-100 text-amber-700 rounded-full border border-amber-200">
+                                                                    <span className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse" />
+                                                                    {pendingOverrides.length} en attente
+                                                                </span>
+                                                            )}
+                                                            <button
+                                                                onClick={() => setShowPendingOverrides(v => !v)}
+                                                                className={`flex items-center gap-1 px-2.5 py-1 text-[10px] rounded-md border transition-colors ${showPendingOverrides ? 'bg-gray-100 text-gray-700 border-gray-200' : 'bg-white text-gray-500 border-gray-200 hover:bg-gray-50'}`}
+                                                            >
+                                                                <Clock className="w-3 h-3" />
+                                                                Historique
+                                                            </button>
+                                                            <button
+                                                                onClick={() => setShowOverrideForm(v => !v)}
+                                                                className={`flex items-center gap-1 px-2.5 py-1 text-[10px] rounded-md border transition-colors ${showOverrideForm ? 'bg-violet-100 text-violet-700 border-violet-200' : 'bg-violet-50 text-violet-700 border-violet-200 hover:bg-violet-100'}`}
+                                                            >
+                                                                <Plus className="w-3 h-3" />
+                                                                Demander
+                                                            </button>
+                                                        </div>
+                                                    </div>
+
+                                                    {/* Override request form */}
+                                                    {showOverrideForm && (
+                                                        <div className="border-b border-gray-100 bg-violet-50/30">
+                                                            <div className="px-4 pt-4 pb-1">
+                                                                <div className="flex items-center gap-2 mb-4">
+                                                                    <div className="w-6 h-6 rounded-full bg-violet-600 flex items-center justify-center shrink-0">
+                                                                        <FileCheck2 className="w-3 h-3 text-white" />
+                                                                    </div>
+                                                                    <div>
+                                                                        <div className="text-xs font-semibold text-gray-900">Nouvelle demande de dérogation</div>
+                                                                        <div className="text-[10px] text-gray-400">Au moins une condition ou un mode doit être spécifié</div>
+                                                                    </div>
+                                                                </div>
+                                                            </div>
+
+                                                            <div className="px-4 pb-4 space-y-3">
+                                                                {/* Document row */}
+                                                                <div className="grid grid-cols-2 gap-3">
+                                                                    <div>
+                                                                        <label className="block text-[10px] font-semibold text-gray-500 mb-1.5 uppercase tracking-wider">Type de document</label>
+                                                                        <div className="flex gap-1.5">
+                                                                            {(['order', 'invoice'] as const).map(dt => (
+                                                                                <button
+                                                                                    key={dt}
+                                                                                    onClick={() => setOverrideForm(f => ({ ...f, document_type: dt }))}
+                                                                                    className={`flex-1 py-1.5 text-[11px] font-medium rounded-lg border transition-all ${overrideForm.document_type === dt ? 'bg-violet-600 text-white border-violet-600' : 'bg-white text-gray-600 border-gray-200 hover:border-violet-300'}`}
+                                                                                >
+                                                                                    {dt === 'order' ? 'Commande' : 'Facture'}
+                                                                                </button>
+                                                                            ))}
+                                                                        </div>
+                                                                    </div>
+                                                                    <div>
+                                                                        <label className="block text-[10px] font-semibold text-gray-500 mb-1.5 uppercase tracking-wider">N° du document</label>
+                                                                        <input
+                                                                            type="number"
+                                                                            value={overrideForm.document_id}
+                                                                            onChange={e => setOverrideForm(f => ({ ...f, document_id: e.target.value }))}
+                                                                            placeholder="ID interne (ex: 1042)"
+                                                                            className="w-full text-xs border border-gray-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-violet-500 bg-white"
+                                                                        />
+                                                                    </div>
+                                                                </div>
+
+                                                                {/* Payment selects */}
+                                                                <div className="grid grid-cols-2 gap-3">
+                                                                    <div>
+                                                                        <label className="block text-[10px] font-semibold text-gray-500 mb-1.5 uppercase tracking-wider">
+                                                                            Condition de paiement
+                                                                            <span className="normal-case font-normal text-gray-400 ml-1">(optionnel)</span>
+                                                                        </label>
+                                                                        <select
+                                                                            value={overrideForm.payment_term_id}
+                                                                            onChange={e => setOverrideForm(f => ({ ...f, payment_term_id: e.target.value }))}
+                                                                            className="w-full text-xs border border-gray-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-violet-500 bg-white"
+                                                                        >
+                                                                            <option value="">— Inchangée —</option>
+                                                                            {[...getAttachedTerms(paymentTermsData), ...getAvailableTerms(paymentTermsData).filter(
+                                                                                (a: any) => !getAttachedTerms(paymentTermsData).find((t: any) => t.id === a.id)
+                                                                            )].map((t: any) => (
+                                                                                <option key={t.id} value={t.id}>{t.name}</option>
+                                                                            ))}
+                                                                        </select>
+                                                                    </div>
+                                                                    <div>
+                                                                        <label className="block text-[10px] font-semibold text-gray-500 mb-1.5 uppercase tracking-wider">
+                                                                            Mode de règlement
+                                                                            <span className="normal-case font-normal text-gray-400 ml-1">(optionnel)</span>
+                                                                        </label>
+                                                                        <select
+                                                                            value={overrideForm.payment_method_id}
+                                                                            onChange={e => setOverrideForm(f => ({ ...f, payment_method_id: e.target.value }))}
+                                                                            className="w-full text-xs border border-gray-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-violet-500 bg-white"
+                                                                        >
+                                                                            <option value="">— Inchangé —</option>
+                                                                            {paymentMethods.filter(p => p.is_active).map(pm => (
+                                                                                <option key={pm.id} value={pm.id}>{pm.code} — {pm.name}</option>
+                                                                            ))}
+                                                                        </select>
+                                                                    </div>
+                                                                </div>
+
+                                                                {/* Reason */}
+                                                                <div>
+                                                                    <label className="block text-[10px] font-semibold text-gray-500 mb-1.5 uppercase tracking-wider">Justification</label>
+                                                                    <textarea
+                                                                        value={overrideForm.reason}
+                                                                        onChange={e => setOverrideForm(f => ({ ...f, reason: e.target.value }))}
+                                                                        rows={3}
+                                                                        placeholder="Décrivez la situation exceptionnelle qui justifie cette dérogation…"
+                                                                        className="w-full text-xs border border-gray-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-violet-500 bg-white resize-none leading-relaxed"
+                                                                    />
+                                                                </div>
+
+                                                                {/* Info note + actions */}
+                                                                <div className="flex items-center gap-3 pt-1">
+                                                                    <div className="flex-1 text-[10px] text-gray-400 bg-gray-50 rounded-lg px-3 py-2 border border-gray-100">
+                                                                        Les rôles <strong className="text-gray-600">root</strong> et <strong className="text-gray-600">admin</strong> bénéficient d'une approbation automatique.
+                                                                    </div>
+                                                                    <button
+                                                                        onClick={() => { setShowOverrideForm(false); setOverrideForm({ document_type: 'order', document_id: '', payment_term_id: '', payment_method_id: '', reason: '' }); }}
+                                                                        className="px-3 py-2 text-xs text-gray-500 bg-white border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors shrink-0"
+                                                                    >
+                                                                        Annuler
+                                                                    </button>
+                                                                    <button
+                                                                        onClick={handleCreateOverride}
+                                                                        disabled={creatingOverride}
+                                                                        className="flex items-center gap-1.5 px-4 py-2 text-xs font-medium bg-violet-600 text-white rounded-lg hover:bg-violet-700 disabled:opacity-40 transition-colors shrink-0"
+                                                                    >
+                                                                        {creatingOverride ? <Loader2 className="w-3 h-3 animate-spin" /> : <FileCheck2 className="w-3 h-3" />}
+                                                                        Soumettre
+                                                                    </button>
+                                                                </div>
+                                                            </div>
+                                                        </div>
+                                                    )}
+
+                                                    {/* Override list */}
+                                                    {showPendingOverrides && (
+                                                        <div className="divide-y divide-gray-50">
+                                                            {pendingOverridesLoading ? (
+                                                                <div className="flex items-center justify-center py-8 text-gray-400 text-xs gap-2">
+                                                                    <Loader2 className="w-4 h-4 animate-spin" /> Chargement...
+                                                                </div>
+                                                            ) : pendingOverrides.length > 0 ? (
+                                                                pendingOverrides.map(ov => {
+                                                                    const statusCfg = {
+                                                                        pending:  { bar: 'bg-amber-400',   badge: 'bg-amber-100 text-amber-700 border-amber-200',   label: 'En attente' },
+                                                                        approved: { bar: 'bg-emerald-400', badge: 'bg-emerald-100 text-emerald-700 border-emerald-200', label: 'Approuvé'   },
+                                                                        rejected: { bar: 'bg-red-400',     badge: 'bg-red-100 text-red-700 border-red-200',           label: 'Rejeté'     },
+                                                                    }[ov.approval_status];
+                                                                    return (
+                                                                        <div key={ov.id} className="flex gap-0 group">
+                                                                            {/* Status bar */}
+                                                                            <div className={`w-1 shrink-0 rounded-tl-none rounded-bl-none ${statusCfg.bar} first:rounded-tl-xl last:rounded-bl-xl`} />
+                                                                            <div className="flex-1 px-4 py-3">
+                                                                                {/* Top row */}
+                                                                                <div className="flex items-center justify-between mb-2">
+                                                                                    <div className="flex items-center gap-2">
+                                                                                        <span className="font-mono text-[10px] text-gray-400">#{ov.id}</span>
+                                                                                        <span className={`px-2 py-0.5 rounded-full text-[10px] font-semibold border ${statusCfg.badge}`}>
+                                                                                            {statusCfg.label}
+                                                                                        </span>
+                                                                                        <span className="text-[10px] text-gray-500">
+                                                                                            {ov.document_type === 'order' ? 'Commande' : 'Facture'} <strong>#{ov.document_id}</strong>
+                                                                                        </span>
+                                                                                    </div>
+                                                                                    <span className="text-[10px] text-gray-400">{fmtDate(ov.created_at)}</span>
+                                                                                </div>
+
+                                                                                {/* Changes row */}
+                                                                                {(ov.payment_term || ov.payment_method) && (
+                                                                                    <div className="flex flex-wrap gap-2 mb-2">
+                                                                                        {ov.payment_term && (
+                                                                                            <div className="flex items-center gap-1.5 px-2.5 py-1 bg-sage-50 rounded-lg border border-sage-100 text-[10px]">
+                                                                                                <DollarSign className="w-3 h-3 text-sage-500 shrink-0" />
+                                                                                                <span className="text-gray-500">Condition:</span>
+                                                                                                <span className="font-semibold text-sage-700">{ov.payment_term.name}</span>
+                                                                                            </div>
+                                                                                        )}
+                                                                                        {ov.payment_method && (
+                                                                                            <div className="flex items-center gap-1.5 px-2.5 py-1 bg-indigo-50 rounded-lg border border-indigo-100 text-[10px]">
+                                                                                                <Banknote className="w-3 h-3 text-indigo-500 shrink-0" />
+                                                                                                <span className="text-gray-500">Mode:</span>
+                                                                                                <span className="font-semibold text-indigo-700">{ov.payment_method.code}</span>
+                                                                                                <span className="text-gray-400">— {ov.payment_method.name}</span>
+                                                                                            </div>
+                                                                                        )}
+                                                                                    </div>
+                                                                                )}
+
+                                                                                {/* Reason */}
+                                                                                <p className="text-[11px] text-gray-600 italic leading-relaxed mb-2 border-l-2 border-gray-200 pl-2">
+                                                                                    {ov.reason}
+                                                                                </p>
+
+                                                                                {/* Comment (if approved/rejected) */}
+                                                                                {ov.comment && (
+                                                                                    <div className="flex items-start gap-1.5 text-[10px] text-gray-500 mb-2">
+                                                                                        <MessageSquare className="w-3 h-3 text-gray-300 mt-0.5 shrink-0" />
+                                                                                        <span>{ov.comment}</span>
+                                                                                    </div>
+                                                                                )}
+
+                                                                                {/* Actions */}
+                                                                                {ov.approval_status === 'pending' && (
+                                                                                    <div className="flex gap-2 mt-1">
+                                                                                        <button
+                                                                                            onClick={() => handleApproveOverride(ov.id)}
+                                                                                            disabled={approvingOverride}
+                                                                                            className="flex items-center gap-1.5 px-3 py-1.5 text-[11px] font-medium bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 disabled:opacity-40 transition-colors"
+                                                                                        >
+                                                                                            {approvingOverride ? <Loader2 className="w-3 h-3 animate-spin" /> : <ThumbsUp className="w-3 h-3" />}
+                                                                                            Approuver
+                                                                                        </button>
+                                                                                        <button
+                                                                                            onClick={() => handleRejectOverride(ov.id)}
+                                                                                            disabled={rejectingOverride}
+                                                                                            className="flex items-center gap-1.5 px-3 py-1.5 text-[11px] font-medium bg-white text-red-600 border border-red-200 rounded-lg hover:bg-red-50 disabled:opacity-40 transition-colors"
+                                                                                        >
+                                                                                            {rejectingOverride ? <Loader2 className="w-3 h-3 animate-spin" /> : <ThumbsDown className="w-3 h-3" />}
+                                                                                            Rejeter
+                                                                                        </button>
+                                                                                    </div>
+                                                                                )}
+                                                                            </div>
+                                                                        </div>
+                                                                    );
+                                                                })
+                                                            ) : (
+                                                                <div className="py-10 text-center">
+                                                                    <div className="w-10 h-10 rounded-full bg-gray-50 border border-gray-100 flex items-center justify-center mx-auto mb-3">
+                                                                        <FileCheck2 className="w-5 h-5 text-gray-300" />
+                                                                    </div>
+                                                                    <p className="text-xs text-gray-400 font-medium">Aucune dérogation</p>
+                                                                    <p className="text-[10px] text-gray-300 mt-0.5">L'historique est vide pour l'instant</p>
+                                                                </div>
+                                                            )}
+                                                        </div>
+                                                    )}
+
+                                                    {/* Empty state when both panels closed */}
+                                                    {!showOverrideForm && !showPendingOverrides && (
+                                                        <div className="px-4 py-4 flex items-center justify-between text-xs text-gray-400">
+                                                            <span>
+                                                                {pendingOverrides.length > 0
+                                                                    ? `${pendingOverrides.length} dérogation(s) en attente d'approbation`
+                                                                    : 'Aucune dérogation en attente'}
+                                                            </span>
+                                                            <button
+                                                                onClick={() => setShowPendingOverrides(true)}
+                                                                className="text-[10px] text-violet-500 hover:text-violet-700 underline"
+                                                            >
+                                                                Voir l'historique
+                                                            </button>
+                                                        </div>
+                                                    )}
+                                                </div>
+
+                                            </div>
                                         </SageCollapsible>
                                     </div>
 
@@ -1275,6 +2246,352 @@ export const PartnerManagementPage = () => {
                                                     );
                                                 })()}
                                             </div>
+                                        </SageCollapsible>
+                                    </div>
+
+                                    {/* ── Activité Section (§10) ────────── */}
+                                    <div ref={el => { sectionRefs.current['activite'] = el; }}>
+                                        <SageCollapsible title="Activité commerciale" isOpen={openSections['activite']} onOpenChange={open => toggleSection('activite', open)}>
+                                            {(() => {
+                                                const orders = (partnerDetail as any).orders as any[] | undefined;
+                                                const bls = (partnerDetail as any).delivery_notes as any[] | undefined;
+                                                return (
+                                                    <div className="space-y-4">
+                                                        {/* Commandes */}
+                                                        <div>
+                                                            <div className="flex items-center gap-2 mb-2">
+                                                                <Package className="w-3.5 h-3.5 text-sage-500" />
+                                                                <span className="text-xs font-semibold text-gray-600">Bons de commande récents</span>
+                                                            </div>
+                                                            {orders && orders.length > 0 ? (
+                                                                <div className="space-y-1">
+                                                                    {orders.slice(0, 10).map((o: any, i: number) => (
+                                                                        <div key={o.id ?? i} className="flex items-center justify-between py-1.5 px-2.5 bg-white rounded-lg border border-gray-100 text-xs">
+                                                                            <div className="flex items-center gap-2 min-w-0">
+                                                                                <span className="font-mono font-medium text-sage-700 shrink-0">{o.order_code ?? o.code ?? `#${o.id}`}</span>
+                                                                                {(o.status ?? o.order_status) && (
+                                                                                    <span className={`px-1.5 py-0.5 rounded text-[10px] font-medium shrink-0 ${
+                                                                                        (o.status || o.order_status)?.toLowerCase().includes('deliv') || (o.status || o.order_status)?.toLowerCase() === 'confirmed' ? 'bg-emerald-50 text-emerald-700' :
+                                                                                        (o.status || o.order_status)?.toLowerCase().includes('cancel') ? 'bg-red-50 text-red-600' :
+                                                                                        'bg-gray-100 text-gray-600'
+                                                                                    }`}>{o.status ?? o.order_status}</span>
+                                                                                )}
+                                                                            </div>
+                                                                            <div className="flex items-center gap-2 shrink-0">
+                                                                                <span className="text-gray-400 text-[10px]">{fmtDate(o.created_at ?? o.order_date)}</span>
+                                                                                <span className="font-semibold text-gray-800">{fmtNumber(o.total_amount)}</span>
+                                                                            </div>
+                                                                        </div>
+                                                                    ))}
+                                                                </div>
+                                                            ) : (
+                                                                <div className="text-center py-4 text-xs text-gray-400 bg-gray-50 rounded-lg border border-dashed border-gray-200">
+                                                                    <Package className="w-6 h-6 mx-auto mb-1 text-gray-300" />
+                                                                    Aucune commande récente
+                                                                </div>
+                                                            )}
+                                                        </div>
+
+                                                        {/* Bons de livraison */}
+                                                        <div>
+                                                            <div className="flex items-center gap-2 mb-2">
+                                                                <Truck className="w-3.5 h-3.5 text-indigo-500" />
+                                                                <span className="text-xs font-semibold text-gray-600">Bons de livraison récents</span>
+                                                            </div>
+                                                            {bls && bls.length > 0 ? (
+                                                                <div className="space-y-1">
+                                                                    {bls.slice(0, 10).map((bl: any, i: number) => (
+                                                                        <div key={bl.id ?? i} className="flex items-center justify-between py-1.5 px-2.5 bg-white rounded-lg border border-gray-100 text-xs">
+                                                                            <div className="flex items-center gap-2 min-w-0">
+                                                                                <span className="font-mono font-medium text-indigo-700 shrink-0">{bl.delivery_number ?? bl.code ?? `#${bl.id}`}</span>
+                                                                                {(bl.status ?? bl.delivery_status) && (
+                                                                                    <span className={`px-1.5 py-0.5 rounded text-[10px] font-medium shrink-0 ${
+                                                                                        (bl.status || bl.delivery_status)?.toUpperCase() === 'DELIVERED' ? 'bg-emerald-50 text-emerald-700' : 'bg-gray-100 text-gray-600'
+                                                                                    }`}>{bl.status ?? bl.delivery_status}</span>
+                                                                                )}
+                                                                            </div>
+                                                                            <div className="flex items-center gap-2 shrink-0">
+                                                                                <span className="text-gray-400 text-[10px]">{fmtDate(bl.created_at)}</span>
+                                                                                <span className="font-semibold text-gray-800">{fmtNumber(bl.total_amount)}</span>
+                                                                            </div>
+                                                                        </div>
+                                                                    ))}
+                                                                </div>
+                                                            ) : (
+                                                                <div className="text-center py-4 text-xs text-gray-400 bg-gray-50 rounded-lg border border-dashed border-gray-200">
+                                                                    <Truck className="w-6 h-6 mx-auto mb-1 text-gray-300" />
+                                                                    Aucun bon de livraison récent
+                                                                </div>
+                                                            )}
+                                                        </div>
+
+                                                        {/* Last payment */}
+                                                        {partnerDetail.last_payment_date && (
+                                                            <div className="flex items-center justify-between text-xs px-3 py-2 bg-emerald-50 rounded-lg border border-emerald-100">
+                                                                <span className="text-emerald-700 font-medium">Dernier paiement reçu</span>
+                                                                <span className="font-semibold text-emerald-800">{fmtDate(partnerDetail.last_payment_date)}</span>
+                                                            </div>
+                                                        )}
+                                                    </div>
+                                                );
+                                            })()}
+                                        </SageCollapsible>
+                                    </div>
+
+                                    {/* ── Soldes Section (§11) ────────────── */}
+                                    <div ref={el => { sectionRefs.current['soldes'] = el; }}>
+                                        <SageCollapsible title="Soldes (Points / Budget / Avoir)" isOpen={openSections['soldes']} onOpenChange={open => toggleSection('soldes', open)}>
+                                            <div className="space-y-3">
+                                                {balancesLoading ? (
+                                                    <div className="flex items-center justify-center py-6 text-gray-400 text-xs">
+                                                        <Loader2 className="w-4 h-4 animate-spin mr-2" /> Chargement soldes...
+                                                    </div>
+                                                ) : balancesData.length > 0 ? (
+                                                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                                                        {balancesData.map(bal => (
+                                                            <div key={bal.id} className="relative p-3 rounded-xl border border-gray-100 bg-white shadow-sm">
+                                                                <button
+                                                                    onClick={() => handleDeleteBalance(bal.id)}
+                                                                    disabled={deletingBalance}
+                                                                    className="absolute top-2 right-2 p-0.5 text-gray-300 hover:text-red-500 transition-colors"
+                                                                    title="Supprimer"
+                                                                >
+                                                                    <X className="w-3 h-3" />
+                                                                </button>
+                                                                <div className="flex items-center gap-2 mb-2">
+                                                                    <Wallet className="w-3.5 h-3.5 text-indigo-400" />
+                                                                    <span className="text-[10px] font-semibold text-gray-500 uppercase tracking-wider">{bal.balance_type}</span>
+                                                                </div>
+                                                                <div className="text-xl font-bold text-gray-900">{bal.balance.toLocaleString('fr-FR', { minimumFractionDigits: 2 })}</div>
+                                                            </div>
+                                                        ))}
+                                                    </div>
+                                                ) : (
+                                                    <div className="text-center py-6 text-xs text-gray-400 border border-dashed border-gray-200 rounded-xl bg-gray-50">
+                                                        <Wallet className="w-8 h-8 mx-auto mb-2 text-gray-300" />
+                                                        <p>Aucun solde enregistré</p>
+                                                    </div>
+                                                )}
+
+                                                {/* Add / update balance */}
+                                                {!showBalanceForm ? (
+                                                    <button
+                                                        onClick={() => setShowBalanceForm(true)}
+                                                        className="flex items-center gap-2 w-full px-3 py-2.5 text-xs font-medium text-indigo-700 bg-indigo-50 hover:bg-indigo-100 rounded-xl border border-indigo-200 transition-colors"
+                                                    >
+                                                        <Plus className="w-3.5 h-3.5" />
+                                                        Ajouter / Modifier un solde
+                                                    </button>
+                                                ) : (
+                                                    <div className="p-3 rounded-xl border border-indigo-200 bg-white space-y-3">
+                                                        <div className="text-xs font-semibold text-gray-700">Modifier un solde</div>
+                                                        <div className="grid grid-cols-2 gap-2">
+                                                            <div>
+                                                                <label className="block text-[10px] text-gray-500 mb-1">Type de solde</label>
+                                                                <select value={balanceForm.balance_type} onChange={e => setBalanceForm(f => ({ ...f, balance_type: e.target.value as BalanceType }))}
+                                                                    className="w-full text-xs border border-gray-200 rounded-md px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-gray-50">
+                                                                    <option value="POINTS">Points</option>
+                                                                    <option value="BUDGET_PROMO">Budget Promo</option>
+                                                                    <option value="AVOIR">Avoir</option>
+                                                                </select>
+                                                            </div>
+                                                            <div>
+                                                                <label className="block text-[10px] text-gray-500 mb-1">Opération</label>
+                                                                <select value={balanceForm.operation} onChange={e => setBalanceForm(f => ({ ...f, operation: e.target.value as BalanceOperation }))}
+                                                                    className="w-full text-xs border border-gray-200 rounded-md px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-gray-50">
+                                                                    <option value="add">Ajouter (+)</option>
+                                                                    <option value="subtract">Soustraire (−)</option>
+                                                                    <option value="set">Définir (=)</option>
+                                                                </select>
+                                                            </div>
+                                                        </div>
+                                                        <div>
+                                                            <label className="block text-[10px] text-gray-500 mb-1">Montant / Points</label>
+                                                            <input type="number" min="0" step="0.01" value={balanceForm.balance} onChange={e => setBalanceForm(f => ({ ...f, balance: e.target.value }))}
+                                                                placeholder="0.00" className="w-full text-xs border border-gray-200 rounded-md px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-gray-50" />
+                                                        </div>
+                                                        <div className="flex gap-2">
+                                                            <button onClick={handleUpsertBalance} disabled={!balanceForm.balance || upsertingBalance}
+                                                                className="flex-1 flex items-center justify-center gap-1 px-3 py-1.5 text-xs bg-indigo-600 text-white rounded-md hover:bg-indigo-700 disabled:opacity-40 transition-colors">
+                                                                {upsertingBalance ? <Loader2 className="w-3 h-3 animate-spin" /> : <CheckCircle className="w-3 h-3" />}
+                                                                Valider
+                                                            </button>
+                                                            <button onClick={() => setShowBalanceForm(false)}
+                                                                className="px-3 py-1.5 text-xs bg-gray-100 text-gray-600 rounded-md hover:bg-gray-200 transition-colors">
+                                                                Annuler
+                                                            </button>
+                                                        </div>
+                                                    </div>
+                                                )}
+                                            </div>
+                                        </SageCollapsible>
+                                    </div>
+
+                                    {/* ── Nearby Panel ─────────────────────── */}
+                                    {showNearby && (
+                                        <div className="rounded-xl border border-amber-200 bg-amber-50/40">
+                                            <div className="px-4 py-2.5 bg-amber-50 border-b border-amber-100 flex items-center justify-between">
+                                                <div className="flex items-center gap-2">
+                                                    <Locate className="w-3.5 h-3.5 text-amber-600" />
+                                                    <span className="text-xs font-semibold text-amber-800">Partenaires proches (2 km)</span>
+                                                </div>
+                                                <button onClick={() => { setShowNearby(false); resetNearby(); }} className="p-0.5 text-amber-400 hover:text-amber-700 rounded transition-colors">
+                                                    <X className="w-3.5 h-3.5" />
+                                                </button>
+                                            </div>
+                                            <div className="p-3">
+                                                {nearbyLoading ? (
+                                                    <div className="flex items-center justify-center py-4 text-xs text-gray-400"><Loader2 className="w-4 h-4 animate-spin mr-2" /> Recherche...</div>
+                                                ) : nearbyPartners.length > 0 ? (
+                                                    <div className="space-y-1">
+                                                        {nearbyPartners.map((p: any) => (
+                                                            <div key={p.id} className="flex items-center justify-between text-xs py-1.5 px-2 bg-white rounded border border-amber-100">
+                                                                <div className="flex items-center gap-2">
+                                                                    <span className="font-mono text-[10px] text-gray-500">{p.code}</span>
+                                                                    <span className="font-medium text-gray-800">{p.name}</span>
+                                                                </div>
+                                                                <span className="text-gray-400 shrink-0">{p.distance_km ? `${Number(p.distance_km).toFixed(2)} km` : ''}</span>
+                                                            </div>
+                                                        ))}
+                                                    </div>
+                                                ) : (
+                                                    <div className="text-center py-4 text-xs text-gray-400">Aucun partenaire dans un rayon de 2 km</div>
+                                                )}
+                                            </div>
+                                        </div>
+                                    )}
+
+                                    {/* ── Tournées Section ─────────────── */}
+                                    <div ref={el => { sectionRefs.current['tournees'] = el; }}>
+                                        <SageCollapsible title="Tournées de livraison" isOpen={openSections['tournees']} onOpenChange={open => toggleSection('tournees', open)}>
+                                            {/* Current itineraries */}
+                                            {(() => {
+                                                const itins = (partnerDetail as any).itinerary_partners as any[] | undefined;
+                                                return (
+                                                    <div className="space-y-3">
+                                                        {itins && itins.length > 0 ? (
+                                                            <div className="space-y-2">
+                                                                {itins.map((ip: any) => (
+                                                                    <div key={ip.id} className="flex items-center justify-between p-3 rounded-xl border border-indigo-100 bg-indigo-50/30">
+                                                                        <div className="flex items-center gap-3 min-w-0">
+                                                                            <div className="w-8 h-8 rounded-lg bg-indigo-100 flex items-center justify-center shrink-0">
+                                                                                <Route className="w-4 h-4 text-indigo-600" />
+                                                                            </div>
+                                                                            <div className="min-w-0">
+                                                                                <div className="text-sm font-semibold text-gray-900 truncate">
+                                                                                    {ip.itinerary?.name ?? `Tournée #${ip.itinerary_id}`}
+                                                                                </div>
+                                                                                <div className="flex items-center gap-2 text-[10px] text-gray-500 flex-wrap mt-0.5">
+                                                                                    {ip.itinerary?.code && <span className="font-mono bg-white px-1.5 py-0.5 rounded border border-gray-200">{ip.itinerary.code}</span>}
+                                                                                    {ip.visit_frequency_days > 0 && <span>Fréquence: {ip.visit_frequency_days}j</span>}
+                                                                                    {ip.start_time && ip.end_time && <span>{ip.start_time} – {ip.end_time}</span>}
+                                                                                    {ip.rank > 0 && <span>Rang: {ip.rank}</span>}
+                                                                                    {ip.is_stop_point && <span className="px-1.5 py-0.5 bg-indigo-100 text-indigo-700 rounded">Arrêt officiel</span>}
+                                                                                </div>
+                                                                                {ip.notes && <div className="text-[10px] text-gray-400 mt-0.5 truncate max-w-xs">{ip.notes}</div>}
+                                                                            </div>
+                                                                        </div>
+                                                                        <button
+                                                                            onClick={() => handleRemoveFromItinerary(ip.itinerary_id, ip.id)}
+                                                                            disabled={removingItinerary}
+                                                                            className="ml-2 p-1.5 rounded-lg text-gray-400 hover:text-red-600 hover:bg-red-50 transition-colors shrink-0"
+                                                                            title="Retirer de cette tournée"
+                                                                        >
+                                                                            <Unlink className="w-3.5 h-3.5" />
+                                                                        </button>
+                                                                    </div>
+                                                                ))}
+                                                            </div>
+                                                        ) : (
+                                                            <div className="text-center py-6 text-xs text-gray-400 border border-dashed border-gray-200 rounded-xl bg-gray-50">
+                                                                <Route className="w-8 h-8 mx-auto mb-2 text-gray-300" />
+                                                                <p>Aucune tournée assignée</p>
+                                                            </div>
+                                                        )}
+
+                                                        {/* Add to itinerary */}
+                                                        {!showItineraryPanel ? (
+                                                            <button
+                                                                onClick={() => { setShowItineraryPanel(true); fetchItineraries(); }}
+                                                                className="flex items-center gap-2 w-full px-3 py-2.5 text-xs font-medium text-indigo-700 bg-indigo-50 hover:bg-indigo-100 rounded-xl border border-indigo-200 transition-colors"
+                                                            >
+                                                                <Link2 className="w-3.5 h-3.5" />
+                                                                Affecter à une tournée
+                                                            </button>
+                                                        ) : (
+                                                            <div className="p-3 rounded-xl border border-indigo-200 bg-white space-y-3">
+                                                                <div className="text-xs font-semibold text-gray-700">Affecter à une tournée</div>
+                                                                {itinerariesLoading ? (
+                                                                    <div className="flex items-center gap-2 text-xs text-gray-400 py-2">
+                                                                        <Loader2 className="w-3 h-3 animate-spin" /> Chargement...
+                                                                    </div>
+                                                                ) : (
+                                                                    <select
+                                                                        value={selectedItineraryId ?? ''}
+                                                                        onChange={e => setSelectedItineraryId(e.target.value ? Number(e.target.value) : null)}
+                                                                        className="w-full text-xs border border-gray-200 rounded-md px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-gray-50"
+                                                                    >
+                                                                        <option value="">Sélectionner une tournée…</option>
+                                                                        {availableItineraries.map(it => (
+                                                                            <option key={it.id} value={it.id}>{it.name} ({it.code})</option>
+                                                                        ))}
+                                                                    </select>
+                                                                )}
+                                                                {/* Optional fields */}
+                                                                <div className="grid grid-cols-2 gap-2">
+                                                                    <div>
+                                                                        <label className="block text-[10px] text-gray-500 mb-1">Rang dans tournée</label>
+                                                                        <input type="number" min="0" value={itineraryForm.rank ?? ''} onChange={e => setItineraryForm(f => ({ ...f, rank: e.target.value ? Number(e.target.value) : undefined }))}
+                                                                            placeholder="0" className="w-full text-xs border border-gray-200 rounded px-2 py-1 focus:outline-none focus:ring-1 focus:ring-indigo-400 bg-gray-50" />
+                                                                    </div>
+                                                                    <div>
+                                                                        <label className="block text-[10px] text-gray-500 mb-1">Fréquence (jours)</label>
+                                                                        <input type="number" min="1" value={itineraryForm.visit_frequency_days ?? ''} onChange={e => setItineraryForm(f => ({ ...f, visit_frequency_days: e.target.value ? Number(e.target.value) : undefined }))}
+                                                                            placeholder="7" className="w-full text-xs border border-gray-200 rounded px-2 py-1 focus:outline-none focus:ring-1 focus:ring-indigo-400 bg-gray-50" />
+                                                                    </div>
+                                                                    <div>
+                                                                        <label className="block text-[10px] text-gray-500 mb-1">Heure début</label>
+                                                                        <input type="time" value={itineraryForm.start_time ?? ''} onChange={e => setItineraryForm(f => ({ ...f, start_time: e.target.value || undefined }))}
+                                                                            className="w-full text-xs border border-gray-200 rounded px-2 py-1 focus:outline-none focus:ring-1 focus:ring-indigo-400 bg-gray-50" />
+                                                                    </div>
+                                                                    <div>
+                                                                        <label className="block text-[10px] text-gray-500 mb-1">Heure fin</label>
+                                                                        <input type="time" value={itineraryForm.end_time ?? ''} onChange={e => setItineraryForm(f => ({ ...f, end_time: e.target.value || undefined }))}
+                                                                            className="w-full text-xs border border-gray-200 rounded px-2 py-1 focus:outline-none focus:ring-1 focus:ring-indigo-400 bg-gray-50" />
+                                                                    </div>
+                                                                </div>
+                                                                <div>
+                                                                    <label className="block text-[10px] text-gray-500 mb-1">Notes livreur</label>
+                                                                    <input type="text" value={itineraryForm.notes ?? ''} onChange={e => setItineraryForm(f => ({ ...f, notes: e.target.value || undefined }))}
+                                                                        placeholder="Ex: Livraison avant ouverture magasin"
+                                                                        className="w-full text-xs border border-gray-200 rounded px-2 py-1 focus:outline-none focus:ring-1 focus:ring-indigo-400 bg-gray-50" />
+                                                                </div>
+                                                                <label className="flex items-center gap-2 text-xs text-gray-600 cursor-pointer">
+                                                                    <input type="checkbox" checked={itineraryForm.is_stop_point ?? false} onChange={e => setItineraryForm(f => ({ ...f, is_stop_point: e.target.checked }))}
+                                                                        className="w-3.5 h-3.5 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500" />
+                                                                    Point d'arrêt officiel
+                                                                </label>
+                                                                <div className="flex gap-2">
+                                                                    <button
+                                                                        onClick={handleAssignItinerary}
+                                                                        disabled={!selectedItineraryId || assigningItinerary}
+                                                                        className="flex-1 flex items-center justify-center gap-1 px-3 py-1.5 text-xs bg-indigo-600 text-white rounded-md hover:bg-indigo-700 disabled:opacity-40 transition-colors"
+                                                                    >
+                                                                        {assigningItinerary ? <Loader2 className="w-3 h-3 animate-spin" /> : <Link2 className="w-3 h-3" />}
+                                                                        Affecter
+                                                                    </button>
+                                                                    <button
+                                                                        onClick={() => { setShowItineraryPanel(false); setSelectedItineraryId(null); setItineraryForm({}); }}
+                                                                        className="px-3 py-1.5 text-xs bg-gray-100 text-gray-600 rounded-md hover:bg-gray-200 transition-colors"
+                                                                    >
+                                                                        Annuler
+                                                                    </button>
+                                                                </div>
+                                                            </div>
+                                                        )}
+                                                    </div>
+                                                );
+                                            })()}
                                         </SageCollapsible>
                                     </div>
                                 </div>
