@@ -105,6 +105,7 @@ const ITEM_PERMISSIONS: Record<string, string> = {
     'Audit': 'admin.audit.view',
     'Monitoring': 'admin.monitoring.view',
     'Paramètres Généraux': 'admin.settings.view',
+    'Configuration Dynamique': 'admin.settings.view',
     
     // Workflows (Admin)
     'Gestion des workflows': 'view-workflows',
@@ -280,7 +281,7 @@ const MENU_DATA: ModuleData[] = [
         categories: [
             { title: 'Utilisateurs', items: ['Utilisateurs', 'Rôles', 'Groupes'] },
             { title: 'Sécurité', items: ['Gouvernance', 'Audit'] },
-            { title: 'Système', items: ['Monitoring', 'Paramètres Généraux'] }
+            { title: 'Système', items: ['Monitoring', 'Paramètres Généraux', 'Configuration Dynamique'] }
         ]
     },
     {
@@ -662,6 +663,7 @@ export const MegaMenu: React.FC<MegaMenuProps> = ({ isOpen, onClose, initialSear
         'Audit': '/settings',
         'Monitoring': '/admin/monitoring',
         'Paramètres Généraux': '/settings',
+        'Configuration Dynamique': '/settings/configuration',
 
         // Workflows Module Routes
         'Gestion des workflows': '/workflows',
