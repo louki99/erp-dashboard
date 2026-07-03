@@ -1,12 +1,15 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import Split from 'react-split';
 import { cn } from '@/lib/utils';
 import { Search, Star, ChevronDown, ChevronLeft, ChevronRight, Maximize2, Minimize2, Bell, Moon, Sun, LayoutGrid } from 'lucide-react';
 import { MegaMenu } from './MegaMenu';
+import { CommandMenu } from './CommandMenu';
 import { ConfirmationModal } from '@/components/common/ConfirmationModal';
 
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/context/AuthContext';
+import { useFilteredMenu } from '@/lib/menu/menuUtils';
+import { useMenuFavorites } from '@/hooks/menu/useMenuFavorites';
 
 interface MasterLayoutProps {
     children?: React.ReactNode;
@@ -32,12 +35,18 @@ export const MasterLayout: React.FC<MasterLayoutProps> = ({
 
     const [mode, setMode] = useState<LayoutMode>('split');
     const [isMegaMenuOpen, setIsMegaMenuOpen] = useState(false);
+    const [isCommandMenuOpen, setIsCommandMenuOpen] = useState(false);
     const [showUserMenu, setShowUserMenu] = useState(false);
     const [showFavoritesMenu, setShowFavoritesMenu] = useState(false);
     const [isLogoutModalOpen, setIsLogoutModalOpen] = useState(false);
     const [isDark, setIsDark] = useState(false);
     const [searchQuery, setSearchQuery] = useState('');
-    const [favoriteItems, setFavoriteItems] = useState<string[]>([]);
+
+    const userPermissions = useMemo(() => user?.permissions?.effective || [], [user?.permissions?.effective]);
+    const userRoles = useMemo(() => user?.roles?.details?.map(r => r.name) || [], [user?.roles?.details]);
+
+    const { items: menuItems } = useFilteredMenu(userPermissions, userRoles);
+    const { favorites } = useMenuFavorites(menuItems, user?.id?.toString());
 
     // Check Screen Size
     useEffect(() => {
@@ -60,55 +69,19 @@ export const MasterLayout: React.FC<MasterLayoutProps> = ({
         return () => window.removeEventListener('resize', checkMobile);
     }, []);
 
-    // Load favorites from localStorage and listen for changes (user-specific)
+    // Cmd/Ctrl + K shortcut for the command palette.
     useEffect(() => {
-        const getUserStorageKey = () => {
-            const userPrefix = user?.id ? `user-${user.id.toString()}` : 'guest';
-            return `megamenu-favorites-${userPrefix}`;
-        };
-
-        const loadFavorites = () => {
-            const favoritesKey = getUserStorageKey();
-            const storedFavorites = localStorage.getItem(favoritesKey);
-            if (storedFavorites) {
-                try {
-                    setFavoriteItems(JSON.parse(storedFavorites));
-                } catch (e) {
-                    console.error('Failed to parse favorites', e);
-                }
-            } else {
-                setFavoriteItems([]);
+        const handleKeyDown = (e: KeyboardEvent) => {
+            const isModifier = e.metaKey || e.ctrlKey;
+            if (isModifier && e.key.toLowerCase() === 'k') {
+                e.preventDefault();
+                setIsCommandMenuOpen((open) => !open);
             }
         };
 
-        // Initial load
-        loadFavorites();
-
-        // Listen for storage changes (from MegaMenu)
-        const handleStorageChange = (e: StorageEvent) => {
-            const favoritesKey = getUserStorageKey();
-            if (e.key === favoritesKey) {
-                loadFavorites();
-            }
-        };
-
-        // Listen for custom event (for same-window updates)
-        const handleFavoritesUpdate = (e: Event) => {
-            const customEvent = e as CustomEvent;
-            // Only reload if the event is for the current user
-            if (!customEvent.detail?.userId || customEvent.detail.userId === user?.id?.toString()) {
-                loadFavorites();
-            }
-        };
-
-        window.addEventListener('storage', handleStorageChange);
-        window.addEventListener('favorites-updated', handleFavoritesUpdate);
-
-        return () => {
-            window.removeEventListener('storage', handleStorageChange);
-            window.removeEventListener('favorites-updated', handleFavoritesUpdate);
-        };
-    }, [user?.id]);
+        window.addEventListener('keydown', handleKeyDown);
+        return () => window.removeEventListener('keydown', handleKeyDown);
+    }, []);
 
     // Theme Toggle Logic
     useEffect(() => {
@@ -122,117 +95,18 @@ export const MasterLayout: React.FC<MasterLayoutProps> = ({
     const toggleTheme = () => setIsDark(!isDark);
 
     const handleHeaderSearch = (e: React.KeyboardEvent<HTMLInputElement>) => {
-        if (e.key === 'Enter' && searchQuery.trim()) {
-            setIsMegaMenuOpen(true);
+        if (e.key === 'Enter') {
+            e.preventDefault();
+            setIsCommandMenuOpen(true);
         }
     };
 
     const handleSearchFocus = () => {
-        if (searchQuery.trim()) {
-            setIsMegaMenuOpen(true);
-        }
+        setIsCommandMenuOpen(true);
     };
 
-    // Route mapping for favorites navigation
-    const ROUTE_MAPPING: Record<string, string> = {
-        // Achats
-        'Recherche tarifs': '/dashboard',
-        'Saisie des tarifs': '/dashboard',
-        'Planning global': '/dashboard',
-        'Plan de travail': '/dashboard',
-        'Plan de regroupement': '/dashboard',
-        'Demandes d\'achat': '/dashboard',
-        'Soldes demandes d\'achat': '/dashboard',
-        'Demandes': '/dashboard',
-        'Réponses': '/dashboard',
-        'Relances': '/dashboard',
-        'Commandes ouvertes': '/dashboard',
-        'Signatures': '/dashboard',
-        'Réceptions': '/dashboard',
-        'Retours': '/dashboard',
-        'Factures': '/dashboard',
-        'Avoirs': '/dashboard',
-        // Ventes
-        'Saisie devis': '/dashboard',
-        'Liste devis': '/dashboard',
-        'Saisie commandes': '/orders',
-        'Liste commandes': '/orders',
-        'Préparation': '/magasinier/preparations',
-        'Validation': '/adv/validation',
-        'Promotions': '/promotions',
-        // Stock
-        'Entrées diverses': '/dashboard',
-        'Sorties diverses': '/dashboard',
-        'Changements emplacement': '/dashboard',
-        'Comptage': '/dashboard',
-        // ADV
-        'Tableau de bord ADV': '/adv',
-        'Validation Partenaires': '/adv/partners',
-        'Liste Partenaires': '/adv/partners',
-        'Soldes Partenaires': '/partners/balances',
-        'Gestion Crédit': '/adv/credit',
-        'Échéances': '/adv/echeances',
-        'Validation BC': '/adv/validation',
-        'Dérogations Crédit': '/adv/derogations',
-        // Dispatcher
-        'Tableau de bord Dispatcher': '/dispatcher',
-        'Commandes en attente': '/dispatcher/orders',
-        'BL (liste)': '/dispatcher/bons-livraisons',
-        'Workspace Missions': '/dispatcher/workspace/missions',
-        'Décharges (liste)': '/dispatcher/decharges',
-        // Magasinier
-        'Tableau de bord Magasinier': '/magasinier',
-        'Bons de préparation': '/magasinier/preparations',
-        'Commandes approuvées': '/magasinier/orders',
-        'Gestion stock': '/magasinier/stock',
-        'Mouvements stock': '/magasinier/stock',
-        'Préparation groupée': '/magasinier/batch-picking',
-        // Données de Base
-        'Gestion Produits': '/products',
-        'Articles': '/products',
-        'Articles-site': '/products',
-        'Unités': '/dashboard',
-        'Clients': '/partners',
-        'Fournisseurs': '/dashboard',
-        'Transporteurs': '/dashboard',
-        'Tiers': '/partners',
-        // Administration
-        'Utilisateurs': '/settings',
-        'Rôles': '/settings',
-        'Groupes': '/settings',
-        'Gouvernance': '/settings',
-        'Audit': '/settings',
-        'Monitoring': '/admin/monitoring',
-        'Paramètres Généraux': '/settings',
-        // Tasks & Workflows
-        'Tableau de bord Tâches': '/tasks',
-        'Tâches prêtes': '/tasks?status=ready',
-        'Tâches en cours': '/tasks?status=in_progress',
-        'Tâches terminées': '/tasks?status=completed',
-        'Progression workflows': '/admin/monitoring',
-        'Statistiques workflows': '/admin/monitoring',
-        'Templates de workflow': '/workflows',
-        'Gestion des workflows': '/workflows',
-        'Gestion des tâches': '/admin/monitoring',
-        'Workflow Engine Test': '/workflows/engine',
-        // Import/Export
-        'Tableau de bord Import/Export': '/import-export',
-        'Importer Données': '/import-export/import',
-        'Exporter Données': '/import-export/export',
-        'Historique des Opérations': '/import-export/batches',
-        'Gérer Templates': '/import-export/templates',
-        // Legacy
-        'Commandes': '/orders',
-        'Tableau de bord': '/adv',
-        'Partner Validation': '/adv/partners',
-        'Credit Management': '/adv/credit',
-        'BC Approval': '/adv/validation',
-        'default': '/dashboard'
-    };
-
-    const handleFavoriteNavigation = (itemLabel: string) => {
+    const handleFavoriteNavigation = (route: string) => {
         setShowFavoritesMenu(false);
-        const route = ROUTE_MAPPING[itemLabel] || ROUTE_MAPPING['default'];
         navigate(route);
     };
 
@@ -248,8 +122,21 @@ export const MasterLayout: React.FC<MasterLayoutProps> = ({
                 initialSearchQuery={searchQuery}
                 onSearchQueryChange={setSearchQuery}
                 userId={user?.id?.toString()}
-                userPermissions={user?.permissions?.effective || []}
-                userRoles={user?.roles?.details?.map(r => r.name) || []}
+                userPermissions={userPermissions}
+                userRoles={userRoles}
+            />
+
+            {/* Command Palette Overlay */}
+            <CommandMenu
+                isOpen={isCommandMenuOpen}
+                onClose={() => {
+                    setIsCommandMenuOpen(false);
+                    setSearchQuery('');
+                }}
+                initialQuery={searchQuery}
+                userId={user?.id?.toString()}
+                userPermissions={userPermissions}
+                userRoles={userRoles}
             />
 
             {/* Logout Confirmation Modal */}
@@ -276,8 +163,13 @@ export const MasterLayout: React.FC<MasterLayoutProps> = ({
                     >
                         <LayoutGrid className="w-6 h-6 group-hover:text-sage-500 transition-colors" />
                     </button>
-
-                    <div className="flex items-center gap-3 select-none">
+                    {/* Logo section */}
+                    <div
+                        onClick={() => navigate('/dashboard')}
+                        className="flex items-center gap-3 select-none cursor-pointer hover:opacity-90 transition-opacity"
+                        role="link"
+                        aria-label="Go to dashboard"
+                    >
                         <div className="flex flex-col">
                             <span className="font-bold text-xl leading-none tracking-tight">
                                 <span className="text-sage-500">Omni</span>
@@ -312,7 +204,7 @@ export const MasterLayout: React.FC<MasterLayoutProps> = ({
                                         <div className="px-4 py-2 border-b border-gray-100 dark:border-gray-700">
                                             <p className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">Quick Access</p>
                                         </div>
-                                        {favoriteItems.length === 0 ? (
+                                        {favorites.length === 0 ? (
                                             <div className="px-4 py-6 text-center text-sm text-gray-500 dark:text-gray-400">
                                                 <Star className="w-8 h-8 mx-auto mb-2 text-gray-300 dark:text-gray-600" />
                                                 No favorites yet
@@ -320,14 +212,14 @@ export const MasterLayout: React.FC<MasterLayoutProps> = ({
                                             </div>
                                         ) : (
                                             <div className="max-h-64 overflow-y-auto">
-                                                {favoriteItems.map((item, idx) => (
+                                                {favorites.map((item) => (
                                                     <button
-                                                        key={idx}
-                                                        onClick={() => handleFavoriteNavigation(item)}
+                                                        key={item.id}
+                                                        onClick={() => handleFavoriteNavigation(item.route)}
                                                         className="w-full text-left px-4 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-sage-50 dark:hover:bg-gray-700 hover:text-sage-600 transition-colors flex items-center gap-2"
                                                     >
                                                         <Star className="w-3 h-3 text-yellow-500 fill-yellow-500" />
-                                                        {item}
+                                                        {item.label}
                                                     </button>
                                                 ))}
                                             </div>
@@ -352,19 +244,22 @@ export const MasterLayout: React.FC<MasterLayoutProps> = ({
 
                 {/* Center: Global Search */}
                 <div className="flex-1 max-w-xl mx-8 hidden lg:block">
-                    <div className="relative group">
+                    <div
+                        className="relative group cursor-pointer"
+                        onClick={() => setIsCommandMenuOpen(true)}
+                    >
                         <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500 group-hover:text-sage-500 transition-colors" />
                         <input
                             type="text"
+                            readOnly
                             placeholder="Search functions, modules, categories..."
-                            className="w-full bg-white/5 border border-white/10 rounded-full pl-10 pr-20 py-1.5 text-sm text-gray-200 placeholder:text-gray-500 focus:outline-none focus:bg-white/10 focus:border-sage-500/50 transition-all"
+                            className="w-full bg-white/5 border border-white/10 rounded-full pl-10 pr-20 py-1.5 text-sm text-gray-200 placeholder:text-gray-500 focus:outline-none focus:bg-white/10 focus:border-sage-500/50 transition-all cursor-pointer"
                             value={searchQuery}
-                            onChange={(e) => setSearchQuery(e.target.value)}
                             onKeyDown={handleHeaderSearch}
                             onFocus={handleSearchFocus}
                         />
                         <div className="absolute right-3 top-1/2 -translate-y-1/2 flex gap-1">
-                            <span className="px-1.5 py-0.5 rounded bg-white/10 text-[10px] font-medium text-gray-400 border border-white/5">Enter</span>
+                            <span className="px-1.5 py-0.5 rounded bg-white/10 text-[10px] font-medium text-gray-400 border border-white/5">⌘K</span>
                         </div>
                     </div>
                 </div>
@@ -465,7 +360,7 @@ export const MasterLayout: React.FC<MasterLayoutProps> = ({
                         dragInterval={1}
                         direction="horizontal"
                         cursor="col-resize"
-                        gutter={(index, direction) => {
+                        gutter={(_index, direction) => {
                             const gutter = document.createElement('div')
                             gutter.className = `gutter gutter-${direction} relative flex items-center justify-center bg-gray-50/50 hover:bg-sage-50 transition-colors border-l border-r border-gray-200`
                             return gutter

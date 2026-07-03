@@ -86,8 +86,8 @@ export const Dashboard = () => {
                             <option>Last Year</option>
                         </select>
                     </div>
-                    <div className="h-[300px] w-full">
-                        <ResponsiveContainer width="100%" height="100%">
+                    <div className="h-[300px] w-full min-w-0">
+                        <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={0}>
                             <AreaChart data={SALES_DATA}>
                                 <defs>
                                     <linearGradient id="colorSales" x1="0" y1="0" x2="0" y2="1">
@@ -126,8 +126,8 @@ export const Dashboard = () => {
                         <h3 className="font-semibold text-foreground">Weekly Performance</h3>
                         <p className="text-xs text-muted-foreground">Order processing speed</p>
                     </div>
-                    <div className="h-[300px] w-full">
-                        <ResponsiveContainer width="100%" height="100%">
+                    <div className="h-[300px] w-full min-w-0">
+                        <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={0}>
                             <BarChart data={PERFORMANCE_DATA}>
                                 <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="hsl(var(--border))" />
                                 <XAxis dataKey="name" stroke="hsl(var(--muted-foreground))" fontSize={12} tickLine={false} axisLine={false} />
