@@ -1,30 +1,98 @@
-import { useState } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { TemplateList } from '@/components/document-studio/TemplateList';
 import { DesignerCanvas } from '@/components/document-studio/DesignerCanvas';
 import { ToolPalette } from '@/components/document-studio/ToolPalette';
 import { PropertiesPanel } from '@/components/document-studio/PropertiesPanel';
 import { VersionsPanel } from '@/components/document-studio/VersionsPanel';
 import { LivePreviewFrame } from '@/components/document-studio/LivePreviewFrame';
+import { MasterLayout } from '@/components/layout/MasterLayout';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { useDesignerStore } from '@/stores/designer-store';
-import { useCreateVersion, useStreamDocument } from '@/hooks/document-studio/use-templates';
+import {
+  useTemplates,
+  useTemplateVersions,
+  useTemplateVersionDetail,
+  useCreateVersion,
+  useStreamDocument,
+} from '@/hooks/document-studio/use-templates';
 import type { Template } from '@/types/document-studio.types';
+
+const STATUS_TABS = [
+  { value: 'all',       label: 'Tous',       icon: '📋' },
+  { value: 'published', label: 'Publiés',    icon: '✅' },
+  { value: 'draft',     label: 'Brouillons', icon: '✏️' },
+  { value: 'archived',  label: 'Archivés',   icon: '📁' },
+];
+
+// Fetches the best version for the current template and loads it into the store.
+// Must be rendered inside the editor view so it only runs when editing.
+function VersionAutoLoader() {
+  const { template, setVersion } = useDesignerStore();
+  const [targetId, setTargetId] = useState('');
+  const didPick = useRef(false);
+
+  const { data: versions } = useTemplateVersions(template?.id ?? '');
+  const { data: fullVersion } = useTemplateVersionDetail(template?.id ?? '', targetId);
+
+  // Reset when user switches to a different template
+  useEffect(() => {
+    didPick.current = false;
+    setTargetId('');
+  }, [template?.id]);
+
+  // Pick published version first, then latest
+  useEffect(() => {
+    if (!versions?.length || didPick.current) return;
+    const published = versions.find((v) => v.is_published);
+    const best = published ?? versions[versions.length - 1];
+    if (best) {
+      setTargetId(best.id);
+      didPick.current = true;
+    }
+  }, [versions]);
+
+  // Load full version (with elements) into the store
+  useEffect(() => {
+    if (fullVersion) setVersion(fullVersion);
+  }, [fullVersion, setVersion]);
+
+  return null;
+}
 
 type Tab = 'designer' | 'versions' | 'preview';
 
+const MIN_ZOOM = 0.1;
+const MAX_ZOOM = 4.0;
+const STEP     = 0.1;
+
 export default function DocumentStudioPage() {
-  const [view, setView]     = useState<'list' | 'editor'>('list');
-  const [tab, setTab]       = useState<Tab>('designer');
-  const [zoom, setZoom]     = useState(1);
+  const [view,         setView]        = useState<'list' | 'editor'>('list');
+  const [tab,          setTab]         = useState<Tab>('designer');
+  const [zoom,         setZoom]        = useState(1);
+  const [search,       setSearch]      = useState('');
+  const [statusFilter, setStatusFilter]= useState('all');
+  const [createOpen,   setCreateOpen]  = useState(false);
+
+  // Stats for sidebar — fetches all templates regardless of current filter
+  const { data: allTemplates = [] } = useTemplates({});
+  const stats = {
+    total:     allTemplates.length,
+    published: allTemplates.filter((t) => t.status === 'published').length,
+    draft:     allTemplates.filter((t) => t.status === 'draft').length,
+    archived:  allTemplates.filter((t) => t.status === 'archived').length,
+  };
+
+  const fitValuesRef = useRef({ page: 1, width: 1 });
 
   const {
     template, version, page, elements, selectedId,
     setTemplate, setVersion, selectElement, updateElement,
     isDirty, markSaved, undo, redo,
+    previewMode, setPreviewMode,
   } = useDesignerStore();
 
-  const { mutate: createVersion, isPending: saving } = useCreateVersion(template?.id ?? '');
+  const { mutate: createVersion, isPending: saving }    = useCreateVersion(template?.id ?? '');
   const { mutate: streamDoc,     isPending: generating } = useStreamDocument();
 
   const handleEdit = (t: Template) => {
@@ -56,39 +124,234 @@ export default function DocumentStudioPage() {
     });
   };
 
+  const handleZoomPreset = (preset: string) => {
+    if (preset === 'page')  setZoom(fitValuesRef.current.page);
+    if (preset === 'width') setZoom(fitValuesRef.current.width);
+    if (preset === '100')   setZoom(1);
+  };
+
   if (view === 'list') {
     return (
-      <div className="p-6">
-        <h1 className="text-2xl font-semibold mb-6">Document Studio</h1>
-        <TemplateList onEdit={handleEdit} />
-      </div>
+      <MasterLayout
+        leftContent={
+          <div className="h-full flex flex-col bg-white border-r border-gray-100">
+            {/* Module header */}
+            <div className="p-4 border-b border-gray-100 shrink-0">
+              <div className="flex items-center gap-3 mb-4">
+                <div className="w-10 h-10 rounded-xl bg-indigo-100 flex items-center justify-center text-xl shrink-0">
+                  📑
+                </div>
+                <div className="min-w-0">
+                  <p className="text-sm font-semibold text-gray-900 leading-tight">Document Studio</p>
+                  <p className="text-xs text-gray-500">Templates de documents</p>
+                </div>
+              </div>
+
+              {/* Stats grid */}
+              <div className="grid grid-cols-2 gap-2">
+                <div className="bg-indigo-50 rounded-lg p-2.5">
+                  <div className="text-[10px] text-gray-500 mb-0.5">Total</div>
+                  <div className="text-xl font-bold text-indigo-700">{stats.total}</div>
+                </div>
+                <div className="bg-emerald-50 rounded-lg p-2.5">
+                  <div className="text-[10px] text-gray-500 mb-0.5">Publiés</div>
+                  <div className="text-xl font-bold text-emerald-700">{stats.published}</div>
+                </div>
+                <div className="bg-amber-50 rounded-lg p-2.5">
+                  <div className="text-[10px] text-gray-500 mb-0.5">Brouillons</div>
+                  <div className="text-xl font-bold text-amber-600">{stats.draft}</div>
+                </div>
+                <div className="bg-slate-50 rounded-lg p-2.5 border border-slate-100">
+                  <div className="text-[10px] text-gray-500 mb-0.5">Archivés</div>
+                  <div className="text-xl font-bold text-slate-500">{stats.archived}</div>
+                </div>
+              </div>
+            </div>
+
+            {/* Status filter */}
+            <div className="p-3 border-b border-gray-100 shrink-0">
+              <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider mb-2 px-1">Filtrer par statut</p>
+              <div className="flex flex-col gap-0.5">
+                {STATUS_TABS.map((tab) => (
+                  <button
+                    key={tab.value}
+                    onClick={() => setStatusFilter(tab.value)}
+                    className={`flex items-center gap-2.5 px-3 py-2 rounded-lg text-xs font-medium transition-colors text-left ${
+                      statusFilter === tab.value
+                        ? 'bg-indigo-50 text-indigo-700 border border-indigo-100'
+                        : 'text-gray-600 hover:bg-gray-50'
+                    }`}
+                  >
+                    <span>{tab.icon}</span>
+                    <span>{tab.label}</span>
+                    {tab.value !== 'all' && (
+                      <span className={`ml-auto text-[10px] font-bold px-1.5 py-0.5 rounded-full ${
+                        statusFilter === tab.value ? 'bg-indigo-100 text-indigo-600' : 'bg-gray-100 text-gray-500'
+                      }`}>
+                        {tab.value === 'published' ? stats.published : tab.value === 'draft' ? stats.draft : stats.archived}
+                      </span>
+                    )}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* New template button */}
+            <div className="p-3 mt-auto border-t border-gray-100 shrink-0">
+              <button
+                onClick={() => setCreateOpen(true)}
+                className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold transition-colors shadow-sm"
+              >
+                <span className="text-sm">+</span> Nouveau template
+              </button>
+            </div>
+          </div>
+        }
+        mainContent={
+          <div className="h-full flex flex-col min-h-0 bg-slate-50">
+            <TemplateList
+              onEdit={handleEdit}
+              search={search}
+              statusFilter={statusFilter}
+              onSearchChange={setSearch}
+              createOpen={createOpen}
+              onCreateOpenChange={setCreateOpen}
+            />
+          </div>
+        }
+      />
     );
   }
 
   return (
     <div className="flex flex-col h-full">
-      {/* Header */}
-      <div className="flex items-center gap-3 px-4 py-2 border-b bg-background shrink-0">
-        <Button variant="ghost" size="sm" onClick={() => setView('list')}>
+      {/* ── Header / Toolbar ─────────────────────────────────────────────── */}
+      <div className="flex items-center gap-2 px-4 py-2 border-b bg-[#1e1e2e] text-white shrink-0">
+        <Button
+          variant="ghost"
+          size="sm"
+          className="text-slate-300 hover:text-white hover:bg-white/10"
+          onClick={() => setView('list')}
+        >
           ← Templates
         </Button>
-        <span className="font-medium text-sm">{template?.name}</span>
-        {isDirty && <Badge variant="outline" className="text-xs">Non sauvegardé</Badge>}
-        {version && <Badge variant="secondary" className="text-xs">v{version.version_number}</Badge>}
 
+        <span className="font-medium text-sm text-white truncate">{template?.name}</span>
+        {isDirty   && <Badge variant="outline" className="text-[9px] border-amber-400/40 text-amber-300">Non sauvegardé</Badge>}
+        {version   && <Badge variant="secondary" className="text-[9px]">v{version.version_number}</Badge>}
+
+        {/* Divider */}
+        <div className="h-4 w-px bg-white/10 mx-1" />
+
+        {/* Undo / Redo */}
+        <button
+          onClick={undo}
+          title="Annuler (Ctrl+Z)"
+          className="h-7 w-7 flex items-center justify-center rounded text-slate-400 hover:text-white hover:bg-white/10 transition-colors"
+        >
+          ↩
+        </button>
+        <button
+          onClick={redo}
+          title="Rétablir (Ctrl+Y)"
+          className="h-7 w-7 flex items-center justify-center rounded text-slate-400 hover:text-white hover:bg-white/10 transition-colors"
+        >
+          ↪
+        </button>
+
+        {/* Divider */}
+        <div className="h-4 w-px bg-white/10" />
+
+        {/* Zoom controls */}
+        <div className="flex items-center gap-0.5 px-1 py-0.5 rounded bg-white/5 border border-white/10">
+          <button
+            onClick={() => setZoom((z) => +Math.max(MIN_ZOOM, z - STEP).toFixed(2))}
+            title="Zoom arrière"
+            className="h-6 w-6 flex items-center justify-center rounded text-slate-400 hover:text-white hover:bg-white/10 transition-colors font-bold"
+          >
+            −
+          </button>
+          <span className="w-11 text-center text-[11px] font-medium text-slate-300">
+            {Math.round(zoom * 100)}%
+          </span>
+          <button
+            onClick={() => setZoom((z) => +Math.min(MAX_ZOOM, z + STEP).toFixed(2))}
+            title="Zoom avant"
+            className="h-6 w-6 flex items-center justify-center rounded text-slate-400 hover:text-white hover:bg-white/10 transition-colors font-bold"
+          >
+            +
+          </button>
+          {/* Zoom preset select */}
+          <select
+            value=""
+            onChange={(e) => { handleZoomPreset(e.target.value); (e.target as HTMLSelectElement).value = ''; }}
+            className="h-6 bg-white/5 border border-white/10 rounded text-[10px] text-slate-300 px-1 cursor-pointer ml-0.5"
+          >
+            <option value="" disabled className="bg-gray-900">Preset</option>
+            <option value="page"  className="bg-gray-900">Fit Page</option>
+            <option value="width" className="bg-gray-900">Fit Width</option>
+            <option value="100"   className="bg-gray-900">100%</option>
+          </select>
+        </div>
+
+        {/* Divider */}
+        <div className="h-4 w-px bg-white/10" />
+
+        {/* Tabs */}
+        <div className="flex items-center gap-0.5 px-1 py-0.5 rounded bg-white/5 border border-white/10">
+          {([
+            { key: 'designer' as const, label: 'Designer', icon: '✏️' },
+            { key: 'versions' as const, label: 'Versions',  icon: '🕐' },
+            { key: 'preview'  as const, label: 'Aperçu',    icon: '👁' },
+          ]).map((t) => (
+            <button
+              key={t.key}
+              onClick={() => setTab(t.key)}
+              className={`flex items-center gap-1.5 px-2.5 py-1 text-[11px] font-medium rounded transition-colors ${
+                tab === t.key
+                  ? 'bg-white/20 text-white'
+                  : 'text-slate-400 hover:text-white hover:bg-white/10'
+              }`}
+            >
+              <span>{t.icon}</span>
+              <span className="hidden sm:inline">{t.label}</span>
+            </button>
+          ))}
+        </div>
+
+        {/* Tags / Live Data toggle */}
+        <button
+          onClick={() => setPreviewMode(!previewMode)}
+          className={`flex items-center gap-1.5 px-2.5 py-1 text-[11px] font-medium rounded border transition-colors ${
+            previewMode
+              ? 'bg-emerald-500/20 border-emerald-500/40 text-emerald-300'
+              : 'bg-white/5 border-white/10 text-slate-400 hover:text-white'
+          }`}
+          title="Basculer entre les tags bruts et les données mock"
+        >
+          {previewMode ? '👁 Live Data' : '</> Tags'}
+        </button>
+
+        {/* Right actions */}
         <div className="ml-auto flex items-center gap-2">
-          <Button variant="ghost" size="sm" onClick={undo} title="Annuler (Ctrl+Z)">↩</Button>
-          <Button variant="ghost" size="sm" onClick={redo} title="Rétablir (Ctrl+Y)">↪</Button>
-          <Button variant="outline" size="sm" onClick={handleSave} disabled={saving}>
-            {saving ? 'Sauvegarde…' : '💾 Sauvegarder'}
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={handleSave}
+            disabled={saving}
+            className="h-7 text-xs border-white/20 text-white bg-transparent hover:bg-white/10 hover:text-white"
+          >
+            {saving ? '⏳ Sauvegarde…' : '💾 Sauvegarder'}
           </Button>
-          <div className="flex rounded border overflow-hidden">
-            {(['pdf', 'xlsx', 'docx'] as const).map((fmt) => (
+          <div className="flex rounded border border-white/20 overflow-hidden">
+            {(['pdf', 'xlsx', 'docx'] as const).map((fmt, i) => (
               <button
                 key={fmt}
-                className="px-3 py-1 text-xs hover:bg-muted transition-colors border-r last:border-r-0"
                 onClick={() => handleGenerate(fmt)}
                 disabled={generating}
+                className={`px-2.5 py-1 text-[10px] font-medium text-slate-300 hover:bg-white/10 hover:text-white transition-colors ${
+                  i > 0 ? 'border-l border-white/20' : ''
+                }`}
               >
                 {fmt.toUpperCase()}
               </button>
@@ -97,34 +360,8 @@ export default function DocumentStudioPage() {
         </div>
       </div>
 
-      {/* Tabs */}
-      <div className="flex gap-1 px-4 py-1 border-b shrink-0 bg-muted/30">
-        {(['designer', 'versions', 'preview'] as Tab[]).map((t) => (
-          <button
-            key={t}
-            className={`px-3 py-1 text-xs rounded-sm font-medium transition-colors ${
-              tab === t ? 'bg-background shadow-sm' : 'hover:bg-background/60'
-            }`}
-            onClick={() => setTab(t)}
-          >
-            {t === 'designer' ? 'Designer' : t === 'versions' ? 'Versions' : 'Live Preview'}
-          </button>
-        ))}
-        <div className="ml-auto flex items-center gap-1">
-          <span className="text-xs text-muted-foreground">Zoom :</span>
-          {[0.5, 0.75, 1, 1.25, 1.5].map((z) => (
-            <button
-              key={z}
-              className={`px-2 py-0.5 text-xs rounded ${zoom === z ? 'bg-primary text-primary-foreground' : 'hover:bg-muted'}`}
-              onClick={() => setZoom(z)}
-            >
-              {Math.round(z * 100)}%
-            </button>
-          ))}
-        </div>
-      </div>
-
-      {/* Content */}
+      {/* ── Content area ─────────────────────────────────────────────────── */}
+      <VersionAutoLoader />
       <div className="flex flex-1 min-h-0">
         {tab === 'designer' && (
           <>
@@ -134,8 +371,12 @@ export default function DocumentStudioPage() {
               elements={elements}
               selectedId={selectedId}
               zoom={zoom}
+              onZoomChange={setZoom}
               onSelect={selectElement}
-              onChange={updateElement.bind(null, selectedId ?? '')}
+              onChange={(el) => updateElement(el.id, el)}
+              onFitComputed={(fitPage, fitWidth) => {
+                fitValuesRef.current = { page: fitPage, width: fitWidth };
+              }}
             />
             <PropertiesPanel />
           </>

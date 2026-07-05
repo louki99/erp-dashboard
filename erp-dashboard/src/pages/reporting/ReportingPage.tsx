@@ -1,4 +1,6 @@
 import { useState } from 'react';
+import { useNavigate, useLocation } from 'react-router-dom';
+import { MasterLayout } from '@/components/layout/MasterLayout';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -100,6 +102,48 @@ function StepIndicator({ step }: { step: Step }) {
   );
 }
 
+function ReportingNav() {
+  const navigate = useNavigate();
+  const location = useLocation();
+  const isAdmin  = location.pathname.startsWith('/reporting/admin');
+
+  const items = [
+    { path: '/reporting',       label: 'Catalogue',       icon: '📊', desc: 'Rapports disponibles'  },
+    { path: '/reporting/admin', label: 'Admin catalogue', icon: '⚙️', desc: 'Gérer les définitions' },
+  ];
+
+  return (
+    <div className="h-full bg-white border-r flex flex-col overflow-hidden">
+      <div className="px-4 py-5 border-b shrink-0">
+        <p className="text-[10px] font-semibold uppercase tracking-widest text-gray-400 mb-1">Module</p>
+        <h2 className="text-sm font-bold text-gray-800">Reporting</h2>
+      </div>
+      <nav className="flex-1 p-3 space-y-0.5 overflow-y-auto">
+        {items.map((item) => {
+          const active = item.path === '/reporting' ? !isAdmin : location.pathname.startsWith(item.path);
+          return (
+            <button
+              key={item.path}
+              onClick={() => navigate(item.path)}
+              className={`w-full text-left rounded-lg px-3 py-2.5 transition-colors ${
+                active ? 'bg-primary/10 text-primary' : 'hover:bg-gray-50 text-gray-600 hover:text-gray-900'
+              }`}
+            >
+              <div className="flex items-center gap-2.5">
+                <span className="text-base">{item.icon}</span>
+                <div>
+                  <p className={`text-sm font-medium leading-none ${active ? 'text-primary' : ''}`}>{item.label}</p>
+                  <p className="text-[10px] text-gray-400 mt-0.5">{item.desc}</p>
+                </div>
+              </div>
+            </button>
+          );
+        })}
+      </nav>
+    </div>
+  );
+}
+
 export default function ReportingPage() {
   const [step, setStep]                     = useState<Step>('catalogue');
   const [definition, setDefinition]         = useState<ReportDefinition | null>(null);
@@ -158,7 +202,7 @@ export default function ReportingPage() {
     doExport({ ...payload, export_format: format });
   };
 
-  return (
+  const pageContent = (
     <div className="flex flex-col h-full">
       {/* Header */}
       <div className="px-6 pt-6 pb-4 border-b bg-background shrink-0">
@@ -332,5 +376,12 @@ export default function ReportingPage() {
         )}
       </div>
     </div>
+  );
+
+  return (
+    <MasterLayout
+      leftContent={<ReportingNav />}
+      mainContent={pageContent}
+    />
   );
 }

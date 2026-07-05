@@ -56,6 +56,7 @@ import { StockManagementPage } from '@/pages/stock/StockManagementPage';
 import { PricingManagementPage } from '@/pages/pricing/PricingManagementPage';
 import { CustomFieldsPage } from '@/pages/custom-fields/CustomFieldsPage';
 import ReportingPage from '@/pages/reporting/ReportingPage';
+import ReportingAdminPage from '@/pages/reporting/ReportingAdminPage';
 import DocumentStudioPage from '@/pages/document-studio/DocumentStudioPage';
 
 
@@ -418,6 +419,11 @@ function AppRoutes() {
       <Route path="/reporting" element={
         <ProtectedRoute>
           <ReportingPage />
+        </ProtectedRoute>
+      } />
+      <Route path="/reporting/admin" element={
+        <ProtectedRoute requiredRole={['admin', 'root']}>
+          <ReportingAdminPage />
         </ProtectedRoute>
       } />
 

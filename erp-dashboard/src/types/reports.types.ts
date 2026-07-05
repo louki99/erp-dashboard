@@ -75,6 +75,43 @@ export interface ReportDefinitionsResponse {
   data: Record<string, ReportDefinition[]>;
 }
 
+// ── Admin sources catalogue ───────────────────────────────────────────────────
+
+export interface SourceView {
+  view:        string;
+  category:    string;
+  label:       string;
+  description: string;
+  columns:     string[];
+}
+
+// ── Admin ────────────────────────────────────────────────────────────────────
+
+export interface ReportDefinitionAdmin extends ReportDefinition {
+  id:         number;
+  category:   string;
+  sort_order: number;
+  is_active:  boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ReportDefinitionPayload {
+  code:             string;
+  name:             string;
+  description?:     string;
+  category:         string;
+  sort_order?:      number;
+  source_type:      SourceType;
+  source_name:      string;
+  allowed_formats:  ExportFormat[];
+  default_format:   ExportFormat;
+  default_theme?:   string;
+  parameter_schema: ParameterField[];
+  default_columns:  ReportColumn[];
+  default_style?:   Record<string, unknown>;
+}
+
 // ── Request / Response ───────────────────────────────────────────────────────
 
 export interface ReportRequest {

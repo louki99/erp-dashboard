@@ -1,8 +1,13 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
-import { useTemplateVersions, useCreateVersion, usePublishVersion } from '@/hooks/document-studio/use-templates';
+import {
+  useTemplateVersions,
+  useTemplateVersionDetail,
+  useCreateVersion,
+  usePublishVersion,
+} from '@/hooks/document-studio/use-templates';
 import { useDesignerStore } from '@/stores/designer-store';
 import type { TemplateVersion } from '@/types/document-studio.types';
 
@@ -10,9 +15,20 @@ export function VersionsPanel() {
   const [label, setLabel] = useState('');
   const { template, version, page, elements, setVersion, markSaved } = useDesignerStore();
 
-  const { data: versions = [], isPending } = useTemplateVersions(template?.id ?? '');
-  const { mutate: createVersion, isPending: saving }   = useCreateVersion(template?.id ?? '');
+  const [restoringId, setRestoringId] = useState('');
+
+  const { data: versions = [], isPending }            = useTemplateVersions(template?.id ?? '');
+  const { data: fullRestored }                        = useTemplateVersionDetail(template?.id ?? '', restoringId);
+  const { mutate: createVersion, isPending: saving }  = useCreateVersion(template?.id ?? '');
   const { mutate: publishVersion, isPending: publishing } = usePublishVersion();
+
+  // Once the full version detail arrives, load it and clear the pending id
+  useEffect(() => {
+    if (fullRestored && restoringId) {
+      setVersion(fullRestored);
+      setRestoringId('');
+    }
+  }, [fullRestored, restoringId, setVersion]);
 
   if (!template) {
     return (
@@ -35,7 +51,7 @@ export function VersionsPanel() {
   };
 
   const handleRestore = (v: TemplateVersion) => {
-    setVersion(v);
+    setRestoringId(v.id);
   };
 
   const handlePublish = (v: TemplateVersion) => {

@@ -67,6 +67,8 @@ export const useReportExport = () =>
     mutationFn: async (payload: ReportRequest): Promise<{ blob: Blob; filename: string }> => {
       const response = await apiClient.post(ENDPOINTS.REPORTING_EXPORT, payload, {
         responseType: 'blob',
+        // xlsx must not send Accept: application/json — browser would treat binary as text
+        headers: payload.export_format === 'xlsx' ? { Accept: '*/*' } : undefined,
       });
       return { blob: response.data, filename: `${payload.report_name}.${payload.export_format}` };
     },

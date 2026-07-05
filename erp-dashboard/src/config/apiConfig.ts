@@ -25,6 +25,12 @@ export const ENDPOINTS = {
   REPORTING_THEMES:              '/api/v1/reporting/themes',
   REPORTING_PREVIEW:             '/api/v1/reporting/preview',
   REPORTING_EXPORT:              '/api/v1/reporting/export',
+
+  // ── Reporting Admin ────────────────────────────────────────────────────────
+  /** GET all (incl. inactive), POST create, PUT /{code}, PATCH /{code}/toggle, DELETE /{code} */
+  REPORTING_ADMIN_DEFINITIONS:   '/api/v1/reporting/admin/definitions',
+  /** GET list of available DB views for source_name dropdown */
+  REPORTING_ADMIN_SOURCES:       '/api/v1/reporting/admin/sources',
 } as const;
 
 export type EndpointKey = keyof typeof ENDPOINTS;

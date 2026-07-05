@@ -1,7 +1,7 @@
 import { z } from 'zod';
 
 export const reportRequestSchema = z.object({
-  source_type:  z.enum(['procedure', 'query']),
+  source_type:  z.enum(['procedure', 'query', 'view']),
   source_name:  z.string().min(1),
   parameters:   z.record(z.unknown()).optional(),
   filters: z.array(z.object({
@@ -39,5 +39,34 @@ export const templateCreateSchema = z.object({
   margin_left:      z.number().default(10),
 });
 
-export type ReportRequestInput   = z.infer<typeof reportRequestSchema>;
-export type TemplateCreateInput  = z.infer<typeof templateCreateSchema>;
+const CATEGORIES = ['clients', 'products', 'price_lists', 'sales', 'visits', 'delivery', 'treasury'] as const;
+const SOURCE_TYPES = ['view', 'query', 'procedure'] as const;
+const FORMATS = ['xlsx', 'csv', 'pdf'] as const;
+
+export const reportDefinitionSchema = z.object({
+  code: z
+    .string()
+    .min(1)
+    .max(120)
+    .regex(/^[a-z0-9_]+$/, 'snake_case uniquement (a-z, 0-9, _)'),
+  name:             z.string().min(1).max(255),
+  description:      z.string().optional(),
+  category:         z.enum(CATEGORIES),
+  sort_order:       z.coerce.number().int().min(0).default(0),
+  source_type:      z.enum(SOURCE_TYPES),
+  source_name:      z.string().min(1),
+  allowed_formats:  z.array(z.enum(FORMATS)).min(1, 'Au moins un format requis'),
+  default_format:   z.enum(FORMATS),
+  default_theme:    z.string().optional(),
+  parameter_schema: z.string().default('[]'),   // JSON string — validated on submit
+  default_columns:  z.string().default('[]'),   // JSON string
+  default_style:    z.string().default('{}'),   // JSON string
+});
+
+export type ReportRequestInput     = z.infer<typeof reportRequestSchema>;
+export type TemplateCreateInput    = z.infer<typeof templateCreateSchema>;
+export type ReportDefinitionInput  = z.infer<typeof reportDefinitionSchema>;
+
+export const REPORT_CATEGORIES = CATEGORIES;
+export const REPORT_SOURCE_TYPES = SOURCE_TYPES;
+export const REPORT_FORMATS = FORMATS;

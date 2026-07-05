@@ -95,6 +95,18 @@ export const useTemplateVersions = (templateId: string) =>
     enabled: !!templateId,
   });
 
+export const useTemplateVersionDetail = (templateId: string, versionId: string) =>
+  useQuery({
+    queryKey: [...TEMPLATES_KEY, templateId, 'versions', versionId],
+    queryFn: async () => {
+      const { data } = await apiClient.get(
+        `${ENDPOINTS.DOCUMENT_STUDIO_TEMPLATES}/${templateId}/versions/${versionId}`,
+      );
+      return data as TemplateVersion;
+    },
+    enabled: !!templateId && !!versionId,
+  });
+
 export const useCreateVersion = (templateId: string) => {
   const qc = useQueryClient();
   return useMutation({
