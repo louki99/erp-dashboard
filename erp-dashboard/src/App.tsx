@@ -55,6 +55,8 @@ import { WorkflowCreatePage } from './pages/workflows/WorkflowCreatePage';
 import { StockManagementPage } from '@/pages/stock/StockManagementPage';
 import { PricingManagementPage } from '@/pages/pricing/PricingManagementPage';
 import { CustomFieldsPage } from '@/pages/custom-fields/CustomFieldsPage';
+import ReportingPage from '@/pages/reporting/ReportingPage';
+import DocumentStudioPage from '@/pages/document-studio/DocumentStudioPage';
 
 
 // Simple Navigation Wrapper to show active route in DevSwitcher style (optional, but let's stick to MegaMenu for now)
@@ -411,6 +413,20 @@ function AppRoutes() {
         </ProtectedRoute>
       } />
 
+
+      {/* Reporting Module */}
+      <Route path="/reporting" element={
+        <ProtectedRoute>
+          <ReportingPage />
+        </ProtectedRoute>
+      } />
+
+      {/* Document Studio Module */}
+      <Route path="/document-studio" element={
+        <ProtectedRoute>
+          <DocumentStudioPage />
+        </ProtectedRoute>
+      } />
 
       {/* Catch all */}
       <Route path="*" element={<Navigate to="/dashboard" replace />} />
