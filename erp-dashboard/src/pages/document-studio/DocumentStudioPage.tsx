@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useRef } from 'react';
 import { TemplateList } from '@/components/document-studio/TemplateList';
 import { DesignerCanvas } from '@/components/document-studio/DesignerCanvas';
 import { ToolPalette } from '@/components/document-studio/ToolPalette';
@@ -13,18 +13,25 @@ import type { Template } from '@/types/document-studio.types';
 
 type Tab = 'designer' | 'versions' | 'preview';
 
+const MIN_ZOOM = 0.1;
+const MAX_ZOOM = 4.0;
+const STEP     = 0.1;
+
 export default function DocumentStudioPage() {
-  const [view, setView]     = useState<'list' | 'editor'>('list');
-  const [tab, setTab]       = useState<Tab>('designer');
-  const [zoom, setZoom]     = useState(1);
+  const [view, setView] = useState<'list' | 'editor'>('list');
+  const [tab,  setTab]  = useState<Tab>('designer');
+  const [zoom, setZoom] = useState(1);
+
+  const fitValuesRef = useRef({ page: 1, width: 1 });
 
   const {
     template, version, page, elements, selectedId,
     setTemplate, setVersion, selectElement, updateElement,
     isDirty, markSaved, undo, redo,
+    previewMode, setPreviewMode,
   } = useDesignerStore();
 
-  const { mutate: createVersion, isPending: saving } = useCreateVersion(template?.id ?? '');
+  const { mutate: createVersion, isPending: saving }    = useCreateVersion(template?.id ?? '');
   const { mutate: streamDoc,     isPending: generating } = useStreamDocument();
 
   const handleEdit = (t: Template) => {
@@ -56,6 +63,12 @@ export default function DocumentStudioPage() {
     });
   };
 
+  const handleZoomPreset = (preset: string) => {
+    if (preset === 'page')  setZoom(fitValuesRef.current.page);
+    if (preset === 'width') setZoom(fitValuesRef.current.width);
+    if (preset === '100')   setZoom(1);
+  };
+
   if (view === 'list') {
     return (
       <div className="p-6">
@@ -67,28 +80,133 @@ export default function DocumentStudioPage() {
 
   return (
     <div className="flex flex-col h-full">
-      {/* Header */}
-      <div className="flex items-center gap-3 px-4 py-2 border-b bg-background shrink-0">
-        <Button variant="ghost" size="sm" onClick={() => setView('list')}>
+      {/* ── Header / Toolbar ─────────────────────────────────────────────── */}
+      <div className="flex items-center gap-2 px-4 py-2 border-b bg-[#1e1e2e] text-white shrink-0">
+        <Button
+          variant="ghost"
+          size="sm"
+          className="text-slate-300 hover:text-white hover:bg-white/10"
+          onClick={() => setView('list')}
+        >
           ← Templates
         </Button>
-        <span className="font-medium text-sm">{template?.name}</span>
-        {isDirty && <Badge variant="outline" className="text-xs">Non sauvegardé</Badge>}
-        {version && <Badge variant="secondary" className="text-xs">v{version.version_number}</Badge>}
 
+        <span className="font-medium text-sm text-white truncate">{template?.name}</span>
+        {isDirty   && <Badge variant="outline" className="text-[9px] border-amber-400/40 text-amber-300">Non sauvegardé</Badge>}
+        {version   && <Badge variant="secondary" className="text-[9px]">v{version.version_number}</Badge>}
+
+        {/* Divider */}
+        <div className="h-4 w-px bg-white/10 mx-1" />
+
+        {/* Undo / Redo */}
+        <button
+          onClick={undo}
+          title="Annuler (Ctrl+Z)"
+          className="h-7 w-7 flex items-center justify-center rounded text-slate-400 hover:text-white hover:bg-white/10 transition-colors"
+        >
+          ↩
+        </button>
+        <button
+          onClick={redo}
+          title="Rétablir (Ctrl+Y)"
+          className="h-7 w-7 flex items-center justify-center rounded text-slate-400 hover:text-white hover:bg-white/10 transition-colors"
+        >
+          ↪
+        </button>
+
+        {/* Divider */}
+        <div className="h-4 w-px bg-white/10" />
+
+        {/* Zoom controls */}
+        <div className="flex items-center gap-0.5 px-1 py-0.5 rounded bg-white/5 border border-white/10">
+          <button
+            onClick={() => setZoom((z) => +Math.max(MIN_ZOOM, z - STEP).toFixed(2))}
+            title="Zoom arrière"
+            className="h-6 w-6 flex items-center justify-center rounded text-slate-400 hover:text-white hover:bg-white/10 transition-colors font-bold"
+          >
+            −
+          </button>
+          <span className="w-11 text-center text-[11px] font-medium text-slate-300">
+            {Math.round(zoom * 100)}%
+          </span>
+          <button
+            onClick={() => setZoom((z) => +Math.min(MAX_ZOOM, z + STEP).toFixed(2))}
+            title="Zoom avant"
+            className="h-6 w-6 flex items-center justify-center rounded text-slate-400 hover:text-white hover:bg-white/10 transition-colors font-bold"
+          >
+            +
+          </button>
+          {/* Zoom preset select */}
+          <select
+            value=""
+            onChange={(e) => { handleZoomPreset(e.target.value); (e.target as HTMLSelectElement).value = ''; }}
+            className="h-6 bg-white/5 border border-white/10 rounded text-[10px] text-slate-300 px-1 cursor-pointer ml-0.5"
+          >
+            <option value="" disabled className="bg-gray-900">Preset</option>
+            <option value="page"  className="bg-gray-900">Fit Page</option>
+            <option value="width" className="bg-gray-900">Fit Width</option>
+            <option value="100"   className="bg-gray-900">100%</option>
+          </select>
+        </div>
+
+        {/* Divider */}
+        <div className="h-4 w-px bg-white/10" />
+
+        {/* Tabs */}
+        <div className="flex items-center gap-0.5 px-1 py-0.5 rounded bg-white/5 border border-white/10">
+          {([
+            { key: 'designer' as const, label: 'Designer', icon: '✏️' },
+            { key: 'versions' as const, label: 'Versions',  icon: '🕐' },
+            { key: 'preview'  as const, label: 'Aperçu',    icon: '👁' },
+          ]).map((t) => (
+            <button
+              key={t.key}
+              onClick={() => setTab(t.key)}
+              className={`flex items-center gap-1.5 px-2.5 py-1 text-[11px] font-medium rounded transition-colors ${
+                tab === t.key
+                  ? 'bg-white/20 text-white'
+                  : 'text-slate-400 hover:text-white hover:bg-white/10'
+              }`}
+            >
+              <span>{t.icon}</span>
+              <span className="hidden sm:inline">{t.label}</span>
+            </button>
+          ))}
+        </div>
+
+        {/* Tags / Live Data toggle */}
+        <button
+          onClick={() => setPreviewMode(!previewMode)}
+          className={`flex items-center gap-1.5 px-2.5 py-1 text-[11px] font-medium rounded border transition-colors ${
+            previewMode
+              ? 'bg-emerald-500/20 border-emerald-500/40 text-emerald-300'
+              : 'bg-white/5 border-white/10 text-slate-400 hover:text-white'
+          }`}
+          title="Basculer entre les tags bruts et les données mock"
+        >
+          {previewMode ? '👁 Live Data' : '</> Tags'}
+        </button>
+
+        {/* Right actions */}
         <div className="ml-auto flex items-center gap-2">
-          <Button variant="ghost" size="sm" onClick={undo} title="Annuler (Ctrl+Z)">↩</Button>
-          <Button variant="ghost" size="sm" onClick={redo} title="Rétablir (Ctrl+Y)">↪</Button>
-          <Button variant="outline" size="sm" onClick={handleSave} disabled={saving}>
-            {saving ? 'Sauvegarde…' : '💾 Sauvegarder'}
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={handleSave}
+            disabled={saving}
+            className="h-7 text-xs border-white/20 text-white bg-transparent hover:bg-white/10 hover:text-white"
+          >
+            {saving ? '⏳ Sauvegarde…' : '💾 Sauvegarder'}
           </Button>
-          <div className="flex rounded border overflow-hidden">
-            {(['pdf', 'xlsx', 'docx'] as const).map((fmt) => (
+          <div className="flex rounded border border-white/20 overflow-hidden">
+            {(['pdf', 'xlsx', 'docx'] as const).map((fmt, i) => (
               <button
                 key={fmt}
-                className="px-3 py-1 text-xs hover:bg-muted transition-colors border-r last:border-r-0"
                 onClick={() => handleGenerate(fmt)}
                 disabled={generating}
+                className={`px-2.5 py-1 text-[10px] font-medium text-slate-300 hover:bg-white/10 hover:text-white transition-colors ${
+                  i > 0 ? 'border-l border-white/20' : ''
+                }`}
               >
                 {fmt.toUpperCase()}
               </button>
@@ -97,34 +215,7 @@ export default function DocumentStudioPage() {
         </div>
       </div>
 
-      {/* Tabs */}
-      <div className="flex gap-1 px-4 py-1 border-b shrink-0 bg-muted/30">
-        {(['designer', 'versions', 'preview'] as Tab[]).map((t) => (
-          <button
-            key={t}
-            className={`px-3 py-1 text-xs rounded-sm font-medium transition-colors ${
-              tab === t ? 'bg-background shadow-sm' : 'hover:bg-background/60'
-            }`}
-            onClick={() => setTab(t)}
-          >
-            {t === 'designer' ? 'Designer' : t === 'versions' ? 'Versions' : 'Live Preview'}
-          </button>
-        ))}
-        <div className="ml-auto flex items-center gap-1">
-          <span className="text-xs text-muted-foreground">Zoom :</span>
-          {[0.5, 0.75, 1, 1.25, 1.5].map((z) => (
-            <button
-              key={z}
-              className={`px-2 py-0.5 text-xs rounded ${zoom === z ? 'bg-primary text-primary-foreground' : 'hover:bg-muted'}`}
-              onClick={() => setZoom(z)}
-            >
-              {Math.round(z * 100)}%
-            </button>
-          ))}
-        </div>
-      </div>
-
-      {/* Content */}
+      {/* ── Content area ─────────────────────────────────────────────────── */}
       <div className="flex flex-1 min-h-0">
         {tab === 'designer' && (
           <>
@@ -134,8 +225,12 @@ export default function DocumentStudioPage() {
               elements={elements}
               selectedId={selectedId}
               zoom={zoom}
+              onZoomChange={setZoom}
               onSelect={selectElement}
-              onChange={updateElement.bind(null, selectedId ?? '')}
+              onChange={(el) => updateElement(el.id, el)}
+              onFitComputed={(fitPage, fitWidth) => {
+                fitValuesRef.current = { page: fitPage, width: fitWidth };
+              }}
             />
             <PropertiesPanel />
           </>

@@ -28,28 +28,30 @@ interface HistoryEntry {
 }
 
 interface DesignerState {
-  template:   Template | null;
-  version:    TemplateVersion | null;
-  elements:   DesignerElement[];
-  page:       PageSettings;
-  selectedId: string | null;
-  testData:   Record<string, unknown>;
-  isDirty:    boolean;
-  history:    HistoryEntry[];
-  historyIdx: number;
+  template:    Template | null;
+  version:     TemplateVersion | null;
+  elements:    DesignerElement[];
+  page:        PageSettings;
+  selectedId:  string | null;
+  testData:    Record<string, unknown>;
+  isDirty:     boolean;
+  history:     HistoryEntry[];
+  historyIdx:  number;
+  previewMode: boolean;
 
-  setTemplate:   (t: Template) => void;
-  setVersion:    (v: TemplateVersion) => void;
-  setElements:   (elements: DesignerElement[]) => void;
-  addElement:    (element: DesignerElement) => void;
-  updateElement: (id: string, patch: Partial<DesignerElement>) => void;
-  removeElement: (id: string) => void;
-  selectElement: (id: string | null) => void;
-  setTestData:   (data: Record<string, unknown>) => void;
-  setPage:       (page: PageSettings) => void;
-  markSaved:     () => void;
-  undo:          () => void;
-  redo:          () => void;
+  setTemplate:    (t: Template) => void;
+  setVersion:     (v: TemplateVersion) => void;
+  setElements:    (elements: DesignerElement[]) => void;
+  addElement:     (element: DesignerElement) => void;
+  updateElement:  (id: string, patch: Partial<DesignerElement>) => void;
+  removeElement:  (id: string) => void;
+  selectElement:  (id: string | null) => void;
+  setTestData:    (data: Record<string, unknown>) => void;
+  setPage:        (page: PageSettings) => void;
+  markSaved:      () => void;
+  undo:           () => void;
+  redo:           () => void;
+  setPreviewMode: (v: boolean) => void;
 }
 
 function snapshot(elements: DesignerElement[], page: PageSettings): HistoryEntry {
@@ -57,15 +59,16 @@ function snapshot(elements: DesignerElement[], page: PageSettings): HistoryEntry
 }
 
 export const useDesignerStore = create<DesignerState>((set, get) => ({
-  template:   null,
-  version:    null,
-  elements:   [],
-  page:       DEFAULT_PAGE,
-  selectedId: null,
-  testData:   DEFAULT_TEST_DATA,
-  isDirty:    false,
-  history:    [],
-  historyIdx: -1,
+  template:    null,
+  version:     null,
+  elements:    [],
+  page:        DEFAULT_PAGE,
+  selectedId:  null,
+  testData:    DEFAULT_TEST_DATA,
+  isDirty:     false,
+  history:     [],
+  historyIdx:  -1,
+  previewMode: false,
 
   setTemplate: (template) => set({ template }),
 
@@ -146,4 +149,6 @@ export const useDesignerStore = create<DesignerState>((set, get) => ({
     const next = history[historyIdx + 1];
     set({ elements: next.elements, page: next.page, historyIdx: historyIdx + 1, isDirty: true });
   },
+
+  setPreviewMode: (v) => set({ previewMode: v }),
 }));
