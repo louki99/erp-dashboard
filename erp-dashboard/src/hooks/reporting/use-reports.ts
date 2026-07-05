@@ -2,7 +2,41 @@ import { useMutation, useQuery } from '@tanstack/react-query';
 import toast from 'react-hot-toast';
 import apiClient from '@/services/api/client';
 import { ENDPOINTS } from '@/config/apiConfig';
-import type { ReportRequest, ReportPreviewResponse } from '@/types/reports.types';
+import type {
+  ReportRequest,
+  ReportPreviewResponse,
+  ReportDefinition,
+  ReportDefinitionsResponse,
+} from '@/types/reports.types';
+
+// ── Catalogue ────────────────────────────────────────────────────────────────
+
+export const useReportDefinitions = () =>
+  useQuery({
+    queryKey: ['reporting', 'definitions'],
+    queryFn: async (): Promise<Record<string, ReportDefinition[]>> => {
+      const { data } = await apiClient.get<ReportDefinitionsResponse>(
+        ENDPOINTS.REPORTING_DEFINITIONS,
+      );
+      // Accept both { data: { clients: [...] } } and { clients: [...] } shapes
+      return (data as any)?.data ?? data;
+    },
+    staleTime: 5 * 60 * 1000, // catalogue rarely changes — cache 5 min
+  });
+
+export const useReportDefinition = (code: string) =>
+  useQuery({
+    queryKey: ['reporting', 'definitions', code],
+    queryFn: async (): Promise<ReportDefinition> => {
+      const { data } = await apiClient.get(
+        `${ENDPOINTS.REPORTING_DEFINITIONS}/${code}`,
+      );
+      return data;
+    },
+    enabled: !!code,
+  });
+
+// ── Themes ───────────────────────────────────────────────────────────────────
 
 export const useThemes = () =>
   useQuery({
@@ -12,6 +46,8 @@ export const useThemes = () =>
       return data.themes as string[];
     },
   });
+
+// ── Preview & Export ─────────────────────────────────────────────────────────
 
 export const useReportPreview = () =>
   useMutation({
@@ -28,18 +64,17 @@ export const useReportPreview = () =>
 
 export const useReportExport = () =>
   useMutation({
-    mutationFn: async (payload: ReportRequest): Promise<Blob> => {
+    mutationFn: async (payload: ReportRequest): Promise<{ blob: Blob; filename: string }> => {
       const response = await apiClient.post(ENDPOINTS.REPORTING_EXPORT, payload, {
         responseType: 'blob',
       });
-      return response.data;
+      return { blob: response.data, filename: `${payload.report_name}.${payload.export_format}` };
     },
-    onSuccess: (blob, payload) => {
-      const ext = payload.export_format;
+    onSuccess: ({ blob, filename }) => {
       const url = URL.createObjectURL(blob);
       const a   = document.createElement('a');
       a.href     = url;
-      a.download = `${payload.report_name}.${ext}`;
+      a.download = filename;
       a.click();
       URL.revokeObjectURL(url);
       toast.success('Export téléchargé.');

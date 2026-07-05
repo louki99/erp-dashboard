@@ -21,6 +21,7 @@ export const ENDPOINTS = {
   RENDER_GENERATE_INVOICE:       '/api/v1/document-studio/render/generate/invoice',
 
   // ── Reporting ──────────────────────────────────────────────────────────────
+  REPORTING_DEFINITIONS:         '/api/v1/reporting/definitions',
   REPORTING_THEMES:              '/api/v1/reporting/themes',
   REPORTING_PREVIEW:             '/api/v1/reporting/preview',
   REPORTING_EXPORT:              '/api/v1/reporting/export',
