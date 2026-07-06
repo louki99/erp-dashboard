@@ -1,8 +1,11 @@
 import { useState, useRef, useEffect } from 'react';
+import toast from 'react-hot-toast';
+import type { DesignerCanvasRef } from '@/components/document-studio/DesignerCanvas';
 import { TemplateList } from '@/components/document-studio/TemplateList';
-import { DesignerCanvas } from '@/components/document-studio/DesignerCanvas';
+import { DesignerCanvas, MM_TO_PX, PAGE_DIMS } from '@/components/document-studio/DesignerCanvas';
 import { ToolPalette } from '@/components/document-studio/ToolPalette';
 import { PropertiesPanel } from '@/components/document-studio/PropertiesPanel';
+import { SimpleEditPanel } from '@/components/document-studio/SimpleEditPanel';
 import { VersionsPanel } from '@/components/document-studio/VersionsPanel';
 import { LivePreviewFrame } from '@/components/document-studio/LivePreviewFrame';
 import { MasterLayout } from '@/components/layout/MasterLayout';
@@ -38,6 +41,7 @@ function VersionAutoLoader() {
   // Reset when user switches to a different template
   useEffect(() => {
     didPick.current = false;
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setTargetId('');
   }, [template?.id]);
 
@@ -47,6 +51,7 @@ function VersionAutoLoader() {
     const published = versions.find((v) => v.is_published);
     const best = published ?? versions[versions.length - 1];
     if (best) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setTargetId(best.id);
       didPick.current = true;
     }
@@ -63,7 +68,7 @@ function VersionAutoLoader() {
 type Tab = 'designer' | 'versions' | 'preview';
 
 const MIN_ZOOM = 0.1;
-const MAX_ZOOM = 4.0;
+const MAX_ZOOM = 8.0;
 const STEP     = 0.1;
 
 export default function DocumentStudioPage() {
@@ -84,13 +89,17 @@ export default function DocumentStudioPage() {
   };
 
   const fitValuesRef = useRef({ page: 1, width: 1 });
+  const canvasRef = useRef<DesignerCanvasRef | null>(null);
 
   const {
     template, version, page, elements, selectedId,
-    setTemplate, setVersion, selectElement, updateElement,
+    setTemplate, setVersion, setPage, selectElement, updateElement, setElementsBulk,
     isDirty, markSaved, undo, redo,
     previewMode, setPreviewMode,
+    editorMode, setEditorMode,
   } = useDesignerStore();
+
+  const isSimpleMode = editorMode === 'simple';
 
   const { mutate: createVersion, isPending: saving }    = useCreateVersion(template?.id ?? '');
   const { mutate: streamDoc,     isPending: generating } = useStreamDocument();
@@ -124,9 +133,54 @@ export default function DocumentStudioPage() {
     });
   };
 
+  // Proportionally rescale ALL elements so the content fills the printable
+  // area. Fixes templates authored in a smaller coordinate space (mm/points
+  // instead of page px). Single history entry → one Ctrl+Z restores everything.
+  const handleFitContent = () => {
+    if (!elements.length) return;
+
+    const dims = PAGE_DIMS[page.format] ?? PAGE_DIMS.A4;
+    const pageWmm = page.orientation === 'landscape' ? dims.h : dims.w;
+    const pageHmm = page.orientation === 'landscape' ? dims.w : dims.h;
+    const w = pageWmm * MM_TO_PX;
+    const h = pageHmm * MM_TO_PX;
+    const ml = (page.margin_left ?? 10) * MM_TO_PX;
+    const mr = (page.margin_right ?? 10) * MM_TO_PX;
+    const mt = (page.margin_top ?? 10) * MM_TO_PX;
+    const mb = (page.margin_bottom ?? 10) * MM_TO_PX;
+
+    const minX = Math.min(...elements.map((e) => e.x));
+    const minY = Math.min(...elements.map((e) => e.y));
+    const maxX = Math.max(...elements.map((e) => e.x + e.width));
+    const maxY = Math.max(...elements.map((e) => e.y + e.height));
+    const bboxW = maxX - minX;
+    const bboxH = maxY - minY;
+    if (bboxW <= 0 || bboxH <= 0) return;
+
+    // Fit width, but never overflow the page height
+    const s = Math.min((w - ml - mr) / bboxW, (h - mt - mb) / bboxH);
+
+    setElementsBulk(
+      elements.map((el) => ({
+        ...el,
+        x:      Math.round(ml + (el.x - minX) * s),
+        y:      Math.round(mt + (el.y - minY) * s),
+        width:  Math.max(2, Math.round(el.width * s)),
+        height: Math.max(2, Math.round(el.height * s)),
+        style: {
+          ...el.style,
+          font_size: el.style.font_size ? +(el.style.font_size * s).toFixed(1) : el.style.font_size,
+          padding:   el.style.padding ? +(el.style.padding * s).toFixed(1) : el.style.padding,
+        },
+      })),
+    );
+    toast.success(`Contenu adapté à la page (×${s.toFixed(2)})`);
+  };
+
   const handleZoomPreset = (preset: string) => {
     if (preset === 'page')  setZoom(fitValuesRef.current.page);
     if (preset === 'width') setZoom(fitValuesRef.current.width);
+    if (preset === 'fill')  setZoom(Math.max(fitValuesRef.current.page, fitValuesRef.current.width));
     if (preset === '100')   setZoom(1);
   };
 
@@ -243,6 +297,35 @@ export default function DocumentStudioPage() {
         {/* Divider */}
         <div className="h-4 w-px bg-white/10 mx-1" />
 
+        {/* Simple / Designer mode switch */}
+        <div className="flex items-center gap-0.5 p-0.5 rounded-lg bg-white/5 border border-white/10">
+          <button
+            onClick={() => setEditorMode('simple')}
+            title="Mode sécurisé : textes, logo et couleurs uniquement — la mise en page est verrouillée"
+            className={`flex items-center gap-1.5 px-2.5 py-1 text-[11px] font-medium rounded-md transition-colors ${
+              isSimpleMode
+                ? 'bg-emerald-500/25 text-emerald-300 border border-emerald-500/40'
+                : 'text-slate-400 hover:text-white border border-transparent'
+            }`}
+          >
+            🔒 <span className="hidden md:inline">Édition simple</span>
+          </button>
+          <button
+            onClick={() => setEditorMode('designer')}
+            title="Mode avancé : contrôle total de la mise en page (réservé aux administrateurs)"
+            className={`flex items-center gap-1.5 px-2.5 py-1 text-[11px] font-medium rounded-md transition-colors ${
+              !isSimpleMode
+                ? 'bg-indigo-500/25 text-indigo-300 border border-indigo-500/40'
+                : 'text-slate-400 hover:text-white border border-transparent'
+            }`}
+          >
+            🎨 <span className="hidden md:inline">Designer</span>
+          </button>
+        </div>
+
+        {/* Divider */}
+        <div className="h-4 w-px bg-white/10 mx-1" />
+
         {/* Undo / Redo */}
         <button
           onClick={undo}
@@ -258,6 +341,16 @@ export default function DocumentStudioPage() {
         >
           ↪
         </button>
+
+        {!isSimpleMode && (
+          <button
+            onClick={handleFitContent}
+            title="Redimensionner tout le contenu pour occuper la zone imprimable (annulable avec Ctrl+Z)"
+            className="flex items-center gap-1.5 px-2.5 py-1 text-[11px] font-medium rounded border bg-white/5 border-white/10 text-slate-400 hover:text-white hover:bg-white/10 transition-colors"
+          >
+            ⤢ <span className="hidden lg:inline">Adapter à la page</span>
+          </button>
+        )}
 
         {/* Divider */}
         <div className="h-4 w-px bg-white/10" />
@@ -281,6 +374,16 @@ export default function DocumentStudioPage() {
           >
             +
           </button>
+          {/* Focus selected element */}
+          <button
+            onClick={() => selectedId && canvasRef.current?.focusElement(selectedId)}
+            disabled={!selectedId}
+            title="Centrer sur l'élément sélectionné"
+            className="h-6 px-1.5 flex items-center justify-center rounded text-[10px] text-slate-400 hover:text-white hover:bg-white/10 transition-colors disabled:opacity-40 disabled:cursor-not-allowed ml-0.5"
+          >
+            🎯
+          </button>
+
           {/* Zoom preset select */}
           <select
             value=""
@@ -290,6 +393,7 @@ export default function DocumentStudioPage() {
             <option value="" disabled className="bg-gray-900">Preset</option>
             <option value="page"  className="bg-gray-900">Fit Page</option>
             <option value="width" className="bg-gray-900">Fit Width</option>
+            <option value="fill"  className="bg-gray-900">Fill</option>
             <option value="100"   className="bg-gray-900">100%</option>
           </select>
         </div>
@@ -365,8 +469,9 @@ export default function DocumentStudioPage() {
       <div className="flex flex-1 min-h-0">
         {tab === 'designer' && (
           <>
-            <ToolPalette />
+            {!isSimpleMode && <ToolPalette />}
             <DesignerCanvas
+              ref={canvasRef}
               page={page}
               elements={elements}
               selectedId={selectedId}
@@ -377,8 +482,10 @@ export default function DocumentStudioPage() {
               onFitComputed={(fitPage, fitWidth) => {
                 fitValuesRef.current = { page: fitPage, width: fitWidth };
               }}
+              readOnly={isSimpleMode}
+              onPageChange={setPage}
             />
-            <PropertiesPanel />
+            {isSimpleMode ? <SimpleEditPanel /> : <PropertiesPanel />}
           </>
         )}
         {tab === 'versions' && (

@@ -16,15 +16,15 @@ const TOOLS: { type: ElementType; label: string; icon: string }[] = [
 ];
 
 const DEFAULTS: Partial<Record<ElementType, Partial<DesignerElement>>> = {
-  text:         { width: 120, height: 20 },
+  text:         { width: 160, height: 26 },
   rectangle:    { width: 100, height: 60 },
   line:         { width: 200, height: 2  },
   image:        { width: 80,  height: 80 },
-  table:        { width: 300, height: 100 },
-  qr_code:      { width: 60,  height: 60 },
-  barcode:      { width: 150, height: 40 },
-  current_date: { width: 80,  height: 20 },
-  page_number:  { width: 40,  height: 20 },
+  table:        { width: 400, height: 120 },
+  qr_code:      { width: 70,  height: 70 },
+  barcode:      { width: 170, height: 48 },
+  current_date: { width: 100, height: 24 },
+  page_number:  { width: 50,  height: 24 },
 };
 
 export function ToolPalette() {

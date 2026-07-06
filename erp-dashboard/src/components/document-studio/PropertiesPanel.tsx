@@ -11,11 +11,45 @@ import type { DesignerElement } from '@/types/document-studio.types';
 
 const MM_TO_PX = 3.7795275591;
 
+function estimateTextWidth(text: string, fontSize: number): number {
+  return Math.round(text.length * fontSize * 0.6 + 16);
+}
+
+function resolveMock(binding: string, testData: Record<string, unknown>): string {
+  if (!binding) return '';
+  const inner = binding.replace(/\{\{|\}\}/g, '').trim();
+  const varPath = inner.split('|')[0].trim();
+  const parts = varPath.split('.');
+  let val: unknown = testData;
+  for (const p of parts) {
+    if (val && typeof val === 'object') val = (val as Record<string, unknown>)[p];
+    else return binding;
+  }
+  return val != null ? String(val) : binding;
+}
+
 const PAGE_DIMS: Record<string, { w: number; h: number }> = {
   A4:     { w: 210, h: 297 },
   A5:     { w: 148, h: 210 },
   letter: { w: 216, h: 279 },
 };
+
+function elementLabel(el: DesignerElement): string {
+  if (el.binding) return el.binding;
+  const content = el.properties?.content;
+  if (typeof content === 'string' && content) return content;
+  return el.type;
+}
+
+function elementOverlaps(el: DesignerElement, elements: DesignerElement[]): boolean {
+  for (const other of elements) {
+    if (other.id === el.id) continue;
+    const xOverlap = Math.min(el.x + el.width, other.x + other.width) - Math.max(el.x, other.x);
+    const yOverlap = Math.min(el.y + el.height, other.y + other.height) - Math.max(el.y, other.y);
+    if (xOverlap > 1 && yOverlap > 1) return true;
+  }
+  return false;
+}
 
 // ── Internal accordion section ────────────────────────────────────────────────
 
@@ -95,21 +129,24 @@ function GlobalSettings() {
     setOpenGroups((prev) => ({ ...prev, [key]: !prev[key] }));
 
   const handleAddVar = (v: string) => {
+    const binding = '{{' + v + '}}';
+    const fontSize = 12;
+    const width = Math.max(160, Math.round(binding.length * fontSize * 0.6 + 16));
     addElement({
       id:         nanoid(),
       type:       'text',
       x:          20,
       y:          20,
-      width:      150,
-      height:     20,
+      width,
+      height:     26,
       rotation:   0,
       opacity:    1,
       z_index:    elements.length,
       visible:    true,
       locked:     false,
-      binding:    '{{' + v + '}}',
+      binding,
       properties: {},
-      style:      { font_size: 12, color: '#000000' },
+      style:      { font_size: fontSize, color: '#000000' },
     });
   };
 
@@ -201,6 +238,34 @@ function GlobalSettings() {
             </div>
           </div>
         </div>
+
+        {/* Bands */}
+        <div className="space-y-1">
+          <Label className="text-[10px]">Bandes (mm)</Label>
+          <div className="grid grid-cols-2 gap-1">
+            <div className="space-y-0.5">
+              <Label className="text-[9px] text-indigo-400">▲ En-tête</Label>
+              <Input
+                type="number"
+                className="h-6 text-xs"
+                value={page.header_height ?? 45}
+                onChange={(e) => setPage({ ...page, header_height: Number(e.target.value) })}
+              />
+            </div>
+            <div className="space-y-0.5">
+              <Label className="text-[9px] text-amber-500">▼ Pied de page</Label>
+              <Input
+                type="number"
+                className="h-6 text-xs"
+                value={page.footer_height ?? 40}
+                onChange={(e) => setPage({ ...page, footer_height: Number(e.target.value) })}
+              />
+            </div>
+          </div>
+          <p className="text-[9px] text-gray-400 leading-snug">
+            Les séparateurs sont aussi déplaçables directement sur le canvas.
+          </p>
+        </div>
       </div>
 
       {/* ── Variables section ── */}
@@ -256,7 +321,7 @@ function GlobalSettings() {
 // ── Element properties panel ──────────────────────────────────────────────────
 
 function ElementProperties({ el }: { el: DesignerElement }) {
-  const { page, version, elements, updateElement, removeElement } = useDesignerStore();
+  const { page, version, updateElement, removeElement, previewMode, testData } = useDesignerStore();
 
   const [sections, setSections] = useState<Record<string, boolean>>({
     geometry:   true,
@@ -283,7 +348,7 @@ function ElementProperties({ el }: { el: DesignerElement }) {
   const variables: string[] = version?.variables ?? [];
 
   return (
-    <div className="flex flex-col h-full">
+    <div className="flex flex-col">
       {/* Header row */}
       <div className="flex items-center justify-between px-3 py-2 border-b shrink-0">
         <span className="text-[10px] font-semibold uppercase tracking-wide bg-gray-100 text-gray-600 px-2 py-0.5 rounded">
@@ -299,8 +364,7 @@ function ElementProperties({ el }: { el: DesignerElement }) {
         </Button>
       </div>
 
-      {/* Scrollable sections */}
-      <div className="flex-1 overflow-y-auto">
+      <div>
         {/* ── Geometry ── */}
         <Section
           title="Géométrie"
@@ -339,6 +403,28 @@ function ElementProperties({ el }: { el: DesignerElement }) {
               />
             </div>
           </div>
+
+          {/* Auto-width for text elements */}
+          {isText && (
+            <div className="space-y-0.5">
+              <Label className="text-[10px]">Largeur</Label>
+              <button
+                type="button"
+                onClick={() => {
+                  const fontSize = el.style.font_size ?? 12;
+                  const text =
+                    previewMode && el.binding
+                      ? resolveMock(el.binding, testData)
+                      : el.binding || (el.properties?.content as string) || '';
+                  const newW = estimateTextWidth(text, fontSize);
+                  upd({ width: Math.max(40, Math.min(newW, pageWidthPx - el.x - 20)) });
+                }}
+                className="w-full h-7 text-[10px] rounded border border-gray-200 hover:bg-gray-100 hover:border-gray-300 transition-colors font-medium"
+              >
+                Ajuster à la largeur du texte
+              </button>
+            </div>
+          )}
 
           {/* Alignment tools */}
           <div className="space-y-0.5">
@@ -551,6 +637,115 @@ function ElementProperties({ el }: { el: DesignerElement }) {
   );
 }
 
+// ── Layers panel ──────────────────────────────────────────────────────────────
+
+function LayersPanel() {
+  const { elements, selectedId, selectElement, updateElement, removeElement } = useDesignerStore();
+  const [open, setOpen] = useState(true);
+
+  const sorted = [...elements].sort((a, b) => (b.z_index ?? 0) - (a.z_index ?? 0));
+
+  return (
+    <div className="flex flex-col h-52 shrink-0 border-t bg-white">
+      <button
+        onClick={() => setOpen((v) => !v)}
+        className="w-full flex items-center justify-between px-3 py-2 text-xs font-semibold uppercase tracking-wide text-gray-500 hover:bg-gray-50 border-b shrink-0"
+      >
+        <span className="flex items-center gap-2">
+          Calques
+          <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-gray-100 text-gray-500">
+            {elements.length}
+          </span>
+        </span>
+        <span className="text-gray-300">{open ? '▲' : '▼'}</span>
+      </button>
+
+      {open && (
+        <div className="flex-1 overflow-y-auto">
+          {sorted.length === 0 ? (
+            <p className="text-[10px] text-gray-400 italic p-3">Aucun élément</p>
+          ) : (
+            <div className="divide-y">
+              {sorted.map((el) => {
+                const label = elementLabel(el);
+                const isSelected = el.id === selectedId;
+                const overlapping = elementOverlaps(el, elements);
+                return (
+                  <div
+                    key={el.id}
+                    onClick={() => selectElement(el.id)}
+                    className={`group flex items-center gap-2 px-2 py-1.5 cursor-pointer transition-colors ${
+                      isSelected ? 'bg-blue-50' : 'hover:bg-gray-50'
+                    }`}
+                  >
+                    <span className="text-[10px] w-4 text-center text-gray-400">
+                      {el.type === 'text' && 'T'}
+                      {el.type === 'rectangle' && '▭'}
+                      {el.type === 'line' && '—'}
+                      {el.type === 'image' && '🖼'}
+                      {el.type === 'table' && '⊞'}
+                      {el.type === 'qr_code' && '⊡'}
+                      {el.type === 'barcode' && 'B'}
+                      {el.type === 'current_date' && '📅'}
+                      {el.type === 'page_number' && '#'}
+                    </span>
+
+                    <div className="flex-1 min-w-0">
+                      <p className="text-[10px] font-medium text-gray-700 truncate" title={label}>
+                        {label}
+                      </p>
+                      <p className="text-[9px] text-gray-400 truncate">
+                        {el.type} · {Math.round(el.x)},{Math.round(el.y)} · {Math.round(el.width)}×{Math.round(el.height)}
+                      </p>
+                    </div>
+
+                    {overlapping && (
+                      <span className="w-2 h-2 rounded-full bg-red-500" title="Chevauchement détecté" />
+                    )}
+
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        updateElement(el.id, { visible: !el.visible });
+                      }}
+                      className="text-[10px] text-gray-400 hover:text-gray-700"
+                      title={el.visible ? 'Masquer' : 'Afficher'}
+                    >
+                      {el.visible ? '👁' : '🚫'}
+                    </button>
+
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        updateElement(el.id, { locked: !el.locked });
+                      }}
+                      className="text-[10px] text-gray-400 hover:text-gray-700"
+                      title={el.locked ? 'Déverrouiller' : 'Verrouiller'}
+                    >
+                      {el.locked ? '🔒' : '🔓'}
+                    </button>
+
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        removeElement(el.id);
+                      }}
+                      className="text-[10px] text-red-400 hover:text-red-600"
+                      title="Supprimer"
+                    >
+                      ✕
+                    </button>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ── Public component ──────────────────────────────────────────────────────────
 
 export function PropertiesPanel() {
@@ -558,12 +753,11 @@ export function PropertiesPanel() {
   const el = elements.find((e) => e.id === selectedId);
 
   return (
-    <div className="w-64 shrink-0 border-l bg-white overflow-y-auto flex flex-col">
-      {el ? (
-        <ElementProperties el={el} />
-      ) : (
-        <GlobalSettings />
-      )}
+    <div className="w-72 shrink-0 border-l bg-white flex flex-col h-full">
+      <div className="flex-1 overflow-y-auto min-h-0">
+        {el ? <ElementProperties el={el} /> : <GlobalSettings />}
+      </div>
+      <LayersPanel />
     </div>
   );
 }

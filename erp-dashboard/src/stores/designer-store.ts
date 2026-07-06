@@ -27,6 +27,8 @@ interface HistoryEntry {
   page:     PageSettings;
 }
 
+export type EditorMode = 'simple' | 'designer';
+
 interface DesignerState {
   template:    Template | null;
   version:     TemplateVersion | null;
@@ -38,6 +40,7 @@ interface DesignerState {
   history:     HistoryEntry[];
   historyIdx:  number;
   previewMode: boolean;
+  editorMode:  EditorMode;
 
   setTemplate:    (t: Template) => void;
   setVersion:     (v: TemplateVersion) => void;
@@ -52,6 +55,8 @@ interface DesignerState {
   undo:           () => void;
   redo:           () => void;
   setPreviewMode: (v: boolean) => void;
+  setEditorMode:  (m: EditorMode) => void;
+  setElementsBulk:(elements: DesignerElement[]) => void;
 }
 
 function snapshot(elements: DesignerElement[], page: PageSettings): HistoryEntry {
@@ -69,8 +74,10 @@ export const useDesignerStore = create<DesignerState>((set, get) => ({
   history:     [],
   historyIdx:  -1,
   previewMode: false,
+  editorMode:  'simple',
 
-  setTemplate: (template) => set({ template }),
+  // Always reopen in the safe simple mode — designer mode is opt-in per session
+  setTemplate: (template) => set({ template, editorMode: 'simple' }),
 
   setVersion: (version) => {
     const elements = version.elements ?? [];
@@ -151,4 +158,14 @@ export const useDesignerStore = create<DesignerState>((set, get) => ({
   },
 
   setPreviewMode: (v) => set({ previewMode: v }),
+
+  setEditorMode: (m) => set({ editorMode: m, selectedId: null }),
+
+  // Single history entry for a multi-element change (e.g. global color replace)
+  setElementsBulk: (elements) => {
+    const { page, history, historyIdx } = get();
+    const next = history.slice(0, historyIdx + 1);
+    next.push(snapshot(elements, page));
+    set({ elements, isDirty: true, history: next, historyIdx: next.length - 1 });
+  },
 }));

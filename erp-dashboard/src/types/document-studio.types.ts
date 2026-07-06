@@ -52,6 +52,10 @@ export interface PageSettings {
   margin_right:   number;
   margin_bottom:  number;
   margin_left:    number;
+  // Banded layout (Crystal Reports style) — design-time zone boundaries in mm.
+  // The renderer keeps absolute mm positions; bands are conception guides.
+  header_height?: number;
+  footer_height?: number;
 }
 
 export interface Template {
