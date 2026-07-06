@@ -1,7 +1,10 @@
 import { useRef, useState, useEffect, useMemo, useCallback, forwardRef, useImperativeHandle } from 'react';
 import { Rnd } from 'react-rnd';
+import { nanoid } from 'nanoid';
 import { useDesignerStore } from '@/stores/designer-store';
-import type { DesignerElement, PageSettings, ElementStyle } from '@/types/document-studio.types';
+import { buildToolElement, TOOL_DRAG_TYPE } from '@/components/document-studio/ToolPalette';
+import { ElementEditModal } from '@/components/document-studio/ElementEditModal';
+import type { DesignerElement, PageSettings, ElementStyle, ElementType } from '@/types/document-studio.types';
 
 /*
  * HTML/CSS designer canvas.
@@ -243,13 +246,15 @@ const RESIZE_HANDLE: React.CSSProperties = {
   borderRadius: 2,
 };
 
-function CanvasElement({ el, isSelected, zoom, readOnly, onSelect, onChange }: {
+function CanvasElement({ el, isSelected, zoom, readOnly, onSelect, onChange, onContextMenu, onEdit }: {
   el: DesignerElement;
   isSelected: boolean;
   zoom: number;
   readOnly: boolean;
   onSelect: () => void;
   onChange: (el: DesignerElement) => void;
+  onContextMenu?: (e: React.MouseEvent) => void;
+  onEdit?: () => void;
 }) {
   const outline = isSelected
     ? '1.5px solid #4f46e5'
@@ -266,6 +271,18 @@ function CanvasElement({ el, isSelected, zoom, readOnly, onSelect, onChange }: {
         cursor: readOnly ? 'pointer' : 'move',
       }}
       onClick={(e) => { e.stopPropagation(); onSelect(); }}
+      onDoubleClick={(e) => {
+        if (!onEdit) return;
+        e.stopPropagation();
+        onEdit();
+      }}
+      onContextMenu={(e) => {
+        if (!onContextMenu) return;
+        e.preventDefault();
+        e.stopPropagation();
+        onSelect();
+        onContextMenu(e);
+      }}
     >
       <ElementContent el={el} previewMode={false} testData={{}} />
     </div>
@@ -335,6 +352,61 @@ function CanvasElement({ el, isSelected, zoom, readOnly, onSelect, onChange }: {
     >
       {inner}
     </Rnd>
+  );
+}
+
+// ── Context menu ──────────────────────────────────────────────────────────────
+
+interface MenuAction {
+  icon: string;
+  label: string;
+  danger?: boolean;
+  divider?: boolean;
+  onClick: () => void;
+}
+
+function ContextMenu({ x, y, actions, onClose }: {
+  x: number; y: number; actions: MenuAction[]; onClose: () => void;
+}) {
+  // Close on any outside click / Escape / scroll
+  useEffect(() => {
+    const close = () => onClose();
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
+    window.addEventListener('mousedown', close);
+    window.addEventListener('keydown', onKey);
+    window.addEventListener('wheel', close, { once: true });
+    return () => {
+      window.removeEventListener('mousedown', close);
+      window.removeEventListener('keydown', onKey);
+      window.removeEventListener('wheel', close);
+    };
+  }, [onClose]);
+
+  const menuW = 200;
+  const left = Math.min(x, window.innerWidth - menuW - 8);
+  const top = Math.min(y, window.innerHeight - actions.length * 32 - 16);
+
+  return (
+    <div
+      className="fixed z-[1000] bg-white rounded-xl border border-gray-200 shadow-xl py-1 select-none"
+      style={{ left, top, width: menuW }}
+      onMouseDown={(e) => e.stopPropagation()}
+    >
+      {actions.map((a, i) => (
+        <div key={i}>
+          {a.divider && <div className="h-px bg-gray-100 my-1" />}
+          <button
+            onClick={() => { a.onClick(); onClose(); }}
+            className={`w-full flex items-center gap-2.5 px-3 py-1.5 text-xs text-left transition-colors ${
+              a.danger ? 'text-red-500 hover:bg-red-50' : 'text-gray-700 hover:bg-indigo-50'
+            }`}
+          >
+            <span className="w-4 text-center">{a.icon}</span>
+            {a.label}
+          </button>
+        </div>
+      ))}
+    </div>
   );
 }
 
@@ -474,7 +546,41 @@ export const DesignerCanvas = forwardRef<DesignerCanvasRef, Props>(function Desi
   const containerRef = useRef<HTMLDivElement>(null);
   const fitZoomRef = useRef(1);
 
-  const { testData, previewMode } = useDesignerStore();
+  const { testData, previewMode, addElement, removeElement, selectElement } = useDesignerStore();
+
+  // Context menu + quick-edit modal state
+  const [menu, setMenu] = useState<{ x: number; y: number; elId: string } | null>(null);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const menuEl = menu ? elements.find((e) => e.id === menu.elId) : undefined;
+  const editingEl = editingId ? elements.find((e) => e.id === editingId) : undefined;
+
+  const duplicateElement = (el: DesignerElement) => {
+    const copy: DesignerElement = {
+      ...structuredClone(el),
+      id: nanoid(),
+      x: el.x + 12,
+      y: el.y + 12,
+      z_index: Math.max(0, ...elements.map((e) => e.z_index ?? 0)) + 1,
+    };
+    addElement(copy);
+    selectElement(copy.id);
+  };
+
+  // Drop a tool from the palette at the exact cursor position
+  const handleToolDrop = (e: React.DragEvent<HTMLDivElement>) => {
+    const type = e.dataTransfer.getData(TOOL_DRAG_TYPE) as ElementType | '';
+    if (!type) return;
+    e.preventDefault();
+    const rect = e.currentTarget.getBoundingClientRect();
+    const px = (e.clientX - rect.left) / zoom;
+    const py = (e.clientY - rect.top) / zoom;
+    const el = buildToolElement(type, px, py, elements.length);
+    // Center the new element under the cursor, clamped inside the page
+    el.x = Math.max(0, Math.min(Math.round(px - el.width / 2), Math.round(w - el.width)));
+    el.y = Math.max(0, Math.min(Math.round(py - el.height / 2), Math.round(h - el.height)));
+    addElement(el);
+    selectElement(el.id);
+  };
 
   const dims = PAGE_DIMS[page.format] ?? PAGE_DIMS.A4;
   const pageW = page.orientation === 'landscape' ? dims.h : dims.w;
@@ -615,6 +721,10 @@ export const DesignerCanvas = forwardRef<DesignerCanvasRef, Props>(function Desi
                 backgroundSize: `${gridStep}px ${gridStep}px`,
               }}
               onClick={(e) => { if (e.target === e.currentTarget) onSelect(null); }}
+              onDragOver={(e) => {
+                if (!readOnly && e.dataTransfer.types.includes(TOOL_DRAG_TYPE)) e.preventDefault();
+              }}
+              onDrop={readOnly ? undefined : handleToolDrop}
             >
               {/* Band zones */}
               {showBands && (
@@ -680,6 +790,12 @@ export const DesignerCanvas = forwardRef<DesignerCanvasRef, Props>(function Desi
                       readOnly={readOnly}
                       onSelect={() => onSelect(el.id)}
                       onChange={onChange}
+                      onContextMenu={
+                        readOnly
+                          ? undefined
+                          : (e) => setMenu({ x: e.clientX, y: e.clientY, elId: el.id })
+                      }
+                      onEdit={readOnly ? undefined : () => setEditingId(el.id)}
                     />
                   ),
                 )}
@@ -722,6 +838,51 @@ export const DesignerCanvas = forwardRef<DesignerCanvasRef, Props>(function Desi
           </div>
         </div>
       </div>
+
+      {/* Right-click context menu */}
+      {menu && menuEl && (
+        <ContextMenu
+          x={menu.x}
+          y={menu.y}
+          onClose={() => setMenu(null)}
+          actions={[
+            { icon: '✏️', label: 'Modifier…', onClick: () => setEditingId(menuEl.id) },
+            { icon: '📄', label: 'Dupliquer', onClick: () => duplicateElement(menuEl) },
+            {
+              icon: '⬆', label: 'Premier plan', divider: true,
+              onClick: () => onChange({ ...menuEl, z_index: Math.max(0, ...elements.map((e) => e.z_index ?? 0)) + 1 }),
+            },
+            {
+              icon: '⬇', label: 'Arrière-plan',
+              onClick: () => onChange({ ...menuEl, z_index: Math.min(0, ...elements.map((e) => e.z_index ?? 0)) - 1 }),
+            },
+            {
+              icon: menuEl.visible === false ? '👁' : '🚫',
+              label: menuEl.visible === false ? 'Afficher' : 'Masquer',
+              divider: true,
+              onClick: () => onChange({ ...menuEl, visible: menuEl.visible === false }),
+            },
+            {
+              icon: menuEl.locked ? '🔓' : '🔒',
+              label: menuEl.locked ? 'Déverrouiller' : 'Verrouiller',
+              onClick: () => onChange({ ...menuEl, locked: !menuEl.locked }),
+            },
+            {
+              icon: '🗑', label: 'Supprimer', danger: true, divider: true,
+              onClick: () => removeElement(menuEl.id),
+            },
+          ]}
+        />
+      )}
+
+      {/* Quick-edit modal (from context menu → Modifier…) */}
+      {editingEl && (
+        <ElementEditModal
+          element={editingEl}
+          onClose={() => setEditingId(null)}
+          onSave={onChange}
+        />
+      )}
     </div>
   );
 });
