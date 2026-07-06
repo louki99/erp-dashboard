@@ -9,7 +9,6 @@ import { SimpleEditPanel } from '@/components/document-studio/SimpleEditPanel';
 import { VersionsPanel } from '@/components/document-studio/VersionsPanel';
 import { LivePreviewFrame } from '@/components/document-studio/LivePreviewFrame';
 import { MasterLayout } from '@/components/layout/MasterLayout';
-import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { useDesignerStore } from '@/stores/designer-store';
 import {
@@ -278,21 +277,24 @@ export default function DocumentStudioPage() {
   }
 
   return (
-    <div className="flex flex-col h-full">
-      {/* ── Header / Toolbar ─────────────────────────────────────────────── */}
-      <div className="flex items-center gap-2 px-4 py-2 border-b bg-[#1e1e2e] text-white shrink-0">
-        <Button
-          variant="ghost"
-          size="sm"
-          className="text-slate-300 hover:text-white hover:bg-white/10"
+    <div className="flex flex-col h-screen overflow-hidden">
+      {/* ── Header / Toolbar — single line, never wraps ─────────────────── */}
+      <div className="flex items-center flex-nowrap gap-1.5 px-3 py-1.5 border-b bg-[#1e1e2e] text-white shrink-0">
+        <button
           onClick={() => setView('list')}
+          title="Retour à la liste des templates"
+          className="flex items-center gap-1 px-2 py-1 rounded text-xs font-medium text-slate-300 hover:text-white hover:bg-white/10 transition-colors shrink-0 whitespace-nowrap"
         >
-          ← Templates
-        </Button>
+          ← <span className="hidden xl:inline">Templates</span>
+        </button>
 
-        <span className="font-medium text-sm text-white truncate">{template?.name}</span>
-        {isDirty   && <Badge variant="outline" className="text-[9px] border-amber-400/40 text-amber-300">Non sauvegardé</Badge>}
-        {version   && <Badge variant="secondary" className="text-[9px]">v{version.version_number}</Badge>}
+        <span className="font-medium text-sm text-white truncate max-w-[150px] shrink" title={template?.name}>
+          {template?.name}
+        </span>
+        {isDirty && (
+          <span className="w-2 h-2 rounded-full bg-amber-400 shrink-0" title="Modifications non sauvegardées" />
+        )}
+        {version && <Badge variant="secondary" className="text-[9px] shrink-0">v{version.version_number}</Badge>}
 
         {/* Divider */}
         <div className="h-4 w-px bg-white/10 mx-1" />
@@ -308,7 +310,7 @@ export default function DocumentStudioPage() {
                 : 'text-slate-400 hover:text-white border border-transparent'
             }`}
           >
-            🔒 <span className="hidden md:inline">Édition simple</span>
+            🔒 <span className="hidden xl:inline whitespace-nowrap">Simple</span>
           </button>
           <button
             onClick={() => setEditorMode('designer')}
@@ -319,7 +321,7 @@ export default function DocumentStudioPage() {
                 : 'text-slate-400 hover:text-white border border-transparent'
             }`}
           >
-            🎨 <span className="hidden md:inline">Designer</span>
+            🎨 <span className="hidden xl:inline whitespace-nowrap">Designer</span>
           </button>
         </div>
 
@@ -345,10 +347,10 @@ export default function DocumentStudioPage() {
         {!isSimpleMode && (
           <button
             onClick={handleFitContent}
-            title="Redimensionner tout le contenu pour occuper la zone imprimable (annulable avec Ctrl+Z)"
-            className="flex items-center gap-1.5 px-2.5 py-1 text-[11px] font-medium rounded border bg-white/5 border-white/10 text-slate-400 hover:text-white hover:bg-white/10 transition-colors"
+            title="Adapter à la page : redimensionne tout le contenu pour occuper la zone imprimable (annulable avec Ctrl+Z)"
+            className="h-7 w-7 flex items-center justify-center rounded text-slate-400 hover:text-white hover:bg-white/10 transition-colors shrink-0"
           >
-            ⤢ <span className="hidden lg:inline">Adapter à la page</span>
+            ⤢
           </button>
         )}
 
@@ -418,7 +420,7 @@ export default function DocumentStudioPage() {
               }`}
             >
               <span>{t.icon}</span>
-              <span className="hidden sm:inline">{t.label}</span>
+              <span className="hidden lg:inline whitespace-nowrap">{t.label}</span>
             </button>
           ))}
         </div>
@@ -433,34 +435,36 @@ export default function DocumentStudioPage() {
           }`}
           title="Basculer entre les tags bruts et les données mock"
         >
-          {previewMode ? '👁 Live Data' : '</> Tags'}
+          <span className="whitespace-nowrap">{previewMode ? '👁 Live' : '</> Tags'}</span>
         </button>
 
         {/* Right actions */}
-        <div className="ml-auto flex items-center gap-2">
-          <Button
-            size="sm"
-            variant="outline"
+        <div className="ml-auto flex items-center gap-1.5 shrink-0">
+          <button
             onClick={handleSave}
             disabled={saving}
-            className="h-7 text-xs border-white/20 text-white bg-transparent hover:bg-white/10 hover:text-white"
+            title="Sauvegarder une nouvelle version"
+            className="flex items-center gap-1.5 px-2.5 py-1 text-[11px] font-medium rounded border border-white/20 text-white hover:bg-white/10 disabled:opacity-50 transition-colors whitespace-nowrap"
           >
-            {saving ? '⏳ Sauvegarde…' : '💾 Sauvegarder'}
-          </Button>
-          <div className="flex rounded border border-white/20 overflow-hidden">
-            {(['pdf', 'xlsx', 'docx'] as const).map((fmt, i) => (
-              <button
-                key={fmt}
-                onClick={() => handleGenerate(fmt)}
-                disabled={generating}
-                className={`px-2.5 py-1 text-[10px] font-medium text-slate-300 hover:bg-white/10 hover:text-white transition-colors ${
-                  i > 0 ? 'border-l border-white/20' : ''
-                }`}
-              >
-                {fmt.toUpperCase()}
-              </button>
-            ))}
-          </div>
+            {saving ? '⏳' : '💾'} <span className="hidden lg:inline">Sauvegarder</span>
+          </button>
+          {/* Export dropdown — one control instead of three buttons */}
+          <select
+            value=""
+            disabled={generating}
+            onChange={(e) => {
+              const fmt = e.target.value as 'pdf' | 'xlsx' | 'docx';
+              (e.target as HTMLSelectElement).value = '';
+              if (fmt) handleGenerate(fmt);
+            }}
+            title="Générer et télécharger le document"
+            className="h-7 bg-white/5 border border-white/20 rounded text-[11px] text-slate-300 px-1.5 cursor-pointer disabled:opacity-50"
+          >
+            <option value="" disabled className="bg-gray-900">{generating ? '⏳ Export…' : '⬇ Exporter'}</option>
+            <option value="pdf"  className="bg-gray-900">PDF</option>
+            <option value="xlsx" className="bg-gray-900">XLSX</option>
+            <option value="docx" className="bg-gray-900">DOCX</option>
+          </select>
         </div>
       </div>
 

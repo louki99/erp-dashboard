@@ -646,7 +646,7 @@ function LayersPanel() {
   const sorted = [...elements].sort((a, b) => (b.z_index ?? 0) - (a.z_index ?? 0));
 
   return (
-    <div className="flex flex-col h-52 shrink-0 border-t bg-white">
+    <div className={`flex flex-col shrink-0 border-b bg-white ${open ? 'h-56' : ''}`}>
       <button
         onClick={() => setOpen((v) => !v)}
         className="w-full flex items-center justify-between px-3 py-2 text-xs font-semibold uppercase tracking-wide text-gray-500 hover:bg-gray-50 border-b shrink-0"
@@ -754,10 +754,11 @@ export function PropertiesPanel() {
 
   return (
     <div className="w-72 shrink-0 border-l bg-white flex flex-col h-full">
+      {/* Layers first — primary navigation tool for the designer */}
+      <LayersPanel />
       <div className="flex-1 overflow-y-auto min-h-0">
         {el ? <ElementProperties el={el} /> : <GlobalSettings />}
       </div>
-      <LayersPanel />
     </div>
   );
 }

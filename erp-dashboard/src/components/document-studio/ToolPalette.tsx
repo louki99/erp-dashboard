@@ -52,7 +52,7 @@ export function ToolPalette() {
   };
 
   return (
-    <div className="w-16 flex flex-col gap-1 p-2 border-r bg-muted/30 shrink-0">
+    <div className="w-16 flex flex-col gap-1 p-2 border-r bg-muted/30 shrink-0 overflow-y-auto">
       {TOOLS.map(({ type, label, icon }) => (
         <Button
           key={type}
