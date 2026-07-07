@@ -8,7 +8,33 @@ import type {
   TemplateVersion,
   RenderResult,
   GenerateErpPayload,
+  DesignerElement,
 } from '@/types/document-studio.types';
+
+/**
+ * Strips canvas-only fields before sending an element to the MS.
+ * Allowed: type · name · x · y · width · height · binding · properties · style
+ * Also drops null property keys and base64 `src` (images must use a binding).
+ */
+function sanitizeElement(el: DesignerElement): Record<string, unknown> {
+  const properties = Object.fromEntries(
+    Object.entries(el.properties ?? {}).filter(
+      ([key, value]) => value != null && !(key === 'src' && String(value).startsWith('data:')),
+    ),
+  );
+  const out: Record<string, unknown> = {
+    type:       el.type,
+    x:          el.x,
+    y:          el.y,
+    width:      el.width,
+    height:     el.height,
+    properties,
+    style:      el.style ?? {},
+  };
+  if (el.name)    out.name = el.name;
+  if (el.binding) out.binding = el.binding;
+  return out;
+}
 
 const TEMPLATES_KEY = ['document-studio', 'templates'];
 
@@ -110,17 +136,44 @@ export const useTemplateVersionDetail = (templateId: string, versionId: string) 
 export const useCreateVersion = (templateId: string) => {
   const qc = useQueryClient();
   return useMutation({
+    // Certified backend flow: create the version empty, then POST each
+    // sanitized element to /versions/{vid}/elements, then refetch the full
+    // version (the create response has no elements).
     mutationFn: async (payload: {
       label?:         string;
       page_settings:  TemplateVersion['page_settings'];
-      elements:       TemplateVersion['elements'];
+      elements:       DesignerElement[];
       variables:      string[];
     }): Promise<TemplateVersion> => {
-      const { data } = await apiClient.post(
+      const label = (payload.label?.trim() ||
+        `v-${new Date().toISOString().slice(0, 16).replace('T', ' ')}`).slice(0, 100);
+
+      // 1. Version without elements — label is required by the Laravel controller
+      const { data: created } = await apiClient.post(
         `${ENDPOINTS.DOCUMENT_STUDIO_TEMPLATES}/${templateId}/versions`,
-        payload,
+        {
+          label,
+          page_settings: payload.page_settings,
+          variables:     payload.variables,
+          elements:      [],
+        },
       );
-      return data;
+      const versionId: string = created.id;
+
+      // 2. One POST per element, in z-order so stacking survives the round-trip
+      const ordered = [...payload.elements].sort((a, b) => (a.z_index ?? 0) - (b.z_index ?? 0));
+      for (const el of ordered) {
+        await apiClient.post(
+          `${ENDPOINTS.DOCUMENT_STUDIO_VERSIONS}/${versionId}/elements`,
+          sanitizeElement(el),
+        );
+      }
+
+      // 3. Return the complete version so the store reloads with elements
+      const { data: full } = await apiClient.get(
+        `${ENDPOINTS.DOCUMENT_STUDIO_TEMPLATES}/${templateId}/versions/${versionId}`,
+      );
+      return full as TemplateVersion;
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: [...TEMPLATES_KEY, templateId, 'versions'] });

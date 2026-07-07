@@ -10,6 +10,8 @@
 export const ENDPOINTS = {
   // ── Document Studio ────────────────────────────────────────────────────────
   DOCUMENT_STUDIO_TEMPLATES:    '/api/v1/document-studio/templates',
+  /** POST `/${versionId}/elements` per element, POST `/${versionId}/publish` */
+  DOCUMENT_STUDIO_VERSIONS:     '/api/v1/document-studio/versions',
   DOCUMENT_STUDIO_ASSETS:       '/api/v1/document-studio/assets',
 
   RENDER_PREVIEW:                '/api/v1/document-studio/render/preview',

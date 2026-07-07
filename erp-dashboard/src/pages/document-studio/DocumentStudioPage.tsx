@@ -111,11 +111,25 @@ export default function DocumentStudioPage() {
 
   const handleSave = () => {
     if (!template) return;
+
+    // The MS rejects inline base64 images — they are stripped at save time.
+    // Images must reference a URL binding ({{company.logo_url}}) to persist.
+    const hasInlineImage = elements.some(
+      (el) => el.type === 'image' && String(el.properties?.src ?? '').startsWith('data:'),
+    );
+    if (hasInlineImage) {
+      toast('⚠ Les images uploadées (base64) ne sont pas persistées par le serveur — utilisez un binding URL ({{company.logo_url}}) pour le logo.', {
+        duration: 6000,
+      });
+    }
+
+    // Root context keys only (company, branch, customer…) as expected by the MS
     const variables = [...new Set(
       elements
         .map((el) => el.binding)
         .filter((b): b is string => !!b)
-        .map((b) => b.replace(/\{\{|\}\}/g, '').trim()),
+        .map((b) => b.match(/([a-zA-Z_][a-zA-Z0-9_]*)\.[a-zA-Z_]/)?.[1] ?? '')
+        .filter(Boolean),
     )];
     createVersion(
       { page_settings: page, elements, variables },

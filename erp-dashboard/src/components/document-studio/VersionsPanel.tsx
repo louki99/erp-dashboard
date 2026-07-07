@@ -37,11 +37,13 @@ export function VersionsPanel() {
   }
 
   const handleSave = () => {
+    // Root context keys only (company, branch, customer…) as expected by the MS
     const variables = [...new Set(
       elements
         .map((el) => el.binding)
         .filter((b): b is string => !!b)
-        .map((b) => b.replace(/\{\{|\}\}/g, '').trim()),
+        .map((b) => b.match(/([a-zA-Z_][a-zA-Z0-9_]*)\.[a-zA-Z_]/)?.[1] ?? '')
+        .filter(Boolean),
     )];
 
     createVersion(
