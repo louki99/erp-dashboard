@@ -1,4 +1,5 @@
 import { useMemo } from 'react';
+import type { LucideIcon } from 'lucide-react';
 import {
   DEFAULT_ROUTE,
   getItemRoute,
@@ -13,6 +14,7 @@ export interface FlatMenuItem extends MenuItem {
   categoryId: string;
   categoryTitle: string;
   route: string;
+  icon: LucideIcon;
 }
 
 export interface UseMenuPermissionsOptions {
@@ -98,6 +100,7 @@ export function toFlatItem(
     moduleName: module.label,
     categoryId: category.id,
     categoryTitle: category.title,
+    icon: item.icon ?? module.icon,
   };
 }
 

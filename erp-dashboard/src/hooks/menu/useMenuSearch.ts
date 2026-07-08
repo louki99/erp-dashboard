@@ -7,6 +7,7 @@ export interface UseMenuSearchOptions {
   boostIds?: string[];
   recentIds?: string[];
   limit?: number;
+  initialQuery?: string;
 }
 
 export function useMenuSearch({
@@ -14,8 +15,9 @@ export function useMenuSearch({
   boostIds = [],
   recentIds = [],
   limit = 50,
+  initialQuery = '',
 }: UseMenuSearchOptions) {
-  const [query, setQueryState] = useState('');
+  const [query, setQueryState] = useState(initialQuery);
   const [selectedIndex, setSelectedIndex] = useState(0);
 
   const matches = useMemo<SearchMatch[]>(() => {

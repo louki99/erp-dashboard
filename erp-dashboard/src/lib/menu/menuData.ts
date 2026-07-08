@@ -20,6 +20,7 @@ export interface MenuItem {
   permission?: string;
   description?: string;
   keywords?: string[];
+  icon?: LucideIcon;
 }
 
 export interface MenuCategory {
@@ -51,7 +52,7 @@ export const MENU_MODULES: MenuModule[] = [
     id: 'purch',
     label: 'Achats',
     icon: ShoppingCart,
-    description: 'Manage procurement, orders, and receipts',
+    description: 'Achats, commandes fournisseurs et réceptions',
     requiredPermission: 'admin.procurement',
     requiredRole: 'procurement',
     categories: [
@@ -120,7 +121,7 @@ export const MENU_MODULES: MenuModule[] = [
     id: 'sales',
     label: 'Ventes',
     icon: BarChart3,
-    description: 'Sales orders, quotes, and delivery management',
+    description: 'Commandes clients, devis et gestion des livraisons',
     requiredPermission: 'admin.sales',
     requiredRole: 'sales',
     categories: [
@@ -161,7 +162,7 @@ export const MENU_MODULES: MenuModule[] = [
     id: 'stock',
     label: 'Stocks',
     icon: Package,
-    description: 'Inventory, transfers, and stock counts',
+    description: 'Inventaire, transferts et contrôle des stocks',
     requiredPermission: 'admin.stock',
     requiredRole: 'stock',
     categories: [
@@ -346,7 +347,7 @@ export const MENU_MODULES: MenuModule[] = [
     id: 'base',
     label: 'Données de base',
     icon: Database,
-    description: 'Master data for products, partners, and sites',
+    description: 'Données de base : articles, tiers et sites',
     requiredPermission: 'admin.master',
     requiredRole: 'master-data',
     categories: [
@@ -406,9 +407,9 @@ export const MENU_MODULES: MenuModule[] = [
   },
   {
     id: 'admin',
-    label: 'Administration',
+    label: 'Référentiel',
     icon: Settings,
-    description: 'User management, security, and global settings',
+    description: 'Utilisateurs, sécurité et paramètres globaux',
     requiredPermission: 'admin.view',
     categories: [
       {
@@ -425,6 +426,8 @@ export const MENU_MODULES: MenuModule[] = [
         title: 'Sécurité',
         items: [
           { id: 'admin:sec:gouvernance', label: 'Gouvernance', route: '/data-rules', permission: 'admin.access-control.data-rules.manage' },
+          { id: 'admin:sec:token-series', label: 'Séries de numérotation', route: '/token-series', permission: 'admin.access-control.token-series.manage' },
+          { id: 'admin:sec:device-keys', label: 'Clés devices', route: '/device-keys', permission: 'admin.access-control.device-keys.manage' },
           { id: 'admin:sec:audit', label: 'Audit', route: '/settings', permission: 'admin.audit.view' },
         ],
       },
@@ -485,7 +488,7 @@ export const MENU_MODULES: MenuModule[] = [
   },
   {
     id: 'import-export',
-    label: 'Import/Export',
+    label: 'ImpoExpo',
     icon: ArrowLeftRight,
     description: 'Gestion des imports et exports de données',
     requiredPermission: 'admin.import-export',

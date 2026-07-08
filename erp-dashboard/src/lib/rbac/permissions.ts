@@ -242,6 +242,16 @@ export const PERMISSIONS = {
         MANAGE: 'admin.access-control.data-rules.manage',
     },
 
+    // Token Series & Device Keys
+    TOKEN_SERIES: {
+        INDEX: 'admin.access-control.token-series.index',
+        MANAGE: 'admin.access-control.token-series.manage',
+    },
+    DEVICE_KEYS: {
+        INDEX: 'admin.access-control.device-keys.index',
+        MANAGE: 'admin.access-control.device-keys.manage',
+    },
+
     // Settings
     SETTINGS: {
         GENERAL: 'admin.settings.general',
@@ -387,6 +397,10 @@ export const PAGE_PERMISSIONS: Record<string, string | string[]> = {
 
     // Data Rules
     '/data-rules': PERMISSIONS.DATA_RULES.MANAGE,
+
+    // Token Series & Device Keys
+    '/token-series': PERMISSIONS.TOKEN_SERIES.MANAGE,
+    '/device-keys': PERMISSIONS.DEVICE_KEYS.MANAGE,
 
     // Tasks
     '/tasks': PERMISSIONS.TASKS.DASHBOARD,

@@ -59,6 +59,8 @@ import ReportingPage from '@/pages/reporting/ReportingPage';
 import ReportingAdminPage from '@/pages/reporting/ReportingAdminPage';
 import DocumentStudioPage from '@/pages/document-studio/DocumentStudioPage';
 import { DataRulesPage } from '@/pages/data-rules/DataRulesPage';
+import { TokenSeriesPage } from '@/pages/token-series/TokenSeriesPage';
+import { DeviceKeysPage } from '@/pages/device-keys/DeviceKeysPage';
 
 
 // Simple Navigation Wrapper to show active route in DevSwitcher style (optional, but let's stick to MegaMenu for now)
@@ -439,6 +441,18 @@ function AppRoutes() {
       <Route path="/data-rules" element={
         <ProtectedRoute requiredPermission={PERMISSIONS.DATA_RULES.MANAGE}>
           <DataRulesPage />
+        </ProtectedRoute>
+      } />
+
+      {/* Token Series & Device Keys Module */}
+      <Route path="/token-series" element={
+        <ProtectedRoute requiredPermission={PERMISSIONS.TOKEN_SERIES.MANAGE}>
+          <TokenSeriesPage />
+        </ProtectedRoute>
+      } />
+      <Route path="/device-keys" element={
+        <ProtectedRoute requiredPermission={PERMISSIONS.DEVICE_KEYS.MANAGE}>
+          <DeviceKeysPage />
         </ProtectedRoute>
       } />
 

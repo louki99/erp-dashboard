@@ -1,12 +1,12 @@
 /**
  * SearchableSelect
  * ─────────────────────────────────────────────────────────────────────────────
- * Portal-based searchable dropdown.
- * Renders the open panel via ReactDOM.createPortal so it is never clipped by
- * overflow:hidden / overflow:auto ancestors (scrollable cards, modals, etc.).
+ * Inline searchable dropdown.
+ * Renders the panel as a child of the component wrapper so it stays inside
+ * React focus scopes (e.g. Radix Dialogs) while using absolute positioning and
+ * a simple flip calculation to avoid viewport clipping.
  */
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import ReactDOM from 'react-dom';
 import { AlertCircle, Check, ChevronDown, Search, X } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
@@ -42,7 +42,8 @@ const SearchableSelect: React.FC<SearchableSelectProps> = ({
 }) => {
     const [open, setOpen] = useState(false);
     const [query, setQuery] = useState('');
-    const [dropPos, setDropPos] = useState<React.CSSProperties>({});
+    const [placement, setPlacement] = useState<'bottom' | 'top'>('bottom');
+    const wrapperRef = useRef<HTMLDivElement>(null);
     const triggerRef = useRef<HTMLButtonElement>(null);
     const searchRef = useRef<HTMLInputElement>(null);
 
@@ -51,8 +52,7 @@ const SearchableSelect: React.FC<SearchableSelectProps> = ({
         if (!open) return;
         const handler = (e: MouseEvent) => {
             const target = e.target as Node;
-            const dropdown = document.getElementById('sage-searchable-dropdown');
-            if (triggerRef.current?.contains(target) || dropdown?.contains(target)) return;
+            if (wrapperRef.current?.contains(target)) return;
             setOpen(false);
             setQuery('');
         };
@@ -65,19 +65,21 @@ const SearchableSelect: React.FC<SearchableSelectProps> = ({
         if (open) setTimeout(() => searchRef.current?.focus(), 60);
     }, [open]);
 
+    // Close dropdown on window resize (re-positioning is too expensive synchronously).
+    useEffect(() => {
+        if (!open) return;
+        const handleResize = () => setOpen(false);
+        window.addEventListener('resize', handleResize);
+        return () => window.removeEventListener('resize', handleResize);
+    }, [open]);
+
     const handleToggle = () => {
         if (disabled) return;
-        if (!open && triggerRef.current) {
-            const rect = triggerRef.current.getBoundingClientRect();
-            const spaceBelow = window.innerHeight - rect.bottom;
+        if (!open && wrapperRef.current) {
+            const rect = wrapperRef.current.getBoundingClientRect();
             const dropH = Math.min(280, options.length * 36 + 56);
-            setDropPos({
-                position: 'fixed',
-                top: spaceBelow > dropH ? rect.bottom + 4 : rect.top - dropH - 4,
-                left: rect.left,
-                width: rect.width,
-                zIndex: 9999,
-            });
+            const spaceBelow = window.innerHeight - rect.bottom;
+            setPlacement(spaceBelow >= dropH ? 'bottom' : 'top');
         }
         setOpen(o => !o);
         if (open) setQuery('');
@@ -108,9 +110,10 @@ const SearchableSelect: React.FC<SearchableSelectProps> = ({
 
     const dropdown = open ? (
         <div
-            id="sage-searchable-dropdown"
-            style={dropPos}
-            className="bg-white border border-gray-200 rounded-xl shadow-2xl shadow-gray-200/80 overflow-hidden"
+            className={cn(
+                "absolute left-0 right-0 z-[9999] bg-white border border-gray-200 rounded-xl shadow-2xl shadow-gray-200/80 overflow-hidden",
+                placement === 'bottom' ? 'top-full mt-1' : 'bottom-full mb-1'
+            )}
         >
             <div className="p-2 border-b border-gray-100 bg-gray-50/80">
                 <div className="relative">
@@ -179,7 +182,7 @@ const SearchableSelect: React.FC<SearchableSelectProps> = ({
     ) : null;
 
     return (
-        <>
+        <div ref={wrapperRef} className="relative w-full">
             <button
                 ref={triggerRef}
                 type="button"
@@ -208,8 +211,8 @@ const SearchableSelect: React.FC<SearchableSelectProps> = ({
                     <ChevronDown className={cn('w-4 h-4 text-gray-400 transition-transform duration-200', open && 'rotate-180')} />
                 </span>
             </button>
-            {typeof document !== 'undefined' && ReactDOM.createPortal(dropdown, document.body)}
-        </>
+            {dropdown}
+        </div>
     );
 };
 
