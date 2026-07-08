@@ -58,6 +58,7 @@ import { CustomFieldsPage } from '@/pages/custom-fields/CustomFieldsPage';
 import ReportingPage from '@/pages/reporting/ReportingPage';
 import ReportingAdminPage from '@/pages/reporting/ReportingAdminPage';
 import DocumentStudioPage from '@/pages/document-studio/DocumentStudioPage';
+import { DataRulesPage } from '@/pages/data-rules/DataRulesPage';
 
 
 // Simple Navigation Wrapper to show active route in DevSwitcher style (optional, but let's stick to MegaMenu for now)
@@ -431,6 +432,13 @@ function AppRoutes() {
       <Route path="/document-studio" element={
         <ProtectedRoute>
           <DocumentStudioPage />
+        </ProtectedRoute>
+      } />
+
+      {/* Data Rules Module */}
+      <Route path="/data-rules" element={
+        <ProtectedRoute requiredPermission={PERMISSIONS.DATA_RULES.MANAGE}>
+          <DataRulesPage />
         </ProtectedRoute>
       } />
 

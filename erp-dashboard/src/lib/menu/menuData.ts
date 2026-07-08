@@ -3,6 +3,7 @@ import {
   ArrowLeftRight,
   BarChart3,
   Database,
+  FileText,
   ListTodo,
   Package,
   Settings,
@@ -371,6 +372,39 @@ export const MENU_MODULES: MenuModule[] = [
     ],
   },
   {
+    id: 'document-studio',
+    label: 'Document Studio',
+    icon: FileText,
+    description: 'Modèles de documents et édition',
+    requiredPermission: 'admin.view',
+    categories: [
+      {
+        id: 'studio',
+        title: 'Studio',
+        items: [
+          { id: 'docstudio:dashboard', label: 'Document Studio', route: '/document-studio', permission: 'admin.view' },
+        ],
+      },
+    ],
+  },
+  {
+    id: 'reporting',
+    label: 'Reporting',
+    icon: BarChart3,
+    description: 'Rapports et administration des définitions',
+    requiredPermission: 'admin.view',
+    categories: [
+      {
+        id: 'reports',
+        title: 'Rapports',
+        items: [
+          { id: 'reporting:dashboard', label: 'Tableau de bord Reporting', route: '/reporting', permission: 'admin.view' },
+          { id: 'reporting:admin', label: 'Administration Reporting', route: '/reporting/admin', permission: 'admin.view' },
+        ],
+      },
+    ],
+  },
+  {
     id: 'admin',
     label: 'Administration',
     icon: Settings,
@@ -390,7 +424,7 @@ export const MENU_MODULES: MenuModule[] = [
         id: 'securite',
         title: 'Sécurité',
         items: [
-          { id: 'admin:sec:gouvernance', label: 'Gouvernance', route: '/settings', permission: 'admin.governance.view' },
+          { id: 'admin:sec:gouvernance', label: 'Gouvernance', route: '/data-rules', permission: 'admin.access-control.data-rules.manage' },
           { id: 'admin:sec:audit', label: 'Audit', route: '/settings', permission: 'admin.audit.view' },
         ],
       },

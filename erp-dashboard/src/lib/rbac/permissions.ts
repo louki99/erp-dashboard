@@ -236,6 +236,12 @@ export const PERMISSIONS = {
         RESET_PASSWORD: 'admin.employee.reset-password',
     },
 
+    // Data Rules (visibility matrix)
+    DATA_RULES: {
+        INDEX: 'admin.access-control.data-rules.index',
+        MANAGE: 'admin.access-control.data-rules.manage',
+    },
+
     // Settings
     SETTINGS: {
         GENERAL: 'admin.settings.general',
@@ -378,6 +384,9 @@ export const PAGE_PERMISSIONS: Record<string, string | string[]> = {
     
     // Settings
     '/settings': PERMISSIONS.SETTINGS.GENERAL,
+
+    // Data Rules
+    '/data-rules': PERMISSIONS.DATA_RULES.MANAGE,
 
     // Tasks
     '/tasks': PERMISSIONS.TASKS.DASHBOARD,
