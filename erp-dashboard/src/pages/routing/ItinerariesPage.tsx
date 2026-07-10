@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import toast from 'react-hot-toast';
 import { isAxiosError } from 'axios';
 import {
@@ -7,6 +8,8 @@ import {
     Edit2,
     Trash2,
     RotateCcw,
+    Power,
+    PowerOff,
     X,
     Search,
     MapPin,
@@ -14,6 +17,11 @@ import {
     Route,
     Building2,
     SlidersHorizontal,
+    CheckCircle2,
+    UserX,
+    PenTool,
+    CalendarDays,
+    Milestone,
 } from 'lucide-react';
 
 import { MasterLayout } from '@/components/layout/MasterLayout';
@@ -71,19 +79,31 @@ function getErrorMessage(error: unknown): string {
 
 const DEFAULT_FILTERS: ItineraryFilters = { per_page: 50, page: 1 };
 
+// ─── Detail panel ─────────────────────────────────────────────────────────────
+
 function ItineraryDetail({
     itinerary,
     onBack,
+    onEdit,
+    onToggle,
+    togglePending,
 }: {
     itinerary: Itinerary;
     onBack?: () => void;
+    onEdit: (itinerary: Itinerary) => void;
+    onToggle: (itinerary: Itinerary) => void;
+    togglePending: boolean;
 }) {
+    const navigate = useNavigate();
     const { data: detailData } = useItinerary(itinerary.id);
     const syncPartners = useSyncItineraryPartners(itinerary.id);
     const syncUsers = useSyncItineraryUsers(itinerary.id);
     const [activeTab, setActiveTab] = useState('detail');
 
     const detail = detailData?.itinerary ?? itinerary;
+    const partners = detail.itinerary_partners ?? [];
+    const stopPoints = partners.filter((p) => p.is_stop_point).length;
+    const totalKm = partners.reduce((sum, p) => sum + (p.mileage ?? 0), 0);
 
     const handleSyncPartners = async (entries: SyncPartnerEntry[]) => {
         try {
@@ -105,45 +125,103 @@ function ItineraryDetail({
 
     return (
         <div className="h-full bg-slate-50/60 flex flex-col">
-            <div className="flex items-center justify-between border-b border-gray-200 bg-white px-6 py-4">
-                <div className="flex items-center gap-3">
-                    <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-sage-100 text-sage-700">
-                        <Truck className="h-5 w-5" />
+            {/* Header */}
+            <div className="border-b border-gray-200 bg-white px-6 py-4 shrink-0">
+                <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-3">
+                        <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-sage-50 border border-sage-100 text-sage-700">
+                            <Truck className="h-5 w-5" />
+                        </div>
+                        <div>
+                            <div className="flex items-center gap-2">
+                                <h1 className="text-lg font-bold text-gray-900">{detail.name}</h1>
+                                {detail.name_ar && (
+                                    <span className="text-sm text-gray-400" dir="rtl">{detail.name_ar}</span>
+                                )}
+                            </div>
+                            <div className="flex items-center gap-1.5 text-xs text-gray-400 mt-0.5">
+                                <span className="font-mono text-gray-500">{detail.code}</span>
+                                {detail.itinerary_type && (
+                                    <>
+                                        <span>·</span>
+                                        <span>{detail.itinerary_type.name}</span>
+                                    </>
+                                )}
+                                {detail.geo_area && (
+                                    <>
+                                        <span>·</span>
+                                        <span>{detail.geo_area.name}</span>
+                                    </>
+                                )}
+                            </div>
+                        </div>
                     </div>
-                    <div>
-                        <h1 className="text-xl font-bold text-gray-900">{detail.name}</h1>
-                        <p className="text-sm font-mono text-gray-500">{detail.code}</p>
+                    <div className="flex items-center gap-2">
+                        <button
+                            onClick={() => !togglePending && onToggle(detail)}
+                            title={detail.is_active ? 'Cliquer pour désactiver' : 'Cliquer pour activer'}
+                            className="focus:outline-none"
+                            disabled={togglePending}
+                        >
+                            {detail.is_active ? (
+                                <Badge variant="success" className="text-[10px] cursor-pointer hover:opacity-80">
+                                    ● Active
+                                </Badge>
+                            ) : (
+                                <Badge variant="secondary" className="text-[10px] cursor-pointer hover:opacity-80">
+                                    ○ Inactive
+                                </Badge>
+                            )}
+                        </button>
+                        <Button variant="outline" size="sm" onClick={() => onEdit(detail)}>
+                            <Edit2 className="mr-1.5 h-3.5 w-3.5" />
+                            Éditer
+                        </Button>
+                        {onBack && (
+                            <Button variant="ghost" size="sm" onClick={onBack} className="h-8 w-8 p-0">
+                                <X className="h-4 w-4" />
+                            </Button>
+                        )}
                     </div>
                 </div>
-                <div className="flex items-center gap-2">
-                    {detail.is_active ? (
-                        <Badge variant="success" className="text-[10px]">Actif</Badge>
-                    ) : (
-                        <Badge variant="secondary" className="text-[10px]">Inactif</Badge>
+
+                {/* Mini KPI strip */}
+                <div className="flex items-center gap-4 mt-3 text-xs text-gray-500">
+                    <span className="flex items-center gap-1.5">
+                        <Users className="w-3.5 h-3.5 text-indigo-400" />
+                        <strong className="text-gray-700">{partners.length}</strong> clients
+                    </span>
+                    <span className="flex items-center gap-1.5">
+                        <Milestone className="w-3.5 h-3.5 text-amber-400" />
+                        <strong className="text-gray-700">{stopPoints}</strong> stop points
+                    </span>
+                    {totalKm > 0 && (
+                        <span className="flex items-center gap-1.5">
+                            <Route className="w-3.5 h-3.5 text-sage-500" />
+                            <strong className="text-gray-700">{totalKm.toFixed(0)}</strong> km déclarés
+                        </span>
                     )}
-                    {onBack && (
-                        <Button variant="outline" size="sm" onClick={onBack} className="ml-2">
-                            <X className="mr-1.5 h-4 w-4" />
-                            Fermer
-                        </Button>
-                    )}
+                    <span className="flex items-center gap-1.5">
+                        <Users className="w-3.5 h-3.5 text-gray-300" />
+                        <strong className="text-gray-700">{detail.itinerary_users?.length ?? 0}</strong> vendeurs
+                    </span>
                 </div>
             </div>
 
             <SageTabs
                 tabs={[
                     { id: 'detail', label: 'Détail' },
-                    { id: 'partners', label: 'Partenaires' },
-                    { id: 'users', label: 'Vendeurs' },
+                    { id: 'partners', label: `Partenaires (${partners.length})` },
+                    { id: 'users', label: `Vendeurs (${detail.itinerary_users?.length ?? 0})` },
                 ]}
                 activeTabId={activeTab}
                 onTabChange={setActiveTab}
-                className="px-6 pt-4"
+                className="px-6 pt-3 shrink-0"
             />
 
             <div className="flex-1 overflow-y-auto p-6">
                 {activeTab === 'detail' && (
-                    <div className="space-y-6">
+                    <div className="space-y-4">
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                             <DetailCard title="Configuration" icon={Route} accent="sage">
                                 <div className="space-y-2 text-sm">
@@ -152,8 +230,8 @@ function ItineraryDetail({
                                         <span className="font-medium">{detail.itinerary_type?.name ?? detail.itinerary_type_id}</span>
                                     </div>
                                     <div className="flex justify-between">
-                                        <span className="text-muted-foreground">Jours avant prochaine visite</span>
-                                        <span className="font-mono">{detail.days_before_next_visit}</span>
+                                        <span className="text-muted-foreground">Fréquence de visite</span>
+                                        <span className="font-mono">{detail.days_before_next_visit} j</span>
                                     </div>
                                     <div className="flex justify-between">
                                         <span className="text-muted-foreground">Trend</span>
@@ -173,47 +251,54 @@ function ItineraryDetail({
                                         <span className="font-medium">{detail.branch?.name ?? detail.branch_code ?? '—'}</span>
                                     </div>
                                     <div className="flex justify-between">
-                                        <span className="text-muted-foreground">Zone</span>
-                                        <span className="font-medium">{detail.geo_area?.name ?? detail.geo_area_code ?? '—'}</span>
+                                        <span className="text-muted-foreground">Secteur</span>
+                                        <span className="font-medium">
+                                            {detail.geo_area ? `${detail.geo_area.name} (${detail.geo_area.code})` : detail.geo_area_code ?? '—'}
+                                        </span>
                                     </div>
                                     <div className="flex justify-between">
-                                        <span className="text-muted-foreground">Vendeur</span>
-                                        <span className="font-medium">{detail.rider?.name ?? detail.rider_id ?? '—'}</span>
+                                        <span className="text-muted-foreground">Vendeur titulaire</span>
+                                        <span className="font-medium">{detail.rider?.name ?? '—'}</span>
                                     </div>
                                 </div>
                             </DetailCard>
                         </div>
 
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                            <DetailCard title="Période" icon={Building2} accent="amber">
-                                <div className="space-y-2 text-sm">
-                                    <div className="flex justify-between">
-                                        <span className="text-muted-foreground">Début</span>
-                                        <span>{detail.start_date ?? '—'}</span>
-                                    </div>
-                                    <div className="flex justify-between">
-                                        <span className="text-muted-foreground">Fin</span>
-                                        <span>{detail.end_date ?? '—'}</span>
-                                    </div>
-                                    <div className="flex justify-between">
-                                        <span className="text-muted-foreground">Ordre</span>
-                                        <span className="font-mono">{detail.sort_order}</span>
-                                    </div>
+                        <DetailCard title="Période de validité" icon={Building2} accent="amber">
+                            <div className="grid grid-cols-3 gap-4 text-sm">
+                                <div>
+                                    <p className="text-muted-foreground text-xs mb-0.5">Début</p>
+                                    <p className="font-medium">{detail.start_date ?? '—'}</p>
                                 </div>
-                            </DetailCard>
+                                <div>
+                                    <p className="text-muted-foreground text-xs mb-0.5">Fin</p>
+                                    <p className="font-medium">{detail.end_date ?? '—'}</p>
+                                </div>
+                                <div>
+                                    <p className="text-muted-foreground text-xs mb-0.5">Ordre</p>
+                                    <p className="font-mono">{detail.sort_order}</p>
+                                </div>
+                            </div>
+                        </DetailCard>
 
-                            <DetailCard title="Compteurs" icon={Users} accent="default">
-                                <div className="space-y-2 text-sm">
-                                    <div className="flex justify-between">
-                                        <span className="text-muted-foreground">Partenaires</span>
-                                        <span className="font-medium">{detail.itinerary_partners?.length ?? 0}</span>
-                                    </div>
-                                    <div className="flex justify-between">
-                                        <span className="text-muted-foreground">Vendeurs</span>
-                                        <span className="font-medium">{detail.itinerary_users?.length ?? 0}</span>
-                                    </div>
-                                </div>
-                            </DetailCard>
+                        {/* Quick navigation */}
+                        <div className="grid grid-cols-2 gap-3">
+                            <Button
+                                variant="outline"
+                                className="justify-start"
+                                onClick={() => navigate('/routing/designer')}
+                            >
+                                <PenTool className="w-4 h-4 mr-2 text-sage-600" />
+                                Ouvrir dans le Visual Designer
+                            </Button>
+                            <Button
+                                variant="outline"
+                                className="justify-start"
+                                onClick={() => navigate('/routing/planning')}
+                            >
+                                <CalendarDays className="w-4 h-4 mr-2 text-indigo-500" />
+                                Voir le planning hebdomadaire
+                            </Button>
                         </div>
                     </div>
                 )}
@@ -221,7 +306,7 @@ function ItineraryDetail({
                 {activeTab === 'partners' && detailData && (
                     <ItineraryPartnersManager
                         key={`partners-${itinerary.id}`}
-                        partners={detail.itinerary_partners ?? []}
+                        partners={partners}
                         availablePartners={detailData.availablePartners}
                         onSave={handleSyncPartners}
                         loading={syncPartners.isPending}
@@ -242,6 +327,92 @@ function ItineraryDetail({
     );
 }
 
+// ─── Empty state dashboard ────────────────────────────────────────────────────
+
+function ItinerariesDashboard({ itineraries }: { itineraries: Itinerary[] }) {
+    const navigate = useNavigate();
+
+    const kpis = [
+        {
+            label: 'Tournées',
+            value: itineraries.length,
+            icon: <Truck className="w-5 h-5 text-sage-600" />,
+            bg: 'bg-sage-50 border-sage-100',
+        },
+        {
+            label: 'Actives',
+            value: itineraries.filter((i) => i.is_active).length,
+            icon: <CheckCircle2 className="w-5 h-5 text-emerald-500" />,
+            bg: 'bg-emerald-50 border-emerald-100',
+        },
+        {
+            label: 'Avec vendeur',
+            value: itineraries.filter((i) => i.rider_id != null).length,
+            icon: <Users className="w-5 h-5 text-blue-500" />,
+            bg: 'bg-blue-50 border-blue-100',
+        },
+        {
+            label: 'Sans vendeur',
+            value: itineraries.filter((i) => i.rider_id == null).length,
+            icon: <UserX className="w-5 h-5 text-amber-500" />,
+            bg: 'bg-amber-50 border-amber-100',
+        },
+    ];
+
+    return (
+        <div className="flex-1 overflow-y-auto p-8">
+            <div className="max-w-3xl mx-auto space-y-6">
+                <div className="text-center mb-2">
+                    <h3 className="text-lg font-semibold text-gray-800">Gestion des Tournées</h3>
+                    <p className="text-sm text-gray-500 mt-1">
+                        Sélectionnez une tournée pour gérer ses partenaires, vendeurs et sa configuration.
+                    </p>
+                </div>
+
+                <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+                    {kpis.map((kpi) => (
+                        <div key={kpi.label} className={`rounded-xl border p-4 ${kpi.bg}`}>
+                            <div className="flex items-center justify-between mb-2">{kpi.icon}</div>
+                            <p className="text-2xl font-bold text-gray-900 leading-none">{kpi.value}</p>
+                            <p className="text-[11px] text-gray-500 mt-1">{kpi.label}</p>
+                        </div>
+                    ))}
+                </div>
+
+                {/* Quick links to workspaces */}
+                <div className="grid grid-cols-2 gap-4">
+                    <button
+                        onClick={() => navigate('/routing/designer')}
+                        className="flex items-center gap-4 p-5 rounded-xl border border-gray-200 bg-white hover:border-sage-300 hover:shadow-sm transition-all text-left group"
+                    >
+                        <div className="w-11 h-11 rounded-xl bg-sage-50 border border-sage-100 flex items-center justify-center shrink-0">
+                            <PenTool className="w-5 h-5 text-sage-600" />
+                        </div>
+                        <div>
+                            <p className="text-sm font-semibold text-gray-800 group-hover:text-sage-700">Visual Designer</p>
+                            <p className="text-xs text-gray-400 mt-0.5">Composer les tournées sur la carte (lasso, GPS)</p>
+                        </div>
+                    </button>
+                    <button
+                        onClick={() => navigate('/routing/planning')}
+                        className="flex items-center gap-4 p-5 rounded-xl border border-gray-200 bg-white hover:border-indigo-300 hover:shadow-sm transition-all text-left group"
+                    >
+                        <div className="w-11 h-11 rounded-xl bg-indigo-50 border border-indigo-100 flex items-center justify-center shrink-0">
+                            <CalendarDays className="w-5 h-5 text-indigo-500" />
+                        </div>
+                        <div>
+                            <p className="text-sm font-semibold text-gray-800 group-hover:text-indigo-600">Planning hebdomadaire</p>
+                            <p className="text-xs text-gray-400 mt-0.5">Affecter les tournées aux agents par jour</p>
+                        </div>
+                    </button>
+                </div>
+            </div>
+        </div>
+    );
+}
+
+// ─── Page ─────────────────────────────────────────────────────────────────────
+
 export function ItinerariesPage() {
     const [filters, setFilters] = useState<ItineraryFilters>(DEFAULT_FILTERS);
     const { data, isLoading, refetch } = useItineraries(filters);
@@ -256,7 +427,11 @@ export function ItinerariesPage() {
 
     const createItinerary = useCreateItinerary();
     const updateItinerary = useUpdateItinerary(editingItinerary?.id ?? 0);
+    const toggleItinerary = useUpdateItinerary(selectedItinerary?.id ?? 0);
     const deleteItinerary = useDeleteItinerary();
+
+    const rows = data?.itineraries.data ?? [];
+    const totalCount = data?.itineraries.total ?? 0;
 
     const handleSelect = (itinerary: Itinerary) => {
         setSelectedItinerary(itinerary);
@@ -278,6 +453,18 @@ export function ItinerariesPage() {
         }
     };
 
+    const handleToggle = async (itinerary: Itinerary) => {
+        try {
+            await toggleItinerary.mutateAsync({ is_active: !itinerary.is_active });
+            toast.success(itinerary.is_active ? 'Tournée désactivée.' : 'Tournée activée.');
+            setSelectedItinerary((prev) =>
+                prev && prev.id === itinerary.id ? { ...prev, is_active: !prev.is_active } : prev
+            );
+        } catch (error) {
+            toast.error(getErrorMessage(error));
+        }
+    };
+
     const handleDelete = async () => {
         if (!itineraryToDelete) return;
         try {
@@ -294,25 +481,18 @@ export function ItinerariesPage() {
     };
 
     const columnDefs = [
-        { field: 'code', headerName: 'Code', flex: 1 },
-        { field: 'name', headerName: 'Nom', flex: 2 },
-        {
-            field: 'itinerary_type',
-            headerName: 'Type',
-            flex: 1,
-            valueGetter: (params: { data: Itinerary }) => params.data.itinerary_type?.name ?? '',
-        },
-        {
-            field: 'branch',
-            headerName: 'Branche',
-            flex: 1,
-            valueGetter: (params: { data: Itinerary }) => params.data.branch?.name ?? params.data.branch_code ?? '—',
-        },
+        { field: 'name', headerName: 'Tournée', flex: 2 },
+        { field: 'code', headerName: 'Code', flex: 1.3, cellClass: 'font-mono text-xs' },
         {
             field: 'rider',
             headerName: 'Vendeur',
-            flex: 1,
-            valueGetter: (params: { data: Itinerary }) => params.data.rider?.name ?? '—',
+            flex: 1.2,
+            cellRenderer: (params: { data: Itinerary }) =>
+                params.data.rider ? (
+                    <span className="text-xs">{params.data.rider.name}</span>
+                ) : (
+                    <span className="text-xs text-amber-500">Non affecté</span>
+                ),
         },
         {
             field: 'is_active',
@@ -320,9 +500,9 @@ export function ItinerariesPage() {
             flex: 0.7,
             cellRenderer: (params: { value: boolean }) =>
                 params.value ? (
-                    <Badge variant="success" className="text-[10px]">Actif</Badge>
+                    <Badge variant="success" className="text-[10px]">Active</Badge>
                 ) : (
-                    <Badge variant="secondary" className="text-[10px]">Inactif</Badge>
+                    <Badge variant="secondary" className="text-[10px]">Inactive</Badge>
                 ),
         },
     ];
@@ -330,8 +510,16 @@ export function ItinerariesPage() {
     const branchOptions = data?.branches.map((b) => ({ value: b.code, label: `${b.name} (${b.code})` })) ?? [];
     const geoAreaOptions = data?.geoAreas.map((g) => ({ value: g.code, label: `${g.name} (${g.code})` })) ?? [];
     const riderOptions = data?.riders.map((r) => ({ value: r.id, label: r.name })) ?? [];
+    const typeOptions =
+        itineraryTypesData?.data?.data.map((t) => ({ value: t.id, label: `${t.name} (${t.code})` })) ?? [];
 
-    const activeFilterCount = [filters.branch_code, filters.geo_area_code, filters.rider_id].filter(Boolean).length;
+    const activeFilterCount = [
+        filters.branch_code,
+        filters.geo_area_code,
+        filters.rider_id,
+        filters.itinerary_type_id,
+        filters.is_active,
+    ].filter((v) => v !== undefined && v !== '').length;
 
     const actionGroups = [
         {
@@ -345,6 +533,12 @@ export function ItinerariesPage() {
                 {
                     items: [
                         { icon: Edit2, label: 'Éditer', variant: 'sage' as const, onClick: () => setEditingItinerary(selectedItinerary) },
+                        {
+                            icon: selectedItinerary.is_active ? PowerOff : Power,
+                            label: selectedItinerary.is_active ? 'Désactiver' : 'Activer',
+                            variant: 'warning' as const,
+                            onClick: () => handleToggle(selectedItinerary),
+                        },
                         { icon: Trash2, label: 'Supprimer', variant: 'danger' as const, onClick: () => setItineraryToDelete(selectedItinerary) },
                     ],
                 },
@@ -357,15 +551,20 @@ export function ItinerariesPage() {
             leftContent={
                 <div className="h-full bg-white border-r border-gray-100 flex flex-col">
                     <div className="p-4 border-b border-gray-100 shrink-0">
-                        <div className="flex items-center gap-2 mb-3">
-                            <Truck className="h-5 w-5 text-sage-600" />
-                            <h1 className="text-sm font-semibold text-gray-900">Tournées</h1>
+                        <div className="flex items-center justify-between mb-3">
+                            <div className="flex items-center gap-2">
+                                <Truck className="h-5 w-5 text-sage-600" />
+                                <h1 className="text-sm font-semibold text-gray-900">Tournées</h1>
+                            </div>
+                            <span className="text-[11px] text-gray-400 font-mono">
+                                {rows.length}/{totalCount}
+                            </span>
                         </div>
                         <div className="space-y-2">
                             <div className="relative">
                                 <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-gray-400" />
                                 <Input
-                                    placeholder="Rechercher..."
+                                    placeholder="Rechercher (nom, code)..."
                                     value={filters.search ?? ''}
                                     onChange={(e) => setFilters((prev) => ({ ...prev, search: e.target.value, page: 1 }))}
                                     className="h-8 text-xs pl-8"
@@ -407,7 +606,7 @@ export function ItinerariesPage() {
                     <div className="flex-1 min-h-0 p-2">
                         <div className="bg-white rounded-lg border border-gray-200 shadow-sm h-full">
                             <DataGrid
-                                rowData={data?.itineraries.data ?? []}
+                                rowData={rows}
                                 columnDefs={columnDefs}
                                 onRowSelected={(itinerary) => handleSelect(itinerary)}
                                 loading={isLoading}
@@ -424,6 +623,9 @@ export function ItinerariesPage() {
                         <DialogContent className="max-w-3xl">
                             <DialogHeader>
                                 <DialogTitle>{editingItinerary ? 'Modifier la tournée' : 'Nouvelle tournée'}</DialogTitle>
+                                <DialogDescription>
+                                    Configuration de la tournée : type, secteur, vendeur titulaire et période.
+                                </DialogDescription>
                             </DialogHeader>
                             <ItineraryForm
                                 key={editingItinerary ? `edit-${editingItinerary.id}` : 'create'}
@@ -447,8 +649,8 @@ export function ItinerariesPage() {
                                     Supprimer la tournée ?
                                 </DialogTitle>
                                 <DialogDescription>
-                                    Vous allez supprimer <strong>{itineraryToDelete?.name}</strong> ({itineraryToDelete?.code}).
-                                    Cette action est irréversible.
+                                    Vous allez supprimer <strong>{itineraryToDelete?.name}</strong> ({itineraryToDelete?.code})
+                                    ainsi que ses affectations partenaires et vendeurs. Cette action est irréversible.
                                 </DialogDescription>
                             </DialogHeader>
                             <DialogFooter>
@@ -470,39 +672,72 @@ export function ItinerariesPage() {
                                     Filtres de tournées
                                 </DialogTitle>
                                 <DialogDescription>
-                                    Affinez la liste des tournées par branche, zone ou vendeur.
+                                    Affinez la liste par type, branche, zone, vendeur ou statut.
                                 </DialogDescription>
                             </DialogHeader>
                             <div className="space-y-4 py-2">
                                 <div className="space-y-2">
+                                    <Label className="text-xs font-medium text-gray-700">Type de tournée</Label>
+                                    <SearchableSelect
+                                        options={typeOptions}
+                                        value={draftFilters.itinerary_type_id ?? undefined}
+                                        onChange={(v) => setDraftFilters((prev) => ({ ...prev, itinerary_type_id: v ? Number(v) : undefined }))}
+                                        placeholder="— Tous les types —"
+                                        clearable
+                                    />
+                                </div>
+                                <div className="space-y-2">
                                     <Label className="text-xs font-medium text-gray-700">Branche</Label>
                                     <SearchableSelect
-                                        options={[{ value: '', label: '— Toutes les branches —' }, ...branchOptions]}
-                                        value={draftFilters.branch_code ?? ''}
+                                        options={branchOptions}
+                                        value={draftFilters.branch_code ?? undefined}
                                         onChange={(v) => setDraftFilters((prev) => ({ ...prev, branch_code: v ? String(v) : undefined }))}
-                                        placeholder="Branche"
+                                        placeholder="— Toutes les branches —"
                                         clearable
                                     />
                                 </div>
                                 <div className="space-y-2">
                                     <Label className="text-xs font-medium text-gray-700">Zone géographique</Label>
                                     <SearchableSelect
-                                        options={[{ value: '', label: '— Toutes les zones —' }, ...geoAreaOptions]}
-                                        value={draftFilters.geo_area_code ?? ''}
+                                        options={geoAreaOptions}
+                                        value={draftFilters.geo_area_code ?? undefined}
                                         onChange={(v) => setDraftFilters((prev) => ({ ...prev, geo_area_code: v ? String(v) : undefined }))}
-                                        placeholder="Zone géographique"
+                                        placeholder="— Toutes les zones —"
                                         clearable
                                     />
                                 </div>
                                 <div className="space-y-2">
                                     <Label className="text-xs font-medium text-gray-700">Vendeur</Label>
                                     <SearchableSelect
-                                        options={[{ value: '', label: '— Tous les vendeurs —' }, ...riderOptions]}
-                                        value={draftFilters.rider_id ?? ''}
+                                        options={riderOptions}
+                                        value={draftFilters.rider_id ?? undefined}
                                         onChange={(v) => setDraftFilters((prev) => ({ ...prev, rider_id: v ? Number(v) : undefined }))}
-                                        placeholder="Vendeur"
+                                        placeholder="— Tous les vendeurs —"
                                         clearable
                                     />
+                                </div>
+                                <div className="space-y-2">
+                                    <Label className="text-xs font-medium text-gray-700">Statut</Label>
+                                    <div className="grid grid-cols-3 gap-2">
+                                        {([
+                                            { label: 'Toutes', value: undefined },
+                                            { label: 'Actives', value: true },
+                                            { label: 'Inactives', value: false },
+                                        ] as const).map((opt) => (
+                                            <button
+                                                key={opt.label}
+                                                type="button"
+                                                onClick={() => setDraftFilters((prev) => ({ ...prev, is_active: opt.value }))}
+                                                className={`py-1.5 rounded-lg border text-xs font-medium transition-all ${
+                                                    draftFilters.is_active === opt.value
+                                                        ? 'bg-sage-600 text-white border-sage-600'
+                                                        : 'bg-white text-gray-600 border-gray-200 hover:border-sage-400'
+                                                }`}
+                                            >
+                                                {opt.label}
+                                            </button>
+                                        ))}
+                                    </div>
                                 </div>
                             </div>
                             <DialogFooter>
@@ -529,15 +764,15 @@ export function ItinerariesPage() {
                     </Dialog>
 
                     {showDetailPanel && selectedItinerary ? (
-                        <ItineraryDetail itinerary={selectedItinerary} onBack={() => setShowDetailPanel(false)} />
+                        <ItineraryDetail
+                            itinerary={selectedItinerary}
+                            onBack={() => setShowDetailPanel(false)}
+                            onEdit={(itinerary) => setEditingItinerary(itinerary)}
+                            onToggle={handleToggle}
+                            togglePending={toggleItinerary.isPending}
+                        />
                     ) : (
-                        <div className="flex-1 flex flex-col items-center justify-center p-10 text-center">
-                            <Truck className="w-16 h-16 text-gray-300 mb-4" />
-                            <h3 className="text-lg font-semibold text-gray-700 mb-2">Tournées</h3>
-                            <p className="text-sm text-gray-500 max-w-md">
-                                Sélectionnez une tournée pour voir ses détails, partenaires et vendeurs.
-                            </p>
-                        </div>
+                        <ItinerariesDashboard itineraries={rows} />
                     )}
                 </div>
             }

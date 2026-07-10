@@ -53,6 +53,9 @@ import { WorkflowDetailPage } from '@/pages/workflows/WorkflowDetailPage';
 import { WorkflowCreatePage } from './pages/workflows/WorkflowCreatePage';
 
 import { StockManagementPage } from '@/pages/stock/StockManagementPage';
+import { WarehousesPage } from '@/pages/stock/WarehousesPage';
+import { StockConsultationPage } from '@/pages/stock/StockConsultationPage';
+import { PreparationBillsPage } from '@/pages/stock/PreparationBillsPage';
 import { PricingManagementPage } from '@/pages/pricing/PricingManagementPage';
 import { CustomFieldsPage } from '@/pages/custom-fields/CustomFieldsPage';
 import ReportingPage from '@/pages/reporting/ReportingPage';
@@ -403,10 +406,32 @@ function AppRoutes() {
       } />
 
 
-      {/* Stock Management Module */}
+      {/* Stock Management Module (legacy) */}
       <Route path="/stock-management" element={
         <ProtectedRoute>
           <StockManagementPage />
+        </ProtectedRoute>
+      } />
+
+      {/* Stock / Warehouse Module */}
+      <Route path="/stock" element={
+        <ProtectedRoute requiredRole={['admin', 'root', 'dispatcher', 'magasinier']}>
+          <Navigate to="/stock/warehouses" replace />
+        </ProtectedRoute>
+      } />
+      <Route path="/stock/warehouses" element={
+        <ProtectedRoute requiredRole={['admin', 'root', 'dispatcher', 'magasinier']}>
+          <WarehousesPage />
+        </ProtectedRoute>
+      } />
+      <Route path="/stock/consultation" element={
+        <ProtectedRoute requiredRole={['admin', 'root', 'dispatcher', 'magasinier']}>
+          <StockConsultationPage />
+        </ProtectedRoute>
+      } />
+      <Route path="/stock/preparation-bills" element={
+        <ProtectedRoute requiredRole={['admin', 'root', 'dispatcher', 'magasinier']}>
+          <PreparationBillsPage />
         </ProtectedRoute>
       } />
 

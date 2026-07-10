@@ -14,6 +14,7 @@ import type {
     GeoAreaBounds,
     GeoAreaFeatureCollection,
     GeoAreaFilters,
+    GeoAreaStatistics,
     GeoAreaUser,
     Itinerary,
     ItineraryBusinessNature,
@@ -146,6 +147,14 @@ export function useToggleGeoArea() {
             queryClient.invalidateQueries({ queryKey: routingKeys.geoAreaDetail(id) });
             queryClient.invalidateQueries({ queryKey: routingKeys.geoHierarchy() });
         },
+    });
+}
+
+export function useGeoAreaStatistics() {
+    return useQuery<GeoAreaStatistics, AxiosError>({
+        queryKey: [...routingKeys.geoAreas(), 'statistics'],
+        queryFn: () => routingApi.getGeoAreaStatistics(),
+        staleTime: 60 * 1000,
     });
 }
 

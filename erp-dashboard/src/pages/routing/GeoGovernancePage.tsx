@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, useMemo } from 'react';
 import toast from 'react-hot-toast';
 import { isAxiosError } from 'axios';
 import {
@@ -12,8 +12,12 @@ import {
     ChevronRight,
     MoreHorizontal,
     X,
+    RotateCcw,
+    AlertTriangle,
 } from 'lucide-react';
 
+import { MasterLayout } from '@/components/layout/MasterLayout';
+import { ActionPanel } from '@/components/layout/ActionPanel';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
@@ -40,7 +44,7 @@ import {
     useRemoveGeoAreaUser,
 } from '@/hooks/routing/useRouting';
 import { useUsersOptions } from '@/hooks/tokenSeries/useEntitySelectors';
-import type { CreateGeoAreaPayload, GeoArea, UpdateGeoAreaPayload } from '@/types/routing.types';
+import type { CreateGeoAreaPayload, GeoArea, GeoAreaType, UpdateGeoAreaPayload } from '@/types/routing.types';
 import { cn } from '@/lib/utils';
 
 function getErrorMessage(error: unknown): string {
@@ -51,6 +55,13 @@ function getErrorMessage(error: unknown): string {
     return 'Une erreur est survenue.';
 }
 
+// API returns decimals as strings — normalize before toFixed
+function toCoord(v: string | number | null | undefined): number | null {
+    if (v == null || v === '') return null;
+    const n = typeof v === 'number' ? v : parseFloat(v);
+    return Number.isFinite(n) ? n : null;
+}
+
 const TYPE_ICONS: Record<number, string> = {
     100: '🌍',
     200: '📍',
@@ -59,6 +70,71 @@ const TYPE_ICONS: Record<number, string> = {
     500: '🗺️',
     600: '📌',
 };
+
+// ─── Client-side tree normalization ─────────────────────────────────────────
+// The /hierarchy endpoint can return misplaced roots (sectors whose parent
+// exists elsewhere in the payload) and omits the geo_area_type relation.
+// Rebuild the nesting from parent_code and enrich each node; zones whose
+// parent_code points to a code absent from the dataset are surfaced as
+// orphans instead of polluting the root level.
+function normalizeTree(
+    roots: GeoArea[],
+    typesById: Map<number, GeoAreaType>
+): { tree: GeoArea[]; orphans: GeoArea[] } {
+    const all = new Map<string, GeoArea>();
+    const collect = (nodes: GeoArea[]) => {
+        for (const n of nodes) {
+            if (!all.has(n.code)) {
+                all.set(n.code, {
+                    ...n,
+                    geo_area_type: n.geo_area_type ?? typesById.get(n.geo_area_type_id),
+                    children: [],
+                });
+            }
+            if (n.children?.length) collect(n.children);
+        }
+    };
+    collect(roots);
+
+    // resolve parent relation for the detail panel
+    for (const node of all.values()) {
+        if (node.parent_code) {
+            const p = all.get(node.parent_code);
+            if (p) node.parent = { id: p.id, code: p.code, name: p.name };
+        }
+    }
+
+    const tree: GeoArea[] = [];
+    const orphans: GeoArea[] = [];
+    for (const node of all.values()) {
+        if (node.parent_code && all.has(node.parent_code)) {
+            all.get(node.parent_code)!.children!.push(node);
+        } else if (node.parent_code) {
+            orphans.push(node);
+        } else {
+            tree.push(node);
+        }
+    }
+
+    const sortRec = (nodes: GeoArea[]) => {
+        nodes.sort(
+            (a, b) =>
+                (a.geo_area_type?.rank ?? 0) - (b.geo_area_type?.rank ?? 0) ||
+                a.sort_order - b.sort_order ||
+                a.name.localeCompare(b.name)
+        );
+        for (const n of nodes) {
+            if (n.children?.length) sortRec(n.children);
+            // leaf: drop the empty array so LazyTreeNode can still lazy-load
+            // localités via /children when the hierarchy payload omitted them
+            else n.children = undefined;
+        }
+    };
+    sortRec(tree);
+    sortRec(orphans);
+
+    return { tree, orphans };
+}
 
 // ─── Lazy Tree Node ──────────────────────────────────────────────────────────
 
@@ -280,11 +356,11 @@ function GeoAreaContextPanel({
                         <span className="font-medium text-right">{area.geo_area_type?.name ?? area.geo_area_type_id}</span>
                         <span className="text-muted-foreground">Parent</span>
                         <span className="font-medium text-right">{area.parent?.name ?? '—'}</span>
-                        {area.latitude !== null && (
+                        {toCoord(area.latitude) !== null && (
                             <>
                                 <span className="text-muted-foreground">Lat / Lng</span>
                                 <span className="font-mono text-right text-xs">
-                                    {area.latitude?.toFixed(4)}, {area.longitude?.toFixed(4)}
+                                    {toCoord(area.latitude)?.toFixed(4)}, {toCoord(area.longitude)?.toFixed(4) ?? '—'}
                                 </span>
                             </>
                         )}
@@ -360,7 +436,7 @@ function GeoAreaContextPanel({
 // ─── Main Page ───────────────────────────────────────────────────────────────
 
 export function GeoGovernancePage() {
-    const { data: hierarchy, isLoading } = useGeoHierarchy();
+    const { data: hierarchy, isLoading, refetch: refetchHierarchy } = useGeoHierarchy();
     const { data: listMeta } = useGeoAreas({ per_page: 500 });
 
     const [search, setSearch] = useState('');
@@ -374,9 +450,18 @@ export function GeoGovernancePage() {
     const updateArea = useUpdateGeoArea(editingArea?.id ?? 0);
     const deleteArea = useDeleteGeoArea();
 
-    const filteredTree = search.trim()
-        ? filterTree(hierarchy ?? [], search.toLowerCase())
-        : (hierarchy ?? []);
+    // Rebuild nesting from parent_code — see normalizeTree
+    const typesById = useMemo(
+        () => new Map((listMeta?.geoAreaTypes ?? []).map((t) => [t.id, t])),
+        [listMeta]
+    );
+    const { tree, orphans } = useMemo(
+        () => normalizeTree(hierarchy ?? [], typesById),
+        [hierarchy, typesById]
+    );
+
+    const filteredTree = search.trim() ? filterTree(tree, search.toLowerCase()) : tree;
+    const filteredOrphans = search.trim() ? filterTree(orphans, search.toLowerCase()) : orphans;
 
     function handleAction(action: 'edit' | 'add-child' | 'delete' | 'assign-user', area: GeoArea) {
         if (action === 'edit') {
@@ -425,50 +510,85 @@ export function GeoGovernancePage() {
 
     const isFormOpen = editingArea !== undefined;
 
-    return (
-        <div className="h-full flex overflow-hidden">
-            {/* ── LEFT: Tree View ── */}
-            <div className="w-[380px] shrink-0 flex flex-col border-r border-gray-200 bg-white">
-                <div className="px-4 py-3 border-b border-gray-100 shrink-0">
-                    <div className="flex items-center justify-between mb-3">
-                        <div className="flex items-center gap-2">
-                            <FolderTree className="w-4 h-4 text-sage-600" />
-                            <h1 className="text-sm font-semibold text-gray-900">Gouvernance Géographique</h1>
-                        </div>
-                        <Button
-                            size="sm"
-                            className="h-7 text-xs"
-                            onClick={() => {
-                                setParentForCreate(null);
+    const actionGroups = [
+        {
+            items: [
+                {
+                    icon: Plus,
+                    label: 'Nouvelle zone',
+                    variant: 'primary' as const,
+                    onClick: () => {
+                        setParentForCreate(null);
+                        setEditingArea(null);
+                    },
+                },
+                { icon: RotateCcw, label: 'Rafraîchir', variant: 'default' as const, onClick: () => refetchHierarchy() },
+            ],
+        },
+        ...(selectedArea
+            ? [
+                {
+                    items: [
+                        { icon: Edit2, label: 'Éditer', variant: 'sage' as const, onClick: () => setEditingArea(selectedArea) },
+                        {
+                            icon: Plus,
+                            label: 'Sous-zone',
+                            variant: 'default' as const,
+                            onClick: () => {
+                                setParentForCreate(selectedArea);
                                 setEditingArea(null);
-                            }}
-                        >
-                            <Plus className="w-3.5 h-3.5 mr-1" />
-                            Nouveau
-                        </Button>
-                    </div>
-                    <div className="relative">
-                        <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400" />
-                        <Input
-                            placeholder="Rechercher une zone..."
-                            value={search}
-                            onChange={(e) => setSearch(e.target.value)}
-                            className="h-8 text-xs pl-8"
-                        />
-                    </div>
-                </div>
+                            },
+                        },
+                        { icon: Trash2, label: 'Supprimer', variant: 'danger' as const, onClick: () => setAreaToDelete(selectedArea) },
+                    ],
+                },
+            ]
+            : []),
+    ];
 
-                <div className="flex-1 overflow-y-auto p-2">
-                    {isLoading ? (
-                        <div className="flex items-center justify-center h-32 text-gray-400 text-sm">
-                            Chargement de l'arborescence…
-                        </div>
-                    ) : filteredTree.length === 0 ? (
-                        <div className="flex flex-col items-center justify-center h-32 text-gray-400">
-                            <FolderTree className="w-8 h-8 mb-2" />
-                            <p className="text-xs">Aucune zone trouvée</p>
-                        </div>
-                    ) : (
+    const leftContent = (
+        <div className="h-full bg-white flex flex-col">
+            <div className="px-4 py-3 border-b border-gray-100 shrink-0">
+                <div className="flex items-center justify-between mb-3">
+                    <div className="flex items-center gap-2">
+                        <FolderTree className="w-4 h-4 text-sage-600" />
+                        <h1 className="text-sm font-semibold text-gray-900">Gouvernance Géographique</h1>
+                    </div>
+                    <Button
+                        size="sm"
+                        className="h-7 text-xs"
+                        onClick={() => {
+                            setParentForCreate(null);
+                            setEditingArea(null);
+                        }}
+                    >
+                        <Plus className="w-3.5 h-3.5 mr-1" />
+                        Nouveau
+                    </Button>
+                </div>
+                <div className="relative">
+                    <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400" />
+                    <Input
+                        placeholder="Rechercher une zone..."
+                        value={search}
+                        onChange={(e) => setSearch(e.target.value)}
+                        className="h-8 text-xs pl-8"
+                    />
+                </div>
+            </div>
+
+            <div className="flex-1 overflow-y-auto p-2">
+                {isLoading ? (
+                    <div className="flex items-center justify-center h-32 text-gray-400 text-sm">
+                        Chargement de l'arborescence…
+                    </div>
+                ) : filteredTree.length === 0 && filteredOrphans.length === 0 ? (
+                    <div className="flex flex-col items-center justify-center h-32 text-gray-400">
+                        <FolderTree className="w-8 h-8 mb-2" />
+                        <p className="text-xs">Aucune zone trouvée</p>
+                    </div>
+                ) : (
+                    <>
                         <div className="space-y-0.5">
                             {filteredTree.map((node) => (
                                 <LazyTreeNode
@@ -481,12 +601,40 @@ export function GeoGovernancePage() {
                                 />
                             ))}
                         </div>
-                    )}
-                </div>
-            </div>
 
-            {/* ── RIGHT: Context Panel ── */}
-            <div className="flex-1 min-w-0">
+                        {/* Zones whose parent_code points to a missing zone — data issue to fix via "Modifier" */}
+                        {filteredOrphans.length > 0 && (
+                            <div className="mt-4 pt-3 border-t border-amber-200">
+                                <p className="flex items-center gap-1.5 px-2 pb-2 text-[10px] font-semibold text-amber-600 uppercase tracking-wider">
+                                    <AlertTriangle className="w-3 h-3" />
+                                    Zones mal rattachées ({filteredOrphans.length})
+                                </p>
+                                <p className="px-2 pb-2 text-[10px] text-gray-400 leading-relaxed">
+                                    Le parent référencé n'existe pas. Corrigez le champ « Zone parente » via Modifier.
+                                </p>
+                                <div className="space-y-0.5">
+                                    {filteredOrphans.map((node) => (
+                                        <LazyTreeNode
+                                            key={node.id}
+                                            node={node}
+                                            level={0}
+                                            selectedId={selectedArea?.id ?? null}
+                                            onSelect={setSelectedArea}
+                                            onAction={handleAction}
+                                        />
+                                    ))}
+                                </div>
+                            </div>
+                        )}
+                    </>
+                )}
+            </div>
+        </div>
+    );
+
+    const mainContent = (
+        <div className="h-full flex flex-col min-w-0">
+            <div className="flex-1 min-h-0">
                 {selectedArea ? (
                     <GeoAreaContextPanel
                         key={selectedArea.id}
@@ -520,6 +668,7 @@ export function GeoGovernancePage() {
             </div>
 
             {/* ── Form Dialog ── */}
+            {/* (dialogs live inside mainContent so they mount with the layout) */}
             <Dialog open={isFormOpen} onOpenChange={(open) => !open && setEditingArea(undefined)}>
                 <DialogContent className="max-w-2xl">
                     <DialogHeader>
@@ -530,6 +679,9 @@ export function GeoGovernancePage() {
                                 ? `Nouvelle sous-zone de "${parentForCreate.name}"`
                                 : 'Nouvelle zone racine'}
                         </DialogTitle>
+                        <DialogDescription>
+                            Renseignez le code, le nom et le type hiérarchique de la zone.
+                        </DialogDescription>
                     </DialogHeader>
                     {isFormOpen && (
                         <GeoAreaForm
@@ -571,6 +723,14 @@ export function GeoGovernancePage() {
                 </DialogContent>
             </Dialog>
         </div>
+    );
+
+    return (
+        <MasterLayout
+            leftContent={leftContent}
+            mainContent={mainContent}
+            rightContent={<ActionPanel groups={actionGroups} />}
+        />
     );
 }
 

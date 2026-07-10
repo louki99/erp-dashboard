@@ -21,8 +21,9 @@ export interface GeoArea {
     name_ar: string | null;
     geo_area_type_id: number;
     parent_code: string | null;
-    latitude: number | null;
-    longitude: number | null;
+    // API returns decimals as strings (e.g. "33.573100") — parse before numeric ops
+    latitude: string | number | null;
+    longitude: string | number | null;
     description: string | null;
     is_active: boolean;
     sort_order: number;
@@ -325,6 +326,8 @@ export interface ItineraryFilters {
     branch_code?: string;
     rider_id?: number;
     geo_area_code?: string;
+    itinerary_type_id?: number;
+    is_active?: boolean;
     search?: string;
     page?: number;
     per_page?: number;
