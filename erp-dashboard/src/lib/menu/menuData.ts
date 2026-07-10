@@ -5,6 +5,7 @@ import {
   Database,
   FileText,
   ListTodo,
+  Map,
   Package,
   Settings,
   ShoppingCart,
@@ -401,6 +402,35 @@ export const MENU_MODULES: MenuModule[] = [
         items: [
           { id: 'reporting:dashboard', label: 'Tableau de bord Reporting', route: '/reporting', permission: 'admin.view' },
           { id: 'reporting:admin', label: 'Administration Reporting', route: '/reporting/admin', permission: 'admin.view' },
+        ],
+      },
+    ],
+  },
+  {
+    id: 'routing',
+    label: 'Routing',
+    icon: Map,
+    description: 'Sectorisation géographique et tournées commerciales',
+    requiredPermission: 'admin.routing',
+    requiredRole: 'routing',
+    categories: [
+      {
+        id: 'sectorisation',
+        title: 'Sectorisation',
+        items: [
+          { id: 'routing:geo-governance', label: 'Gouvernance géographique', route: '/routing/geo-governance', description: 'Arborescence interactive des zones géographiques', keywords: ['zone', 'secteur', 'tree', 'géographie', 'superviseur'] },
+          { id: 'routing:geo-areas', label: 'Zones (liste)', route: '/routing/geo-areas', description: 'Liste paginée des zones géographiques', keywords: ['zone', 'secteur', 'localité'] },
+          { id: 'routing:itinerary-types', label: 'Types de tournée', route: '/routing/itinerary-types', description: 'Gérer les types de tournée', keywords: ['type', 'tournée', 'business nature'] },
+          { id: 'routing:business-natures', label: 'Business Natures', route: '/routing/business-natures', description: 'Playbooks de visite et règles d\'action', keywords: ['playbook', 'nature', 'business', 'action', 'visite'] },
+        ],
+      },
+      {
+        id: 'tournees',
+        title: 'Tournées',
+        items: [
+          { id: 'routing:itineraries', label: 'Gestion des tournées', route: '/routing/itineraries', description: 'CRUD tournées, partenaires et vendeurs', keywords: ['tournée', 'itinéraire', 'partenaire', 'vendeur'] },
+          { id: 'routing:designer', label: 'Visual Designer', route: '/routing/designer', description: 'Designer drag-and-drop avec carte Leaflet', keywords: ['designer', 'carte', 'map', 'drag', 'lasso', 'arrêts'] },
+          { id: 'routing:planning', label: 'Planning', route: '/routing/planning', description: 'Planning hebdomadaire et overrides journaliers', keywords: ['planning', 'calendrier', 'jour', 'semaine', 'override'] },
         ],
       },
     ],

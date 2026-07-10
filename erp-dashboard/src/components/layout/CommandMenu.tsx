@@ -78,10 +78,12 @@ export const CommandMenu: React.FC<CommandMenuProps> = ({
     [addRecent, onClose, navigate]
   );
 
-  // Sync search query with parent when controlled.
+  // Sync search query with parent only when the palette is open.
   useEffect(() => {
-    setQuery(initialQuery);
-  }, [initialQuery, setQuery, setSelectedIndex]);
+    if (isOpen) {
+      setQuery(initialQuery);
+    }
+  }, [isOpen, initialQuery, setQuery]);
 
   useEffect(() => {
     if (isOpen) {
@@ -220,18 +222,20 @@ export const CommandMenu: React.FC<CommandMenuProps> = ({
                       const active = index === selectedIndex;
                       const favorite = isFavorite(item);
                       return (
-                        <button
+                        <div
                           key={item.id}
-                          onClick={() => handleNavigate(item)}
                           onMouseEnter={() => setSelectedIndex(index)}
                           className={cn(
-                            'w-full text-left px-3 py-2.5 rounded-lg border transition-colors group flex items-center gap-3',
+                            'px-3 py-2.5 rounded-lg border transition-colors group flex items-center gap-3',
                             active
                               ? 'bg-sage-50 dark:bg-sage-900/20 border-sage-500'
                               : 'bg-transparent border-transparent hover:bg-gray-50 dark:hover:bg-gray-800/50'
                           )}
                         >
-                          <div className="flex-1 min-w-0">
+                          <button
+                            onClick={() => handleNavigate(item)}
+                            className="flex-1 min-w-0 text-left"
+                          >
                             <div className="text-sm font-medium text-gray-900 dark:text-white truncate">
                               <Highlight text={item.label} query={query} />
                             </div>
@@ -244,7 +248,7 @@ export const CommandMenu: React.FC<CommandMenuProps> = ({
                                 <Highlight text={item.categoryTitle} query={query} />
                               </span>
                             </div>
-                          </div>
+                          </button>
                           <button
                             onClick={(e) => handleFavoriteToggle(e, item)}
                             className={cn(
@@ -264,7 +268,7 @@ export const CommandMenu: React.FC<CommandMenuProps> = ({
                               active ? 'text-sage-600' : 'text-gray-300 dark:text-gray-600'
                             )}
                           />
-                        </button>
+                        </div>
                       );
                     })}
                   </div>

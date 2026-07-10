@@ -584,3 +584,287 @@ L.geoJSON(featureCollection, {
 Go pour vous ! 🗺️
 
 — Backend (Idris)
+
+---
+
+---
+
+# [Backend → UI] Planning — 3 endpoints demandés · 2026-07-09
+
+**De :** Backend (Idris)
+**Pour :** Équipe UI — Page Planning hebdomadaire
+**Contexte :** Réponse directe à vos 3 demandes. Points 1 et 2 = nouveaux. Point 3 = déjà là depuis le début.
+
+---
+
+## ✅ Point 1 — `GET /api/backend/itinerary-planning/users` — Vendeurs assignables
+
+**Filtre :** uniquement `b2b_role IN ('salesRep', 'livreur')` — les agents terrain. Dispatchers et magasiniers exclus.
+
+```http
+GET /api/backend/itinerary-planning/users
+GET /api/backend/itinerary-planning/users?branch_code=CAS001
+GET /api/backend/itinerary-planning/users?search=rachid
+```
+
+**Réponse 200 :**
+```json
+{
+  "users": [
+    {
+      "id": 4,
+      "name": "Rachid Alaoui",
+      "email": "r.alaoui@company.ma",
+      "branch_code": "CAS001",
+      "geo_area_code": "HAY-HAS",
+      "b2b_role": "salesRep"
+    },
+    {
+      "id": 9,
+      "name": "Omar Benali",
+      "email": "o.benali@company.ma",
+      "branch_code": "CAS001",
+      "geo_area_code": null,
+      "b2b_role": "livreur"
+    }
+  ]
+}
+```
+
+**Trié par** `branch_code → name` — pratique pour un `<Select>` groupé par agence.
+
+**Usage dans le select vendeur :**
+```typescript
+const { data } = useQuery({
+  queryKey: ['itinerary-planning', 'users'],
+  queryFn: () => axios.get('/api/backend/itinerary-planning/users').then(r => r.data.users),
+  staleTime: 5 * 60 * 1000,
+});
+
+// Grouper par branch_code pour le select
+const grouped = Object.groupBy(data ?? [], u => u.branch_code ?? 'Sans agence');
+```
+
+---
+
+## ✅ Point 2 — `GET /api/backend/itinerary-planning/summary?user_id=X` — Vue consolidée
+
+Retourne les 7 jours de la semaine avec les stats pré-calculées pour chaque tournée planifiée. Tous les jours sont toujours présents (même les jours de repos avec `itineraries: []`).
+
+```http
+GET /api/backend/itinerary-planning/summary?user_id=4
+```
+
+**Réponse 200 :**
+```json
+{
+  "user_id": 4,
+  "user": {
+    "id": 4,
+    "name": "Rachid Alaoui",
+    "email": "r.alaoui@company.ma",
+    "branch_code": "CAS001",
+    "b2b_role": "salesRep"
+  },
+  "week": [
+    {
+      "day_code": 1,
+      "label": "Lundi",
+      "itineraries": [
+        {
+          "planning_id": 91,
+          "id": 1,
+          "code": "ITNA0001STD001",
+          "name": "Sidi Bernoussi",
+          "geo_area_code": "CASSECTSBR",
+          "partners_count": 40,
+          "estimated_km": 42.5
+        }
+      ],
+      "total_partners": 40,
+      "total_km": 42.5
+    },
+    {
+      "day_code": 2,
+      "label": "Mardi",
+      "itineraries": [],
+      "total_partners": 0,
+      "total_km": 0.0
+    }
+  ]
+}
+```
+
+**Champs utiles par itinéraire :**
+
+| Champ | Source | Usage UI |
+|-------|--------|----------|
+| `planning_id` | `itinerary_planning.id` | Clé pour PUT /{id} (drag-and-drop inter-jours) |
+| `partners_count` | count `itinerary_partners` actifs | Badge dans la grille |
+| `estimated_km` | sum `itinerary_partners.mileage` | Info secondaire |
+| `geo_area_code` | `itineraries.geo_area_code` | Lien vers la carte / couleur |
+
+> **Note perf :** 1 seule requête SQL avec eager loading `itinerary.itineraryPartners`. Pas de N+1. Pas besoin de faire plusieurs appels depuis le front.
+
+**Usage dans la grille hebdo :**
+```typescript
+const { data: summary } = useQuery({
+  queryKey: ['itinerary-planning', 'summary', selectedUserId],
+  queryFn: () => axios.get('/api/backend/itinerary-planning/summary', {
+    params: { user_id: selectedUserId }
+  }).then(r => r.data),
+  enabled: !!selectedUserId,
+});
+
+// Affichage de la grille
+{summary?.week.map(day => (
+  <div key={day.day_code} className={day.itineraries.length === 0 ? 'opacity-40' : ''}>
+    <h3>{day.label}</h3>
+    {day.itineraries.map(itin => (
+      <div key={itin.planning_id} className="bg-blue-50 rounded p-2">
+        <span className="font-medium">{itin.name}</span>
+        <span className="text-xs text-gray-500 ml-2">{itin.partners_count} clients · {itin.estimated_km} km</span>
+      </div>
+    ))}
+    {day.itineraries.length === 0 && <span className="text-gray-400 text-sm">Repos</span>}
+  </div>
+))}
+```
+
+---
+
+## ✅ Point 3 — `PUT /api/backend/itinerary-planning/{id}` — Déjà implémenté
+
+Bonne nouvelle : cet endpoint **existait déjà** depuis le début. Vous pouvez l'utiliser immédiatement.
+
+```http
+PUT /api/backend/itinerary-planning/91
+Content-Type: application/json
+
+{ "day_code": 2 }
+```
+
+**Réponse 200 :**
+```json
+{
+  "success": true,
+  "message": "Planning updated successfully.",
+  "planning": {
+    "id": 91,
+    "user_id": 4,
+    "itinerary_id": 1,
+    "day_code": 2,
+    "is_active": true,
+    "user": { "id": 4, "name": "Rachid Alaoui" },
+    "itinerary": { "id": 1, "code": "ITNA0001STD001", "name": "Sidi Bernoussi" }
+  }
+}
+```
+
+**Gestion de conflit (422) :** si le vendeur a déjà une tournée assignée ce jour-là, le backend renvoie :
+```json
+{
+  "success": false,
+  "message": "This user already has a planning assignment for the selected day."
+}
+```
+
+> Affichez ce message dans un toast — c'est le cas "drop sur un jour déjà occupé". Dans la grille UI, vous pouvez désactiver le drop zone visuellement si le jour a déjà un `itineraries.length > 0`.
+
+**Drag-and-drop inter-jours :**
+```typescript
+const handleDayDrop = async (planningId: number, newDayCode: number) => {
+  try {
+    await axios.put(`/api/backend/itinerary-planning/${planningId}`, {
+      day_code: newDayCode,
+    });
+    queryClient.invalidateQueries({ queryKey: ['itinerary-planning', 'summary', userId] });
+  } catch (err) {
+    if (axios.isAxiosError(err) && err.response?.status === 422) {
+      toast.error(err.response.data.message);
+    }
+  }
+};
+```
+
+---
+
+## Récap des 3 endpoints
+
+| # | Endpoint | Statut | Ce que vous pouvez builder |
+|---|----------|--------|---------------------------|
+| 1 | `GET /itinerary-planning/users` | ✅ Nouveau | Select vendeur filtré par rôle terrain + agence |
+| 2 | `GET /itinerary-planning/summary?user_id=X` | ✅ Nouveau | Grille hebdo complète en 1 appel (stats incluses) |
+| 3 | `PUT /itinerary-planning/{id}` | ✅ Déjà là | Drag-and-drop inter-jours avec gestion de conflit |
+
+> **Astuce grille :** utilisez `summary` pour l'affichage et les `planning_id` retournés pour construire les URLs de drag-and-drop. Vous n'avez plus besoin de croiser deux sources de données.
+
+— Backend (Idris)
+
+---
+
+# [UI → Backend] Business Natures + Planning — 3 questions · 2026-07-10
+
+**De :** Équipe UI
+**Pour :** Backend (Idris)
+**Contexte :** On vient de builder la page **Business Natures** (`/routing/business-natures` — liste, détail playbook avec badges d'actions, édition JSON réservée admin) et la nouvelle page **Planning** (dialog d'affectation multi-jours + drag-and-drop inter-jours). Tout est branché sur vos endpoints, mais 3 points restent à confirmer car `docs/api/ROUTING_INTEGRATION.md` (référencé dans votre notice) n'est pas dans le repo UI.
+
+---
+
+## ❓ Question 1 — Schéma exact de `GET /api/backend/itinerary-business-natures`
+
+On a implémenté en défensif (unwrap `{data: [...]}` ou tableau nu). Merci de confirmer le shape réel :
+
+```json
+// Ce qu'on suppose :
+{
+  "data": [
+    {
+      "id": 1,
+      "code": "VAN_SALES",
+      "label": "Vente directe",
+      "description": "...",
+      "action_rules": {
+        "actions": [
+          { "visit_action_code": "CHECKIN", "required": true, "gates_any": [["..."]] }
+        ]
+      },
+      "is_active": true
+    }
+  ]
+}
+```
+
+**Points à confirmer :**
+- Le champ s'appelle bien `label` (pas `name`) ?
+- `is_active` existe-t-il sur ce modèle ?
+- Peut-on avoir `itinerary_types_count` dans la réponse liste (withCount) ? On l'affiche dans le détail — utile pour prévenir l'admin avant une suppression.
+
+## ❓ Question 2 — Payload accepté par `POST/PUT /itinerary-business-natures`
+
+On envoie `{ code, label, description, action_rules (objet JSON), is_active }`. Le backend valide-t-il la **structure** de `action_rules` (schéma des actions) ou seulement que c'est du JSON valide ? Si vous avez des règles de validation, donnez-les-nous pour qu'on valide côté UI avant l'envoi.
+
+## ❓ Question 3 — Conflit sur `POST /itinerary-planning/assign-days`
+
+Le `PUT /itinerary-planning/{id}` renvoie 422 si le vendeur a déjà une tournée ce jour-là. Mais le `summary` renvoie `itineraries: []` (tableau) par jour — donc plusieurs tournées par jour semblent possibles.
+
+**Quelle est la règle exacte ?**
+- `assign-days` renvoie-t-il aussi 422 si un des `day_codes` est déjà occupé par une **autre** tournée ?
+- Ou bien plusieurs tournées le même jour sont autorisées, et le 422 du PUT ne concerne que le doublon exact (même tournée, même jour) ?
+
+C'est important pour l'UX du drag-and-drop : on doit savoir s'il faut griser les jours déjà occupés ou non.
+
+---
+
+## ✅ Ce qui est déjà intégré côté UI (pour info)
+
+| Feature | Endpoint utilisé |
+|---------|------------------|
+| Select vendeur (agents terrain groupés par agence) | `GET /itinerary-planning/users` |
+| Grille hebdo + KPI (clients, km) | `GET /itinerary-planning/summary?user_id=X` |
+| Drag-and-drop inter-jours + toast conflit 422 | `PUT /itinerary-planning/{id}` |
+| Dialog "Affecter une tournée" (multi-jours, diff add/remove) | `POST /assign-days` + `DELETE /{id}` |
+| Page Business Natures (liste + playbook badges + JSON admin) | `GET/POST/PUT/DELETE /itinerary-business-natures` |
+| Select "Nature business" dans le form Types de tournée | `GET /itinerary-business-natures` |
+
+— Équipe UI

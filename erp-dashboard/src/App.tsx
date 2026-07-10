@@ -61,6 +61,13 @@ import DocumentStudioPage from '@/pages/document-studio/DocumentStudioPage';
 import { DataRulesPage } from '@/pages/data-rules/DataRulesPage';
 import { TokenSeriesPage } from '@/pages/token-series/TokenSeriesPage';
 import { DeviceKeysPage } from '@/pages/device-keys/DeviceKeysPage';
+import { GeoAreasPage } from '@/pages/routing/GeoAreasPage';
+import { GeoGovernancePage } from '@/pages/routing/GeoGovernancePage';
+import { ItineraryTypesPage } from '@/pages/routing/ItineraryTypesPage';
+import { BusinessNaturesPage } from '@/pages/routing/BusinessNaturesPage';
+import { ItinerariesPage } from '@/pages/routing/ItinerariesPage';
+import { ItineraryDesignerPage } from '@/pages/routing/ItineraryDesignerPage';
+import { PlanningPage } from '@/pages/routing/PlanningPage';
 
 
 // Simple Navigation Wrapper to show active route in DevSwitcher style (optional, but let's stick to MegaMenu for now)
@@ -453,6 +460,48 @@ function AppRoutes() {
       <Route path="/device-keys" element={
         <ProtectedRoute requiredPermission={PERMISSIONS.DEVICE_KEYS.MANAGE}>
           <DeviceKeysPage />
+        </ProtectedRoute>
+      } />
+
+      {/* Routing / Sectorisation / Tournées — role-based access (admin | root | routing) */}
+      <Route path="/routing" element={
+        <ProtectedRoute requiredRole={['admin', 'root', 'routing']}>
+          <Navigate to="/routing/geo-governance" replace />
+        </ProtectedRoute>
+      } />
+      <Route path="/routing/geo-governance" element={
+        <ProtectedRoute requiredRole={['admin', 'root', 'routing']}>
+          <GeoGovernancePage />
+        </ProtectedRoute>
+      } />
+      <Route path="/routing/geo-areas" element={
+        <ProtectedRoute requiredRole={['admin', 'root', 'routing']}>
+          <GeoAreasPage />
+        </ProtectedRoute>
+      } />
+      <Route path="/routing/itinerary-types" element={
+        <ProtectedRoute requiredRole={['admin', 'root', 'routing']}>
+          <ItineraryTypesPage />
+        </ProtectedRoute>
+      } />
+      <Route path="/routing/business-natures" element={
+        <ProtectedRoute requiredRole={['admin', 'root', 'routing']}>
+          <BusinessNaturesPage />
+        </ProtectedRoute>
+      } />
+      <Route path="/routing/itineraries" element={
+        <ProtectedRoute requiredRole={['admin', 'root', 'routing']}>
+          <ItinerariesPage />
+        </ProtectedRoute>
+      } />
+      <Route path="/routing/designer" element={
+        <ProtectedRoute requiredRole={['admin', 'root', 'routing']}>
+          <ItineraryDesignerPage />
+        </ProtectedRoute>
+      } />
+      <Route path="/routing/planning" element={
+        <ProtectedRoute requiredRole={['admin', 'root', 'routing']}>
+          <PlanningPage />
         </ProtectedRoute>
       } />
 

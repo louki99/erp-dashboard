@@ -284,18 +284,19 @@ export const MegaMenu: React.FC<MegaMenuProps> = ({
                         const favorite = isFavorite(result);
                         const ItemIcon = result.icon;
                         return (
-                          <button
+                          <div
                             key={result.id}
-                            onClick={() => handleNavigation(result)}
                             className={cn(
-                              'w-full text-left p-3 rounded-lg border transition-colors group',
+                              'flex items-start justify-between gap-4 p-3 rounded-lg border transition-colors group',
                               isSelected
                                 ? 'bg-sage-50 dark:bg-sage-900/20 border-sage-500'
                                 : 'bg-white dark:bg-gray-800/50 border-gray-200 dark:border-gray-700 hover:border-sage-400 dark:hover:border-sage-600'
                             )}
                           >
-                            <div className="flex items-start justify-between gap-4">
-                              <div className="flex-1 min-w-0 flex items-center gap-3">
+                            <button
+                              onClick={() => handleNavigation(result)}
+                              className="flex-1 min-w-0 flex items-center gap-3 text-left"
+                            >
                                 <div className="w-8 h-8 rounded-md bg-gray-100 dark:bg-gray-800 flex items-center justify-center shrink-0">
                                   <ItemIcon className="w-4 h-4 text-gray-600 dark:text-gray-400" />
                                 </div>
@@ -311,13 +312,10 @@ export const MegaMenu: React.FC<MegaMenuProps> = ({
                                     <span><Highlight text={result.categoryTitle} query={searchQuery} /></span>
                                   </div>
                                 </div>
-                              </div>
+                              </button>
                               <div className="flex items-center gap-2">
                                 <button
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    toggleFavorite(result);
-                                  }}
+                                  onClick={() => toggleFavorite(result)}
                                   className={cn(
                                     'p-1 rounded transition-all',
                                     favorite
@@ -335,7 +333,6 @@ export const MegaMenu: React.FC<MegaMenuProps> = ({
                                 )} />
                               </div>
                             </div>
-                          </button>
                         );
                       })}
                     </div>

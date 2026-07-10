@@ -252,6 +252,14 @@ export const PERMISSIONS = {
         MANAGE: 'admin.access-control.device-keys.manage',
     },
 
+    // Routing / Sectorisation / Tournées
+    ROUTING: {
+        GEO_AREAS_MANAGE: 'admin.routing.geo-areas.manage',
+        ITINERARY_TYPES_MANAGE: 'admin.routing.itinerary-types.manage',
+        ITINERARIES_MANAGE: 'admin.routing.itineraries.manage',
+        PLANNING_MANAGE: 'admin.routing.planning.manage',
+    },
+
     // Settings
     SETTINGS: {
         GENERAL: 'admin.settings.general',
@@ -401,6 +409,14 @@ export const PAGE_PERMISSIONS: Record<string, string | string[]> = {
     // Token Series & Device Keys
     '/token-series': PERMISSIONS.TOKEN_SERIES.MANAGE,
     '/device-keys': PERMISSIONS.DEVICE_KEYS.MANAGE,
+
+    // Routing
+    '/routing/geo-areas': PERMISSIONS.ROUTING.GEO_AREAS_MANAGE,
+    '/routing/geo-governance': PERMISSIONS.ROUTING.GEO_AREAS_MANAGE,
+    '/routing/itinerary-types': PERMISSIONS.ROUTING.ITINERARY_TYPES_MANAGE,
+    '/routing/itineraries': PERMISSIONS.ROUTING.ITINERARIES_MANAGE,
+    '/routing/designer': PERMISSIONS.ROUTING.ITINERARIES_MANAGE,
+    '/routing/planning': PERMISSIONS.ROUTING.PLANNING_MANAGE,
 
     // Tasks
     '/tasks': PERMISSIONS.TASKS.DASHBOARD,

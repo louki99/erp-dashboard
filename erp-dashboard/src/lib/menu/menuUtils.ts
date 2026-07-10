@@ -33,7 +33,7 @@ export function hasPermission(
 ): boolean {
   if (!permission) return true;
 
-  if (userRoles.includes('admin') || userRoles.includes('super-admin')) {
+  if (userRoles.includes('admin') || userRoles.includes('super-admin') || userRoles.includes('root')) {
     return true;
   }
 
@@ -67,8 +67,21 @@ export function filterMenuByPermission(
   userPermissions?: string[],
   userRoles?: string[]
 ): MenuModule[] {
+  const roles = userRoles ?? [];
+
+  const canAccessModule = (module: MenuModule): boolean => {
+    // Permission check passes → show
+    if (hasPermission(module.requiredPermission, userPermissions, userRoles)) return true;
+    // Role check as alternative: user has the required role
+    if (module.requiredRole) {
+      const required = Array.isArray(module.requiredRole) ? module.requiredRole : [module.requiredRole];
+      if (required.some((r) => roles.includes(r))) return true;
+    }
+    return false;
+  };
+
   return modules
-    .filter((module) => hasPermission(module.requiredPermission, userPermissions, userRoles))
+    .filter(canAccessModule)
     .map((module) => ({
       ...module,
       categories: module.categories
