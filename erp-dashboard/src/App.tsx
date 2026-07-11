@@ -33,6 +33,7 @@ import { MagasinierPreparationsPage } from '@/pages/magasinier/MagasinierPrepara
 import { MagasinierStockPage } from '@/pages/magasinier/MagasinierStockPage';
 import { MagasinierBatchPickingPage } from '@/pages/magasinier/MagasinierBatchPickingPage';
 import { ProductsPage } from '@/pages/products/ProductsPage';
+import { ProductMasterDataPage } from '@/pages/products/ProductMasterDataPage';
 import { SettingsPage } from '@/pages/settings/SettingsPage';
 import { ConfigurationSettingsPage } from '@/pages/settings/ConfigurationSettingsPage';
 import { PromotionsPage } from '@/pages/promotions/PromotionsPage';
@@ -283,6 +284,12 @@ function AppRoutes() {
       <Route path="/products" element={
         <ProtectedRoute>
           <ProductsPage />
+        </ProtectedRoute>
+      } />
+
+      <Route path="/products/master-data" element={
+        <ProtectedRoute>
+          <ProductMasterDataPage />
         </ProtectedRoute>
       } />
 

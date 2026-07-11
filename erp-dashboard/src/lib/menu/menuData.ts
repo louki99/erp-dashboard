@@ -360,9 +360,8 @@ export const MENU_MODULES: MenuModule[] = [
         title: 'Articles',
         items: [
           { id: 'base:art:gestion', label: 'Gestion Produits', route: '/products', permission: 'admin.master.products' },
-          { id: 'base:art:articles', label: 'Articles', route: '/products', permission: 'admin.master.products' },
-          { id: 'base:art:articles-site', label: 'Articles-site', route: '/products', permission: 'admin.master.products' },
-          { id: 'base:art:unites', label: 'Unités', route: '/dashboard', permission: 'admin.master.units' },
+          { id: 'base:art:master-data', label: 'Données de base produits', route: '/products/master-data', permission: 'admin.master.products', description: 'Marques, catégories, unités, TVA, fournisseurs, groupes et pages' },
+          { id: 'base:art:unites', label: 'Unités', route: '/products/master-data', permission: 'admin.master.units' },
         ],
       },
       {
@@ -370,7 +369,7 @@ export const MENU_MODULES: MenuModule[] = [
         title: 'Tiers',
         items: [
           { id: 'base:tiers:clients', label: 'Clients', route: '/partners', permission: 'admin.master.customers' },
-          { id: 'base:tiers:fournisseurs', label: 'Fournisseurs', route: '/dashboard', permission: 'admin.master.suppliers' },
+          { id: 'base:tiers:fournisseurs', label: 'Fournisseurs', route: '/products/master-data', permission: 'admin.master.suppliers' },
           { id: 'base:tiers:transporteurs', label: 'Transporteurs', route: '/dashboard', permission: 'admin.master.carriers' },
         ],
       },

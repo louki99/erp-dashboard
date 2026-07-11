@@ -306,6 +306,9 @@ const ProductStockDetail = ({ row }: { row: StockRow }) => {
                                     <th className="text-right text-[11px] font-semibold text-gray-500 uppercase tracking-wider px-4 py-3 w-28">
                                         Disponible
                                     </th>
+                                    <th className="text-center text-[11px] font-semibold text-gray-500 uppercase tracking-wider px-4 py-3 w-24">
+                                        État
+                                    </th>
                                 </tr>
                             </thead>
                             <tbody>
@@ -313,6 +316,11 @@ const ProductStockDetail = ({ row }: { row: StockRow }) => {
                                     const locAvail = parseFloat(loc.available_quantity);
                                     const locPhys = parseFloat(loc.quantity);
                                     const locRes = parseFloat(loc.reserved_quantity);
+                                    const locStatus = locAvail <= 0
+                                        ? { label: 'Rupture', class: 'bg-red-50 text-red-700 border-red-100' }
+                                        : locAvail < 10
+                                            ? { label: 'Bas', class: 'bg-amber-50 text-amber-700 border-amber-100' }
+                                            : { label: 'OK', class: 'bg-emerald-50 text-emerald-700 border-emerald-100' };
                                     return (
                                         <tr key={loc.id} className="border-b border-gray-100 last:border-b-0 hover:bg-gray-50/80 transition-colors">
                                             <td className="px-4 py-3">
@@ -320,7 +328,9 @@ const ProductStockDetail = ({ row }: { row: StockRow }) => {
                                                     <div className="w-8 h-8 rounded-lg bg-teal-50 flex items-center justify-center shrink-0">
                                                         <MapPin className="w-4 h-4 text-teal-500" />
                                                     </div>
-                                                    <span className="text-sm font-semibold text-gray-900 font-mono">{loc.warehouse_code}</span>
+                                                    <div>
+                                                        <span className="text-sm font-semibold text-gray-900 font-mono">{loc.warehouse_code}</span>
+                                                    </div>
                                                 </div>
                                             </td>
                                             <td className="px-4 py-3 text-right">
@@ -331,6 +341,11 @@ const ProductStockDetail = ({ row }: { row: StockRow }) => {
                                             </td>
                                             <td className="px-4 py-3 text-right">
                                                 <span className={`text-sm font-bold ${availColor(locAvail)}`}>{fmtQty(locAvail)}</span>
+                                            </td>
+                                            <td className="px-4 py-3 text-center">
+                                                <span className={`inline-flex items-center px-2 py-0.5 rounded text-[11px] font-semibold border ${locStatus.class}`}>
+                                                    {locStatus.label}
+                                                </span>
                                             </td>
                                         </tr>
                                     );

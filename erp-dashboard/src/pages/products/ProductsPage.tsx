@@ -16,7 +16,11 @@ import {
     DollarSign,
     X,
     ZoomIn,
-    Maximize2
+    Maximize2,
+    Layers,
+    Globe,
+    Truck,
+    Upload,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 
@@ -36,14 +40,30 @@ import {
     useProductStatistics,
     useCreateProduct,
     useUpdateProduct,
+    useProductFormMetadata,
+    useProductPackagings,
+    useCreatePackaging,
+    useUpdatePackaging,
+    useDeletePackaging,
+    useProductTranslations,
+    useCreateTranslation,
+    useUpdateTranslation,
+    useDeleteTranslation,
+    useProductLogistics,
+    useUpdateLogistics,
+    useProductSuppliers,
+    useCreateProductSupplier,
+    useUpdateProductSupplier,
+    useDeleteProductSupplier,
 } from '@/hooks/products/useProducts';
 import type { Product, ProductFilters } from '@/types/product.types';
+import { productsApi } from '@/services/api/productsApi';
 import { ActionPanel } from '@/components/layout/ActionPanel';
 
 export const ProductsPage = () => {
     const [selected, setSelected] = useState<Product | null>(null);
     const [selectedProducts, setSelectedProducts] = useState<Product[]>([]);
-    const [filters, setFilters] = useState<ProductFilters>({ page: 1, per_page: 20 });
+    const [filters] = useState<ProductFilters>({ page: 1, per_page: 20 });
     const [activeTab, setActiveTab] = useState<string>('info');
     const [showDetailPanel, setShowDetailPanel] = useState<boolean>(false);
     const [isEditMode, setIsEditMode] = useState(false);
@@ -61,7 +81,38 @@ export const ProductsPage = () => {
         custom_fields: true,
         flags: false,
         categories: true,
+        packagings: true,
+        translations: true,
+        logistics: true,
     });
+    const [packagingForm, setPackagingForm] = useState<any>({
+        id: null,
+        unit_id: '',
+        quantity: '',
+        is_default: false,
+        packaging_level_id: '',
+    });
+    const [editingPackagingId, setEditingPackagingId] = useState<number | null>(null);
+    const [translationForm, setTranslationForm] = useState<any>({ lang: '', name: '', short_description: '', description: '' });
+    const [editingTranslationLang, setEditingTranslationLang] = useState<string | null>(null);
+    const [logisticsForm, setLogisticsForm] = useState<any>({
+        shipping_level: '',
+        stackable: false,
+        fragile: false,
+        temperature_controlled: false,
+    });
+    const [isEditingLogistics, setIsEditingLogistics] = useState(false);
+    const [supplierForm, setSupplierForm] = useState<any>({
+        supplier_id: '',
+        cost_price: '',
+        min_order_qty: '',
+        lead_time_days: '',
+        preferred: false,
+    });
+    const [editingSupplierId, setEditingSupplierId] = useState<number | null>(null);
+    const [uploadingMainImage, setUploadingMainImage] = useState(false);
+    const [uploadingGalleryImages, setUploadingGalleryImages] = useState(false);
+    const [deletingGalleryImage, setDeletingGalleryImage] = useState<number | null>(null);
 
     const sectionRefs = useRef<Record<string, HTMLDivElement | null>>({});
     const containerRef = useRef<HTMLDivElement>(null);
@@ -69,7 +120,6 @@ export const ProductsPage = () => {
 
     const { data, loading, error, refetch } = useProductsList(filters);
     const products = data?.data?.data || [];
-    const pagination = data?.meta;
 
     const { data: statsData } = useProductStatistics();
     const stats = statsData?.data || {
@@ -81,24 +131,43 @@ export const ProductsPage = () => {
     };
 
     const { data: detailData, loading: detailLoading, refetch: refetchDetail } = useProductDetail(selected?.id ?? null);
-    const { data: stockData, loading: stockLoading, refetch: refetchStock } = useProductStock(selected?.id ?? null);
+    const { data: stockData, loading: stockLoading } = useProductStock(selected?.id ?? null);
+    const { data: metadata, loading: metadataLoading } = useProductFormMetadata();
+    const { data: packagingsData, loading: packagingsLoading, refetch: refetchPackagings } = useProductPackagings(selected?.id ?? null);
+    const { data: translationsData, loading: translationsLoading, refetch: refetchTranslations } = useProductTranslations(selected?.id ?? null);
+    const { data: logisticsData, loading: logisticsLoading, refetch: refetchLogistics } = useProductLogistics(selected?.id ?? null);
+    const { data: suppliersData, loading: suppliersLoading, refetch: refetchSuppliers } = useProductSuppliers(selected?.id ?? null);
     const { approve, loading: approving } = useApproveProduct();
     const { toggleStatus, loading: toggling } = useToggleProductStatus();
     const { deleteProduct, loading: deleting } = useDeleteProduct();
     const { create, loading: creating } = useCreateProduct();
     const { update, loading: updating } = useUpdateProduct();
+    const { create: createPackaging, loading: creatingPackaging } = useCreatePackaging();
+    const { update: updatePackaging, loading: updatingPackaging } = useUpdatePackaging();
+    const { deletePackaging, loading: deletingPackaging } = useDeletePackaging();
+    const { create: createTranslation, loading: creatingTranslation } = useCreateTranslation();
+    const { update: updateTranslation, loading: updatingTranslation } = useUpdateTranslation();
+    const { deleteTranslation, loading: deletingTranslation } = useDeleteTranslation();
+    const { update: updateLogistics, loading: updatingLogistics } = useUpdateLogistics();
+    const { create: createProductSupplier, loading: creatingSupplier } = useCreateProductSupplier();
+    const { update: updateProductSupplier, loading: updatingSupplier } = useUpdateProductSupplier();
+    const { deleteSupplier: deleteProductSupplier, loading: deletingSupplier } = useDeleteProductSupplier();
+
+    const productSuppliers = suppliersData?.suppliers ?? suppliersData?.data ?? [];
 
     const details = detailData?.data?.product || selected;
     const customFields = detailData?.data?.custom_fields || {};
     const stockSummary = stockData?.data || detailData?.data?.stock_summary;
     const stocksByBranch = (stockSummary as any)?.stocks_by_branch || (stockSummary as any)?.by_branch || details?.stocks || [];
 
-    // Debug: Log the details to see the structure
-    if (details) {
-        console.log('Product Details:', details);
-        console.log('Flags:', details.flags);
-        console.log('Marketing:', details.marketing);
-    }
+    const brands = metadata?.data?.brands || [];
+    const units = metadata?.data?.units || [];
+    const categories = metadata?.data?.categories || [];
+    const vatTaxes = metadata?.data?.vat_taxes || [];
+    const suppliers = metadata?.data?.suppliers || [];
+    const packagings = packagingsData?.packagings ?? packagingsData?.data ?? [];
+    const translations = translationsData?.translations ?? translationsData?.data ?? [];
+    const logistics = logisticsData?.logistics ?? logisticsData?.data ?? null;
 
     const columnDefs = useMemo<ColDef[]>(
         () => [
@@ -167,6 +236,9 @@ export const ProductsPage = () => {
             { id: 'price_lists', label: 'Listes de prix', icon: DollarSign },
             { id: 'stock', label: 'Stock', icon: Box },
             { id: 'suppliers', label: 'Fournisseurs', icon: Package },
+            { id: 'packagings', label: 'Colisage', icon: Layers },
+            { id: 'logistics', label: 'Logistique', icon: Truck },
+            { id: 'translations', label: 'Traductions', icon: Globe },
             { id: 'media', label: 'Médias', icon: ImageIcon },
             { id: 'custom_fields', label: 'Champs personnalisés', icon: Tag },
             { id: 'flags', label: 'Options & Marketing', icon: CheckCircle2 },
@@ -208,13 +280,15 @@ export const ProductsPage = () => {
             discount_price: 0,
             quantity: 0,
             min_order_quantity: 1,
-            brand: undefined,
-            unit: undefined,
+            brand_id: '',
+            unit_id: '',
             short_description: '',
             description: '',
             buy_price: 0,
-            categories: [],
-            vat_taxes: [],
+            category_ids: [],
+            vat_tax_ids: [],
+            supplier_ids: [],
+            supplier_pivots: {},
             is_active: true,
             is_salable: true,
             is_returnable: true,
@@ -230,6 +304,18 @@ export const ProductsPage = () => {
         setIsCreateMode(false);
 
         // Build complete form data matching API requirements
+        const supplierPivots: any = {};
+        if (details?.suppliers && Array.isArray(details.suppliers)) {
+            details.suppliers.forEach((supplier: any) => {
+                supplierPivots[supplier.id] = {
+                    cost_price: supplier.pivot?.cost_price || supplier.cost || 0,
+                    min_order_qty: supplier.pivot?.min_order_qty || supplier.min_quantity || 0,
+                    lead_time_days: supplier.pivot?.lead_time_days || supplier.lead_time_days || 0,
+                    preferred: supplier.pivot?.preferred || supplier.is_preferred || false,
+                };
+            });
+        }
+
         const editFormData: any = {
             // Basic Information
             name: details?.name || '',
@@ -247,13 +333,13 @@ export const ProductsPage = () => {
             min_order_quantity: details?.min_order_quantity || 1,
             has_colisage: details?.has_colisage || false,
 
-            // Relationships
-            brand: details?.brand_id,
-            unit: details?.unit_id,
-            categories: details?.categories?.map((c: any) => c.id) || [],
-            vat_taxes: details?.vatTaxes?.map((v: any) => v.id) || [],
-            units_multi: details?.units?.map((u: any) => u.id) || [],
-            suppliers: details?.suppliers?.map((s: any) => s.id) || [],
+            // Relationships (IDs for API)
+            brand_id: details?.brand_id || '',
+            unit_id: details?.unit_id || '',
+            category_ids: details?.categories?.map((c: any) => c.id) || [],
+            vat_tax_ids: details?.vat_taxes?.map((v: any) => v.id) || details?.vatTaxes?.map((v: any) => v.id) || [],
+            supplier_ids: details?.suppliers?.map((s: any) => s.id) || [],
+            supplier_pivots: supplierPivots,
 
             // Product Flags (Inventory Management)
             decimal_quantity_allowed: details?.flags?.decimal_quantity_allowed ?? false,
@@ -288,17 +374,6 @@ export const ProductsPage = () => {
             // Status
             is_active: details?.is_active ?? true,
         };
-
-        // Add supplier pivot data if suppliers exist
-        if (details?.suppliers && Array.isArray(details.suppliers)) {
-            details.suppliers.forEach((supplier: any) => {
-                const supplierId = supplier.id;
-                editFormData[`supplier_cost_${supplierId}`] = supplier.pivot?.cost_price || 0;
-                editFormData[`supplier_min_qty_${supplierId}`] = supplier.pivot?.min_order_qty || 0;
-                editFormData[`supplier_lead_time_${supplierId}`] = supplier.pivot?.lead_time_days || 0;
-                editFormData[`supplier_preferred_${supplierId}`] = supplier.pivot?.preferred || false;
-            });
-        }
 
         // Add custom fields if they exist
         if (details?.customFieldValues && Array.isArray(details.customFieldValues)) {
@@ -343,9 +418,18 @@ export const ProductsPage = () => {
 
         try {
             // Prepare data for API
-            const apiData = { ...formData };
+            const apiData: any = { ...formData };
 
-            // Convert boolean values to proper format
+            // Ensure relationship arrays are clean arrays of numbers
+            ['category_ids', 'vat_tax_ids', 'supplier_ids'].forEach((key) => {
+                if (!Array.isArray(apiData[key])) apiData[key] = [];
+                apiData[key] = apiData[key].map((v: any) => typeof v === 'string' ? parseInt(v) : v).filter(Boolean);
+            });
+
+            // Remove UI-only helper objects not expected by the main product endpoint
+            delete apiData.supplier_pivots;
+
+            // Convert boolean values to 1/0 for the PHP backend FormData serialization
             Object.keys(apiData).forEach(key => {
                 if (typeof apiData[key] === 'boolean') {
                     apiData[key] = apiData[key] ? 1 : 0;
@@ -467,6 +551,325 @@ export const ProductsPage = () => {
         } catch (e) {
             toast.dismiss(toastId);
             toast.error(e instanceof Error ? e.message : 'Échec de la suppression');
+        }
+    };
+
+    const resetPackagingForm = () => {
+        setPackagingForm({ id: null, unit_id: '', quantity: '', is_default: false, packaging_level_id: '' });
+        setEditingPackagingId(null);
+    };
+
+    const handleSavePackaging = async () => {
+        if (!selected?.id) return;
+        if (!packagingForm.unit_id || !packagingForm.quantity) {
+            toast.error('Unité et quantité sont obligatoires');
+            return;
+        }
+
+        const toastId = toast.loading(editingPackagingId ? 'Mise à jour...' : 'Création...');
+        try {
+            const payload = {
+                product_id: selected.id,
+                unit_id: parseInt(packagingForm.unit_id),
+                quantity: parseInt(packagingForm.quantity),
+                is_default: !!packagingForm.is_default,
+                packaging_level_id: packagingForm.packaging_level_id ? parseInt(packagingForm.packaging_level_id) : null,
+            };
+
+            let res;
+            if (editingPackagingId) {
+                res = await updatePackaging(editingPackagingId, payload);
+            } else {
+                res = await createPackaging(payload);
+            }
+
+            toast.dismiss(toastId);
+            if (res.success) {
+                toast.success(res.message || (editingPackagingId ? 'Colisage mis à jour' : 'Colisage créé'));
+                resetPackagingForm();
+                await refetchPackagings();
+                await refetchDetail();
+            } else {
+                toast.error(res.message || 'Erreur');
+            }
+        } catch (e: any) {
+            toast.dismiss(toastId);
+            toast.error(e?.response?.data?.message || e.message || 'Erreur');
+        }
+    };
+
+    const handleEditPackaging = (pkg: any) => {
+        setEditingPackagingId(pkg.id);
+        setPackagingForm({
+            id: pkg.id,
+            unit_id: pkg.unit_id || '',
+            quantity: pkg.quantity || '',
+            is_default: pkg.is_default || false,
+            packaging_level_id: pkg.packaging_level_id || '',
+        });
+    };
+
+    const handleDeletePackagingItem = async (id: number) => {
+        if (!confirm('Supprimer ce colisage ?')) return;
+        const toastId = toast.loading('Suppression...');
+        try {
+            const res = await deletePackaging(id);
+            toast.dismiss(toastId);
+            if (res.success) {
+                toast.success(res.message || 'Colisage supprimé');
+                await refetchPackagings();
+                await refetchDetail();
+            } else {
+                toast.error(res.message || 'Erreur');
+            }
+        } catch (e: any) {
+            toast.dismiss(toastId);
+            toast.error(e?.response?.data?.message || e.message || 'Erreur');
+        }
+    };
+
+    const resetTranslationForm = () => {
+        setTranslationForm({ lang: '', name: '', short_description: '', description: '' });
+        setEditingTranslationLang(null);
+    };
+
+    const handleSaveTranslation = async () => {
+        if (!selected?.id || !translationForm.lang || !translationForm.name) {
+            toast.error('Langue et nom sont obligatoires');
+            return;
+        }
+        const toastId = toast.loading(editingTranslationLang ? 'Mise à jour...' : 'Création...');
+        try {
+            const payload = {
+                lang: translationForm.lang,
+                name: translationForm.name,
+                short_description: translationForm.short_description || null,
+                description: translationForm.description || null,
+            };
+            let res;
+            if (editingTranslationLang) {
+                res = await updateTranslation(selected.id, editingTranslationLang, payload);
+            } else {
+                res = await createTranslation(selected.id, payload);
+            }
+            toast.dismiss(toastId);
+            if (res.success) {
+                toast.success(res.message || (editingTranslationLang ? 'Traduction mise à jour' : 'Traduction créée'));
+                resetTranslationForm();
+                await refetchTranslations();
+                await refetchDetail();
+            } else {
+                toast.error(res.message || 'Erreur');
+            }
+        } catch (e: any) {
+            toast.dismiss(toastId);
+            toast.error(e?.response?.data?.message || e.message || 'Erreur');
+        }
+    };
+
+    const handleEditTranslation = (t: any) => {
+        setEditingTranslationLang(t.lang);
+        setTranslationForm({
+            lang: t.lang,
+            name: t.name,
+            short_description: t.short_description || '',
+            description: t.description || '',
+        });
+    };
+
+    const handleDeleteTranslationItem = async (lang: string) => {
+        if (!selected?.id) return;
+        if (!confirm('Supprimer cette traduction ?')) return;
+        const toastId = toast.loading('Suppression...');
+        try {
+            const res = await deleteTranslation(selected.id, lang);
+            toast.dismiss(toastId);
+            if (res.success) {
+                toast.success(res.message || 'Traduction supprimée');
+                await refetchTranslations();
+                await refetchDetail();
+            } else {
+                toast.error(res.message || 'Erreur');
+            }
+        } catch (e: any) {
+            toast.dismiss(toastId);
+            toast.error(e?.response?.data?.message || e.message || 'Erreur');
+        }
+    };
+
+    const handleEditLogistics = () => {
+        setIsEditingLogistics(true);
+        setLogisticsForm({
+            shipping_level: logistics?.shipping_level || '',
+            stackable: logistics?.stackable ?? false,
+            fragile: logistics?.fragile ?? false,
+            temperature_controlled: logistics?.temperature_controlled ?? false,
+        });
+    };
+
+    const handleSaveLogistics = async () => {
+        if (!selected?.id) return;
+        const toastId = toast.loading('Mise à jour...');
+        try {
+            const payload: any = {
+                stackable: !!logisticsForm.stackable,
+                fragile: !!logisticsForm.fragile,
+                temperature_controlled: !!logisticsForm.temperature_controlled,
+            };
+            if (logisticsForm.shipping_level) payload.shipping_level = logisticsForm.shipping_level;
+            const res = await updateLogistics(selected.id, payload);
+            toast.dismiss(toastId);
+            if (res.success) {
+                toast.success(res.message || 'Profil logistique mis à jour');
+                setIsEditingLogistics(false);
+                await refetchLogistics();
+                await refetchDetail();
+            } else {
+                toast.error(res.message || 'Erreur');
+            }
+        } catch (e: any) {
+            toast.dismiss(toastId);
+            toast.error(e?.response?.data?.message || e.message || 'Erreur');
+        }
+    };
+
+    const resetSupplierForm = () => {
+        setSupplierForm({ supplier_id: '', cost_price: '', min_order_qty: '', lead_time_days: '', preferred: false });
+        setEditingSupplierId(null);
+    };
+
+    const handleSaveSupplier = async () => {
+        if (!selected?.id || !supplierForm.supplier_id) {
+            toast.error('Veuillez sélectionner un fournisseur');
+            return;
+        }
+        const toastId = toast.loading(editingSupplierId ? 'Mise à jour...' : 'Création...');
+        try {
+            const payload: any = {
+                supplier_id: parseInt(supplierForm.supplier_id),
+                cost_price: supplierForm.cost_price ? parseFloat(supplierForm.cost_price) : 0,
+                min_order_qty: supplierForm.min_order_qty ? parseInt(supplierForm.min_order_qty) : 0,
+                lead_time_days: supplierForm.lead_time_days ? parseInt(supplierForm.lead_time_days) : null,
+                preferred: !!supplierForm.preferred,
+            };
+            let res;
+            if (editingSupplierId) {
+                res = await updateProductSupplier(selected.id, editingSupplierId, payload);
+            } else {
+                res = await createProductSupplier(selected.id, payload);
+            }
+            toast.dismiss(toastId);
+            if (res.success) {
+                toast.success(res.message || (editingSupplierId ? 'Fournisseur mis à jour' : 'Fournisseur associé'));
+                resetSupplierForm();
+                await refetchSuppliers();
+                await refetchDetail();
+            } else {
+                toast.error(res.message || 'Erreur');
+            }
+        } catch (e: any) {
+            toast.dismiss(toastId);
+            toast.error(e?.response?.data?.message || e.message || 'Erreur');
+        }
+    };
+
+    const handleEditSupplier = (s: any) => {
+        setEditingSupplierId(s.id);
+        const pivot = s.pivot || {};
+        setSupplierForm({
+            supplier_id: s.id,
+            cost_price: pivot.cost_price ?? '',
+            min_order_qty: pivot.min_order_qty ?? '',
+            lead_time_days: pivot.lead_time_days ?? '',
+            preferred: pivot.preferred ?? false,
+        });
+    };
+
+    const handleDeleteSupplierItem = async (supplierId: number) => {
+        if (!selected?.id) return;
+        if (!confirm('Supprimer ce fournisseur du produit ?')) return;
+        const toastId = toast.loading('Suppression...');
+        try {
+            const res = await deleteProductSupplier(selected.id, supplierId);
+            toast.dismiss(toastId);
+            if (res.success) {
+                toast.success(res.message || 'Fournisseur dissocié');
+                await refetchSuppliers();
+                await refetchDetail();
+            } else {
+                toast.error(res.message || 'Erreur');
+            }
+        } catch (e: any) {
+            toast.dismiss(toastId);
+            toast.error(e?.response?.data?.message || e.message || 'Erreur');
+        }
+    };
+
+    const handleMainImageChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+        if (!selected?.id || !e.target.files?.[0]) return;
+        const file = e.target.files[0];
+        setUploadingMainImage(true);
+        const toastId = toast.loading('Mise à jour de l\'image principale...');
+        try {
+            const res = await productsApi.setMainImage(selected.id, file);
+            toast.dismiss(toastId);
+            if (res.success) {
+                toast.success(res.message || 'Image principale mise à jour');
+                await refetchDetail();
+            } else {
+                toast.error(res.message || 'Erreur');
+            }
+        } catch (e: any) {
+            toast.dismiss(toastId);
+            toast.error(e?.response?.data?.message || e.message || 'Erreur');
+        } finally {
+            setUploadingMainImage(false);
+            e.target.value = '';
+        }
+    };
+
+    const handleGalleryUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+        if (!selected?.id || !e.target.files?.length) return;
+        const files = Array.from(e.target.files);
+        setUploadingGalleryImages(true);
+        const toastId = toast.loading('Téléversement des images...');
+        try {
+            const res = await productsApi.uploadImages(selected.id, files);
+            toast.dismiss(toastId);
+            if (res.success) {
+                toast.success(res.message || 'Images ajoutées à la galerie');
+                await refetchDetail();
+            } else {
+                toast.error(res.message || 'Erreur');
+            }
+        } catch (e: any) {
+            toast.dismiss(toastId);
+            toast.error(e?.response?.data?.message || e.message || 'Erreur');
+        } finally {
+            setUploadingGalleryImages(false);
+            e.target.value = '';
+        }
+    };
+
+    const handleDeleteGalleryImage = async (mediaId: number) => {
+        if (!selected?.id) return;
+        if (!confirm('Supprimer cette image de la galerie ?')) return;
+        setDeletingGalleryImage(mediaId);
+        const toastId = toast.loading('Suppression...');
+        try {
+            const res = await productsApi.deleteThumbnail(selected.id, mediaId);
+            toast.dismiss(toastId);
+            if (res.success) {
+                toast.success(res.message || 'Image supprimée');
+                await refetchDetail();
+            } else {
+                toast.error(res.message || 'Erreur');
+            }
+        } catch (e: any) {
+            toast.dismiss(toastId);
+            toast.error(e?.response?.data?.message || e.message || 'Erreur');
+        } finally {
+            setDeletingGalleryImage(null);
         }
     };
 
@@ -682,25 +1085,171 @@ export const ProductsPage = () => {
                                                     <div className="grid grid-cols-2 gap-3">
                                                         <div>
                                                             <label className="block text-xs text-gray-500 mb-1">Marque *</label>
-                                                            <input
-                                                                type="text"
-                                                                value={formData.brand || ''}
-                                                                onChange={(e) => setFormData({ ...formData, brand: e.target.value })}
-                                                                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-sage-500"
-                                                                placeholder="Marque"
-                                                            />
+                                                            <select
+                                                                value={formData.brand_id || ''}
+                                                                onChange={(e) => setFormData({ ...formData, brand_id: e.target.value ? parseInt(e.target.value) : '' })}
+                                                                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-sage-500 bg-white"
+                                                                disabled={metadataLoading}
+                                                            >
+                                                                <option value="">Sélectionner une marque...</option>
+                                                                {brands.map((brand: any) => (
+                                                                    <option key={brand.id} value={brand.id}>{brand.name}</option>
+                                                                ))}
+                                                            </select>
                                                         </div>
                                                         <div>
                                                             <label className="block text-xs text-gray-500 mb-1">Unité *</label>
-                                                            <input
-                                                                type="text"
-                                                                value={formData.unit || ''}
-                                                                onChange={(e) => setFormData({ ...formData, unit: e.target.value })}
-                                                                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-sage-500"
-                                                                placeholder="Unité"
-                                                            />
+                                                            <select
+                                                                value={formData.unit_id || ''}
+                                                                onChange={(e) => setFormData({ ...formData, unit_id: e.target.value ? parseInt(e.target.value) : '' })}
+                                                                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-sage-500 bg-white"
+                                                                disabled={metadataLoading}
+                                                            >
+                                                                <option value="">Sélectionner une unité...</option>
+                                                                {units.map((unit: any) => (
+                                                                    <option key={unit.id} value={unit.id}>{unit.name}</option>
+                                                                ))}
+                                                            </select>
                                                         </div>
                                                     </div>
+
+                                                    {/* Categories */}
+                                                    <div>
+                                                        <label className="block text-xs text-gray-500 mb-1">Catégories</label>
+                                                        <div className="border border-gray-300 rounded-md p-2 max-h-32 overflow-y-auto bg-white">
+                                                            {categories.length === 0 ? (
+                                                                <span className="text-xs text-gray-400">Aucune catégorie disponible</span>
+                                                            ) : (
+                                                                categories.map((cat: any) => (
+                                                                    <label key={cat.id} className="flex items-center gap-2 text-sm py-1">
+                                                                        <input
+                                                                            type="checkbox"
+                                                                            checked={(formData.category_ids || []).includes(cat.id)}
+                                                                            onChange={(e) => {
+                                                                                const ids = new Set(formData.category_ids || []);
+                                                                                if (e.target.checked) ids.add(cat.id);
+                                                                                else ids.delete(cat.id);
+                                                                                setFormData({ ...formData, category_ids: Array.from(ids) });
+                                                                            }}
+                                                                            className="w-4 h-4 text-sage-600 border-gray-300 rounded focus:ring-sage-500"
+                                                                        />
+                                                                        <span>{cat.name}</span>
+                                                                    </label>
+                                                                ))
+                                                            )}
+                                                        </div>
+                                                    </div>
+
+                                                    {/* VAT Taxes */}
+                                                    <div>
+                                                        <label className="block text-xs text-gray-500 mb-1">Taxes TVA</label>
+                                                        <div className="border border-gray-300 rounded-md p-2 max-h-32 overflow-y-auto bg-white">
+                                                            {vatTaxes.length === 0 ? (
+                                                                <span className="text-xs text-gray-400">Aucune taxe disponible</span>
+                                                            ) : (
+                                                                vatTaxes.map((tax: any) => (
+                                                                    <label key={tax.id} className="flex items-center gap-2 text-sm py-1">
+                                                                        <input
+                                                                            type="checkbox"
+                                                                            checked={(formData.vat_tax_ids || []).includes(tax.id)}
+                                                                            onChange={(e) => {
+                                                                                const ids = new Set(formData.vat_tax_ids || []);
+                                                                                if (e.target.checked) ids.add(tax.id);
+                                                                                else ids.delete(tax.id);
+                                                                                setFormData({ ...formData, vat_tax_ids: Array.from(ids) });
+                                                                            }}
+                                                                            className="w-4 h-4 text-sage-600 border-gray-300 rounded focus:ring-sage-500"
+                                                                        />
+                                                                        <span>{tax.name} ({tax.percentage}%)</span>
+                                                                    </label>
+                                                                ))
+                                                            )}
+                                                        </div>
+                                                    </div>
+
+                                                    {/* Suppliers */}
+                                                    <div>
+                                                        <label className="block text-xs text-gray-500 mb-1">Fournisseurs</label>
+                                                        <div className="border border-gray-300 rounded-md p-2 max-h-48 overflow-y-auto bg-white">
+                                                            {suppliers.length === 0 ? (
+                                                                <span className="text-xs text-gray-400">Aucun fournisseur disponible</span>
+                                                            ) : (
+                                                                suppliers.map((supplier: any) => {
+                                                                    const isSelected = (formData.supplier_ids || []).includes(supplier.id);
+                                                                    const pivot = formData.supplier_pivots?.[supplier.id] || {};
+                                                                    return (
+                                                                        <div key={supplier.id} className="py-1.5 border-b border-gray-100 last:border-0">
+                                                                            <label className="flex items-center gap-2 text-sm">
+                                                                                <input
+                                                                                    type="checkbox"
+                                                                                    checked={isSelected}
+                                                                                    onChange={(e) => {
+                                                                                        const ids = new Set(formData.supplier_ids || []);
+                                                                                        const pivots = { ...(formData.supplier_pivots || {}) };
+                                                                                        if (e.target.checked) {
+                                                                                            ids.add(supplier.id);
+                                                                                            if (!pivots[supplier.id]) pivots[supplier.id] = { cost_price: 0, min_order_qty: 0, lead_time_days: 0, preferred: false };
+                                                                                        } else {
+                                                                                            ids.delete(supplier.id);
+                                                                                            delete pivots[supplier.id];
+                                                                                        }
+                                                                                        setFormData({ ...formData, supplier_ids: Array.from(ids), supplier_pivots: pivots });
+                                                                                    }}
+                                                                                    className="w-4 h-4 text-sage-600 border-gray-300 rounded focus:ring-sage-500"
+                                                                                />
+                                                                                <span className="font-medium">{supplier.name}</span>
+                                                                            </label>
+                                                                            {isSelected && (
+                                                                                <div className="grid grid-cols-3 gap-2 mt-2 ml-6">
+                                                                                    <input
+                                                                                        type="number"
+                                                                                        step="0.01"
+                                                                                        value={pivot.cost_price || ''}
+                                                                                        onChange={(e) => setFormData({
+                                                                                            ...formData,
+                                                                                            supplier_pivots: {
+                                                                                                ...(formData.supplier_pivots || {}),
+                                                                                                [supplier.id]: { ...pivot, cost_price: parseFloat(e.target.value) || 0 }
+                                                                                            }
+                                                                                        })}
+                                                                                        placeholder="Coût"
+                                                                                        className="w-full px-2 py-1 text-xs border border-gray-300 rounded"
+                                                                                    />
+                                                                                    <input
+                                                                                        type="number"
+                                                                                        value={pivot.min_order_qty || ''}
+                                                                                        onChange={(e) => setFormData({
+                                                                                            ...formData,
+                                                                                            supplier_pivots: {
+                                                                                                ...(formData.supplier_pivots || {}),
+                                                                                                [supplier.id]: { ...pivot, min_order_qty: parseInt(e.target.value) || 0 }
+                                                                                            }
+                                                                                        })}
+                                                                                        placeholder="Qté min"
+                                                                                        className="w-full px-2 py-1 text-xs border border-gray-300 rounded"
+                                                                                    />
+                                                                                    <input
+                                                                                        type="number"
+                                                                                        value={pivot.lead_time_days || ''}
+                                                                                        onChange={(e) => setFormData({
+                                                                                            ...formData,
+                                                                                            supplier_pivots: {
+                                                                                                ...(formData.supplier_pivots || {}),
+                                                                                                [supplier.id]: { ...pivot, lead_time_days: parseInt(e.target.value) || 0 }
+                                                                                            }
+                                                                                        })}
+                                                                                        placeholder="Délai (j)"
+                                                                                        className="w-full px-2 py-1 text-xs border border-gray-300 rounded"
+                                                                                    />
+                                                                                </div>
+                                                                            )}
+                                                                        </div>
+                                                                    );
+                                                                })
+                                                            )}
+                                                        </div>
+                                                    </div>
+
                                                     <div>
                                                         <label className="block text-xs text-gray-500 mb-1">Description courte</label>
                                                         <textarea
@@ -963,50 +1512,672 @@ export const ProductsPage = () => {
                                     </div>
 
                                     {/* Suppliers Section */}
-                                    {!isEditMode && details?.suppliers && details.suppliers.length > 0 && (
-                                        <div ref={el => { sectionRefs.current['suppliers'] = el; }}>
-                                            <SageCollapsible
-                                                title="Fournisseurs"
-                                                isOpen={openSections['suppliers']}
-                                                onOpenChange={(open) => toggleSection('suppliers', open)}
-                                            >
-                                                <div className="space-y-2">
-                                                    {details.suppliers.map((supplierData: any, index: number) => (
-                                                        <div key={index} className="p-3 rounded border border-gray-200 bg-gray-50">
-                                                            <div className="flex items-center justify-between mb-2">
-                                                                <h4 className="font-semibold text-gray-900">{supplierData.supplier?.name || 'Fournisseur'}</h4>
-                                                                {supplierData.is_preferred && (
-                                                                    <span className="text-xs bg-green-100 text-green-700 px-2 py-1 rounded font-medium">
-                                                                        Préféré
-                                                                    </span>
-                                                                )}
+                                    <div ref={el => { sectionRefs.current['suppliers'] = el; }}>
+                                        <SageCollapsible
+                                            title="Fournisseurs"
+                                            isOpen={openSections['suppliers']}
+                                            onOpenChange={(open) => toggleSection('suppliers', open)}
+                                        >
+                                            {suppliersLoading ? (
+                                                <div className="flex items-center justify-center py-6 text-gray-500">
+                                                    <Loader2 className="w-5 h-5 animate-spin mr-2" /> Chargement...
+                                                </div>
+                                            ) : (
+                                                <div className="space-y-4">
+                                                    {productSuppliers.length === 0 ? (
+                                                        <div className="text-center py-8 text-gray-500 text-sm bg-gray-50 rounded-lg border border-dashed border-gray-200">
+                                                            Aucun fournisseur associé à ce produit.
+                                                        </div>
+                                                    ) : (
+                                                        <div className="bg-white border border-gray-200 rounded-xl overflow-hidden shadow-sm">
+                                                            <table className="w-full border-collapse">
+                                                                <thead>
+                                                                    <tr className="bg-gray-50/80 border-b border-gray-200">
+                                                                        <th className="text-left text-[11px] font-semibold text-gray-500 uppercase tracking-wider px-4 py-2.5">Fournisseur</th>
+                                                                        <th className="text-right text-[11px] font-semibold text-gray-500 uppercase tracking-wider px-4 py-2.5 w-28">Coût</th>
+                                                                        <th className="text-center text-[11px] font-semibold text-gray-500 uppercase tracking-wider px-4 py-2.5 w-24">Qté min</th>
+                                                                        <th className="text-center text-[11px] font-semibold text-gray-500 uppercase tracking-wider px-4 py-2.5 w-24">Délai</th>
+                                                                        <th className="text-center text-[11px] font-semibold text-gray-500 uppercase tracking-wider px-4 py-2.5 w-24">Préféré</th>
+                                                                        {isEditMode && (
+                                                                            <th className="text-center text-[11px] font-semibold text-gray-500 uppercase tracking-wider px-4 py-2.5 w-24">Actions</th>
+                                                                        )}
+                                                                    </tr>
+                                                                </thead>
+                                                                <tbody>
+                                                                    {productSuppliers.map((s: any) => {
+                                                                        const pivot = s.pivot || {};
+                                                                        const cost = pivot.cost_price ?? s.cost;
+                                                                        const minQty = pivot.min_order_qty ?? s.min_quantity;
+                                                                        const leadTime = pivot.lead_time_days ?? s.lead_time_days;
+                                                                        const preferred = pivot.preferred ?? s.is_preferred;
+                                                                        return (
+                                                                            <tr key={s.id} className="border-b border-gray-100 last:border-b-0 hover:bg-gray-50/60 transition-colors">
+                                                                                <td className="px-4 py-3">
+                                                                                    <div className="flex items-center gap-2.5">
+                                                                                        <div className="w-8 h-8 rounded-lg bg-indigo-50 flex items-center justify-center shrink-0">
+                                                                                            <Package className="w-4 h-4 text-indigo-500" />
+                                                                                        </div>
+                                                                                        <span className="font-semibold text-sm text-gray-900">{s.supplier?.name || s.name || 'Fournisseur'}</span>
+                                                                                    </div>
+                                                                                </td>
+                                                                                <td className="px-4 py-3 text-right">
+                                                                                    <span className="text-sm font-semibold text-gray-900">{cost ? `${parseFloat(cost).toFixed(2)} MAD` : '-'}</span>
+                                                                                </td>
+                                                                                <td className="px-4 py-3 text-center">
+                                                                                    <span className="text-sm text-gray-700">{minQty ?? '—'}</span>
+                                                                                </td>
+                                                                                <td className="px-4 py-3 text-center">
+                                                                                    <span className="text-sm text-gray-700">{leadTime ?? '—'} <span className="text-xs text-gray-400">j</span></span>
+                                                                                </td>
+                                                                                <td className="px-4 py-3 text-center">
+                                                                                    {preferred ? (
+                                                                                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-semibold bg-green-100 text-green-700">
+                                                                                            <CheckCircle2 className="w-3 h-3" /> Oui
+                                                                                        </span>
+                                                                                    ) : (
+                                                                                        <span className="text-xs text-gray-400">—</span>
+                                                                                    )}
+                                                                                </td>
+                                                                                {isEditMode && (
+                                                                                    <td className="px-4 py-3 text-center">
+                                                                                        <div className="flex items-center justify-center gap-1">
+                                                                                            <button
+                                                                                                onClick={() => handleEditSupplier(s)}
+                                                                                                className="p-1.5 text-gray-400 hover:text-sage-600 hover:bg-sage-50 rounded-lg transition-colors"
+                                                                                                title="Modifier"
+                                                                                            >
+                                                                                                <Edit className="w-3.5 h-3.5" />
+                                                                                            </button>
+                                                                                            <button
+                                                                                                onClick={() => handleDeleteSupplierItem(s.id)}
+                                                                                                disabled={deletingSupplier}
+                                                                                                className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors disabled:opacity-50"
+                                                                                                title="Supprimer"
+                                                                                            >
+                                                                                                <Trash2 className="w-3.5 h-3.5" />
+                                                                                            </button>
+                                                                                        </div>
+                                                                                    </td>
+                                                                                )}
+                                                                            </tr>
+                                                                        );
+                                                                    })}
+                                                                </tbody>
+                                                            </table>
+                                                        </div>
+                                                    )}
+
+                                                    {isEditMode && (
+                                                        <div className="bg-slate-50 border border-gray-200 rounded-xl p-4">
+                                                            <div className="flex items-center gap-2 mb-3">
+                                                                <div className="w-7 h-7 rounded-lg bg-sage-100 flex items-center justify-center">
+                                                                    <Plus className="w-3.5 h-3.5 text-sage-600" />
+                                                                </div>
+                                                                <div className="text-sm font-semibold text-gray-800">
+                                                                    {editingSupplierId ? 'Modifier le fournisseur' : 'Associer un fournisseur'}
+                                                                </div>
                                                             </div>
-                                                            <div className="grid grid-cols-3 gap-2 text-sm">
-                                                                {supplierData.cost && (
-                                                                    <div>
-                                                                        <div className="text-xs text-gray-500">Coût</div>
-                                                                        <div className="font-semibold text-gray-900">{parseFloat(supplierData.cost).toFixed(2)} MAD</div>
-                                                                    </div>
-                                                                )}
-                                                                {supplierData.min_quantity && (
-                                                                    <div>
-                                                                        <div className="text-xs text-gray-500">Qté min.</div>
-                                                                        <div className="font-semibold text-gray-900">{supplierData.min_quantity}</div>
-                                                                    </div>
-                                                                )}
-                                                                {supplierData.lead_time_days && (
-                                                                    <div>
-                                                                        <div className="text-xs text-gray-500">Délai (jours)</div>
-                                                                        <div className="font-semibold text-gray-900">{supplierData.lead_time_days}</div>
-                                                                    </div>
+                                                            <div className="grid grid-cols-1 sm:grid-cols-5 gap-3 mb-3">
+                                                                <div className="sm:col-span-2">
+                                                                    <label className="block text-[11px] font-medium text-gray-500 mb-1">Fournisseur *</label>
+                                                                    <select
+                                                                        value={supplierForm.supplier_id}
+                                                                        onChange={(e) => setSupplierForm({ ...supplierForm, supplier_id: e.target.value })}
+                                                                        disabled={!!editingSupplierId}
+                                                                        className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-sage-500 disabled:bg-gray-100 disabled:text-gray-500"
+                                                                    >
+                                                                        <option value="">Choisir...</option>
+                                                                        {suppliers
+                                                                            .filter((s: any) => editingSupplierId === s.id || !productSuppliers.some((ps: any) => ps.id === s.id))
+                                                                            .map((s: any) => (
+                                                                                <option key={s.id} value={s.id}>{s.name}</option>
+                                                                            ))}
+                                                                    </select>
+                                                                </div>
+                                                                <div>
+                                                                    <label className="block text-[11px] font-medium text-gray-500 mb-1">Coût (MAD)</label>
+                                                                    <input
+                                                                        type="number"
+                                                                        step="0.01"
+                                                                        value={supplierForm.cost_price}
+                                                                        onChange={(e) => setSupplierForm({ ...supplierForm, cost_price: e.target.value })}
+                                                                        className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-sage-500"
+                                                                        placeholder="0.00"
+                                                                    />
+                                                                </div>
+                                                                <div>
+                                                                    <label className="block text-[11px] font-medium text-gray-500 mb-1">Qté min</label>
+                                                                    <input
+                                                                        type="number"
+                                                                        min="0"
+                                                                        value={supplierForm.min_order_qty}
+                                                                        onChange={(e) => setSupplierForm({ ...supplierForm, min_order_qty: e.target.value })}
+                                                                        className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-sage-500"
+                                                                        placeholder="0"
+                                                                    />
+                                                                </div>
+                                                                <div>
+                                                                    <label className="block text-[11px] font-medium text-gray-500 mb-1">Délai (j)</label>
+                                                                    <input
+                                                                        type="number"
+                                                                        min="0"
+                                                                        value={supplierForm.lead_time_days}
+                                                                        onChange={(e) => setSupplierForm({ ...supplierForm, lead_time_days: e.target.value })}
+                                                                        className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-sage-500"
+                                                                        placeholder="0"
+                                                                    />
+                                                                </div>
+                                                            </div>
+                                                            <div className="flex items-center justify-between">
+                                                                <label className="flex items-center gap-2 text-sm cursor-pointer">
+                                                                    <input
+                                                                        type="checkbox"
+                                                                        checked={supplierForm.preferred}
+                                                                        onChange={(e) => setSupplierForm({ ...supplierForm, preferred: e.target.checked })}
+                                                                        className="w-4 h-4 text-sage-600 border-gray-300 rounded focus:ring-sage-500"
+                                                                    />
+                                                                    <span className="text-sm text-gray-700">Fournisseur préféré</span>
+                                                                </label>
+                                                                <div className="flex items-center gap-2">
+                                                                    <button
+                                                                        onClick={handleSaveSupplier}
+                                                                        disabled={creatingSupplier || updatingSupplier}
+                                                                        className="inline-flex items-center gap-1.5 px-4 py-2 bg-sage-600 text-white text-xs font-semibold rounded-lg hover:bg-sage-700 disabled:opacity-50 transition-colors shadow-sm"
+                                                                    >
+                                                                        {creatingSupplier || updatingSupplier ? (
+                                                                            <Loader2 className="w-3 h-3 animate-spin" />
+                                                                        ) : editingSupplierId ? 'Mettre à jour' : 'Associer'}
+                                                                    </button>
+                                                                    {editingSupplierId && (
+                                                                        <button
+                                                                            onClick={resetSupplierForm}
+                                                                            className="px-4 py-2 text-gray-600 text-xs font-semibold hover:bg-gray-200/60 rounded-lg transition-colors"
+                                                                        >
+                                                                            Annuler
+                                                                        </button>
+                                                                    )}
+                                                                </div>
+                                                            </div>
+                                                        </div>
+                                                    )}
+                                                </div>
+                                            )}
+                                        </SageCollapsible>
+                                    </div>
+
+                                    {/* Packagings Section */}
+                                    <div ref={el => { sectionRefs.current['packagings'] = el; }}>
+                                        <SageCollapsible
+                                            title="Colisage"
+                                            isOpen={openSections['packagings']}
+                                            onOpenChange={(open) => toggleSection('packagings', open)}
+                                        >
+                                            {packagingsLoading ? (
+                                                <div className="flex items-center justify-center py-6 text-gray-500">
+                                                    <Loader2 className="w-5 h-5 animate-spin mr-2" /> Chargement...
+                                                </div>
+                                            ) : (
+                                                <div className="space-y-4">
+                                                    {/* Packagings table */}
+                                                    {packagings.length === 0 ? (
+                                                        <div className="text-center py-8 text-gray-500 text-sm bg-gray-50 rounded-lg border border-dashed border-gray-200">
+                                                            Aucun colisage défini pour ce produit.
+                                                        </div>
+                                                    ) : (
+                                                        <div className="bg-white border border-gray-200 rounded-xl overflow-hidden shadow-sm">
+                                                            <table className="w-full border-collapse">
+                                                                <thead>
+                                                                    <tr className="bg-gray-50/80 border-b border-gray-200">
+                                                                        <th className="text-left text-[11px] font-semibold text-gray-500 uppercase tracking-wider px-4 py-2.5">Unité</th>
+                                                                        <th className="text-left text-[11px] font-semibold text-gray-500 uppercase tracking-wider px-4 py-2.5">Quantité</th>
+                                                                        <th className="text-left text-[11px] font-semibold text-gray-500 uppercase tracking-wider px-4 py-2.5">Niveau</th>
+                                                                        <th className="text-center text-[11px] font-semibold text-gray-500 uppercase tracking-wider px-4 py-2.5 w-24">Défaut</th>
+                                                                        {isEditMode && (
+                                                                            <th className="text-center text-[11px] font-semibold text-gray-500 uppercase tracking-wider px-4 py-2.5 w-24">Actions</th>
+                                                                        )}
+                                                                    </tr>
+                                                                </thead>
+                                                                <tbody>
+                                                                    {packagings.map((pkg: any) => (
+                                                                        <tr key={pkg.id} className="border-b border-gray-100 last:border-b-0 hover:bg-gray-50/60 transition-colors">
+                                                                            <td className="px-4 py-3">
+                                                                                <div className="flex items-center gap-2.5">
+                                                                                    <div className="w-8 h-8 rounded-lg bg-sage-50 flex items-center justify-center shrink-0">
+                                                                                        <Box className="w-4 h-4 text-sage-500" />
+                                                                                    </div>
+                                                                                    <span className="font-semibold text-sm text-gray-900">{pkg.unit?.name || 'Unité'}</span>
+                                                                                </div>
+                                                                            </td>
+                                                                            <td className="px-4 py-3">
+                                                                                <span className="text-sm font-semibold text-gray-900">{pkg.quantity}</span>
+                                                                                <span className="text-xs text-gray-400 ml-1">unités</span>
+                                                                            </td>
+                                                                            <td className="px-4 py-3">
+                                                                                {pkg.packagingLevel?.packaging_level ? (
+                                                                                    <span className="inline-flex items-center px-2 py-0.5 rounded text-[11px] font-semibold bg-blue-50 text-blue-700 border border-blue-100">
+                                                                                        {pkg.packagingLevel.packaging_level}
+                                                                                    </span>
+                                                                                ) : (
+                                                                                    <span className="text-xs text-gray-400 italic">—</span>
+                                                                                )}
+                                                                            </td>
+                                                                            <td className="px-4 py-3 text-center">
+                                                                                {pkg.is_default ? (
+                                                                                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-semibold bg-green-100 text-green-700">
+                                                                                        <CheckCircle2 className="w-3 h-3" /> Défaut
+                                                                                    </span>
+                                                                                ) : (
+                                                                                    <span className="text-xs text-gray-400">—</span>
+                                                                                )}
+                                                                            </td>
+                                                                            {isEditMode && (
+                                                                                <td className="px-4 py-3 text-center">
+                                                                                    <div className="flex items-center justify-center gap-1">
+                                                                                        <button
+                                                                                            onClick={() => handleEditPackaging(pkg)}
+                                                                                            className="p-1.5 text-gray-400 hover:text-sage-600 hover:bg-sage-50 rounded-lg transition-colors"
+                                                                                            title="Modifier"
+                                                                                        >
+                                                                                            <Edit className="w-3.5 h-3.5" />
+                                                                                        </button>
+                                                                                        <button
+                                                                                            onClick={() => handleDeletePackagingItem(pkg.id)}
+                                                                                            disabled={deletingPackaging}
+                                                                                            className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors disabled:opacity-50"
+                                                                                            title="Supprimer"
+                                                                                        >
+                                                                                            <Trash2 className="w-3.5 h-3.5" />
+                                                                                        </button>
+                                                                                    </div>
+                                                                                </td>
+                                                                            )}
+                                                                        </tr>
+                                                                    ))}
+                                                                </tbody>
+                                                            </table>
+                                                        </div>
+                                                    )}
+
+                                                    {/* Form */}
+                                                    {isEditMode && (
+                                                        <div className="bg-slate-50 border border-gray-200 rounded-xl p-4">
+                                                            <div className="flex items-center gap-2 mb-3">
+                                                                <div className="w-7 h-7 rounded-lg bg-sage-100 flex items-center justify-center">
+                                                                    <Plus className="w-3.5 h-3.5 text-sage-600" />
+                                                                </div>
+                                                                <div className="text-sm font-semibold text-gray-800">
+                                                                    {editingPackagingId ? 'Modifier le colisage' : 'Ajouter un colisage'}
+                                                                </div>
+                                                            </div>
+                                                            <div className="grid grid-cols-1 sm:grid-cols-4 gap-3 mb-3">
+                                                                <div>
+                                                                    <label className="block text-[11px] font-medium text-gray-500 mb-1">Unité *</label>
+                                                                    <select
+                                                                        value={packagingForm.unit_id}
+                                                                        onChange={(e) => setPackagingForm({ ...packagingForm, unit_id: e.target.value })}
+                                                                        className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-sage-500"
+                                                                    >
+                                                                        <option value="">Choisir...</option>
+                                                                        {units.map((u: any) => (
+                                                                            <option key={u.id} value={u.id}>{u.name}</option>
+                                                                        ))}
+                                                                    </select>
+                                                                </div>
+                                                                <div>
+                                                                    <label className="block text-[11px] font-medium text-gray-500 mb-1">Qté *</label>
+                                                                    <input
+                                                                        type="number"
+                                                                        min="1"
+                                                                        value={packagingForm.quantity}
+                                                                        onChange={(e) => setPackagingForm({ ...packagingForm, quantity: e.target.value })}
+                                                                        className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-sage-500"
+                                                                        placeholder="Ex: 24"
+                                                                    />
+                                                                </div>
+                                                                <div>
+                                                                    <label className="block text-[11px] font-medium text-gray-500 mb-1">Niveau</label>
+                                                                    <select
+                                                                        value={packagingForm.packaging_level_id}
+                                                                        onChange={(e) => setPackagingForm({ ...packagingForm, packaging_level_id: e.target.value })}
+                                                                        className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-sage-500"
+                                                                    >
+                                                                        <option value="">Auto</option>
+                                                                        <option value="1">UNIT</option>
+                                                                        <option value="2">CARTON</option>
+                                                                        <option value="3">PALLET</option>
+                                                                    </select>
+                                                                </div>
+                                                                <div className="flex items-end pb-2">
+                                                                    <label className="flex items-center gap-2 text-sm cursor-pointer">
+                                                                        <input
+                                                                            type="checkbox"
+                                                                            checked={packagingForm.is_default}
+                                                                            onChange={(e) => setPackagingForm({ ...packagingForm, is_default: e.target.checked })}
+                                                                            className="w-4 h-4 text-sage-600 border-gray-300 rounded focus:ring-sage-500"
+                                                                        />
+                                                                        <span className="text-sm text-gray-700">Par défaut</span>
+                                                                    </label>
+                                                                </div>
+                                                            </div>
+                                                            <div className="flex items-center gap-2">
+                                                                <button
+                                                                    onClick={handleSavePackaging}
+                                                                    disabled={creatingPackaging || updatingPackaging}
+                                                                    className="inline-flex items-center gap-1.5 px-4 py-2 bg-sage-600 text-white text-xs font-semibold rounded-lg hover:bg-sage-700 disabled:opacity-50 transition-colors shadow-sm"
+                                                                >
+                                                                    {creatingPackaging || updatingPackaging ? (
+                                                                        <Loader2 className="w-3 h-3 animate-spin" />
+                                                                    ) : editingPackagingId ? 'Mettre à jour' : 'Ajouter'}
+                                                                </button>
+                                                                {editingPackagingId && (
+                                                                    <button
+                                                                        onClick={resetPackagingForm}
+                                                                        className="px-4 py-2 text-gray-600 text-xs font-semibold hover:bg-gray-200/60 rounded-lg transition-colors"
+                                                                    >
+                                                                        Annuler
+                                                                    </button>
                                                                 )}
                                                             </div>
                                                         </div>
-                                                    ))}
+                                                    )}
                                                 </div>
-                                            </SageCollapsible>
-                                        </div>
-                                    )}
+                                            )}
+                                        </SageCollapsible>
+                                    </div>
+
+                                    {/* Translations Section */}
+                                    <div ref={el => { sectionRefs.current['translations'] = el; }}>
+                                        <SageCollapsible
+                                            title="Traductions"
+                                            isOpen={openSections['translations']}
+                                            onOpenChange={(open) => toggleSection('translations', open)}
+                                        >
+                                            {translationsLoading ? (
+                                                <div className="flex items-center justify-center py-6 text-gray-500">
+                                                    <Loader2 className="w-5 h-5 animate-spin mr-2" /> Chargement...
+                                                </div>
+                                            ) : (
+                                                <div className="space-y-4">
+                                                    {translations.length === 0 ? (
+                                                        <div className="text-center py-8 text-gray-500 text-sm bg-gray-50 rounded-lg border border-dashed border-gray-200">
+                                                            Aucune traduction définie pour ce produit.
+                                                        </div>
+                                                    ) : (
+                                                        <div className="bg-white border border-gray-200 rounded-xl overflow-hidden shadow-sm">
+                                                            <table className="w-full border-collapse">
+                                                                <thead>
+                                                                    <tr className="bg-gray-50/80 border-b border-gray-200">
+                                                                        <th className="text-left text-[11px] font-semibold text-gray-500 uppercase tracking-wider px-4 py-2.5 w-24">Langue</th>
+                                                                        <th className="text-left text-[11px] font-semibold text-gray-500 uppercase tracking-wider px-4 py-2.5">Nom</th>
+                                                                        <th className="text-left text-[11px] font-semibold text-gray-500 uppercase tracking-wider px-4 py-2.5">Description courte</th>
+                                                                        {isEditMode && (
+                                                                            <th className="text-center text-[11px] font-semibold text-gray-500 uppercase tracking-wider px-4 py-2.5 w-24">Actions</th>
+                                                                        )}
+                                                                    </tr>
+                                                                </thead>
+                                                                <tbody>
+                                                                    {translations.map((t: any) => (
+                                                                        <tr key={t.lang} className="border-b border-gray-100 last:border-b-0 hover:bg-gray-50/60 transition-colors">
+                                                                            <td className="px-4 py-3">
+                                                                                <span className="inline-flex items-center px-2 py-0.5 rounded text-[11px] font-bold bg-slate-100 text-slate-700 border border-slate-200 uppercase">
+                                                                                    {t.lang}
+                                                                                </span>
+                                                                            </td>
+                                                                            <td className="px-4 py-3">
+                                                                                <div className="text-sm font-semibold text-gray-900">{t.name}</div>
+                                                                                {t.description && (
+                                                                                    <div className="text-xs text-gray-500 mt-1 line-clamp-2">{t.description}</div>
+                                                                                )}
+                                                                            </td>
+                                                                            <td className="px-4 py-3 text-sm text-gray-700">
+                                                                                {t.short_description || <span className="text-xs text-gray-400 italic">—</span>}
+                                                                            </td>
+                                                                            {isEditMode && (
+                                                                                <td className="px-4 py-3 text-center">
+                                                                                    <div className="flex items-center justify-center gap-1">
+                                                                                        <button
+                                                                                            onClick={() => handleEditTranslation(t)}
+                                                                                            className="p-1.5 text-gray-400 hover:text-sage-600 hover:bg-sage-50 rounded-lg transition-colors"
+                                                                                            title="Modifier"
+                                                                                        >
+                                                                                            <Edit className="w-3.5 h-3.5" />
+                                                                                        </button>
+                                                                                        <button
+                                                                                            onClick={() => handleDeleteTranslationItem(t.lang)}
+                                                                                            disabled={deletingTranslation}
+                                                                                            className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors disabled:opacity-50"
+                                                                                            title="Supprimer"
+                                                                                        >
+                                                                                            <Trash2 className="w-3.5 h-3.5" />
+                                                                                        </button>
+                                                                                    </div>
+                                                                                </td>
+                                                                            )}
+                                                                        </tr>
+                                                                    ))}
+                                                                </tbody>
+                                                            </table>
+                                                        </div>
+                                                    )}
+
+                                                    {isEditMode && (
+                                                        <div className="bg-slate-50 border border-gray-200 rounded-xl p-4">
+                                                            <div className="flex items-center gap-2 mb-3">
+                                                                <div className="w-7 h-7 rounded-lg bg-sage-100 flex items-center justify-center">
+                                                                    <Globe className="w-3.5 h-3.5 text-sage-600" />
+                                                                </div>
+                                                                <div className="text-sm font-semibold text-gray-800">
+                                                                    {editingTranslationLang ? 'Modifier la traduction' : 'Ajouter une traduction'}
+                                                                </div>
+                                                            </div>
+                                                            <div className="grid grid-cols-1 sm:grid-cols-4 gap-3 mb-3">
+                                                                <div>
+                                                                    <label className="block text-[11px] font-medium text-gray-500 mb-1">Langue *</label>
+                                                                    <select
+                                                                        value={translationForm.lang}
+                                                                        onChange={(e) => setTranslationForm({ ...translationForm, lang: e.target.value })}
+                                                                        disabled={!!editingTranslationLang}
+                                                                        className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-sage-500 disabled:bg-gray-100 disabled:text-gray-500"
+                                                                    >
+                                                                        <option value="">Choisir...</option>
+                                                                        <option value="fr">Français</option>
+                                                                        <option value="en">English</option>
+                                                                        <option value="ar">العربية</option>
+                                                                        <option value="es">Español</option>
+                                                                        <option value="de">Deutsch</option>
+                                                                    </select>
+                                                                </div>
+                                                                <div className="sm:col-span-3">
+                                                                    <label className="block text-[11px] font-medium text-gray-500 mb-1">Nom *</label>
+                                                                    <input
+                                                                        type="text"
+                                                                        value={translationForm.name}
+                                                                        onChange={(e) => setTranslationForm({ ...translationForm, name: e.target.value })}
+                                                                        className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-sage-500"
+                                                                        placeholder="Nom du produit dans cette langue"
+                                                                    />
+                                                                </div>
+                                                                <div className="sm:col-span-2">
+                                                                    <label className="block text-[11px] font-medium text-gray-500 mb-1">Description courte</label>
+                                                                    <input
+                                                                        type="text"
+                                                                        value={translationForm.short_description}
+                                                                        onChange={(e) => setTranslationForm({ ...translationForm, short_description: e.target.value })}
+                                                                        className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-sage-500"
+                                                                        placeholder="Sous-titre / accroche"
+                                                                    />
+                                                                </div>
+                                                                <div className="sm:col-span-2">
+                                                                    <label className="block text-[11px] font-medium text-gray-500 mb-1">Description</label>
+                                                                    <textarea
+                                                                        value={translationForm.description}
+                                                                        onChange={(e) => setTranslationForm({ ...translationForm, description: e.target.value })}
+                                                                        rows={2}
+                                                                        className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-sage-500 resize-none"
+                                                                        placeholder="Description complète"
+                                                                    />
+                                                                </div>
+                                                            </div>
+                                                            <div className="flex items-center gap-2">
+                                                                <button
+                                                                    onClick={handleSaveTranslation}
+                                                                    disabled={creatingTranslation || updatingTranslation}
+                                                                    className="inline-flex items-center gap-1.5 px-4 py-2 bg-sage-600 text-white text-xs font-semibold rounded-lg hover:bg-sage-700 disabled:opacity-50 transition-colors shadow-sm"
+                                                                >
+                                                                    {creatingTranslation || updatingTranslation ? (
+                                                                        <Loader2 className="w-3 h-3 animate-spin" />
+                                                                    ) : editingTranslationLang ? 'Mettre à jour' : 'Ajouter'}
+                                                                </button>
+                                                                {editingTranslationLang && (
+                                                                    <button
+                                                                        onClick={resetTranslationForm}
+                                                                        className="px-4 py-2 text-gray-600 text-xs font-semibold hover:bg-gray-200/60 rounded-lg transition-colors"
+                                                                    >
+                                                                        Annuler
+                                                                    </button>
+                                                                )}
+                                                            </div>
+                                                        </div>
+                                                    )}
+                                                </div>
+                                            )}
+                                        </SageCollapsible>
+                                    </div>
+
+                                    {/* Logistics Section */}
+                                    <div ref={el => { sectionRefs.current['logistics'] = el; }}>
+                                        <SageCollapsible
+                                            title="Logistique"
+                                            isOpen={openSections['logistics']}
+                                            onOpenChange={(open) => toggleSection('logistics', open)}
+                                        >
+                                            {logisticsLoading ? (
+                                                <div className="flex items-center justify-center py-6 text-gray-500">
+                                                    <Loader2 className="w-5 h-5 animate-spin mr-2" /> Chargement...
+                                                </div>
+                                            ) : (
+                                                <div className="space-y-4">
+                                                    {isEditingLogistics ? (
+                                                        <div className="bg-slate-50 border border-gray-200 rounded-xl p-4">
+                                                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-4">
+                                                                <div>
+                                                                    <label className="block text-[11px] font-medium text-gray-500 mb-1">Niveau d'expédition</label>
+                                                                    <select
+                                                                        value={logisticsForm.shipping_level}
+                                                                        onChange={(e) => setLogisticsForm({ ...logisticsForm, shipping_level: e.target.value })}
+                                                                        className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-sage-500"
+                                                                    >
+                                                                        <option value="">—</option>
+                                                                        <option value="standard">Standard</option>
+                                                                        <option value="express">Express</option>
+                                                                        <option value="freight">Fret</option>
+                                                                        <option value="dangerous">Matières dangereuses</option>
+                                                                    </select>
+                                                                </div>
+                                                            </div>
+                                                            <div className="flex flex-wrap gap-4 mb-4">
+                                                                <label className="flex items-center gap-2 text-sm cursor-pointer">
+                                                                    <input
+                                                                        type="checkbox"
+                                                                        checked={logisticsForm.stackable}
+                                                                        onChange={(e) => setLogisticsForm({ ...logisticsForm, stackable: e.target.checked })}
+                                                                        className="w-4 h-4 text-sage-600 border-gray-300 rounded focus:ring-sage-500"
+                                                                    />
+                                                                    <span className="text-sm text-gray-700">Empilable</span>
+                                                                </label>
+                                                                <label className="flex items-center gap-2 text-sm cursor-pointer">
+                                                                    <input
+                                                                        type="checkbox"
+                                                                        checked={logisticsForm.fragile}
+                                                                        onChange={(e) => setLogisticsForm({ ...logisticsForm, fragile: e.target.checked })}
+                                                                        className="w-4 h-4 text-sage-600 border-gray-300 rounded focus:ring-sage-500"
+                                                                    />
+                                                                    <span className="text-sm text-gray-700">Fragile</span>
+                                                                </label>
+                                                                <label className="flex items-center gap-2 text-sm cursor-pointer">
+                                                                    <input
+                                                                        type="checkbox"
+                                                                        checked={logisticsForm.temperature_controlled}
+                                                                        onChange={(e) => setLogisticsForm({ ...logisticsForm, temperature_controlled: e.target.checked })}
+                                                                        className="w-4 h-4 text-sage-600 border-gray-300 rounded focus:ring-sage-500"
+                                                                    />
+                                                                    <span className="text-sm text-gray-700">Température contrôlée</span>
+                                                                </label>
+                                                            </div>
+                                                            <div className="flex items-center gap-2">
+                                                                <button
+                                                                    onClick={handleSaveLogistics}
+                                                                    disabled={updatingLogistics}
+                                                                    className="inline-flex items-center gap-1.5 px-4 py-2 bg-sage-600 text-white text-xs font-semibold rounded-lg hover:bg-sage-700 disabled:opacity-50 transition-colors shadow-sm"
+                                                                >
+                                                                    {updatingLogistics ? <Loader2 className="w-3 h-3 animate-spin" /> : 'Enregistrer'}
+                                                                </button>
+                                                                <button
+                                                                    onClick={() => setIsEditingLogistics(false)}
+                                                                    className="px-4 py-2 text-gray-600 text-xs font-semibold hover:bg-gray-200/60 rounded-lg transition-colors"
+                                                                >
+                                                                    Annuler
+                                                                </button>
+                                                            </div>
+                                                        </div>
+                                                    ) : (
+                                                        <div className="bg-white border border-gray-200 rounded-xl p-4 shadow-sm">
+                                                            {!logistics ? (
+                                                                <div className="text-center py-6 text-gray-500 text-sm">
+                                                                    Aucune information logistique renseignée.
+                                                                </div>
+                                                            ) : (
+                                                                <div className="space-y-3">
+                                                                    <div className="flex items-center justify-between">
+                                                                        <span className="text-xs font-medium text-gray-500 uppercase tracking-wide">Niveau d'expédition</span>
+                                                                        <span className="text-sm font-semibold text-gray-900">
+                                                                            {logistics.shipping_level ? (
+                                                                                <span className="inline-flex items-center px-2 py-0.5 rounded text-[11px] font-semibold bg-blue-50 text-blue-700 border border-blue-100 capitalize">
+                                                                                    {logistics.shipping_level}
+                                                                                </span>
+                                                                            ) : (
+                                                                                <span className="text-xs text-gray-400 italic">—</span>
+                                                                            )}
+                                                                        </span>
+                                                                    </div>
+                                                                    <div className="grid grid-cols-3 gap-3 pt-3 border-t border-gray-100">
+                                                                        <div className={`p-3 rounded-lg border ${logistics.stackable ? 'bg-green-50 border-green-100' : 'bg-gray-50 border-gray-100'}`}>
+                                                                            <div className="text-[11px] font-medium text-gray-500 mb-1">Empilable</div>
+                                                                            <div className={`text-sm font-semibold ${logistics.stackable ? 'text-green-700' : 'text-gray-400'}`}>
+                                                                                {logistics.stackable ? 'Oui' : 'Non'}
+                                                                            </div>
+                                                                        </div>
+                                                                        <div className={`p-3 rounded-lg border ${logistics.fragile ? 'bg-red-50 border-red-100' : 'bg-gray-50 border-gray-100'}`}>
+                                                                            <div className="text-[11px] font-medium text-gray-500 mb-1">Fragile</div>
+                                                                            <div className={`text-sm font-semibold ${logistics.fragile ? 'text-red-700' : 'text-gray-400'}`}>
+                                                                                {logistics.fragile ? 'Oui' : 'Non'}
+                                                                            </div>
+                                                                        </div>
+                                                                        <div className={`p-3 rounded-lg border ${logistics.temperature_controlled ? 'bg-amber-50 border-amber-100' : 'bg-gray-50 border-gray-100'}`}>
+                                                                            <div className="text-[11px] font-medium text-gray-500 mb-1">Temp. contrôlée</div>
+                                                                            <div className={`text-sm font-semibold ${logistics.temperature_controlled ? 'text-amber-700' : 'text-gray-400'}`}>
+                                                                                {logistics.temperature_controlled ? 'Oui' : 'Non'}
+                                                                            </div>
+                                                                        </div>
+                                                                    </div>
+                                                                </div>
+                                                            )}
+                                                            {isEditMode && (
+                                                                <div className="pt-3 border-t border-gray-100 flex justify-end">
+                                                                    <button
+                                                                        onClick={handleEditLogistics}
+                                                                        className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-sage-700 bg-sage-50 hover:bg-sage-100 rounded-lg transition-colors"
+                                                                    >
+                                                                        <Edit className="w-3.5 h-3.5" /> Modifier
+                                                                    </button>
+                                                                </div>
+                                                            )}
+                                                        </div>
+                                                    )}
+                                                </div>
+                                            )}
+                                        </SageCollapsible>
+                                    </div>
 
                                     {/* Media Section */}
                                     <div ref={el => { sectionRefs.current['media'] = el; }}>
@@ -1015,148 +2186,215 @@ export const ProductsPage = () => {
                                             isOpen={openSections['media']}
                                             onOpenChange={(open) => toggleSection('media', open)}
                                         >
-                                            {isEditMode ? (
-                                                <div className="space-y-4">
-                                                    <FileUpload
-                                                        label="Image principale"
-                                                        value={formData.thumbnail || null}
-                                                        onChange={(file) => setFormData({ ...formData, thumbnail: file })}
-                                                        accept="image/*"
-                                                        multiple={false}
-                                                        maxSize={2}
-                                                        showPreview={true}
-                                                        currentImages={detailData?.data?.thumbnail ? [{
-                                                            id: detailData.data.thumbnail.id,
-                                                            url: detailData.data.thumbnail.url,
-                                                            name: 'Image principale'
-                                                        }] : []}
-                                                        helperText="PNG, JPG, JPEG ou WEBP (max 2MB)"
-                                                    />
+                                            {(() => {
+                                                const mainImage = detailData?.data?.thumbnail || details?.thumbnail;
+                                                const galleryImages = detailData?.data?.medias
+                                                    ?? detailData?.data?.thumbnails
+                                                    ?? detailData?.data?.additional_thumbnails
+                                                    ?? [];
 
-                                                    <FileUpload
-                                                        label="Images supplémentaires"
-                                                        value={formData.additionThumbnail || null}
-                                                        onChange={(files) => setFormData({ ...formData, additionThumbnail: files })}
-                                                        accept="image/*"
-                                                        multiple={true}
-                                                        maxSize={2}
-                                                        maxFiles={10}
-                                                        showPreview={true}
-                                                        currentImages={detailData?.data?.additional_thumbnails?.map((thumb: any, idx: number) => ({
-                                                            id: thumb.id,
-                                                            url: thumb.url || thumb.thumbnail,
-                                                            name: `Image ${idx + 1}`
-                                                        })) || []}
-                                                        helperText="Vous pouvez télécharger jusqu'à 10 images supplémentaires"
+                                                const renderImage = (src: string, alt: string, className?: string) => (
+                                                    <img
+                                                        src={src}
+                                                        alt={alt}
+                                                        className={className}
+                                                        onError={(e) => {
+                                                            (e.target as HTMLImageElement).src = 'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" width="200" height="200"%3E%3Crect fill="%23f0f0f0" width="200" height="200"/%3E%3Ctext fill="%23999" x="50%25" y="50%25" text-anchor="middle" dy=".3em"%3ENo Image%3C/text%3E%3C/svg%3E';
+                                                        }}
                                                     />
-                                                </div>
-                                            ) : (detailData?.data?.thumbnail || detailData?.data?.thumbnails?.length > 0 || detailData?.data?.additional_thumbnails?.length > 0) ? (
-                                                <div className="space-y-6">
-                                                    {/* Main Thumbnail */}
-                                                    {detailData?.data?.thumbnail && (
-                                                        <div>
-                                                            <div className="flex items-center justify-between mb-3">
-                                                                <h4 className="text-sm font-semibold text-gray-900">Image principale</h4>
+                                                );
+
+                                                if (isCreateMode) {
+                                                    return (
+                                                        <div className="space-y-4">
+                                                            <FileUpload
+                                                                label="Image principale"
+                                                                value={formData.thumbnail || null}
+                                                                onChange={(file) => setFormData({ ...formData, thumbnail: file })}
+                                                                accept="image/*"
+                                                                multiple={false}
+                                                                maxSize={2}
+                                                                showPreview={true}
+                                                                currentImages={mainImage ? [{ id: (mainImage as any).id ?? 0, url: (mainImage as any).url || mainImage, name: 'Image principale' }] : []}
+                                                                helperText="PNG, JPG, JPEG ou WEBP (max 2MB)"
+                                                            />
+                                                            <FileUpload
+                                                                label="Images supplémentaires"
+                                                                value={formData.additionThumbnail || null}
+                                                                onChange={(files) => setFormData({ ...formData, additionThumbnail: files })}
+                                                                accept="image/*"
+                                                                multiple={true}
+                                                                maxSize={2}
+                                                                maxFiles={10}
+                                                                showPreview={true}
+                                                                currentImages={galleryImages.map((thumb: any, idx: number) => ({ id: thumb.id, url: thumb.url || thumb.thumbnail, name: `Image ${idx + 1}` }))}
+                                                                helperText="Vous pouvez télécharger jusqu'à 10 images supplémentaires"
+                                                            />
+                                                        </div>
+                                                    );
+                                                }
+
+                                                if (isEditMode) {
+                                                    return (
+                                                        <div className="space-y-6">
+                                                            {/* Main image */}
+                                                            <div>
+                                                                <h4 className="text-sm font-semibold text-gray-900 mb-3">Image principale</h4>
+                                                                {mainImage ? (
+                                                                    <div className="relative w-full h-80 bg-gradient-to-br from-gray-50 to-gray-100 rounded-xl overflow-hidden border-2 border-gray-200 shadow-sm group">
+                                                                        {renderImage((mainImage as any).url || mainImage as string, details?.name || 'Image principale', 'w-full h-full object-contain p-4')}
+                                                                        <div className="absolute bottom-4 right-4">
+                                                                            <label className="inline-flex items-center gap-1.5 px-4 py-2 bg-white/90 backdrop-blur-sm text-gray-700 text-xs font-semibold rounded-lg shadow-sm cursor-pointer hover:bg-white transition-colors">
+                                                                                <input
+                                                                                    type="file"
+                                                                                    accept="image/*"
+                                                                                    className="hidden"
+                                                                                    onChange={handleMainImageChange}
+                                                                                    disabled={uploadingMainImage}
+                                                                                />
+                                                                                {uploadingMainImage ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Upload className="w-3.5 h-3.5" />}
+                                                                                Remplacer
+                                                                            </label>
+                                                                        </div>
+                                                                    </div>
+                                                                ) : (
+                                                                    <label className="flex flex-col items-center justify-center w-full h-48 border-2 border-dashed border-gray-300 rounded-xl cursor-pointer hover:bg-gray-50 transition-colors">
+                                                                        <input
+                                                                            type="file"
+                                                                            accept="image/*"
+                                                                            className="hidden"
+                                                                            onChange={handleMainImageChange}
+                                                                            disabled={uploadingMainImage}
+                                                                        />
+                                                                        {uploadingMainImage ? <Loader2 className="w-10 h-10 text-gray-300 mb-2 animate-spin" /> : <ImageIcon className="w-10 h-10 text-gray-300 mb-2" />}
+                                                                        <span className="text-sm text-gray-500">{uploadingMainImage ? 'Téléversement...' : 'Ajouter une image principale'}</span>
+                                                                    </label>
+                                                                )}
                                                             </div>
-                                                            <div
-                                                                className="relative w-full h-80 bg-gradient-to-br from-gray-50 to-gray-100 rounded-xl overflow-hidden border-2 border-gray-200 shadow-sm hover:shadow-md transition-all duration-200 cursor-pointer group"
-                                                                onClick={() => {
-                                                                    setSelectedImage(detailData.data.thumbnail.url || detailData.data.thumbnail);
-                                                                    setShowLightbox(true);
-                                                                }}
-                                                            >
-                                                                <img
-                                                                    src={detailData.data.thumbnail.url || detailData.data.thumbnail}
-                                                                    alt={details?.name}
-                                                                    className="w-full h-full object-contain p-4 transition-transform duration-200 group-hover:scale-105"
-                                                                    onError={(e) => {
-                                                                        (e.target as HTMLImageElement).src = 'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" width="200" height="200"%3E%3Crect fill="%23f0f0f0" width="200" height="200"/%3E%3Ctext fill="%23999" x="50%25" y="50%25" text-anchor="middle" dy=".3em"%3ENo Image%3C/text%3E%3C/svg%3E';
+
+                                                            {/* Gallery */}
+                                                            <div>
+                                                                <div className="flex items-center justify-between mb-3">
+                                                                    <h4 className="text-sm font-semibold text-gray-900">Galerie</h4>
+                                                                    <label className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-sage-600 text-white text-xs font-semibold rounded-lg cursor-pointer hover:bg-sage-700 transition-colors shadow-sm">
+                                                                        <input
+                                                                            type="file"
+                                                                            accept="image/*"
+                                                                            multiple
+                                                                            className="hidden"
+                                                                            onChange={handleGalleryUpload}
+                                                                            disabled={uploadingGalleryImages}
+                                                                        />
+                                                                        {uploadingGalleryImages ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Plus className="w-3.5 h-3.5" />}
+                                                                        Ajouter des images
+                                                                    </label>
+                                                                </div>
+                                                                {galleryImages.length > 0 ? (
+                                                                    <div className="grid grid-cols-4 gap-3">
+                                                                        {galleryImages.map((thumb: any, index: number) => (
+                                                                            <div
+                                                                                key={thumb.id || index}
+                                                                                className="relative aspect-square bg-gradient-to-br from-gray-50 to-gray-100 rounded-lg border-2 border-gray-200 overflow-hidden group hover:border-sage-400 hover:shadow-lg transition-all duration-200"
+                                                                            >
+                                                                                <img
+                                                                                    src={thumb.thumbnail || thumb.url}
+                                                                                    alt={`Image ${index + 1}`}
+                                                                                    className="w-full h-full object-cover cursor-pointer transition-transform duration-200 group-hover:scale-110"
+                                                                                    onClick={() => {
+                                                                                        setSelectedImage(thumb.thumbnail || thumb.url);
+                                                                                        setShowLightbox(true);
+                                                                                    }}
+                                                                                    onError={(e) => {
+                                                                                        (e.target as HTMLImageElement).src = 'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" width="100" height="100"%3E%3Crect fill="%23f0f0f0" width="100" height="100"/%3E%3C/svg%3E';
+                                                                                    }}
+                                                                                />
+                                                                                <button
+                                                                                    onClick={() => handleDeleteGalleryImage(thumb.id)}
+                                                                                    disabled={deletingGalleryImage === thumb.id}
+                                                                                    className="absolute top-1.5 right-1.5 p-1.5 bg-white/90 backdrop-blur-sm rounded-full text-red-600 hover:bg-red-50 hover:text-red-700 transition-colors shadow-sm disabled:opacity-50"
+                                                                                    title="Supprimer"
+                                                                                >
+                                                                                    {deletingGalleryImage === thumb.id ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Trash2 className="w-3.5 h-3.5" />}
+                                                                                </button>
+                                                                            </div>
+                                                                        ))}
+                                                                    </div>
+                                                                ) : (
+                                                                    <div className="text-center py-8 text-gray-400 text-sm bg-gray-50 rounded-xl border border-dashed border-gray-200">
+                                                                        Aucune image en galerie.
+                                                                    </div>
+                                                                )}
+                                                            </div>
+                                                        </div>
+                                                    );
+                                                }
+
+                                                // Read-only view
+                                                return (mainImage || galleryImages.length > 0) ? (
+                                                    <div className="space-y-6">
+                                                        {mainImage && (
+                                                            <div>
+                                                                <div className="flex items-center justify-between mb-3">
+                                                                    <h4 className="text-sm font-semibold text-gray-900">Image principale</h4>
+                                                                </div>
+                                                                <div
+                                                                    className="relative w-full h-80 bg-gradient-to-br from-gray-50 to-gray-100 rounded-xl overflow-hidden border-2 border-gray-200 shadow-sm hover:shadow-md transition-all duration-200 cursor-pointer group"
+                                                                    onClick={() => {
+                                                                        setSelectedImage((mainImage as any).url || mainImage);
+                                                                        setShowLightbox(true);
                                                                     }}
-                                                                />
-                                                                <div className="absolute inset-0 bg-black/0 group-hover:bg-black/10 transition-colors duration-200 flex items-center justify-center">
-                                                                    <div className="opacity-0 group-hover:opacity-100 transition-opacity duration-200 bg-white/90 backdrop-blur-sm rounded-full p-3 shadow-lg">
-                                                                        <ZoomIn className="w-6 h-6 text-gray-700" />
+                                                                >
+                                                                    {renderImage((mainImage as any).url || mainImage as string, details?.name || 'Image principale', 'w-full h-full object-contain p-4 transition-transform duration-200 group-hover:scale-105')}
+                                                                    <div className="absolute inset-0 bg-black/0 group-hover:bg-black/10 transition-colors duration-200 flex items-center justify-center">
+                                                                        <div className="opacity-0 group-hover:opacity-100 transition-opacity duration-200 bg-white/90 backdrop-blur-sm rounded-full p-3 shadow-lg">
+                                                                            <ZoomIn className="w-6 h-6 text-gray-700" />
+                                                                        </div>
                                                                     </div>
                                                                 </div>
                                                             </div>
-                                                        </div>
-                                                    )}
-
-                                                    {/* Gallery Thumbnails */}
-                                                    {detailData?.data?.thumbnails && detailData.data.thumbnails.length > 0 && (
-                                                        <div>
-                                                            <div className="flex items-center justify-between mb-3">
-                                                                <h4 className="text-sm font-semibold text-gray-900">Galerie</h4>
-                                                                <span className="text-xs text-gray-500 bg-gray-100 px-2.5 py-1 rounded-full font-medium">{detailData.data.thumbnails.length} {detailData.data.thumbnails.length > 1 ? 'images' : 'image'}</span>
-                                                            </div>
-                                                            <div className="grid grid-cols-4 gap-3">
-                                                                {detailData.data.thumbnails.map((thumb: any, index: number) => (
-                                                                    <div
-                                                                        key={thumb.id || index}
-                                                                        className="relative aspect-square bg-gradient-to-br from-gray-50 to-gray-100 rounded-lg border-2 border-gray-200 overflow-hidden cursor-pointer group hover:border-sage-400 hover:shadow-lg transition-all duration-200"
-                                                                        onClick={() => {
-                                                                            setSelectedImage(thumb.thumbnail || thumb.url);
-                                                                            setShowLightbox(true);
-                                                                        }}
-                                                                    >
-                                                                        <img
-                                                                            src={thumb.thumbnail || thumb.url}
-                                                                            alt={`Image ${index + 1}`}
-                                                                            className="w-full h-full object-cover transition-transform duration-200 group-hover:scale-110"
-                                                                            onError={(e) => {
-                                                                                (e.target as HTMLImageElement).src = 'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" width="100" height="100"%3E%3Crect fill="%23f0f0f0" width="100" height="100"/%3E%3C/svg%3E';
+                                                        )}
+                                                        {galleryImages.length > 0 && (
+                                                            <div>
+                                                                <div className="flex items-center justify-between mb-3">
+                                                                    <h4 className="text-sm font-semibold text-gray-900">Galerie</h4>
+                                                                    <span className="text-xs text-gray-500 bg-gray-100 px-2.5 py-1 rounded-full font-medium">{galleryImages.length} {galleryImages.length > 1 ? 'images' : 'image'}</span>
+                                                                </div>
+                                                                <div className="grid grid-cols-4 gap-3">
+                                                                    {galleryImages.map((thumb: any, index: number) => (
+                                                                        <div
+                                                                            key={thumb.id || index}
+                                                                            className="relative aspect-square bg-gradient-to-br from-gray-50 to-gray-100 rounded-lg border-2 border-gray-200 overflow-hidden cursor-pointer group hover:border-sage-400 hover:shadow-lg transition-all duration-200"
+                                                                            onClick={() => {
+                                                                                setSelectedImage(thumb.thumbnail || thumb.url);
+                                                                                setShowLightbox(true);
                                                                             }}
-                                                                        />
-                                                                        <div className="absolute inset-0 bg-black/0 group-hover:bg-black/20 transition-colors duration-200 flex items-center justify-center">
-                                                                            <div className="opacity-0 group-hover:opacity-100 transition-opacity duration-200">
-                                                                                <Maximize2 className="w-5 h-5 text-white drop-shadow-lg" />
+                                                                        >
+                                                                            <img
+                                                                                src={thumb.thumbnail || thumb.url}
+                                                                                alt={`Image ${index + 1}`}
+                                                                                className="w-full h-full object-cover transition-transform duration-200 group-hover:scale-110"
+                                                                                onError={(e) => {
+                                                                                    (e.target as HTMLImageElement).src = 'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" width="100" height="100"%3E%3Crect fill="%23f0f0f0" width="100" height="100"/%3E%3C/svg%3E';
+                                                                                }}
+                                                                            />
+                                                                            <div className="absolute inset-0 bg-black/0 group-hover:bg-black/20 transition-colors duration-200 flex items-center justify-center">
+                                                                                <div className="opacity-0 group-hover:opacity-100 transition-opacity duration-200">
+                                                                                    <Maximize2 className="w-5 h-5 text-white drop-shadow-lg" />
+                                                                                </div>
                                                                             </div>
                                                                         </div>
-                                                                    </div>
-                                                                ))}
+                                                                    ))}
+                                                                </div>
                                                             </div>
-                                                        </div>
-                                                    )}
-
-                                                    {/* Additional Images */}
-                                                    {detailData?.data?.additional_thumbnails && detailData.data.additional_thumbnails.length > 0 && (
-                                                        <div>
-                                                            <div className="flex items-center justify-between mb-3">
-                                                                <h4 className="text-sm font-semibold text-gray-900">Images supplémentaires</h4>
-                                                                <span className="text-xs text-gray-500 bg-gray-100 px-2.5 py-1 rounded-full font-medium">{detailData.data.additional_thumbnails.length} {detailData.data.additional_thumbnails.length > 1 ? 'images' : 'image'}</span>
-                                                            </div>
-                                                            <div className="grid grid-cols-4 gap-3">
-                                                                {detailData.data.additional_thumbnails.map((thumb: any, index: number) => (
-                                                                    <div
-                                                                        key={thumb.id || index}
-                                                                        className="relative aspect-square bg-gradient-to-br from-gray-50 to-gray-100 rounded-lg border-2 border-gray-200 overflow-hidden cursor-pointer group hover:border-sage-400 hover:shadow-lg transition-all duration-200"
-                                                                        onClick={() => {
-                                                                            setSelectedImage(thumb.thumbnail || thumb.url);
-                                                                            setShowLightbox(true);
-                                                                        }}
-                                                                    >
-                                                                        <img
-                                                                            src={thumb.thumbnail || thumb.url}
-                                                                            alt={`Additional ${index + 1}`}
-                                                                            className="w-full h-full object-cover transition-transform duration-200 group-hover:scale-110"
-                                                                        />
-                                                                        <div className="absolute inset-0 bg-black/0 group-hover:bg-black/20 transition-colors duration-200 flex items-center justify-center">
-                                                                            <div className="opacity-0 group-hover:opacity-100 transition-opacity duration-200">
-                                                                                <Maximize2 className="w-5 h-5 text-white drop-shadow-lg" />
-                                                                            </div>
-                                                                        </div>
-                                                                    </div>
-                                                                ))}
-                                                            </div>
-                                                        </div>
-                                                    )}
-                                                </div>
-                                            ) : (
-                                                <div className="text-center py-8 text-gray-400">
-                                                    <ImageIcon className="w-12 h-12 mx-auto mb-2 opacity-50" />
-                                                    <p className="text-sm">Aucune image disponible</p>
-                                                </div>
-                                            )}
+                                                        )}
+                                                    </div>
+                                                ) : (
+                                                    <div className="text-center py-8 text-gray-400">
+                                                        <ImageIcon className="w-12 h-12 mx-auto mb-2 opacity-50" />
+                                                        <p className="text-sm">Aucune image disponible</p>
+                                                    </div>
+                                                );
+                                            })()}
                                         </SageCollapsible>
                                     </div>
 

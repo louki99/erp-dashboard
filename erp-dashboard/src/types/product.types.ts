@@ -216,6 +216,9 @@ export interface ProductDetailResponse extends ApiSuccessResponse {
         };
         thumbnails?: any[];
         additional_thumbnails?: any[];
+        thumbnail?: any;
+        medias?: any[];
+        price_lists?: any[];
     };
 }
 
@@ -314,4 +317,173 @@ export interface StockSummaryResponse {
         reserved_stock: number;
         stocks_by_branch: ProductStock[];
     };
+}
+
+export type PackagingLevelType = 'UNIT' | 'CARTON' | 'PALLET';
+
+export interface PackagingLevel {
+    id: number;
+    packaging_level: PackagingLevelType;
+    units_per_package: number;
+    length_m?: number | null;
+    width_m?: number | null;
+    height_m?: number | null;
+    gross_weight_kg?: number | null;
+    net_weight_kg?: number | null;
+    volume_m3?: number | null;
+}
+
+export interface ProductPackaging {
+    id: number;
+    product_id: number;
+    unit_id: number;
+    unit?: Unit;
+    quantity: number;
+    is_default: boolean;
+    packaging_level_id: number | null;
+    packagingLevel?: PackagingLevel | null;
+}
+
+export interface ProductPackagingListResponse {
+    success: boolean;
+    packagings?: ProductPackaging[];
+    data?: ProductPackaging[];
+}
+
+export interface CreatePackagingRequest {
+    product_id: number;
+    unit_id: number;
+    quantity: number;
+    is_default?: boolean;
+    packaging_level_id?: number | null;
+}
+
+export interface UpdatePackagingRequest {
+    unit_id?: number;
+    quantity?: number;
+    is_default?: boolean;
+    packaging_level_id?: number | null;
+}
+
+export interface ProductTranslation {
+    id?: number;
+    lang: string;
+    name: string;
+    short_description?: string | null;
+    description?: string | null;
+}
+
+export interface ProductTranslationsResponse {
+    success: boolean;
+    translations?: ProductTranslation[];
+    data?: ProductTranslation[];
+}
+
+export interface ProductLogisticsProfile {
+    shipping_level?: 'UNIT' | 'CARTON' | 'PALLET' | string | null;
+    stackable?: boolean;
+    fragile?: boolean;
+    temperature_controlled?: boolean;
+    packaging_levels?: PackagingLevel[];
+}
+
+export interface ProductLogisticsResponse {
+    success: boolean;
+    logistics?: ProductLogisticsProfile;
+    data?: ProductLogisticsProfile;
+}
+
+export interface ProductRetailPrice {
+    id?: number;
+    product_id?: number;
+    price_ht: string | number;
+    price_ttc?: string | number | null;
+    ttc_pricing?: boolean;
+    discount_price?: string | number | null;
+}
+
+export interface ProductRetailPriceResponse {
+    success: boolean;
+    retail_price?: ProductRetailPrice | null;
+    data?: ProductRetailPrice | null;
+}
+
+export interface SupplierPivot {
+    cost_price: string | number;
+    min_order_qty: number;
+    lead_time_days: number | null;
+    preferred: boolean;
+    extra?: Record<string, unknown> | null;
+}
+
+export interface ProductSupplierDetail {
+    id: number;
+    name: string;
+    contact_name?: string | null;
+    contact_email?: string | null;
+    pivot: SupplierPivot;
+    supplier?: { id: number; name: string };
+}
+
+export interface ProductSuppliersResponse {
+    success: boolean;
+    suppliers?: ProductSupplierDetail[];
+    data?: ProductSupplierDetail[];
+}
+
+export interface CreateProductSupplierRequest {
+    supplier_id: number;
+    cost_price?: number | string;
+    min_order_qty?: number;
+    lead_time_days?: number | null;
+    preferred?: boolean;
+}
+
+export interface UpdateProductSupplierRequest {
+    cost_price?: number | string;
+    min_order_qty?: number;
+    lead_time_days?: number | null;
+    preferred?: boolean;
+}
+
+export interface ProductFlagsResponse {
+    success: boolean;
+    product_id?: number;
+    flags?: ProductFlags;
+    data?: ProductFlags;
+}
+
+export interface ProductMarketingResponse {
+    success: boolean;
+    product_id?: number;
+    marketing?: ProductMarketing;
+    data?: ProductMarketing;
+}
+
+export interface ProductSalesGroup {
+    code: string;
+    name: string;
+    is_active: boolean;
+}
+
+export interface ProductPage {
+    id: number;
+    code: string;
+    name: string;
+    rank: number;
+    is_salable: boolean;
+    parent_id: number | null;
+    children?: ProductPage[];
+}
+
+export interface ProductSalesGroupsResponse {
+    success: boolean;
+    groups?: ProductSalesGroup[];
+    data?: ProductSalesGroup[];
+}
+
+export interface ProductPagesResponse {
+    success: boolean;
+    pages?: ProductPage[];
+    data?: ProductPage[];
 }

@@ -539,14 +539,12 @@ const WarehouseDetail = ({
                                             key={loc.id}
                                             className={`group transition-colors border-b border-gray-100 last:border-b-0 hover:bg-gray-50/80 ${!loc.is_active ? 'opacity-60 bg-gray-50/40' : ''}`}
                                         >
-                                            {/* Type icon/dot */}
+                                            {/* Type badge */}
                                             <td className="px-4 py-3.5">
-                                                <div className="flex items-center gap-2">
-                                                    <div className={`w-2.5 h-2.5 rounded-full ${c.accent} ring-2 ring-white shadow-sm shrink-0`} />
-                                                    <span className={`text-[11px] font-semibold ${c.color} leading-tight`}>
-                                                        {c.label}
-                                                    </span>
-                                                </div>
+                                                <span className={`inline-flex items-center gap-1.5 px-2 py-1 rounded-md text-[11px] font-semibold border ${c.bg} ${c.color} ${c.border}`}>
+                                                    <span className={`w-1.5 h-1.5 rounded-full ${c.accent}`} />
+                                                    {c.label}
+                                                </span>
                                             </td>
 
                                             {/* Name + meta */}
