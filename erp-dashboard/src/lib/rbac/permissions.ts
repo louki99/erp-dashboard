@@ -252,6 +252,14 @@ export const PERMISSIONS = {
         MANAGE: 'admin.access-control.device-keys.manage',
     },
 
+    // Finance / Treasury Module
+    FINANCE: {
+        JOURNALS: 'admin.finance.journals',
+        LEDGER: 'admin.finance.ledger',
+        TRANSFERS: 'admin.finance.transfers',
+        SETTLEMENTS: 'admin.finance.settlements',
+    },
+
     // Routing / Sectorisation / Tournées
     ROUTING: {
         GEO_AREAS_MANAGE: 'admin.routing.geo-areas.manage',

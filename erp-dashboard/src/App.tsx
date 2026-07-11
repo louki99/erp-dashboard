@@ -65,6 +65,10 @@ import DocumentStudioPage from '@/pages/document-studio/DocumentStudioPage';
 import { DataRulesPage } from '@/pages/data-rules/DataRulesPage';
 import { TokenSeriesPage } from '@/pages/token-series/TokenSeriesPage';
 import { DeviceKeysPage } from '@/pages/device-keys/DeviceKeysPage';
+import { JournalsPage } from '@/pages/finance/JournalsPage';
+import { LedgerPage } from '@/pages/finance/LedgerPage';
+import { TransfersPage } from '@/pages/finance/TransfersPage';
+import { SettlementsPage } from '@/pages/finance/SettlementsPage';
 import { GeoAreasPage } from '@/pages/routing/GeoAreasPage';
 import { GeoGovernancePage } from '@/pages/routing/GeoGovernancePage';
 import { ItineraryTypesPage } from '@/pages/routing/ItineraryTypesPage';
@@ -534,6 +538,28 @@ function AppRoutes() {
       <Route path="/routing/planning" element={
         <ProtectedRoute requiredRole={['admin', 'root', 'routing']}>
           <PlanningPage />
+        </ProtectedRoute>
+      } />
+
+      {/* Finance Module Routes */}
+      <Route path="/finance/journals" element={
+        <ProtectedRoute requiredPermission={PERMISSIONS.FINANCE.JOURNALS}>
+          <JournalsPage />
+        </ProtectedRoute>
+      } />
+      <Route path="/finance/ledger" element={
+        <ProtectedRoute requiredPermission={PERMISSIONS.FINANCE.LEDGER}>
+          <LedgerPage />
+        </ProtectedRoute>
+      } />
+      <Route path="/finance/transfers" element={
+        <ProtectedRoute requiredPermission={PERMISSIONS.FINANCE.TRANSFERS}>
+          <TransfersPage />
+        </ProtectedRoute>
+      } />
+      <Route path="/finance/settlements" element={
+        <ProtectedRoute requiredPermission={PERMISSIONS.FINANCE.SETTLEMENTS}>
+          <SettlementsPage />
         </ProtectedRoute>
       } />
 
