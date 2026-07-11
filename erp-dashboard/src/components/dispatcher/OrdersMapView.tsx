@@ -1,72 +1,35 @@
 /**
  * OrdersMapView
  * ─────────────────────────────────────────────────────────────────────────────
- * Leaflet map for the dispatcher orders page:
+ * Google Maps view for the dispatcher orders page.
  *  • One pin per order that has GPS coordinates
- *  • Blue pin  = unassigned (DO concept removed — all pending orders render unassigned now)
- *  • Gray pin  = unused since the DO removal, kept for future mission-assignment styling
- *  • Click pin → select that order
- *  • "Dessiner une zone" mode: freehand lasso — click, hold, drag to trace a custom shape,
- *    release to close the polygon. The component calls onPolygonChange with the raw traced
- *    points (precise point-in-polygon selection) and onBboxChange with the shape's bounding
- *    rectangle (kept for callers — e.g. DispatcherOrdersPage's server-side lat/lng query — that
- *    only need a rectangular filter, not a true polygon).
+ *  • Blue pin  = unassigned
+ *  • Gray pin  = unused, kept for future mission-assignment styling
+ *  • Click pin → select that order (single-select mode)
+ *  • "Dessiner une zone" mode: freehand lasso — click, hold, drag to trace a
+ *    custom shape, release to close the polygon. The component calls
+ *    onPolygonChange with the raw traced points and onBboxChange with the
+ *    shape's bounding rectangle.
  *  • Clear button resets the drawn shape
  */
 
-import { useEffect, useRef, useState } from 'react';
-import { MapContainer, TileLayer, Marker, Popup, Polygon, Polyline, useMap, useMapEvents } from 'react-leaflet';
-import MarkerClusterGroup from 'react-leaflet-cluster';
-import type { Map as LeafletMap } from 'leaflet';
-import L from 'leaflet';
-import 'leaflet.markercluster';
+import { useEffect, useRef, useState, useCallback, useMemo } from 'react';
+import {
+    GoogleMap,
+    useJsApiLoader,
+    Marker,
+    InfoWindow,
+    Polygon as GPolygon,
+    Polyline as GPolyline,
+} from '@react-google-maps/api';
+import { MarkerClusterer } from '@googlemaps/markerclusterer';
 import { MousePointer2, Trash2, Plus, Check } from 'lucide-react';
 
-import markerIconPng   from 'leaflet/dist/images/marker-icon.png';
-import markerIcon2xPng from 'leaflet/dist/images/marker-icon-2x.png';
-import markerShadowPng from 'leaflet/dist/images/marker-shadow.png';
-import 'leaflet/dist/leaflet.css';
-import 'leaflet.markercluster/dist/MarkerCluster.css';
-import 'leaflet.markercluster/dist/MarkerCluster.Default.css';
+import { GOOGLE_MAPS_API_KEY } from '@/config/googleMaps';
 import type { DispatcherOrder } from '@/types/dispatcher.types';
 
-// Fix default Leaflet icon paths broken by bundlers
-delete (L.Icon.Default.prototype as any)._getIconUrl;
-L.Icon.Default.mergeOptions({
-    iconUrl:      markerIconPng,
-    iconRetinaUrl: markerIcon2xPng,
-    shadowUrl:    markerShadowPng,
-});
-
-// ─── Custom icons ─────────────────────────────────────────────────────────────
-
-const makeIcon = (color: string, selected = false) =>
-    L.divIcon({
-        className: '',
-        iconSize: [28, 28],
-        iconAnchor: [14, 28],
-        popupAnchor: [0, -30],
-        html: `
-      <div style="
-        width:28px;height:28px;border-radius:50% 50% 50% 0;
-        background:${color};transform:rotate(-45deg);
-        border:2px solid ${selected ? '#f59e0b' : 'white'};
-        box-shadow:0 2px 6px rgba(0,0,0,.35);
-      "></div>`,
-    });
-
-const ICON_UNASSIGNED = makeIcon('#4f46e5');
-const ICON_UNASSIGNED_SEL = makeIcon('#4f46e5', true);
-const ICON_ASSIGNED   = makeIcon('#9ca3af');
-const ICON_ASSIGNED_SEL = makeIcon('#9ca3af', true);
-// Multi-select mode (DispatcherMapWorkspacePage) — emerald instead of amber-ringed indigo, so a
-// "picked for this mission" pin is visually distinct from the single-select "currently viewing"
-// pin used elsewhere (DispatcherOrdersPage).
-const ICON_PICKED = makeIcon('#059669');
-
 // ─── Point-in-polygon (ray casting) ────────────────────────────────────────────
-// Exported so callers that want precise selection (not just the bounding rectangle) can re-test
-// individual points themselves if needed.
+
 export const pointInPolygon = (point: [number, number], polygon: Array<[number, number]>): boolean => {
     const [py, px] = point;
     let inside = false;
@@ -79,69 +42,28 @@ export const pointInPolygon = (point: [number, number], polygon: Array<[number, 
     return inside;
 };
 
-// ─── Freehand lasso draw handler ───────────────────────────────────────────────
-// Leaflet's own mousedown handler initiates a map pan/drag by default — that has to be disabled
-// while in draw mode (see MapDragToggle below) or this component never sees mousemove events at
-// all while the button is held. Points are sampled by screen-space distance (not lat/lng) so the
-// lasso looks equally smooth at any zoom level, and so a stationary mouse doesn't spam the array.
-const MIN_POINT_SPACING_PX = 6;
-
-interface FreehandDrawHandlerProps {
-    active: boolean;
-    onPointAdd: (pt: [number, number]) => void;
-    onStart: () => void;
-    onEnd: () => void;
+// Convert a screen pixel position inside the map container to LatLng.
+// Works with the current zoom level and map bounds.
+function screenToLatLng(map: google.maps.Map, x: number, y: number): google.maps.LatLng | null {
+    const projection = map.getProjection();
+    if (!projection) return null;
+    const bounds = map.getBounds();
+    if (!bounds) return null;
+    const ne = bounds.getNorthEast();
+    const sw = bounds.getSouthWest();
+    const topRight = projection.fromLatLngToPoint(ne);
+    const bottomLeft = projection.fromLatLngToPoint(sw);
+    if (!topRight || !bottomLeft) return null;
+    const zoom = map.getZoom() ?? DEFAULT_ZOOM;
+    const scale = 1 << zoom;
+    const worldPoint = new google.maps.Point(
+        x / scale + bottomLeft.x,
+        y / scale + topRight.y
+    );
+    return projection.fromPointToLatLng(worldPoint);
 }
 
-const FreehandDrawHandler = ({ active, onPointAdd, onStart, onEnd }: FreehandDrawHandlerProps) => {
-    const isPointerDownRef = useRef(false);
-    const lastScreenPtRef = useRef<{ x: number; y: number } | null>(null);
-
-    const map = useMapEvents({
-        mousedown(e) {
-            if (!active) return;
-            isPointerDownRef.current = true;
-            lastScreenPtRef.current = map.latLngToContainerPoint(e.latlng);
-            onStart();
-            onPointAdd([e.latlng.lat, e.latlng.lng]);
-        },
-        mousemove(e) {
-            if (!active || !isPointerDownRef.current) return;
-            const screenPt = map.latLngToContainerPoint(e.latlng);
-            const last = lastScreenPtRef.current;
-            if (last) {
-                const dx = screenPt.x - last.x;
-                const dy = screenPt.y - last.y;
-                if (Math.sqrt(dx * dx + dy * dy) < MIN_POINT_SPACING_PX) return;
-            }
-            lastScreenPtRef.current = screenPt;
-            onPointAdd([e.latlng.lat, e.latlng.lng]);
-        },
-        mouseup() {
-            if (!active || !isPointerDownRef.current) return;
-            isPointerDownRef.current = false;
-            onEnd();
-        },
-    });
-
-    return null;
-};
-
-// Disables map panning while a freehand shape is being traced — otherwise Leaflet consumes the
-// mousedown/drag for its own panning instead of letting FreehandDrawHandler see the stroke.
-const MapDragToggle = ({ active }: { active: boolean }) => {
-    const map = useMap();
-    useEffect(() => {
-        if (active) map.dragging.disable();
-        else map.dragging.enable();
-        return () => { map.dragging.enable(); };
-    }, [active, map]);
-    return null;
-};
-
 // ─── Exported bbox type ───────────────────────────────────────────────────────
-// Kept for callers that only need a rectangular server-side filter (e.g. DispatcherOrdersPage's
-// lat_min/max, lng_min/max query params) — derived from the freehand polygon's bounding box.
 
 export interface MapBbox {
     lat_min: number;
@@ -155,22 +77,30 @@ export interface MapBbox {
 interface OrdersMapViewProps {
     orders: DispatcherOrder[];
     onBboxChange?: (bbox: MapBbox | null) => void;
-    // Precise selection — the raw freehand-traced polygon, for callers that do point-in-polygon
-    // filtering themselves instead of a rectangular bbox (DispatcherMapWorkspacePage).
     onPolygonChange?: (polygon: Array<[number, number]> | null) => void;
-    // Single-select mode (DispatcherOrdersPage) — clicking a pin selects that one order.
     selectedId?: number | null;
     onSelectOrder?: (order: DispatcherOrder) => void;
-    // Multi-select mode (DispatcherMapWorkspacePage) — pins render a "Sélectionner" toggle inside
-    // their popup instead of selecting on click, so the popup's info stays readable on click
-    // without immediately closing/reopening on every toggle.
     selectedIds?: number[];
     onToggleOrder?: (order: DispatcherOrder) => void;
 }
 
-// Morocco-centric default view
-const DEFAULT_CENTER: [number, number] = [31.7917, -7.0926];
+const DEFAULT_CENTER = { lat: 31.7917, lng: -7.0926 };
 const DEFAULT_ZOOM = 6;
+const GOOGLE_MAPS_LIBRARIES: ('geometry' | 'drawing')[] = ['geometry'];
+
+function makeIcon(color: string, selected = false): google.maps.Icon {
+    const size = 28;
+    const stroke = selected ? '#f59e0b' : 'white';
+    const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 0 ${size} ${size}">
+        <path d="M14 0C6.268 0 0 6.268 0 14c0 10.5 14 28 14 28s14-17.5 14-28C28 6.268 21.732 0 14 0z" fill="${color}" stroke="${stroke}" stroke-width="2"/>
+    </svg>`;
+    const url = `data:image/svg+xml;charset=UTF-8,${encodeURIComponent(svg)}`;
+    return {
+        url,
+        scaledSize: new google.maps.Size(size, size),
+        anchor: new google.maps.Point(size / 2, size),
+    };
+}
 
 export const OrdersMapView = ({
     orders,
@@ -182,18 +112,51 @@ export const OrdersMapView = ({
     onPolygonChange,
 }: OrdersMapViewProps) => {
     const multiMode = selectedIds != null;
-    const mapRef = useRef<LeafletMap | null>(null);
+    const mapRef = useRef<google.maps.Map | null>(null);
+    const containerRef = useRef<HTMLDivElement | null>(null);
+    const clustererRef = useRef<MarkerClusterer | null>(null);
+    const markerRefs = useRef<(google.maps.Marker | null)[]>([]);
     const [drawMode, setDrawMode] = useState(false);
     const [isTracing, setIsTracing] = useState(false);
     const [path, setPath] = useState<Array<[number, number]>>([]);
+    const [activeInfoId, setActiveInfoId] = useState<number | null>(null);
+
+    const { isLoaded } = useJsApiLoader({
+        googleMapsApiKey: GOOGLE_MAPS_API_KEY,
+        libraries: GOOGLE_MAPS_LIBRARIES,
+    });
+
+    // Icons must be created lazily — `google` is only available after the JS API loader finishes.
+    const { ICON_UNASSIGNED, ICON_UNASSIGNED_SEL, ICON_ASSIGNED, ICON_ASSIGNED_SEL, ICON_PICKED } = useMemo(() => {
+        if (!isLoaded) {
+            return {
+                ICON_UNASSIGNED: undefined,
+                ICON_UNASSIGNED_SEL: undefined,
+                ICON_ASSIGNED: undefined,
+                ICON_ASSIGNED_SEL: undefined,
+                ICON_PICKED: undefined,
+            };
+        }
+        return {
+            ICON_UNASSIGNED: makeIcon('#4f46e5'),
+            ICON_UNASSIGNED_SEL: makeIcon('#4f46e5', true),
+            ICON_ASSIGNED: makeIcon('#9ca3af'),
+            ICON_ASSIGNED_SEL: makeIcon('#9ca3af', true),
+            ICON_PICKED: makeIcon('#059669'),
+        };
+    }, [isLoaded]);
 
     const hasShape = path.length >= 3;
 
-    const finishShape = () => {
+    const finishShape = useCallback(() => {
         setIsTracing(false);
-        if (path.length < 3) { setPath([]); return; }
         setDrawMode(false);
-
+        if (path.length < 3) {
+            setPath([]);
+            onBboxChange?.(null);
+            onPolygonChange?.(null);
+            return;
+        }
         const lats = path.map((p) => p[0]);
         const lngs = path.map((p) => p[1]);
         onBboxChange?.({
@@ -203,37 +166,145 @@ export const OrdersMapView = ({
             lng_max: Math.max(...lngs),
         });
         onPolygonChange?.(path);
-    };
+    }, [path, onBboxChange, onPolygonChange]);
 
-    const clearShape = () => {
+    const clearShape = useCallback(() => {
         setPath([]);
         setDrawMode(false);
         setIsTracing(false);
         onBboxChange?.(null);
         onPolygonChange?.(null);
-    };
+    }, [onBboxChange, onPolygonChange]);
 
     const toggleDrawMode = () => {
-        if (hasShape) { clearShape(); return; }
+        if (hasShape) {
+            clearShape();
+            return;
+        }
         setDrawMode((d) => !d);
         setPath([]);
     };
 
-    // Auto-fit to markers when orders change
+    // Disable map panning while drawing so the lasso can trace freely.
     useEffect(() => {
-        if (!mapRef.current) return;
-        const pts = orders
-            .filter((o) => o.partner?.geo_lat && o.partner?.geo_lng)
-            .map((o) => [Number(o.partner.geo_lat), Number(o.partner.geo_lng)] as [number, number]);
-        if (pts.length > 0) {
-            mapRef.current.fitBounds(L.latLngBounds(pts), { padding: [40, 40], maxZoom: 13 });
-        }
-    }, [orders.length]);
+        const map = mapRef.current;
+        if (!map || !isLoaded) return;
+        map.setOptions({ draggable: !drawMode });
+        return () => { map.setOptions({ draggable: true }); };
+    }, [drawMode, isLoaded]);
+
+    // Freehand drawing helpers using a transparent overlay above the map.
+    const overlayRef = useRef<HTMLDivElement | null>(null);
+    const drawingRef = useRef(false);
+
+    const addOverlayPoint = useCallback((clientX: number, clientY: number) => {
+        const map = mapRef.current;
+        const overlay = overlayRef.current;
+        if (!map || !overlay) return;
+        const rect = overlay.getBoundingClientRect();
+        const x = clientX - rect.left;
+        const y = clientY - rect.top;
+        const latLng = screenToLatLng(map, x, y);
+        if (!latLng) return;
+        setPath((prev) => [...prev, [latLng.lat(), latLng.lng()]]);
+    }, []);
+
+    const handleOverlayPointerDown = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
+        if (e.button !== 0) return;
+        e.preventDefault();
+        e.stopPropagation();
+        drawingRef.current = true;
+        setIsTracing(true);
+        setPath([]);
+        addOverlayPoint(e.clientX, e.clientY);
+        (e.target as HTMLDivElement).setPointerCapture(e.pointerId);
+    }, [addOverlayPoint]);
+
+    const handleOverlayPointerMove = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
+        if (!drawingRef.current) return;
+        e.preventDefault();
+        e.stopPropagation();
+        addOverlayPoint(e.clientX, e.clientY);
+    }, [addOverlayPoint]);
+
+    const handleOverlayPointerUp = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
+        if (!drawingRef.current) return;
+        e.preventDefault();
+        e.stopPropagation();
+        drawingRef.current = false;
+        finishShape();
+    }, [finishShape]);
 
     const ordersWithGps = orders.filter(
         (o) => o.partner?.geo_lat != null && o.partner?.geo_lng != null,
     );
     const ordersNoGps = orders.length - ordersWithGps.length;
+
+    // Auto-fit to markers when orders change.
+    useEffect(() => {
+        const map = mapRef.current;
+        if (!map || ordersWithGps.length === 0) return;
+        const bounds = new google.maps.LatLngBounds();
+        ordersWithGps.forEach((o) => {
+            bounds.extend({ lat: Number(o.partner.geo_lat), lng: Number(o.partner.geo_lng) });
+        });
+        map.fitBounds(bounds, 40);
+        // Cap zoom so a single order doesn't zoom in too tightly.
+        const listener = google.maps.event.addListenerOnce(map, 'bounds_changed', () => {
+            const z = map.getZoom() ?? DEFAULT_ZOOM;
+            if (z > 13) map.setZoom(13);
+        });
+        return () => {
+            listener?.remove();
+        };
+    }, [ordersWithGps]);
+
+    const clustererRenderer = {
+        render: ({ count, position }: { count: number; position: google.maps.LatLng }) => {
+            const size = count >= 50 ? 44 : count >= 10 ? 38 : 32;
+            const fontSize = count >= 100 ? 11 : 12;
+            const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 0 ${size} ${size}">
+                <circle cx="${size / 2}" cy="${size / 2}" r="${size / 2 - 2}" fill="#4f46e5" stroke="white" stroke-width="3"/>
+                <text x="50%" y="50%" dominant-baseline="central" text-anchor="middle" fill="white" font-size="${fontSize}" font-weight="700" font-family="system-ui,sans-serif">${count}</text>
+            </svg>`;
+            const url = `data:image/svg+xml;charset=UTF-8,${encodeURIComponent(svg)}`;
+            return new google.maps.Marker({
+                position,
+                icon: {
+                    url,
+                    scaledSize: new google.maps.Size(size, size),
+                    anchor: new google.maps.Point(size / 2, size / 2),
+                },
+            });
+        },
+    };
+
+    // Rebuild clusterer when markers change.
+    useEffect(() => {
+        if (!isLoaded || !mapRef.current) return;
+        const markers = markerRefs.current.filter((m): m is google.maps.Marker => m instanceof google.maps.Marker);
+        if (markers.length === 0) return;
+
+        clustererRef.current?.setMap(null);
+        clustererRef.current = new MarkerClusterer({
+            map: mapRef.current,
+            markers,
+            renderer: clustererRenderer,
+        });
+
+        return () => {
+            clustererRef.current?.setMap(null);
+            clustererRef.current = null;
+        };
+    }, [isLoaded, ordersWithGps.length]);
+
+    if (!isLoaded) {
+        return (
+            <div className="h-full flex items-center justify-center text-gray-400">
+                Chargement de la carte…
+            </div>
+        );
+    }
 
     return (
         <div className="h-full flex flex-col">
@@ -289,78 +360,71 @@ export const OrdersMapView = ({
             </div>
 
             {/* Map */}
-            <div className={`flex-1 min-h-0 ${drawMode ? 'cursor-crosshair' : ''}`}>
-                <MapContainer
+            <div ref={containerRef} className={`relative flex-1 min-h-0 ${drawMode ? 'cursor-crosshair' : ''}`}>
+                <GoogleMap
+                    mapContainerStyle={{ width: '100%', height: '100%' }}
                     center={DEFAULT_CENTER}
                     zoom={DEFAULT_ZOOM}
-                    className="h-full w-full"
-                    ref={mapRef}
+                    options={{
+                        mapTypeControl: true,
+                        streetViewControl: false,
+                        fullscreenControl: false,
+                        draggable: !drawMode,
+                    }}
+                    onLoad={(map) => {
+                        mapRef.current = map;
+                    }}
                 >
-                    <TileLayer
-                        url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
-                        attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
-                    />
-
-                    <MapDragToggle active={drawMode} />
-                    <FreehandDrawHandler
-                        active={drawMode}
-                        onStart={() => setIsTracing(true)}
-                        onPointAdd={(pt) => setPath((prev) => [...prev, pt])}
-                        onEnd={finishShape}
-                    />
-
                     {path.length >= 2 && !hasShape && (
-                        <Polyline positions={path} pathOptions={{ color: '#f59e0b', weight: 3 }} />
+                        <GPolyline
+                            path={path.map(([lat, lng]) => ({ lat, lng }))}
+                            options={{ strokeColor: '#f59e0b', strokeWeight: 3 }}
+                        />
                     )}
                     {hasShape && (
-                        <Polygon
-                            positions={path}
-                            pathOptions={{ color: '#f59e0b', weight: 2, fillOpacity: 0.12 }}
+                        <GPolygon
+                            path={path.map(([lat, lng]) => ({ lat, lng }))}
+                            options={{
+                                strokeColor: '#f59e0b',
+                                strokeWeight: 2,
+                                fillColor: '#f59e0b',
+                                fillOpacity: 0.12,
+                            }}
                         />
                     )}
 
-                    <MarkerClusterGroup
-                        chunkedLoading
-                        maxClusterRadius={50}
-                        spiderfyOnMaxZoom
-                        iconCreateFunction={(cluster: L.MarkerCluster) => {
-                            const count = cluster.getChildCount();
-                            const size = count >= 50 ? 44 : count >= 10 ? 38 : 32;
-                            return L.divIcon({
-                                html: `<div style="
-                                    width:${size}px;height:${size}px;border-radius:50%;
-                                    background:#4f46e5;color:white;display:flex;
-                                    align-items:center;justify-content:center;
-                                    font-weight:700;font-size:${count >= 100 ? 11 : 12}px;
-                                    border:3px solid white;box-shadow:0 2px 8px rgba(0,0,0,.4);
-                                ">${count}</div>`,
-                                className: '',
-                                iconSize: [size, size],
-                            });
-                        }}
-                    >
-                        {ordersWithGps.map((order) => {
-                            const lat = Number(order.partner.geo_lat);
-                            const lng = Number(order.partner.geo_lng);
-                            // Always false — see file header. The DO-assignment concept no longer
-                            // exists; pending orders are inherently "unassigned" by definition now.
-                            const isAssigned = false;
-                            const isPicked = multiMode && selectedIds!.includes(order.id);
-                            const isSel = !multiMode && order.id === selectedId;
-                            const icon = isPicked
-                                ? ICON_PICKED
-                                : isAssigned
-                                ? (isSel ? ICON_ASSIGNED_SEL : ICON_ASSIGNED)
-                                : (isSel ? ICON_UNASSIGNED_SEL : ICON_UNASSIGNED);
+                    {ordersWithGps.map((order, idx) => {
+                        const lat = Number(order.partner.geo_lat);
+                        const lng = Number(order.partner.geo_lng);
+                        const isAssigned = false;
+                        const isPicked = multiMode && selectedIds!.includes(order.id);
+                        const isSel = !multiMode && order.id === selectedId;
+                        const icon = isPicked
+                            ? ICON_PICKED
+                            : isAssigned
+                            ? (isSel ? ICON_ASSIGNED_SEL : ICON_ASSIGNED)
+                            : (isSel ? ICON_UNASSIGNED_SEL : ICON_UNASSIGNED);
 
-                            return (
-                                <Marker
-                                    key={order.id}
-                                    position={[lat, lng]}
-                                    icon={icon}
-                                    eventHandlers={multiMode ? {} : { click: () => onSelectOrder?.(order) }}
-                                >
-                                    <Popup>
+                        return (
+                            <Marker
+                                key={order.id}
+                                position={{ lat, lng }}
+                                icon={icon}
+                                onLoad={(marker) => {
+                                    markerRefs.current[idx] = marker;
+                                }}
+                                onClick={() => {
+                                    if (!multiMode) {
+                                        onSelectOrder?.(order);
+                                    }
+                                    setActiveInfoId(order.id);
+                                }}
+                            >
+                                {activeInfoId === order.id && (
+                                    <InfoWindow
+                                        position={{ lat, lng }}
+                                        onCloseClick={() => setActiveInfoId(null)}
+                                    >
                                         <div className="text-xs leading-snug min-w-[170px]">
                                             <div className="font-bold text-indigo-700 mb-1">{order.order_code}</div>
                                             <div className="font-medium text-gray-800">{order.partner.name}</div>
@@ -387,12 +451,27 @@ export const OrdersMapView = ({
                                                 </button>
                                             )}
                                         </div>
-                                    </Popup>
-                                </Marker>
-                            );
-                        })}
-                    </MarkerClusterGroup>
-                </MapContainer>
+                                    </InfoWindow>
+                                )}
+                            </Marker>
+                        );
+                    })}
+                </GoogleMap>
+
+                {/* Transparent drawing overlay: captures pointer events so the lasso works
+                    reliably without fighting Google Maps' own drag/pan handlers. */}
+                {(drawMode || isTracing) && (
+                    <div
+                        ref={overlayRef}
+                        className="absolute inset-0 z-[500] touch-none"
+                        style={{ cursor: 'crosshair' }}
+                        onPointerDown={handleOverlayPointerDown}
+                        onPointerMove={handleOverlayPointerMove}
+                        onPointerUp={handleOverlayPointerUp}
+                        onPointerLeave={handleOverlayPointerUp}
+                        onPointerCancel={handleOverlayPointerUp}
+                    />
+                )}
             </div>
         </div>
     );

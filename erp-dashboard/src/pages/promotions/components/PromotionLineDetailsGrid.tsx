@@ -55,20 +55,22 @@ export const PromotionLineDetailsGrid = ({ lineIndex }: PromotionLineDetailsGrid
         [PromotionType.PERCENTAGE_DISCOUNT]: '% Remise Pourcentage',
         [PromotionType.AMOUNT_PER_UNIT]: 'MAD par Unité',
         [PromotionType.BEST_PRICE]: 'Prix Maximum',
-        [PromotionType.FREE_UNIT]: 'Unités Gratuites',
-        [PromotionType.FREE_PROMO_UNIT]: 'Unités Promo Gratuites',
-        [PromotionType.FLAT_AMOUNT_DISCOUNT]: 'Remise Forfaitaire',
-        [PromotionType.REPLACE_PRICE]: 'Remplacer Prix'
+        [PromotionType.FREE_UNIT]: 'Gratuité Même Produit',
+        [PromotionType.FREE_PROMO_UNIT]: 'Gratuité Autre Produit',
+        [PromotionType.FLAT_AMOUNT_DISCOUNT]: 'Montant Fixe (Prorata)',
+        [PromotionType.REPLACE_PRICE]: 'Prix Spécial',
+        [PromotionType.CHEAPEST_FREE]: '⭐ Le Moins Cher Offert',
     };
 
     const promoTypeDescriptions = {
         [PromotionType.PERCENTAGE_DISCOUNT]: 'Type 1: -10 = 10% de remise',
         [PromotionType.AMOUNT_PER_UNIT]: 'Type 2: -5 = 5 MAD de remise par unité',
         [PromotionType.BEST_PRICE]: 'Type 3: 50 = prix max 50 MAD par unité',
-        [PromotionType.FREE_UNIT]: 'Type 4: -2 = 2 unités gratuites',
-        [PromotionType.FREE_PROMO_UNIT]: 'Type 5: -10 = 10 unités promo gratuites',
-        [PromotionType.FLAT_AMOUNT_DISCOUNT]: 'Type 6: -100 = 100 MAD de remise sur total',
-        [PromotionType.REPLACE_PRICE]: 'Type 7: 76 = nouveau prix 76 MAD par unité'
+        [PromotionType.FREE_UNIT]: 'Type 4: 1 unité offerte par tranche de N (même produit) — ex: 1 offert / 12 achetés',
+        [PromotionType.FREE_PROMO_UNIT]: 'Type 5: unités gratuites d\'un produit différent — configurer free_product_code sur la ligne',
+        [PromotionType.FLAT_AMOUNT_DISCOUNT]: 'Type 6: -100 = 100 MAD distribué au prorata des lignes éligibles',
+        [PromotionType.REPLACE_PRICE]: 'Type 7: 76 = nouveau prix unitaire 76 MAD',
+        [PromotionType.CHEAPEST_FREE]: 'Type 8: le moteur sélectionne automatiquement la ligne éligible la moins chère — aucun produit cible à configurer',
     };
 
     // Get threshold label based on breakpoint type
@@ -115,9 +117,15 @@ export const PromotionLineDetailsGrid = ({ lineIndex }: PromotionLineDetailsGrid
             cellRenderer: (params: any) => {
                 const type = params.value as PromotionType;
                 const label = promoTypeLabels[type] || `Type ${type}`;
+                const isCheapestFree = type === PromotionType.CHEAPEST_FREE;
                 return (
                     <div className="flex flex-col h-full justify-center py-1">
-                        <span className="font-medium text-sm">{label}</span>
+                        <div className="flex items-center gap-1.5">
+                            <span className="font-medium text-sm">{label}</span>
+                            {isCheapestFree && (
+                                <span className="text-[10px] font-bold px-1.5 py-0.5 bg-amber-100 text-amber-700 rounded-full border border-amber-200">AUTO</span>
+                            )}
+                        </div>
                         <span className="text-xs text-gray-400 truncate">{promoTypeDescriptions[type] || ''}</span>
                     </div>
                 );

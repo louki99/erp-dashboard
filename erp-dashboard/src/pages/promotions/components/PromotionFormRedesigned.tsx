@@ -2,17 +2,19 @@ import { useEffect, useState } from 'react';
 import { useForm, FormProvider } from 'react-hook-form';
 import { useNavigate, useParams } from 'react-router-dom';
 import { toast } from 'react-hot-toast';
-import { 
-    Save, 
-    X, 
-    Calendar, 
-    Tag, 
-    FileText, 
+import {
+    Save,
+    X,
+    Calendar,
+    Tag,
+    FileText,
     Settings,
     Users,
     CreditCard,
-    TrendingUp,
-    Loader2
+    Loader2,
+    Banknote,
+    Clock,
+    AlertTriangle,
 } from 'lucide-react';
 import type { Promotion, PromotionType } from '@/types/promotion.types';
 import { BreakpointType } from '@/types/promotion.types';
@@ -20,7 +22,6 @@ import { promotionsApi } from '@/services/api/promotionsApi';
 import { PromotionRulesSection } from './PromotionRulesSection';
 import { PromotionPartnersSection } from './PromotionPartnersSection';
 import { PromotionPaymentSection } from './PromotionPaymentSection';
-import { PromotionBoostsSection } from './PromotionBoostsSection';
 
 export const PromotionFormRedesigned = () => {
     const { id } = useParams();
@@ -29,7 +30,7 @@ export const PromotionFormRedesigned = () => {
     
     const [loading, setLoading] = useState(false);
     const [saving, setSaving] = useState(false);
-    const [activeSection, setActiveSection] = useState<'general' | 'rules' | 'partners' | 'payment' | 'boosts'>('general');
+    const [activeSection, setActiveSection] = useState<'general' | 'rules' | 'partners' | 'payment'>('general');
     const [formReady, setFormReady] = useState(!isEdit);
 
     const methods = useForm<Promotion>({
@@ -47,12 +48,34 @@ export const PromotionFormRedesigned = () => {
             is_closed: false,
             partner_families: [],
             payment_terms: [],
-            lines: []
+            lines: [],
+            // New fields (2026-07-11)
+            max_budget: null,
+            cumulative_basis: 'order',
+            active_days: null,
+            daily_start_time: null,
+            daily_end_time: null,
         }
     });
 
-    const { register, handleSubmit, formState: { errors }, watch, reset } = methods;
+    const { register, handleSubmit, formState: { errors }, watch, reset, setValue } = methods;
     const isBurningPromo = watch('is_burning_promo');
+    const breakpointTypeVal = watch('breakpoint_type');
+    const cumulativeBasis = watch('cumulative_basis');
+    const activeDays = (watch('active_days') ?? []) as number[];
+    const dailyStart = watch('daily_start_time');
+    const dailyEnd = watch('daily_end_time');
+
+    const DAY_LABELS = ['L', 'M', 'M', 'J', 'V', 'S', 'D'];
+    const DAY_FULL = ['Lundi', 'Mardi', 'Mercredi', 'Jeudi', 'Vendredi', 'Samedi', 'Dimanche'];
+
+    const toggleDay = (day: number) => {
+        const current = activeDays ?? [];
+        const next = current.includes(day) ? current.filter(d => d !== day) : [...current, day].sort();
+        setValue('active_days', next.length === 0 ? null : next);
+    };
+
+    const hasSchedule = (activeDays && activeDays.length > 0) || dailyStart || dailyEnd;
 
     useEffect(() => {
         if (isEdit && id) {
@@ -261,7 +284,6 @@ export const PromotionFormRedesigned = () => {
         { id: 'rules', label: 'Règles', icon: FileText },
         { id: 'partners', label: 'Partenaires', icon: Users },
         { id: 'payment', label: 'Paiement', icon: CreditCard },
-        { id: 'boosts', label: 'Boosts', icon: TrendingUp }
     ];
 
     return (
@@ -468,33 +490,88 @@ export const PromotionFormRedesigned = () => {
                                         </p>
                                     </div>
 
-                                    {/* Breakpoint Type */}
-                                    <div>
-                                        <label className="block text-sm font-semibold text-gray-700 mb-2">
-                                            Type de Seuil <span className="text-red-500">*</span>
+                                    {/* ── Breakpoint Type — visual card picker ── */}
+                                    <div className="col-span-2">
+                                        <label className="block text-sm font-semibold text-gray-700 mb-1">
+                                            Comment déclencher la remise ? <span className="text-red-500">*</span>
                                         </label>
-                                        <select
-                                            {...register('breakpoint_type', { valueAsNumber: true, required: true })}
-                                            className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-sage-500 focus:border-sage-500 outline-none transition bg-white"
-                                        >
-                                            <option value={1}>📦 Quantité (Unités)</option>
-                                            <option value={2}>💰 Valeur (MAD)</option>
-                                            <option value={3}>🎁 Unités Promo</option>
-                                        </select>
+                                        <p className="text-xs text-gray-400 mb-3">Choisissez comment le moteur mesure le seuil d'éligibilité.</p>
+                                        <div className="grid grid-cols-3 gap-3">
+                                            {([
+                                                { value: 1, emoji: '📦', title: 'Quantité',     sub: 'Nombre d\'unités achetées',    example: 'ex : ≥ 50 unités → remise active',   sel: 'border-blue-500 bg-blue-50',   dot: 'bg-blue-500'   },
+                                                { value: 2, emoji: '💰', title: 'Valeur MAD',   sub: 'Montant total d\'achat en MAD', example: 'ex : ≥ 500 MAD → remise active',    sel: 'border-green-500 bg-green-50', dot: 'bg-green-500'  },
+                                                { value: 3, emoji: '🎁', title: 'Unités Promo', sub: 'Poids promo pondéré du produit', example: 'ex : ≥ 10 UP → remise active',      sel: 'border-violet-500 bg-violet-50', dot: 'bg-violet-500' },
+                                            ] as const).map(opt => {
+                                                const isSelected = Number(breakpointTypeVal) === opt.value;
+                                                return (
+                                                    <button
+                                                        key={opt.value}
+                                                        type="button"
+                                                        onClick={() => setValue('breakpoint_type', opt.value as any)}
+                                                        className={`relative flex flex-col items-start p-4 rounded-xl border-2 transition-all text-left
+                                                            ${isSelected ? opt.sel : 'border-gray-200 bg-white hover:border-gray-300 hover:bg-gray-50/60'}`}
+                                                    >
+                                                        <span className="text-2xl mb-2 leading-none">{opt.emoji}</span>
+                                                        <span className="font-semibold text-sm text-gray-900 mb-0.5">{opt.title}</span>
+                                                        <span className="text-xs text-gray-500 leading-snug mb-2">{opt.sub}</span>
+                                                        <span className="text-[10px] text-gray-400 italic">{opt.example}</span>
+                                                        {isSelected && (
+                                                            <div className={`absolute top-2.5 right-2.5 w-5 h-5 rounded-full flex items-center justify-center ${opt.dot}`}>
+                                                                <svg className="w-3 h-3 text-white" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="2,6 5,9 10,3"/></svg>
+                                                            </div>
+                                                        )}
+                                                    </button>
+                                                );
+                                            })}
+                                        </div>
                                     </div>
 
-                                    {/* Scale Method */}
+                                    {/* ── Scale Method — visual card picker ──── */}
                                     <div className="col-span-2">
-                                        <label className="block text-sm font-semibold text-gray-700 mb-2">
-                                            Méthode de Calcul <span className="text-red-500">*</span>
+                                        <label className="block text-sm font-semibold text-gray-700 mb-1">
+                                            Comment les paliers s'appliquent-ils ? <span className="text-red-500">*</span>
                                         </label>
-                                        <select
-                                            {...register('scale_method', { valueAsNumber: true, required: true })}
-                                            className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-sage-500 focus:border-sage-500 outline-none transition bg-white"
-                                        >
-                                            <option value={1}>📊 Cumulatif - Les remises s'accumulent</option>
-                                            <option value={2}>🎯 Tranche - Seule la remise la plus élevée s'applique</option>
-                                        </select>
+                                        <p className="text-xs text-gray-400 mb-3">Si plusieurs paliers sont atteints, comment sont-ils combinés ?</p>
+                                        <div className="grid grid-cols-2 gap-3">
+                                            {([
+                                                {
+                                                    value: 1, emoji: '📊', title: 'Cumulatif',
+                                                    sub: 'Tous les paliers atteints s\'accumulent',
+                                                    example: 'ex : 5% dès 50 unités + 3% dès 100 → 8% total à 100 unités',
+                                                    hint: 'Idéal pour récompenser progressivement les gros volumes.',
+                                                    sel: 'border-indigo-500 bg-indigo-50', dot: 'bg-indigo-500',
+                                                },
+                                                {
+                                                    value: 2, emoji: '🎯', title: 'Tranche (Bracket)',
+                                                    sub: 'Seul le palier le plus élevé atteint s\'applique',
+                                                    example: 'ex : 5% dès 50 unités — mais 10% dès 100 → seul 10% s\'applique',
+                                                    hint: 'Idéal pour des remises nettes par seuil.',
+                                                    sel: 'border-amber-500 bg-amber-50', dot: 'bg-amber-500',
+                                                },
+                                            ] as const).map(opt => {
+                                                const isSelected = Number(watch('scale_method')) === opt.value;
+                                                return (
+                                                    <button
+                                                        key={opt.value}
+                                                        type="button"
+                                                        onClick={() => setValue('scale_method', opt.value as any)}
+                                                        className={`relative flex flex-col items-start p-4 rounded-xl border-2 transition-all text-left
+                                                            ${isSelected ? opt.sel : 'border-gray-200 bg-white hover:border-gray-300 hover:bg-gray-50/60'}`}
+                                                    >
+                                                        <span className="text-2xl mb-2 leading-none">{opt.emoji}</span>
+                                                        <span className="font-semibold text-sm text-gray-900 mb-0.5">{opt.title}</span>
+                                                        <span className="text-xs text-gray-500 leading-snug mb-2">{opt.sub}</span>
+                                                        <span className="text-[10px] text-gray-400 italic leading-snug mb-1">{opt.example}</span>
+                                                        <span className="text-[10px] text-gray-500 font-medium">{opt.hint}</span>
+                                                        {isSelected && (
+                                                            <div className={`absolute top-2.5 right-2.5 w-5 h-5 rounded-full flex items-center justify-center ${opt.dot}`}>
+                                                                <svg className="w-3 h-3 text-white" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="2,6 5,9 10,3"/></svg>
+                                                            </div>
+                                                        )}
+                                                    </button>
+                                                );
+                                            })}
+                                        </div>
                                     </div>
 
                                     {/* Burning Promo */}
@@ -525,6 +602,130 @@ export const PromotionFormRedesigned = () => {
                                             </select>
                                         )}
                                     </div>
+
+                                    {/* ── Budget Campagne ───────────────────── */}
+                                    <div className="col-span-2 bg-emerald-50 border border-emerald-200 rounded-lg p-4">
+                                        <div className="flex items-center gap-2 mb-3">
+                                            <Banknote className="w-4 h-4 text-emerald-700" />
+                                            <h3 className="text-sm font-semibold text-emerald-900">Budget Campagne</h3>
+                                            <span className="text-xs text-emerald-600 ml-auto">0 ou vide = illimité</span>
+                                        </div>
+                                        <input
+                                            type="number"
+                                            step="0.01"
+                                            min="0"
+                                            {...register('max_budget', { setValueAs: (v: string) => v === '' ? null : Number(v) })}
+                                            className="w-full px-4 py-2 border border-emerald-300 rounded-lg focus:ring-2 focus:ring-emerald-500 outline-none bg-white text-sm"
+                                            placeholder="ex: 50000.00 MAD — laissez vide pour illimité"
+                                        />
+                                        <p className="text-xs text-emerald-700 mt-1.5">
+                                            ⚡ Augmenter ce budget au-dessus du consommé réactive automatiquement la promotion (le backend efface <code>budget_exhausted_at</code>).
+                                        </p>
+                                    </div>
+
+                                    {/* ── Base Cumulative ───────────────────── */}
+                                    <div className="col-span-2">
+                                        <label className="block text-sm font-semibold text-gray-700 mb-2">
+                                            Base Cumulative des Paliers
+                                        </label>
+                                        <select
+                                            {...register('cumulative_basis')}
+                                            className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-sage-500 focus:border-sage-500 outline-none transition bg-white"
+                                        >
+                                            <option value="order">📋 Par Commande (défaut) — seuil évalué sur la commande courante</option>
+                                            <option value="monthly_partner" disabled={Number(breakpointTypeVal) !== 2}>
+                                                📅 Cumulatif Mensuel Partenaire — CA cumulé depuis le 1er du mois{Number(breakpointTypeVal) !== 2 ? ' (nécessite Seuil = Valeur MAD)' : ''}
+                                            </option>
+                                        </select>
+                                        {cumulativeBasis === 'monthly_partner' && Number(breakpointTypeVal) !== 2 && (
+                                            <p className="text-xs text-amber-600 mt-1.5 flex items-center gap-1">
+                                                <AlertTriangle className="w-3 h-3" />
+                                                Le cumulatif mensuel nécessite <strong>Type de Seuil = Valeur (MAD)</strong>. Changez le type de seuil ci-dessus.
+                                            </p>
+                                        )}
+                                        {cumulativeBasis === 'monthly_partner' && Number(breakpointTypeVal) === 2 && (
+                                            <p className="text-xs text-blue-600 mt-1.5">
+                                                Exemple : « 5% si le client dépasse 20 000 MAD cumulés ce mois » → palier minimum_value: 20000, amount: 5, promo_type: 1.
+                                            </p>
+                                        )}
+                                    </div>
+
+                                    {/* ── Happy Hours / Flash Sales ─────────── */}
+                                    <div className="col-span-2 border border-gray-200 rounded-lg p-4">
+                                        <div className="flex items-center gap-2 mb-3">
+                                            <Clock className="w-4 h-4 text-blue-600" />
+                                            <h3 className="text-sm font-semibold text-gray-900">Happy Hours / Flash Sales</h3>
+                                            {hasSchedule && (
+                                                <span className="ml-auto text-[10px] font-semibold px-2 py-0.5 bg-blue-100 text-blue-700 rounded-full">Fenêtre activée</span>
+                                            )}
+                                        </div>
+
+                                        {/* Day toggles */}
+                                        <div className="mb-3">
+                                            <p className="text-xs text-gray-500 mb-2">Jours actifs <span className="text-gray-400">(aucun sélectionné = tous les jours)</span></p>
+                                            <div className="flex gap-1.5">
+                                                {DAY_LABELS.map((lbl, i) => {
+                                                    const dayNum = i + 1;
+                                                    const isOn = activeDays?.includes(dayNum) ?? false;
+                                                    return (
+                                                        <button
+                                                            key={dayNum}
+                                                            type="button"
+                                                            title={DAY_FULL[i]}
+                                                            onClick={() => toggleDay(dayNum)}
+                                                            className={`w-9 h-9 rounded-lg text-xs font-bold transition-all border
+                                                                ${isOn
+                                                                    ? 'bg-blue-600 text-white border-blue-600 shadow-sm'
+                                                                    : 'bg-white text-gray-400 border-gray-200 hover:border-blue-300 hover:text-blue-600'
+                                                                }`}
+                                                        >
+                                                            {lbl}
+                                                        </button>
+                                                    );
+                                                })}
+                                                {activeDays && activeDays.length > 0 && (
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => setValue('active_days', null)}
+                                                        className="w-9 h-9 rounded-lg text-xs text-gray-300 hover:text-red-400 border border-dashed border-gray-200 hover:border-red-300 transition-all"
+                                                        title="Réinitialiser (tous les jours)"
+                                                    >
+                                                        ✕
+                                                    </button>
+                                                )}
+                                            </div>
+                                        </div>
+
+                                        {/* Time range */}
+                                        <div className="grid grid-cols-2 gap-3">
+                                            <div>
+                                                <label className="block text-xs text-gray-500 mb-1">Heure de début <span className="text-gray-400">(vide = toute la journée)</span></label>
+                                                <input
+                                                    type="time"
+                                                    {...register('daily_start_time', { setValueAs: (v: string) => v === '' ? null : v })}
+                                                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-sage-500 outline-none text-sm bg-white"
+                                                />
+                                            </div>
+                                            <div>
+                                                <label className="block text-xs text-gray-500 mb-1">Heure de fin</label>
+                                                <input
+                                                    type="time"
+                                                    {...register('daily_end_time', { setValueAs: (v: string) => v === '' ? null : v })}
+                                                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-sage-500 outline-none text-sm bg-white"
+                                                />
+                                            </div>
+                                        </div>
+                                        {dailyStart && dailyEnd && dailyEnd <= dailyStart && (
+                                            <p className="text-xs text-red-600 mt-1.5 flex items-center gap-1">
+                                                <AlertTriangle className="w-3 h-3" /> L'heure de fin doit être après l'heure de début (validé par le backend).
+                                            </p>
+                                        )}
+                                        {hasSchedule && (
+                                            <p className="text-xs text-blue-600 mt-2">
+                                                ⚡ La bascule est instantanée à la minute près — pas de délai de cache pour les fenêtres horaires.
+                                            </p>
+                                        )}
+                                    </div>
                                 </div>
                             </div>
                         </div>
@@ -544,10 +745,6 @@ export const PromotionFormRedesigned = () => {
                             <PromotionPaymentSection />
                         </div>
 
-                        {/* Boosts Section */}
-                        <div className={activeSection === 'boosts' ? 'block' : 'hidden'}>
-                            <PromotionBoostsSection />
-                        </div>
                         </>
                         )}
                     </div>

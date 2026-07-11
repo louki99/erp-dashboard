@@ -1,11 +1,96 @@
 import { useFormContext, useFieldArray } from 'react-hook-form';
 import { Plus, Trash2, ChevronDown, ChevronRight, Search, HelpCircle } from 'lucide-react';
-import { useState, useMemo, useEffect } from 'react';
+import { useState, useMemo, useEffect, useRef } from 'react';
 import type { Promotion, PromotionLine } from '@/types/promotion.types';
 import { PromotionType, BreakpointType } from '@/types/promotion.types';
 import { ProductSelectionModal } from './ProductSelectionModal';
 import { ProductFamilySelectionDrawer } from './ProductFamilySelectionDrawer';
 import { AssortmentHelpModal } from './AssortmentHelpModal';
+
+// ── Searchable dropdown — drop-in replacement for native <select> ─────────────
+const SearchableSelect = ({
+    options,
+    value,
+    onChange,
+    className = '',
+    size = 'md',
+}: {
+    options: { value: string | number; label: string }[];
+    value: string | number;
+    onChange: (v: string | number) => void;
+    className?: string;
+    size?: 'sm' | 'md';
+}) => {
+    const [open, setOpen] = useState(false);
+    const [search, setSearch] = useState('');
+    const ref = useRef<HTMLDivElement>(null);
+    const inputRef = useRef<HTMLInputElement>(null);
+
+    const selected = options.find(o => String(o.value) === String(value));
+    const filtered = options.filter(o => o.label.toLowerCase().includes(search.toLowerCase()));
+
+    useEffect(() => {
+        const handler = (e: MouseEvent) => {
+            if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+        };
+        document.addEventListener('mousedown', handler);
+        return () => document.removeEventListener('mousedown', handler);
+    }, []);
+
+    const h = size === 'sm' ? 'h-8 px-2 text-xs' : 'h-10 px-3 text-sm';
+
+    return (
+        <div ref={ref} className={`relative ${className}`}>
+            <button
+                type="button"
+                onClick={() => { setOpen(o => !o); setSearch(''); setTimeout(() => inputRef.current?.focus(), 50); }}
+                className={`w-full ${h} flex items-center justify-between border border-gray-300 rounded-lg bg-white hover:border-sage-400 focus:outline-none focus:ring-2 focus:ring-sage-500 focus:border-sage-500 transition-colors`}
+            >
+                <span className="truncate text-left">{selected?.label ?? '—'}</span>
+                <ChevronDown className={`w-3.5 h-3.5 text-gray-400 shrink-0 ml-1 transition-transform ${open ? 'rotate-180' : ''}`} />
+            </button>
+            {open && (
+                <div className="absolute z-50 mt-1 w-full min-w-[180px] bg-white border border-gray-200 rounded-lg shadow-xl overflow-hidden">
+                    <div className="p-1.5 border-b border-gray-100">
+                        <div className="flex items-center gap-1.5 px-2 py-1 bg-gray-50 rounded-md border border-gray-200">
+                            <Search className="w-3 h-3 text-gray-400 shrink-0" />
+                            <input
+                                ref={inputRef}
+                                value={search}
+                                onChange={e => setSearch(e.target.value)}
+                                className="flex-1 text-xs bg-transparent outline-none placeholder-gray-400 min-w-0"
+                                placeholder="Rechercher..."
+                            />
+                            {search && (
+                                <button type="button" onClick={() => setSearch('')} className="text-gray-300 hover:text-gray-500 shrink-0">
+                                    <ChevronDown className="w-3 h-3 rotate-90" />
+                                </button>
+                            )}
+                        </div>
+                    </div>
+                    <div className="max-h-52 overflow-y-auto py-1">
+                        {filtered.length === 0 && (
+                            <p className="text-xs text-gray-400 text-center py-3">Aucun résultat</p>
+                        )}
+                        {filtered.map(opt => (
+                            <button
+                                key={opt.value}
+                                type="button"
+                                onMouseDown={() => { onChange(opt.value); setOpen(false); setSearch(''); }}
+                                className={`w-full text-left px-3 py-2 text-xs leading-snug transition-colors
+                                    ${String(opt.value) === String(value)
+                                        ? 'bg-sage-50 text-sage-800 font-semibold'
+                                        : 'text-gray-700 hover:bg-gray-50'}`}
+                            >
+                                {opt.label}
+                            </button>
+                        ))}
+                    </div>
+                </div>
+            )}
+        </div>
+    );
+};
 
 export const PromotionRulesSection = () => {
     const { control, watch, register } = useFormContext<Promotion>();
@@ -280,42 +365,39 @@ export const PromotionRulesSection = () => {
                                         <h3 className="text-sm font-semibold text-gray-700">Cible de la Remise</h3>
                                         <p className="text-xs text-gray-500 mt-0.5">Sur quel produit/famille la remise sera appliquée</p>
                                     </div>
-                                    <div className="grid grid-cols-3 gap-4">
-                                        <div>
-                                            <label className="block text-xs font-medium text-gray-600 mb-2">Type de Cible</label>
-                                            <select
+                                    <div className="flex items-end gap-3">
+                                        <div className="w-52 shrink-0">
+                                            <label className="block text-xs font-medium text-gray-600 mb-1.5">Type de Cible</label>
+                                            <SearchableSelect
+                                                options={[
+                                                    { value: 'product', label: '🎯 Produit Spécifique' },
+                                                    { value: 'family',  label: '📦 Famille de Produits' },
+                                                    { value: 'cart',    label: '🛒 Panier Entier' },
+                                                ]}
                                                 value={paidBasedOn}
-                                                onChange={(e) => {
-                                                    const newValue = e.target.value as 'product' | 'family' | 'cart';
-                                                    update(lineIndex, { 
-                                                        ...currentLine, 
-                                                        paid_based_on_product: newValue,
-                                                        paid_product_code: newValue === 'product' ? currentLine.paid_product_code : undefined,
-                                                        paid_product_family_code: newValue === 'family' ? currentLine.paid_product_family_code : undefined
-                                                    });
-                                                }}
-                                                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-sage-500 focus:border-sage-500 outline-none bg-white text-sm"
-                                            >
-                                                <option value="product">🎯 Produit Spécifique</option>
-                                                <option value="family">📦 Famille de Produits</option>
-                                                <option value="cart">🛒 Panier Entier</option>
-                                            </select>
+                                                onChange={(v) => update(lineIndex, {
+                                                    ...currentLine,
+                                                    paid_based_on_product: v as any,
+                                                    paid_product_code: v === 'product' ? currentLine.paid_product_code : undefined,
+                                                    paid_product_family_code: v === 'family' ? currentLine.paid_product_family_code : undefined,
+                                                })}
+                                            />
                                         </div>
 
                                         {paidBasedOn === 'product' && (
-                                            <div className="col-span-2">
-                                                <label className="block text-xs font-medium text-gray-600 mb-2">Code Produit</label>
+                                            <div className="flex-1">
+                                                <label className="block text-xs font-medium text-gray-600 mb-1.5">Code Produit</label>
                                                 <div className="flex gap-2">
                                                     <input
                                                         {...register(`lines.${lineIndex}.paid_product_code`)}
                                                         type="text"
-                                                        className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-sage-500 focus:border-sage-500 outline-none font-mono text-sm"
+                                                        className="flex-1 h-10 px-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-sage-500 focus:border-sage-500 outline-none font-mono text-sm"
                                                         placeholder="Ex: PROD001"
                                                     />
                                                     <button
                                                         type="button"
                                                         onClick={() => openProductSearch(lineIndex)}
-                                                        className="px-3 py-2 bg-sage-600 text-white rounded-lg hover:bg-sage-700 transition-colors flex items-center gap-2"
+                                                        className="h-10 px-3 bg-sage-600 text-white rounded-lg hover:bg-sage-700 transition-colors flex items-center"
                                                         title="Rechercher un produit"
                                                     >
                                                         <Search className="w-4 h-4" />
@@ -325,24 +407,30 @@ export const PromotionRulesSection = () => {
                                         )}
 
                                         {paidBasedOn === 'family' && (
-                                            <div className="col-span-2">
-                                                <label className="block text-xs font-medium text-gray-600 mb-2">Code Famille</label>
+                                            <div className="flex-1">
+                                                <label className="block text-xs font-medium text-gray-600 mb-1.5">Code Famille</label>
                                                 <div className="flex gap-2">
                                                     <input
                                                         {...register(`lines.${lineIndex}.paid_product_family_code`)}
                                                         type="text"
-                                                        className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-sage-500 focus:border-sage-500 outline-none font-mono text-sm"
+                                                        className="flex-1 h-10 px-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-sage-500 focus:border-sage-500 outline-none font-mono text-sm"
                                                         placeholder="Ex: FAM001"
                                                     />
                                                     <button
                                                         type="button"
                                                         onClick={() => openFamilySearch(lineIndex)}
-                                                        className="px-3 py-2 bg-sage-600 text-white rounded-lg hover:bg-sage-700 transition-colors flex items-center gap-2"
+                                                        className="h-10 px-3 bg-sage-600 text-white rounded-lg hover:bg-sage-700 transition-colors flex items-center"
                                                         title="Rechercher une famille"
                                                     >
                                                         <Search className="w-4 h-4" />
                                                     </button>
                                                 </div>
+                                            </div>
+                                        )}
+
+                                        {paidBasedOn === 'cart' && (
+                                            <div className="flex-1 flex items-end pb-0.5">
+                                                <p className="text-xs text-gray-400 italic">La remise s'applique sur l'ensemble du panier — aucun code requis.</p>
                                             </div>
                                         )}
                                     </div>
@@ -367,25 +455,25 @@ export const PromotionRulesSection = () => {
                                     </div>
                                     <div className="grid grid-cols-2 gap-4">
                                         <div>
-                                            <label className="block text-xs font-medium text-gray-600 mb-2">Type d'Assortiment</label>
-                                            <select
+                                            <label className="block text-xs font-medium text-gray-600 mb-1.5">Type d'Assortiment</label>
+                                            <SearchableSelect
+                                                options={[
+                                                    { value: '0', label: '○ Aucun — Pas de condition' },
+                                                    { value: '1', label: '📦 Quantité — Min X unités de chaque' },
+                                                    { value: '2', label: '📊 Quantité % — Min X% du total' },
+                                                    { value: '3', label: '💵 Montant % — Min X% du panier' },
+                                                    { value: '4', label: '💰 Montant — Min X MAD de chaque' },
+                                                ]}
                                                 value={assortmentType}
-                                                onChange={(e) => {
-                                                    const newValue = e.target.value;
+                                                onChange={(v) => {
+                                                    const newValue = String(v);
                                                     update(lineIndex, {
                                                         ...currentLine,
                                                         assortment_type: newValue,
                                                         assortments: (newValue !== '0' && newValue !== 'none') ? currentLine.assortments : []
                                                     });
                                                 }}
-                                                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-sage-500 focus:border-sage-500 outline-none bg-white text-sm"
-                                            >
-                                                <option value="0">○ Aucun - Pas de condition</option>
-                                                <option value="1">📦 Quantité - Min X unités de chaque</option>
-                                                <option value="2">📊 Quantité % - Min X% du total</option>
-                                                <option value="3">💵 Montant % - Min X% du panier</option>
-                                                <option value="4">💰 Montant - Min X MAD de chaque</option>
-                                            </select>
+                                            />
                                             {(assortmentType === '0' || assortmentType === 'none') && (
                                                 <p className="text-xs text-gray-500 mt-1">Aucune condition - Remise directe</p>
                                             )}
@@ -470,37 +558,40 @@ export const PromotionRulesSection = () => {
                                             ) : (
                                                 <div className="space-y-2">
                                                     {currentLine.assortments?.map((assort: any, assortIdx: number) => (
-                                                        <div key={assortIdx} className="flex items-center gap-2 bg-white p-2 rounded border border-gray-200">
-                                                            <select
-                                                                {...register(`lines.${lineIndex}.assortments.${assortIdx}.based_on_product`)}
-                                                                className="px-2 py-1 border border-gray-300 rounded text-xs"
+                                                        <div key={assortIdx} className="flex items-center gap-2 bg-white p-2 rounded-lg border border-gray-200">
+                                                            <SearchableSelect
+                                                                size="sm"
+                                                                className="w-32 shrink-0"
+                                                                options={[
+                                                                    { value: '1', label: '🎯 Produit' },
+                                                                    { value: '0', label: '📦 Famille' },
+                                                                ]}
+                                                                value={assort.based_on_product ?? '1'}
+                                                                onChange={(v) => {
+                                                                    const newAssortments = (currentLine.assortments || []).map((a: any, i: number) =>
+                                                                        i === assortIdx ? { ...a, based_on_product: String(v) } : a
+                                                                    );
+                                                                    update(lineIndex, { ...currentLine, assortments: newAssortments });
+                                                                }}
+                                                            />
+                                                            <input
+                                                                {...register(`lines.${lineIndex}.assortments.${assortIdx}.product_code`)}
+                                                                type="text"
+                                                                className="flex-1 h-8 px-2 border border-gray-300 rounded-lg focus:ring-1 focus:ring-sage-400 outline-none text-xs font-mono"
+                                                                placeholder={assort.based_on_product === '1' ? 'Code produit' : 'Code famille'}
+                                                            />
+                                                            <button
+                                                                type="button"
+                                                                onClick={() => console.log('Search for assortment', lineIndex, assortIdx)}
+                                                                className="h-8 w-8 flex items-center justify-center bg-sage-100 text-sage-700 rounded-lg hover:bg-sage-200 transition-colors shrink-0"
+                                                                title="Rechercher"
                                                             >
-                                                                <option value="1">🎯 Produit</option>
-                                                                <option value="0">📦 Famille</option>
-                                                            </select>
-                                                            <div className="flex-1 flex gap-1">
-                                                                <input
-                                                                    {...register(`lines.${lineIndex}.assortments.${assortIdx}.product_code`)}
-                                                                    type="text"
-                                                                    className="flex-1 px-2 py-1 border border-gray-300 rounded text-xs font-mono"
-                                                                    placeholder={assort.based_on_product === '1' ? 'Code produit' : 'Code famille'}
-                                                                />
-                                                                <button
-                                                                    type="button"
-                                                                    onClick={() => {
-                                                                        // TODO: Open search modal for assortment
-                                                                        console.log('Search for assortment', lineIndex, assortIdx);
-                                                                    }}
-                                                                    className="px-2 py-1 bg-sage-100 text-sage-700 rounded hover:bg-sage-200 transition-colors"
-                                                                    title="Rechercher"
-                                                                >
-                                                                    <Search className="w-3 h-3" />
-                                                                </button>
-                                                            </div>
+                                                                <Search className="w-3 h-3" />
+                                                            </button>
                                                             <input
                                                                 {...register(`lines.${lineIndex}.assortments.${assortIdx}.minimum`, { valueAsNumber: true })}
                                                                 type="number"
-                                                                className="w-16 px-2 py-1 border border-gray-300 rounded text-xs"
+                                                                className="w-16 h-8 px-2 border border-gray-300 rounded-lg focus:ring-1 focus:ring-sage-400 outline-none text-xs text-center"
                                                                 placeholder="Min"
                                                                 min="1"
                                                             />
@@ -510,9 +601,9 @@ export const PromotionRulesSection = () => {
                                                                     const newAssortments = (currentLine.assortments || []).filter((_: any, i: number) => i !== assortIdx);
                                                                     update(lineIndex, { ...currentLine, assortments: newAssortments });
                                                                 }}
-                                                                className="p-1 text-red-600 hover:bg-red-50 rounded"
+                                                                className="h-8 w-8 flex items-center justify-center text-red-500 hover:bg-red-50 rounded-lg transition-colors shrink-0"
                                                             >
-                                                                <Trash2 className="w-3 h-3" />
+                                                                <Trash2 className="w-3.5 h-3.5" />
                                                             </button>
                                                         </div>
                                                     ))}
@@ -579,22 +670,23 @@ export const PromotionRulesSection = () => {
                                                             {detailIndex + 1}
                                                         </div>
                                                         <div className="flex-1 space-y-3">
-                                                            <div className="grid grid-cols-3 gap-4">
+                                                            <div className="grid grid-cols-3 gap-3">
                                                                 <div>
-                                                                    <label className="block text-xs font-medium text-gray-600 mb-1">Type de Remise</label>
-                                                                    <select
-                                                                        {...register(`lines.${lineIndex}.details.${detailIndex}.promo_type`, {
-                                                                            valueAsNumber: true
-                                                                        })}
-                                                                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-sage-500 outline-none bg-white text-sm"
-                                                                    >
-                                                                        {promoTypeOptions.map(opt => (
-                                                                            <option key={opt.value} value={opt.value}>{opt.label}</option>
-                                                                        ))}
-                                                                    </select>
+                                                                    <label className="block text-xs font-medium text-gray-600 mb-1.5">Type de Remise</label>
+                                                                    <SearchableSelect
+                                                                        options={promoTypeOptions.map(o => ({ value: o.value, label: o.label }))}
+                                                                        value={detail.promo_type}
+                                                                        onChange={(v) => {
+                                                                            const line = fields[lineIndex];
+                                                                            const newDetails = line.details.map((d, di) =>
+                                                                                di === detailIndex ? { ...d, promo_type: Number(v) as any } : d
+                                                                            );
+                                                                            update(lineIndex, { ...line, details: newDetails });
+                                                                        }}
+                                                                    />
                                                                 </div>
                                                                 <div>
-                                                                    <label className="block text-xs font-medium text-gray-600 mb-1">
+                                                                    <label className="block text-xs font-medium text-gray-600 mb-1.5">
                                                                         {breakpointLabel.label}
                                                                     </label>
                                                                     <input
@@ -602,12 +694,12 @@ export const PromotionRulesSection = () => {
                                                                             valueAsNumber: true
                                                                         })}
                                                                         type="number"
-                                                                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-sage-500 outline-none text-sm"
+                                                                        className="w-full h-10 px-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-sage-500 focus:border-sage-500 outline-none text-sm"
                                                                         placeholder={breakpointLabel.placeholder}
                                                                     />
                                                                 </div>
                                                                 <div>
-                                                                    <label className="block text-xs font-medium text-gray-600 mb-1">
+                                                                    <label className="block text-xs font-medium text-gray-600 mb-1.5">
                                                                         {getPromoTypeConfig(detail.promo_type).amountLabel}
                                                                     </label>
                                                                     <input
@@ -615,7 +707,7 @@ export const PromotionRulesSection = () => {
                                                                             valueAsNumber: true
                                                                         })}
                                                                         type="number"
-                                                                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-sage-500 outline-none text-sm"
+                                                                        className="w-full h-10 px-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-sage-500 focus:border-sage-500 outline-none text-sm"
                                                                         placeholder={getPromoTypeConfig(detail.promo_type).amountPlaceholder}
                                                                         step="0.01"
                                                                     />

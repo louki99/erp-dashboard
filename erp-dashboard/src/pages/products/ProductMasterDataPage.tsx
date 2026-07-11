@@ -24,6 +24,7 @@ import toast from 'react-hot-toast';
 
 import { MasterLayout } from '@/components/layout/MasterLayout';
 import { ActionPanel } from '@/components/layout/ActionPanel';
+import { DataGrid } from '@/components/common/DataGrid';
 import type { TabItem } from '@/components/common/SageTabs';
 import {
     Dialog,
@@ -100,8 +101,8 @@ interface ResourceConfig {
 }
 
 const ActiveBadge = ({ active }: { active: boolean }) => (
-    <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-semibold border ${active ? 'bg-emerald-50 text-emerald-700 border-emerald-100' : 'bg-gray-100 text-gray-500 border-gray-200'}`}>
-        {active ? <CheckCircle2 className="w-3 h-3" /> : <XCircle className="w-3 h-3" />}
+    <span className={`inline-flex items-center gap-1.5 text-xs font-medium ${active ? 'text-emerald-600' : 'text-gray-400'}`}>
+        <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${active ? 'bg-emerald-500' : 'bg-gray-300'}`} />
         {active ? 'Actif' : 'Inactif'}
     </span>
 );
@@ -225,9 +226,118 @@ const ResourceTab = ({ config }: { config: ResourceConfig }) => {
 
     const isBusy = creating || updating || deleting || toggle?.loading;
 
+    // Build AG Grid column definitions from config
+    const columnDefs = useMemo(() => {
+        const Icon = config.icon;
+        const cols: any[] = [
+            {
+                headerName: 'Code',
+                field: 'code',
+                width: 120,
+                flex: 0,
+                minWidth: 80,
+                cellRenderer: (params: any) => {
+                    const val = params.value;
+                    if (!val || val === params.data?.[config.nameKey]) return <span className="text-gray-300">—</span>;
+                    return <span className="text-xs font-mono text-gray-500">{val}</span>;
+                },
+            },
+            {
+                headerName: 'Nom',
+                field: config.nameKey,
+                flex: 2,
+                minWidth: 160,
+                cellRenderer: (params: any) => {
+                    const item = params.data;
+                    if (!item) return null;
+                    return (
+                        <div className="flex items-center gap-2 h-full">
+                            <div className="w-6 h-6 rounded-md bg-sage-50 flex items-center justify-center shrink-0">
+                                <Icon className="w-3 h-3 text-sage-500" />
+                            </div>
+                            <span className="text-sm font-medium text-gray-900 truncate">{item[config.nameKey]}</span>
+                        </div>
+                    );
+                },
+            },
+            ...config.fields
+                .filter((f) => f.key !== config.nameKey && f.key !== 'is_active')
+                .map((f) => ({
+                    headerName: f.label,
+                    field: f.key,
+                    flex: 1,
+                    minWidth: 110,
+                    ...(f.type === 'checkbox' ? {
+                        cellRenderer: (params: any) => params.value
+                            ? <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+                            : <span className="text-gray-300">—</span>,
+                    } : {}),
+                    ...(f.type === 'select' ? {
+                        valueGetter: (params: any) => {
+                            const val = params.data?.[f.key];
+                            return f.options?.find((o) => String(o.value) === String(val))?.label ?? val ?? '—';
+                        },
+                    } : {}),
+                })),
+            ...(config.activeKey ? [{
+                headerName: 'Statut',
+                field: config.activeKey,
+                width: 110,
+                flex: 0,
+                sortable: true,
+                filter: false,
+                cellRenderer: (params: any) => <ActiveBadge active={!!params.value} />,
+            }] : []),
+            {
+                headerName: 'Actions',
+                field: '__actions',
+                width: 120,
+                flex: 0,
+                sortable: false,
+                filter: false,
+                cellRenderer: (params: any) => {
+                    const item = params.data;
+                    if (!item) return null;
+                    return (
+                        <div className="flex items-center gap-0.5 h-full">
+                            {toggle && (
+                                <button
+                                    onClick={() => handleToggle(item)}
+                                    disabled={!!toggle.loading}
+                                    className="p-1.5 text-gray-400 hover:text-sage-600 hover:bg-sage-50 rounded-lg transition-colors disabled:opacity-50"
+                                    title="Activer / Désactiver"
+                                >
+                                    {item[config.activeKey!] ? <ToggleRight className="w-4 h-4 text-emerald-500" /> : <ToggleLeft className="w-4 h-4" />}
+                                </button>
+                            )}
+                            <button
+                                onClick={() => openEdit(item)}
+                                className="p-1.5 text-gray-400 hover:text-sage-600 hover:bg-sage-50 rounded-lg transition-colors"
+                                title="Modifier"
+                            >
+                                <Edit className="w-3.5 h-3.5" />
+                            </button>
+                            <button
+                                onClick={() => handleDelete(item[config.idKey])}
+                                disabled={deleting}
+                                className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors disabled:opacity-50"
+                                title="Supprimer"
+                            >
+                                <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                        </div>
+                    );
+                },
+            },
+        ];
+        return cols;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [config]);
+
     return (
-        <div className="space-y-4">
-            <div className="flex flex-col sm:flex-row sm:items-center gap-3">
+        <div className="h-full flex flex-col gap-3">
+            {/* Toolbar */}
+            <div className="shrink-0 flex flex-col sm:flex-row sm:items-center gap-3">
                 <div className="relative flex-1 max-w-md">
                     <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
                     <input
@@ -239,7 +349,7 @@ const ResourceTab = ({ config }: { config: ResourceConfig }) => {
                     />
                     {search && (
                         <button onClick={() => setSearch('')} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600">
-                            <Trash2 className="w-3.5 h-3.5" />
+                            <XCircle className="w-3.5 h-3.5" />
                         </button>
                     )}
                 </div>
@@ -251,102 +361,17 @@ const ResourceTab = ({ config }: { config: ResourceConfig }) => {
                 </button>
             </div>
 
-            {loading ? (
-                <div className="flex items-center justify-center py-12 text-gray-500">
-                    <Loader2 className="w-5 h-5 animate-spin mr-2" /> Chargement...
-                </div>
-            ) : filtered.length === 0 ? (
-                <div className="text-center py-12 text-gray-500 text-sm bg-gray-50 rounded-xl border border-dashed border-gray-200">
-                    Aucun élément trouvé.
-                </div>
-            ) : (
-                <div className="bg-white border border-gray-200 rounded-xl shadow-sm overflow-hidden">
-                    <table className="w-full border-collapse">
-                        <thead>
-                            <tr className="bg-gray-50/80 border-b border-gray-200">
-                                <th className="text-left text-[11px] font-semibold text-gray-500 uppercase tracking-wider px-4 py-3">Nom / Code</th>
-                                {config.fields
-                                    .filter((f) => f.key !== config.nameKey && f.key !== 'is_active')
-                                    .map((f) => (
-                                        <th key={f.key} className="text-left text-[11px] font-semibold text-gray-500 uppercase tracking-wider px-4 py-3">
-                                            {f.label}
-                                        </th>
-                                    ))}
-                                {config.activeKey && (
-                                    <th className="text-center text-[11px] font-semibold text-gray-500 uppercase tracking-wider px-4 py-3 w-24">Statut</th>
-                                )}
-                                <th className="text-center text-[11px] font-semibold text-gray-500 uppercase tracking-wider px-4 py-3 w-28">Actions</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            {filtered.map((item) => (
-                                <tr key={item[config.idKey]} className="border-b border-gray-100 last:border-b-0 hover:bg-gray-50/60 transition-colors">
-                                    <td className="px-4 py-3">
-                                        <div className="flex items-center gap-2.5">
-                                            <div className="w-8 h-8 rounded-lg bg-sage-50 flex items-center justify-center shrink-0">
-                                                <config.icon className="w-4 h-4 text-sage-500" />
-                                            </div>
-                                            <div>
-                                                <div className="text-sm font-semibold text-gray-900">{item[config.nameKey]}</div>
-                                                {item.code && item[config.nameKey] !== item.code && (
-                                                    <div className="text-[11px] text-gray-400 font-mono">{item.code}</div>
-                                                )}
-                                            </div>
-                                        </div>
-                                    </td>
-                                    {config.fields
-                                        .filter((f) => f.key !== config.nameKey && f.key !== 'is_active')
-                                        .map((f) => (
-                                            <td key={f.key} className="px-4 py-3 text-sm text-gray-700">
-                                                {f.type === 'checkbox' ? (
-                                                    item[f.key] ? <CheckCircle2 className="w-4 h-4 text-emerald-600" /> : <span className="text-gray-300">—</span>
-                                                ) : f.type === 'select' ? (
-                                                    f.options?.find((o) => String(o.value) === String(item[f.key]))?.label ?? item[f.key] ?? '—'
-                                                ) : (
-                                                    item[f.key] ?? '—'
-                                                )}
-                                            </td>
-                                        ))}
-                                    {config.activeKey && (
-                                        <td className="px-4 py-3 text-center">
-                                            <ActiveBadge active={!!item[config.activeKey]} />
-                                        </td>
-                                    )}
-                                    <td className="px-4 py-3 text-center">
-                                        <div className="flex items-center justify-center gap-1">
-                                            {toggle && (
-                                                <button
-                                                    onClick={() => handleToggle(item)}
-                                                    disabled={toggle.loading}
-                                                    className="p-1.5 text-gray-400 hover:text-sage-600 hover:bg-sage-50 rounded-lg transition-colors"
-                                                    title="Activer / Désactiver"
-                                                >
-                                                    {item[config.activeKey!] ? <ToggleRight className="w-4 h-4 text-emerald-500" /> : <ToggleLeft className="w-4 h-4" />}
-                                                </button>
-                                            )}
-                                            <button
-                                                onClick={() => openEdit(item)}
-                                                className="p-1.5 text-gray-400 hover:text-sage-600 hover:bg-sage-50 rounded-lg transition-colors"
-                                                title="Modifier"
-                                            >
-                                                <Edit className="w-3.5 h-3.5" />
-                                            </button>
-                                            <button
-                                                onClick={() => handleDelete(item[config.idKey])}
-                                                disabled={deleting}
-                                                className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors disabled:opacity-50"
-                                                title="Supprimer"
-                                            >
-                                                <Trash2 className="w-3.5 h-3.5" />
-                                            </button>
-                                        </div>
-                                    </td>
-                                </tr>
-                            ))}
-                        </tbody>
-                    </table>
-                </div>
-            )}
+            {/* DataGrid */}
+            <div className="flex-1 overflow-hidden">
+                <DataGrid
+                    rowData={filtered}
+                    columnDefs={columnDefs}
+                    loading={loading}
+                    pagination
+                    paginationPageSize={25}
+                    rowHeight={38}
+                />
+            </div>
 
             <Dialog open={showModal} onOpenChange={(v) => !v && setShowModal(false)}>
                 <DialogContent className="max-w-md">
@@ -641,7 +666,7 @@ export const ProductMasterDataPage = () => {
                             </div>
                         </div>
                     </div>
-                    <div className="flex-1 overflow-y-auto p-6">
+                    <div className="flex-1 overflow-hidden p-6 flex flex-col">
                         <ResourceTab key={activeTab} config={activeConfig} />
                     </div>
                 </div>

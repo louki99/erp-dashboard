@@ -1,586 +1,671 @@
-import { useState, useEffect, useMemo } from 'react';
-import { MasterLayout } from '@/components/layout/MasterLayout';
-import { DataGrid } from '@/components/common/DataGrid';
+import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { promotionsApi } from '@/services/api/promotionsApi';
 import type { ProductFamilyBoost, ProductFamily, PartnerFamily } from '@/types/promotion.types';
-import type { ColDef } from 'ag-grid-community';
-import { 
-    Zap, 
-    RefreshCw, 
-    Plus,
-    Edit,
-    Trash2,
-    Eye,
-    TrendingUp,
-    Package,
-    Users
+import {
+    Star, Plus, Pencil, Trash2, ChevronDown, Search, Loader2,
+    Package, Users, RefreshCw, TrendingUp, X, AlertTriangle,
+    Tag, ListTodo,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
-import { ConfirmationModal } from '@/components/common/ConfirmationModal';
+import { MasterLayout } from '@/components/layout/MasterLayout';
 
+// ── Searchable dropdown ────────────────────────────────────────────────────────
+const SearchableSelect = ({
+    options, value, onChange, placeholder = 'Sélectionner…', disabled = false,
+}: {
+    options: { value: number; label: string }[];
+    value: number;
+    onChange: (v: number) => void;
+    placeholder?: string;
+    disabled?: boolean;
+}) => {
+    const [open, setOpen] = useState(false);
+    const [search, setSearch] = useState('');
+    const ref = useRef<HTMLDivElement>(null);
+    const inputRef = useRef<HTMLInputElement>(null);
+
+    const selected = options.find(o => o.value === value);
+    const filtered = options.filter(o => o.label.toLowerCase().includes(search.toLowerCase()));
+
+    useEffect(() => {
+        const h = (e: MouseEvent) => { if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false); };
+        document.addEventListener('mousedown', h);
+        return () => document.removeEventListener('mousedown', h);
+    }, []);
+
+    return (
+        <div ref={ref} className="relative">
+            <button
+                type="button"
+                disabled={disabled}
+                onClick={() => { setOpen(o => !o); setSearch(''); setTimeout(() => inputRef.current?.focus(), 40); }}
+                className={`w-full h-10 px-3 flex items-center justify-between border rounded-lg bg-white text-sm transition-colors
+                    ${disabled ? 'opacity-50 cursor-not-allowed' : 'hover:border-amber-400 focus:outline-none focus:ring-2 focus:ring-amber-400 border-gray-300'}`}
+            >
+                <span className={`truncate ${selected ? 'text-gray-900' : 'text-gray-400'}`}>
+                    {selected?.label ?? placeholder}
+                </span>
+                <ChevronDown className={`w-3.5 h-3.5 text-gray-400 shrink-0 ml-1 transition-transform ${open ? 'rotate-180' : ''}`} />
+            </button>
+            {open && (
+                <div className="absolute z-50 mt-1 w-full bg-white border border-gray-200 rounded-lg shadow-xl overflow-hidden">
+                    <div className="p-1.5 border-b border-gray-100">
+                        <div className="flex items-center gap-1.5 px-2 py-1.5 bg-gray-50 rounded-md border border-gray-200">
+                            <Search className="w-3 h-3 text-gray-400 shrink-0" />
+                            <input
+                                ref={inputRef}
+                                value={search}
+                                onChange={e => setSearch(e.target.value)}
+                                className="flex-1 text-xs bg-transparent outline-none placeholder-gray-400"
+                                placeholder="Rechercher…"
+                            />
+                        </div>
+                    </div>
+                    <div className="max-h-52 overflow-y-auto py-1">
+                        {filtered.length === 0 && <p className="text-xs text-gray-400 text-center py-3">Aucun résultat</p>}
+                        {filtered.map(opt => (
+                            <button
+                                key={opt.value}
+                                type="button"
+                                onMouseDown={() => { onChange(opt.value); setOpen(false); setSearch(''); }}
+                                className={`w-full text-left px-3 py-2 text-xs leading-snug transition-colors
+                                    ${opt.value === value ? 'bg-amber-50 text-amber-800 font-semibold' : 'text-gray-700 hover:bg-gray-50'}`}
+                            >
+                                {opt.label}
+                            </button>
+                        ))}
+                    </div>
+                </div>
+            )}
+        </div>
+    );
+};
+
+// ── Boost form modal ───────────────────────────────────────────────────────────
+interface BoostFormState {
+    product_family_id: number;
+    partner_family_id: number;
+    rank: number;
+    boost_factor: number;
+}
+
+const FORM_DEFAULTS: BoostFormState = { product_family_id: 0, partner_family_id: 0, rank: 1, boost_factor: 1.0 };
+
+const BoostFormModal = ({
+    open, onClose, onSaved, editing, productFamilies, partnerFamilies, saving, onSubmit,
+}: {
+    open: boolean; onClose: () => void; onSaved: () => void;
+    editing: ProductFamilyBoost | null;
+    productFamilies: ProductFamily[]; partnerFamilies: PartnerFamily[];
+    saving: boolean; onSubmit: (data: BoostFormState) => Promise<void>;
+}) => {
+    const [form, setForm] = useState<BoostFormState>(FORM_DEFAULTS);
+
+    useEffect(() => {
+        if (open) {
+            setForm(editing ? {
+                product_family_id: editing.product_family_id,
+                partner_family_id: editing.partner_family_id,
+                rank: editing.rank,
+                boost_factor: Number(editing.boost_factor),
+            } : FORM_DEFAULTS);
+        }
+    }, [open, editing]);
+
+    if (!open) return null;
+
+    const pfOptions = productFamilies.map(f => ({ value: f.id!, label: `${f.code} — ${f.name}` }));
+    const partOptions = partnerFamilies.map(f => ({ value: f.id!, label: `${f.code} — ${f.name}` }));
+
+    const valid = form.product_family_id > 0 && form.partner_family_id > 0 && form.rank >= 0 && form.boost_factor >= 0;
+
+    return (
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
+            <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md">
+                {/* Header */}
+                <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100">
+                    <div className="flex items-center gap-2.5">
+                        <div className="w-8 h-8 bg-amber-100 rounded-lg flex items-center justify-center">
+                            <Star className="w-4 h-4 text-amber-600" />
+                        </div>
+                        <h2 className="text-base font-semibold text-gray-900">
+                            {editing ? 'Modifier le Boost' : 'Nouveau Boost'}
+                        </h2>
+                    </div>
+                    <button type="button" onClick={onClose} className="p-1.5 hover:bg-gray-100 rounded-lg transition-colors">
+                        <X className="w-4 h-4 text-gray-500" />
+                    </button>
+                </div>
+
+                {/* Body */}
+                <div className="px-6 py-5 space-y-4">
+                    <div>
+                        <label className="block text-xs font-semibold text-gray-700 mb-1.5">
+                            <Package className="w-3.5 h-3.5 inline mr-1 text-gray-400" />
+                            Famille produit <span className="text-red-500">*</span>
+                        </label>
+                        <SearchableSelect
+                            options={pfOptions}
+                            value={form.product_family_id}
+                            onChange={v => setForm(f => ({ ...f, product_family_id: v }))}
+                            placeholder="Choisir une famille produit…"
+                        />
+                    </div>
+
+                    <div>
+                        <label className="block text-xs font-semibold text-gray-700 mb-1.5">
+                            <Users className="w-3.5 h-3.5 inline mr-1 text-gray-400" />
+                            Famille partenaire <span className="text-red-500">*</span>
+                        </label>
+                        <SearchableSelect
+                            options={partOptions}
+                            value={form.partner_family_id}
+                            onChange={v => setForm(f => ({ ...f, partner_family_id: v }))}
+                            placeholder="Choisir un segment client…"
+                        />
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-3">
+                        <div>
+                            <label className="block text-xs font-semibold text-gray-700 mb-1.5">
+                                Rang d'affichage
+                            </label>
+                            <input
+                                type="number"
+                                min="0"
+                                value={form.rank}
+                                onChange={e => setForm(f => ({ ...f, rank: Number(e.target.value) }))}
+                                className="w-full h-10 px-3 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-amber-400 focus:border-amber-400 outline-none"
+                            />
+                            <p className="text-[10px] text-gray-400 mt-1 leading-snug">
+                                Plus bas = apparaît plus haut dans le catalogue
+                            </p>
+                        </div>
+                        <div>
+                            <label className="block text-xs font-semibold text-gray-700 mb-1.5">
+                                Facteur de boost
+                            </label>
+                            <input
+                                type="number"
+                                min="0"
+                                max="999.999999"
+                                step="0.1"
+                                value={form.boost_factor}
+                                onChange={e => setForm(f => ({ ...f, boost_factor: Number(e.target.value) }))}
+                                className="w-full h-10 px-3 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-amber-400 focus:border-amber-400 outline-none"
+                            />
+                            <p className="text-[10px] text-gray-400 mt-1 leading-snug">
+                                Départage à rang égal — plus élevé = devant
+                            </p>
+                        </div>
+                    </div>
+
+                    <div className="bg-amber-50 border border-amber-200 rounded-lg px-3 py-2.5 text-xs text-amber-800">
+                        <Star className="w-3.5 h-3.5 inline mr-1.5 text-amber-500" />
+                        Ce boost est <strong>visible instantanément</strong> sur le terrain — aucun délai de cache, pas de bouton publier.
+                    </div>
+                </div>
+
+                {/* Footer */}
+                <div className="flex gap-3 px-6 pb-5">
+                    <button
+                        type="button"
+                        onClick={onClose}
+                        className="flex-1 h-10 border border-gray-200 rounded-lg text-sm font-medium text-gray-600 hover:bg-gray-50 transition-colors"
+                    >
+                        Annuler
+                    </button>
+                    <button
+                        type="button"
+                        disabled={!valid || saving}
+                        onClick={() => onSubmit(form)}
+                        className="flex-1 h-10 bg-amber-500 hover:bg-amber-600 text-white rounded-lg text-sm font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                    >
+                        {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Star className="w-4 h-4" />}
+                        {editing ? 'Enregistrer' : 'Créer le boost'}
+                    </button>
+                </div>
+            </div>
+        </div>
+    );
+};
+
+// ── Delete confirmation ────────────────────────────────────────────────────────
+const DeleteModal = ({ open, onClose, onConfirm, deleting }: {
+    open: boolean; onClose: () => void; onConfirm: () => void; deleting: boolean;
+}) => {
+    if (!open) return null;
+    return (
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
+            <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm p-6">
+                <div className="flex items-center gap-3 mb-3">
+                    <div className="w-10 h-10 bg-red-100 rounded-full flex items-center justify-center shrink-0">
+                        <AlertTriangle className="w-5 h-5 text-red-600" />
+                    </div>
+                    <h3 className="font-semibold text-gray-900">Supprimer ce boost ?</h3>
+                </div>
+                <p className="text-sm text-gray-600 mb-5 leading-relaxed">
+                    Ce boost sera retiré, les produits reprendront leur ordre normal dans le catalogue vendeur. Continuer ?
+                </p>
+                <div className="flex gap-3">
+                    <button onClick={onClose} className="flex-1 h-9 border border-gray-200 rounded-lg text-sm text-gray-600 hover:bg-gray-50 transition-colors">
+                        Annuler
+                    </button>
+                    <button
+                        onClick={onConfirm}
+                        disabled={deleting}
+                        className="flex-1 h-9 bg-red-600 hover:bg-red-700 text-white rounded-lg text-sm font-medium transition-colors disabled:opacity-50 flex items-center justify-center gap-2"
+                    >
+                        {deleting ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Trash2 className="w-3.5 h-3.5" />}
+                        Supprimer
+                    </button>
+                </div>
+            </div>
+        </div>
+    );
+};
+
+// ── Promotions quick-nav sidebar ───────────────────────────────────────────────
+const PromoNav = () => {
+    const navigate = useNavigate();
+    const { pathname } = useLocation();
+    const links = [
+        { label: 'Campagnes', route: '/promotions', icon: ListTodo, exact: true },
+        { label: 'Familles Produits', route: '/promotions/product-families', icon: Package },
+        { label: 'Familles Partenaires', route: '/promotions/partner-families', icon: Users },
+        { label: 'Boosts Catalogue', route: '/promotions/boosts', icon: Star },
+    ];
+    return (
+        <div className="h-full flex flex-col bg-white">
+            <div className="px-4 pt-4 pb-3 border-b border-gray-100">
+                <div className="flex items-center gap-2">
+                    <div className="w-7 h-7 bg-amber-100 rounded-lg flex items-center justify-center shrink-0">
+                        <Tag className="w-3.5 h-3.5 text-amber-600" />
+                    </div>
+                    <div>
+                        <h2 className="text-sm font-bold text-gray-900 leading-tight">Promotions</h2>
+                        <p className="text-[10px] text-gray-400">Navigation module</p>
+                    </div>
+                </div>
+            </div>
+            <nav className="flex-1 overflow-y-auto px-2 py-2 space-y-0.5">
+                {links.map(({ label, route, icon: Icon, exact }) => {
+                    const active = exact ? pathname === route : pathname.startsWith(route);
+                    return (
+                        <button
+                            key={route}
+                            onClick={() => navigate(route)}
+                            className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm transition-colors text-left
+                                ${active
+                                    ? 'bg-amber-50 text-amber-700 font-semibold'
+                                    : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900'}`}
+                        >
+                            <Icon className={`w-4 h-4 shrink-0 ${active ? 'text-amber-500' : 'text-gray-400'}`} />
+                            {label}
+                            {active && <div className="ml-auto w-1.5 h-1.5 rounded-full bg-amber-500" />}
+                        </button>
+                    );
+                })}
+            </nav>
+        </div>
+    );
+};
+
+// ── Main page ──────────────────────────────────────────────────────────────────
 export const BoostsPage = () => {
     const [boosts, setBoosts] = useState<ProductFamilyBoost[]>([]);
     const [productFamilies, setProductFamilies] = useState<ProductFamily[]>([]);
     const [partnerFamilies, setPartnerFamilies] = useState<PartnerFamily[]>([]);
-    const [selectedBoost, setSelectedBoost] = useState<ProductFamilyBoost | null>(null);
     const [loading, setLoading] = useState(true);
-    const [showDeleteModal, setShowDeleteModal] = useState(false);
-    const [boostToDelete, setBoostToDelete] = useState<number | null>(null);
-    const [isDeleting, setIsDeleting] = useState(false);
-    const [showCreateModal, setShowCreateModal] = useState(false);
-    const [showEditModal, setShowEditModal] = useState(false);
-    const [editingBoost, setEditingBoost] = useState<ProductFamilyBoost | null>(null);
-    const [newBoost, setNewBoost] = useState({
-        product_family_id: 0,
-        partner_family_id: 0,
-        rank: 1,
-        boost_factor: 1.0
-    });
+    const [saving, setSaving] = useState(false);
+    const [deleting, setDeleting] = useState(false);
 
-    const loadData = async () => {
+    // Filters
+    const [pfFilter, setPfFilter] = useState(0);
+    const [partFilter, setPartFilter] = useState(0);
+
+    // Modal state
+    const [formOpen, setFormOpen] = useState(false);
+    const [editingBoost, setEditingBoost] = useState<ProductFamilyBoost | null>(null);
+    const [deleteTarget, setDeleteTarget] = useState<ProductFamilyBoost | null>(null);
+
+    // Collapsed partner-family groups
+    const [collapsed, setCollapsed] = useState<Set<number>>(new Set());
+
+    const loadData = useCallback(async () => {
+        setLoading(true);
         try {
-            setLoading(true);
-            const [boostsData, productFamiliesData, partnerFamiliesData] = await Promise.all([
+            const [boostsData, pfData, partData] = await Promise.all([
                 promotionsApi.getBoosts(),
                 promotionsApi.getProductFamilies(),
-                promotionsApi.getPartnerFamilies()
+                promotionsApi.getPartnerFamilies(),
             ]);
-            
             setBoosts(boostsData.boosts || []);
-            setProductFamilies(productFamiliesData.productFamilies || []);
-            setPartnerFamilies(partnerFamiliesData.partnerFamilies || []);
-        } catch (error) {
-            console.error('Failed to load boosts data', error);
+            setProductFamilies(pfData.productFamilies || []);
+            setPartnerFamilies(partData.partnerFamilies || []);
+        } catch {
             toast.error('Échec du chargement des données');
         } finally {
             setLoading(false);
         }
-    };
-
-    useEffect(() => {
-        loadData();
     }, []);
 
-    const handleDeleteClick = (id: number) => {
-        setBoostToDelete(id);
-        setShowDeleteModal(true);
-    };
+    useEffect(() => { loadData(); }, [loadData]);
 
-    const handleDeleteConfirm = async () => {
-        if (!boostToDelete) return;
-        
-        try {
-            setIsDeleting(true);
-            await promotionsApi.deleteBoost(boostToDelete);
-            toast.success('Boost supprimé');
-            loadData();
-            if (selectedBoost?.id === boostToDelete) {
-                setSelectedBoost(null);
+    // Filtered + sorted boosts
+    const filtered = useMemo(() => {
+        return boosts
+            .filter(b => (!pfFilter || b.product_family_id === pfFilter))
+            .filter(b => (!partFilter || b.partner_family_id === partFilter))
+            .sort((a, b) => a.rank - b.rank);
+    }, [boosts, pfFilter, partFilter]);
+
+    // Group by partner family
+    const groups = useMemo(() => {
+        const map = new Map<number, { partnerFamily: PartnerFamily; boosts: ProductFamilyBoost[] }>();
+        for (const b of filtered) {
+            const pf = b.partnerFamily
+                ? { id: b.partner_family_id, code: b.partnerFamily.code, name: b.partnerFamily.name }
+                : partnerFamilies.find(p => p.id === b.partner_family_id);
+            if (!pf) continue;
+            if (!map.has(b.partner_family_id)) {
+                map.set(b.partner_family_id, { partnerFamily: pf as PartnerFamily, boosts: [] });
             }
-            setShowDeleteModal(false);
-            setBoostToDelete(null);
-        } catch (error) {
-            console.error('Failed to delete boost:', error);
-            toast.error('Échec de la suppression');
-        } finally {
-            setIsDeleting(false);
+            map.get(b.partner_family_id)!.boosts.push(b);
         }
+        return [...map.values()].sort((a, b) => (a.partnerFamily.code < b.partnerFamily.code ? -1 : 1));
+    }, [filtered, partnerFamilies]);
+
+    const toggleGroup = (id: number) => {
+        setCollapsed(prev => {
+            const next = new Set(prev);
+            next.has(id) ? next.delete(id) : next.add(id);
+            return next;
+        });
     };
 
-    const handleEditClick = (boost: ProductFamilyBoost) => {
-        setEditingBoost(boost);
-        setShowEditModal(true);
+    const pfLookup = (id: number) => {
+        const b = boosts.find(b => b.product_family_id === id && b.productFamily);
+        if (b?.productFamily) return b.productFamily;
+        return productFamilies.find(f => f.id === id);
     };
 
-    const handleEditBoost = async () => {
-        if (!editingBoost?.id) return;
-        
-        if (!editingBoost.product_family_id || !editingBoost.partner_family_id) {
-            toast.error('Veuillez sélectionner les familles');
-            return;
-        }
-
+    const handleSubmit = async (data: BoostFormState) => {
+        setSaving(true);
         try {
-            await promotionsApi.updateBoost(editingBoost.id, {
-                product_family_id: editingBoost.product_family_id,
-                partner_family_id: editingBoost.partner_family_id,
-                rank: editingBoost.rank,
-                boost_factor: editingBoost.boost_factor
-            });
-            toast.success('Boost mis à jour avec succès');
-            setShowEditModal(false);
+            if (editingBoost?.id) {
+                await promotionsApi.updateBoost(editingBoost.id, data);
+                toast.success('Boost mis à jour');
+            } else {
+                await promotionsApi.createBoost(data);
+                toast.success('Boost créé');
+            }
+            setFormOpen(false);
             setEditingBoost(null);
-            loadData();
-        } catch (error) {
-            console.error('Failed to update boost:', error);
-            toast.error('Échec de la mise à jour');
+            await loadData();
+        } catch (err: any) {
+            const msg = err?.response?.data?.message || 'Échec de l\'enregistrement';
+            toast.error(msg);
+        } finally {
+            setSaving(false);
         }
     };
 
-    const handleCreateBoost = async () => {
-        if (!newBoost.product_family_id || !newBoost.partner_family_id) {
-            toast.error('Veuillez sélectionner les familles');
-            return;
-        }
-
+    const handleDelete = async () => {
+        if (!deleteTarget?.id) return;
+        setDeleting(true);
         try {
-            await promotionsApi.createBoost(newBoost);
-            toast.success('Boost créé avec succès');
-            setShowCreateModal(false);
-            setNewBoost({
-                product_family_id: 0,
-                partner_family_id: 0,
-                rank: 1,
-                boost_factor: 1.0
-            });
-            loadData();
-        } catch (error) {
-            console.error('Failed to create boost:', error);
-            toast.error('Échec de la création');
+            await promotionsApi.deleteBoost(deleteTarget.id);
+            toast.success('Boost supprimé');
+            setDeleteTarget(null);
+            await loadData();
+        } catch (err: any) {
+            toast.error(err?.response?.data?.message || 'Échec de la suppression');
+        } finally {
+            setDeleting(false);
         }
     };
 
-    const getProductFamilyName = (id: number) => {
-        const family = productFamilies.find(f => f.id === id);
-        return family ? `${family.code} - ${family.name}` : 'N/A';
-    };
+    const pfOptions = productFamilies.map(f => ({ value: f.id!, label: `${f.code} — ${f.name}` }));
+    const partOptions = partnerFamilies.map(f => ({ value: f.id!, label: `${f.code} — ${f.name}` }));
 
-    const getPartnerFamilyName = (id: number) => {
-        const family = partnerFamilies.find(f => f.id === id);
-        return family ? `${family.code} - ${family.name}` : 'N/A';
-    };
-
-    const columnDefs = useMemo<ColDef[]>(() => [
-        {
-            field: 'id',
-            headerName: 'ID',
-            width: 80,
-            cellRenderer: (params: any) => (
-                <div className="flex items-center h-full">
-                    <span className="text-gray-600 font-mono text-sm">#{params.value}</span>
-                </div>
-            )
-        },
-        {
-            field: 'product_family_id',
-            headerName: 'Famille Produit',
-            flex: 1,
-            minWidth: 200,
-            cellRenderer: (params: any) => (
-                <div className="flex items-center gap-2 h-full">
-                    <Package className="w-4 h-4 text-sage-500" />
-                    <span className="text-gray-900">{getProductFamilyName(params.value)}</span>
-                </div>
-            )
-        },
-        {
-            field: 'partner_family_id',
-            headerName: 'Famille Partenaire',
-            flex: 1,
-            minWidth: 200,
-            cellRenderer: (params: any) => (
-                <div className="flex items-center gap-2 h-full">
-                    <Users className="w-4 h-4 text-purple-500" />
-                    <span className="text-gray-900">{getPartnerFamilyName(params.value)}</span>
-                </div>
-            )
-        },
-        {
-            field: 'rank',
-            headerName: 'Rang',
-            width: 100,
-            cellRenderer: (params: any) => (
-                <div className="flex items-center h-full">
-                    <span className="text-gray-700 font-semibold">{params.value}</span>
-                </div>
-            )
-        },
-        {
-            field: 'boost_factor',
-            headerName: 'Facteur Boost',
-            width: 140,
-            cellRenderer: (params: any) => (
-                <div className="flex items-center gap-1 h-full">
-                    <TrendingUp className="w-4 h-4 text-green-500" />
-                    <span className="text-gray-900 font-semibold">×{params.value.toFixed(2)}</span>
-                </div>
-            )
-        },
-        {
-            headerName: 'Actions',
-            width: 120,
-            cellRenderer: (params: any) => {
-                const boost = params.data as ProductFamilyBoost;
-                
-                return (
-                    <div className="flex items-center justify-center gap-1 h-full">
-                        <button
-                            onClick={() => setSelectedBoost(boost)}
-                            className="p-1.5 hover:bg-sage-50 rounded text-sage-600 transition-colors"
-                            title="Voir détails"
-                        >
-                            <Eye className="w-4 h-4" />
-                        </button>
-                        <button
-                            onClick={() => handleEditClick(boost)}
-                            className="p-1.5 hover:bg-yellow-50 rounded text-yellow-600 transition-colors"
-                            title="Modifier"
-                        >
-                            <Edit className="w-4 h-4" />
-                        </button>
-                        <button
-                            onClick={() => handleDeleteClick(boost.id!)}
-                            className="p-1.5 hover:bg-red-50 rounded text-red-600 transition-colors"
-                            title="Supprimer"
-                        >
-                            <Trash2 className="w-4 h-4" />
-                        </button>
-                    </div>
-                );
-            },
-            sortable: false,
-            filter: false,
-        }
-    ], [boosts, productFamilies, partnerFamilies]);
-
-    const leftContent = (
-        <div className="h-full flex flex-col bg-white border-r border-gray-200">
-            <div className="p-4 border-b border-gray-200">
-                <div className="flex items-center justify-between mb-4">
-                    <div className="flex items-center gap-2">
-                        <Zap className="w-5 h-5 text-yellow-500" />
-                        <h2 className="text-lg font-semibold text-gray-900">Boosts</h2>
-                    </div>
-                    <button
-                        onClick={loadData}
-                        disabled={loading}
-                        className="p-2 hover:bg-gray-100 rounded-lg transition-colors disabled:opacity-50"
-                        title="Actualiser"
-                    >
-                        <RefreshCw className={`w-4 h-4 text-gray-600 ${loading ? 'animate-spin' : ''}`} />
-                    </button>
-                </div>
-
-                <div className="flex gap-2">
-                    <button
-                        onClick={() => setShowCreateModal(true)}
-                        className="flex-1 flex items-center justify-center gap-2 px-4 py-2 bg-yellow-500 text-white rounded-lg hover:bg-yellow-600 transition-colors"
-                    >
-                        <Plus className="w-4 h-4" />
-                        Nouveau Boost
-                    </button>
-                </div>
-
-                <div className="mt-4 p-3 bg-gray-50 rounded-lg">
-                    <div className="text-sm text-gray-600">
-                        <div className="flex justify-between mb-1">
-                            <span>Total Boosts:</span>
-                            <span className="font-semibold text-gray-900">{boosts.length}</span>
+    const pageContent = (
+        <div className="h-full overflow-y-auto bg-gradient-to-br from-slate-50 to-slate-100">
+            {/* ── Page header ── */}
+            <div className="bg-white border-b border-gray-200 shadow-sm">
+                <div className="max-w-6xl mx-auto px-6 py-5">
+                    <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-3">
+                            <div className="w-10 h-10 bg-amber-100 rounded-xl flex items-center justify-center">
+                                <Star className="w-5 h-5 text-amber-600" />
+                            </div>
+                            <div>
+                                <h1 className="text-xl font-bold text-gray-900">Boosts Merchandising</h1>
+                                <p className="text-xs text-gray-500 mt-0.5">
+                                    Poussez des familles produit en tête du catalogue mobile pour un segment client donné — aucun impact prix.
+                                </p>
+                            </div>
+                        </div>
+                        <div className="flex items-center gap-2">
+                            <button
+                                onClick={loadData}
+                                disabled={loading}
+                                className="h-9 w-9 flex items-center justify-center hover:bg-gray-100 rounded-lg transition-colors disabled:opacity-40"
+                                title="Actualiser"
+                            >
+                                <RefreshCw className={`w-4 h-4 text-gray-500 ${loading ? 'animate-spin' : ''}`} />
+                            </button>
+                            <button
+                                onClick={() => { setEditingBoost(null); setFormOpen(true); }}
+                                className="h-9 px-4 bg-amber-500 hover:bg-amber-600 text-white rounded-lg text-sm font-medium flex items-center gap-2 transition-colors shadow-sm"
+                            >
+                                <Plus className="w-4 h-4" />
+                                Nouveau Boost
+                            </button>
                         </div>
                     </div>
                 </div>
             </div>
 
-            <div className="flex-1 overflow-hidden">
-                <DataGrid
-                    rowData={boosts}
-                    columnDefs={columnDefs}
-                    loading={loading}
-                    onRowClicked={(event) => setSelectedBoost(event.data)}
-                />
+            <div className="max-w-6xl mx-auto px-6 py-6 space-y-4">
+                {/* ── Stats strip ── */}
+                <div className="grid grid-cols-3 gap-3">
+                    {[
+                        { label: 'Total boosts', value: boosts.length, icon: Star, color: 'text-amber-600', bg: 'bg-amber-50' },
+                        { label: 'Familles produit boostées', value: new Set(boosts.map(b => b.product_family_id)).size, icon: Package, color: 'text-blue-600', bg: 'bg-blue-50' },
+                        { label: 'Segments couverts', value: new Set(boosts.map(b => b.partner_family_id)).size, icon: Users, color: 'text-purple-600', bg: 'bg-purple-50' },
+                    ].map(s => (
+                        <div key={s.label} className="bg-white rounded-xl border border-gray-200 px-4 py-3 flex items-center gap-3">
+                            <div className={`w-8 h-8 ${s.bg} rounded-lg flex items-center justify-center shrink-0`}>
+                                <s.icon className={`w-4 h-4 ${s.color}`} />
+                            </div>
+                            <div>
+                                <p className="text-lg font-bold text-gray-900 leading-none">{s.value}</p>
+                                <p className="text-xs text-gray-500 mt-0.5">{s.label}</p>
+                            </div>
+                        </div>
+                    ))}
+                </div>
+
+                {/* ── Filters ── */}
+                <div className="bg-white rounded-xl border border-gray-200 px-4 py-3">
+                    <div className="flex items-center gap-3">
+                        <span className="text-xs font-medium text-gray-500 shrink-0">Filtrer :</span>
+                        <div className="w-64">
+                            <SearchableSelect
+                                options={[{ value: 0, label: 'Toutes les familles produit' }, ...pfOptions]}
+                                value={pfFilter}
+                                onChange={setPfFilter}
+                                placeholder="Famille produit…"
+                            />
+                        </div>
+                        <div className="w-64">
+                            <SearchableSelect
+                                options={[{ value: 0, label: 'Tous les segments' }, ...partOptions]}
+                                value={partFilter}
+                                onChange={setPartFilter}
+                                placeholder="Famille partenaire…"
+                            />
+                        </div>
+                        {(pfFilter > 0 || partFilter > 0) && (
+                            <button
+                                onClick={() => { setPfFilter(0); setPartFilter(0); }}
+                                className="text-xs text-gray-400 hover:text-gray-700 flex items-center gap-1 transition-colors"
+                            >
+                                <X className="w-3 h-3" /> Réinitialiser
+                            </button>
+                        )}
+                        <div className="ml-auto text-xs text-gray-400">
+                            {filtered.length} boost{filtered.length !== 1 ? 's' : ''}
+                        </div>
+                    </div>
+                </div>
+
+                {/* ── Content ── */}
+                {loading ? (
+                    <div className="bg-white rounded-xl border border-gray-200 flex items-center justify-center py-16">
+                        <Loader2 className="w-8 h-8 animate-spin text-amber-500" />
+                    </div>
+                ) : groups.length === 0 ? (
+                    <div className="bg-white rounded-xl border border-gray-200 flex flex-col items-center justify-center py-16 text-center">
+                        <div className="w-14 h-14 bg-amber-50 rounded-full flex items-center justify-center mb-3">
+                            <Star className="w-7 h-7 text-amber-300" />
+                        </div>
+                        <p className="text-gray-500 font-medium">Aucun boost configuré</p>
+                        <p className="text-xs text-gray-400 mt-1 mb-5">Créez votre premier boost pour mettre des produits en avant dans le catalogue vendeur</p>
+                        <button
+                            onClick={() => { setEditingBoost(null); setFormOpen(true); }}
+                            className="px-4 py-2 bg-amber-500 hover:bg-amber-600 text-white rounded-lg text-sm font-medium flex items-center gap-2 transition-colors"
+                        >
+                            <Plus className="w-4 h-4" /> Nouveau Boost
+                        </button>
+                    </div>
+                ) : (
+                    <div className="space-y-3">
+                        {groups.map(({ partnerFamily, boosts: groupBoosts }) => {
+                            const isCollapsed = collapsed.has(partnerFamily.id!);
+                            return (
+                                <div key={partnerFamily.id} className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+                                    {/* Group header */}
+                                    <button
+                                        type="button"
+                                        onClick={() => toggleGroup(partnerFamily.id!)}
+                                        className="w-full flex items-center gap-3 px-4 py-3 hover:bg-gray-50/60 transition-colors text-left"
+                                    >
+                                        <ChevronDown className={`w-4 h-4 text-gray-400 transition-transform shrink-0 ${isCollapsed ? '-rotate-90' : ''}`} />
+                                        <div className="flex items-center gap-2 flex-1">
+                                            <div className="flex items-center gap-1.5 px-2.5 py-1 bg-purple-100 rounded-lg">
+                                                <Users className="w-3.5 h-3.5 text-purple-600" />
+                                                <span className="text-xs font-bold text-purple-800">{partnerFamily.code}</span>
+                                            </div>
+                                            <span className="text-sm font-semibold text-gray-800">{partnerFamily.name}</span>
+                                        </div>
+                                        <span className="text-xs text-gray-400 font-medium shrink-0">
+                                            {groupBoosts.length} boost{groupBoosts.length !== 1 ? 's' : ''}
+                                        </span>
+                                    </button>
+
+                                    {/* Group rows */}
+                                    {!isCollapsed && (
+                                        <table className="w-full border-collapse">
+                                            <thead>
+                                                <tr className="border-t border-gray-100 bg-gray-50/80">
+                                                    <th className="text-left text-[10px] font-semibold text-gray-400 uppercase tracking-wide px-4 py-2 w-16">Rang</th>
+                                                    <th className="text-left text-[10px] font-semibold text-gray-400 uppercase tracking-wide px-4 py-2">Famille Produit</th>
+                                                    <th className="text-left text-[10px] font-semibold text-gray-400 uppercase tracking-wide px-4 py-2 w-32">Facteur Boost</th>
+                                                    <th className="w-24 px-4 py-2" />
+                                                </tr>
+                                            </thead>
+                                            <tbody>
+                                                {groupBoosts.map((boost, i) => {
+                                                    const pf = boost.productFamily ?? pfLookup(boost.product_family_id);
+                                                    const factor = Number(boost.boost_factor);
+                                                    return (
+                                                        <tr
+                                                            key={boost.id}
+                                                            className={`border-t border-gray-100 hover:bg-amber-50/30 transition-colors group ${i === groupBoosts.length - 1 ? '' : ''}`}
+                                                        >
+                                                            <td className="px-4 py-3">
+                                                                <span className="inline-flex items-center justify-center w-7 h-7 bg-gray-100 text-gray-700 text-xs font-bold rounded-lg">
+                                                                    {boost.rank}
+                                                                </span>
+                                                            </td>
+                                                            <td className="px-4 py-3">
+                                                                <div className="flex items-center gap-2">
+                                                                    <div className="flex items-center gap-1.5 px-2 py-0.5 bg-blue-50 border border-blue-100 rounded-md">
+                                                                        <Package className="w-3 h-3 text-blue-500" />
+                                                                        <span className="text-xs font-bold text-blue-700">{pf?.code ?? '—'}</span>
+                                                                    </div>
+                                                                    <span className="text-sm text-gray-700">{pf?.name}</span>
+                                                                </div>
+                                                            </td>
+                                                            <td className="px-4 py-3">
+                                                                <div className="flex items-center gap-1.5">
+                                                                    <TrendingUp className="w-3.5 h-3.5 text-green-500" />
+                                                                    <span className={`text-sm font-semibold ${factor > 1 ? 'text-green-700' : 'text-gray-600'}`}>
+                                                                        ×{factor.toFixed(2)}
+                                                                    </span>
+                                                                    {factor > 2 && (
+                                                                        <span className="text-[10px] px-1.5 py-0.5 bg-amber-100 text-amber-700 rounded-full font-medium">Fort</span>
+                                                                    )}
+                                                                </div>
+                                                            </td>
+                                                            <td className="px-4 py-3">
+                                                                <div className="flex items-center justify-end gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                                                                    <button
+                                                                        onClick={() => { setEditingBoost(boost); setFormOpen(true); }}
+                                                                        className="h-7 w-7 flex items-center justify-center text-gray-400 hover:text-amber-600 hover:bg-amber-50 rounded-lg transition-colors"
+                                                                        title="Modifier"
+                                                                    >
+                                                                        <Pencil className="w-3.5 h-3.5" />
+                                                                    </button>
+                                                                    <button
+                                                                        onClick={() => setDeleteTarget(boost)}
+                                                                        className="h-7 w-7 flex items-center justify-center text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                                                                        title="Supprimer"
+                                                                    >
+                                                                        <Trash2 className="w-3.5 h-3.5" />
+                                                                    </button>
+                                                                </div>
+                                                            </td>
+                                                        </tr>
+                                                    );
+                                                })}
+                                            </tbody>
+                                        </table>
+                                    )}
+                                </div>
+                            );
+                        })}
+                    </div>
+                )}
             </div>
-        </div>
-    );
 
-    const mainContent = (
-        <div className="h-full overflow-y-auto bg-gray-50">
-            {selectedBoost ? (
-                <div className="p-6">
-                    <div className="bg-white rounded-lg shadow-sm border border-gray-200">
-                        <div className="p-6 border-b border-gray-200">
-                            <div className="flex items-center gap-3 mb-2">
-                                <Zap className="w-6 h-6 text-yellow-500" />
-                                <h3 className="text-xl font-semibold text-gray-900">
-                                    Détails du Boost #{selectedBoost.id}
-                                </h3>
-                            </div>
-                        </div>
-
-                        <div className="p-6 space-y-6">
-                            <div className="grid grid-cols-2 gap-6">
-                                <div>
-                                    <label className="block text-sm font-medium text-gray-700 mb-2">
-                                        Famille Produit
-                                    </label>
-                                    <div className="flex items-center gap-2 p-3 bg-sage-50 rounded-lg">
-                                        <Package className="w-5 h-5 text-sage-500" />
-                                        <span className="text-gray-900 font-medium">
-                                            {getProductFamilyName(selectedBoost.product_family_id)}
-                                        </span>
-                                    </div>
-                                </div>
-
-                                <div>
-                                    <label className="block text-sm font-medium text-gray-700 mb-2">
-                                        Famille Partenaire
-                                    </label>
-                                    <div className="flex items-center gap-2 p-3 bg-purple-50 rounded-lg">
-                                        <Users className="w-5 h-5 text-purple-500" />
-                                        <span className="text-gray-900 font-medium">
-                                            {getPartnerFamilyName(selectedBoost.partner_family_id)}
-                                        </span>
-                                    </div>
-                                </div>
-
-                                <div>
-                                    <label className="block text-sm font-medium text-gray-700 mb-2">
-                                        Rang
-                                    </label>
-                                    <div className="p-3 bg-gray-50 rounded-lg">
-                                        <span className="text-gray-900 font-semibold text-lg">
-                                            {selectedBoost.rank}
-                                        </span>
-                                    </div>
-                                </div>
-
-                                <div>
-                                    <label className="block text-sm font-medium text-gray-700 mb-2">
-                                        Facteur Boost
-                                    </label>
-                                    <div className="flex items-center gap-2 p-3 bg-green-50 rounded-lg">
-                                        <TrendingUp className="w-5 h-5 text-green-500" />
-                                        <span className="text-gray-900 font-semibold text-lg">
-                                            ×{selectedBoost.boost_factor.toFixed(2)}
-                                        </span>
-                                    </div>
-                                </div>
-                            </div>
-
-                            <div className="pt-4 border-t border-gray-200">
-                                <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
-                                    <p className="text-sm text-yellow-800">
-                                        <strong>Info:</strong> Ce boost multiplie les promotions pour la combinaison 
-                                        de cette famille de produits et cette famille de partenaires.
-                                    </p>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            ) : (
-                <div className="h-full flex items-center justify-center">
-                    <div className="text-center">
-                        <Zap className="w-16 h-16 text-gray-300 mx-auto mb-4" />
-                        <p className="text-gray-500 text-lg">Sélectionnez un boost pour voir les détails</p>
-                    </div>
-                </div>
-            )}
+            {/* ── Modals ── */}
+            <BoostFormModal
+                open={formOpen}
+                onClose={() => { setFormOpen(false); setEditingBoost(null); }}
+                onSaved={loadData}
+                editing={editingBoost}
+                productFamilies={productFamilies}
+                partnerFamilies={partnerFamilies}
+                saving={saving}
+                onSubmit={handleSubmit}
+            />
+            <DeleteModal
+                open={deleteTarget !== null}
+                onClose={() => setDeleteTarget(null)}
+                onConfirm={handleDelete}
+                deleting={deleting}
+            />
         </div>
     );
 
     return (
-        <>
-            <MasterLayout
-                leftContent={leftContent}
-                mainContent={mainContent}
-                leftWidth="60%"
-                rightWidth="40%"
-            />
-
-            <ConfirmationModal
-                isOpen={showDeleteModal}
-                onClose={() => setShowDeleteModal(false)}
-                onConfirm={handleDeleteConfirm}
-                title="Supprimer le boost"
-                message="Êtes-vous sûr de vouloir supprimer ce boost ? Cette action est irréversible."
-                confirmText="Supprimer"
-                cancelText="Annuler"
-                isLoading={isDeleting}
-                variant="danger"
-            />
-
-            {showEditModal && editingBoost && (
-                <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-                    <div className="bg-white rounded-lg shadow-xl w-full max-w-md mx-4">
-                        <div className="p-6 border-b border-gray-200">
-                            <h3 className="text-lg font-semibold text-gray-900">Modifier le Boost</h3>
-                        </div>
-                        
-                        <div className="p-6 space-y-4">
-                            <div>
-                                <label className="block text-sm font-medium text-gray-700 mb-2">
-                                    Famille Produit
-                                </label>
-                                <select
-                                    value={editingBoost.product_family_id}
-                                    onChange={(e) => setEditingBoost({ ...editingBoost, product_family_id: Number(e.target.value) })}
-                                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-yellow-500 focus:border-transparent"
-                                >
-                                    <option value={0}>Sélectionner...</option>
-                                    {productFamilies.map(family => (
-                                        <option key={family.id} value={family.id}>
-                                            {family.code} - {family.name}
-                                        </option>
-                                    ))}
-                                </select>
-                            </div>
-
-                            <div>
-                                <label className="block text-sm font-medium text-gray-700 mb-2">
-                                    Famille Partenaire
-                                </label>
-                                <select
-                                    value={editingBoost.partner_family_id}
-                                    onChange={(e) => setEditingBoost({ ...editingBoost, partner_family_id: Number(e.target.value) })}
-                                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-yellow-500 focus:border-transparent"
-                                >
-                                    <option value={0}>Sélectionner...</option>
-                                    {partnerFamilies.map(family => (
-                                        <option key={family.id} value={family.id}>
-                                            {family.code} - {family.name}
-                                        </option>
-                                    ))}
-                                </select>
-                            </div>
-
-                            <div>
-                                <label className="block text-sm font-medium text-gray-700 mb-2">
-                                    Rang
-                                </label>
-                                <input
-                                    type="number"
-                                    value={editingBoost.rank}
-                                    onChange={(e) => setEditingBoost({ ...editingBoost, rank: Number(e.target.value) })}
-                                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-yellow-500 focus:border-transparent"
-                                    min="1"
-                                />
-                            </div>
-
-                            <div>
-                                <label className="block text-sm font-medium text-gray-700 mb-2">
-                                    Facteur Boost
-                                </label>
-                                <input
-                                    type="number"
-                                    step="0.1"
-                                    value={editingBoost.boost_factor}
-                                    onChange={(e) => setEditingBoost({ ...editingBoost, boost_factor: Number(e.target.value) })}
-                                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-yellow-500 focus:border-transparent"
-                                    min="0"
-                                />
-                            </div>
-                        </div>
-
-                        <div className="p-6 border-t border-gray-200 flex gap-3">
-                            <button
-                                onClick={() => {
-                                    setShowEditModal(false);
-                                    setEditingBoost(null);
-                                }}
-                                className="flex-1 px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors"
-                            >
-                                Annuler
-                            </button>
-                            <button
-                                onClick={handleEditBoost}
-                                className="flex-1 px-4 py-2 bg-yellow-500 text-white rounded-lg hover:bg-yellow-600 transition-colors"
-                            >
-                                Mettre à jour
-                            </button>
-                        </div>
-                    </div>
-                </div>
-            )}
-
-            {showCreateModal && (
-                <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-                    <div className="bg-white rounded-lg shadow-xl w-full max-w-md mx-4">
-                        <div className="p-6 border-b border-gray-200">
-                            <h3 className="text-lg font-semibold text-gray-900">Créer un Boost</h3>
-                        </div>
-                        
-                        <div className="p-6 space-y-4">
-                            <div>
-                                <label className="block text-sm font-medium text-gray-700 mb-2">
-                                    Famille Produit
-                                </label>
-                                <select
-                                    value={newBoost.product_family_id}
-                                    onChange={(e) => setNewBoost({ ...newBoost, product_family_id: Number(e.target.value) })}
-                                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-yellow-500 focus:border-transparent"
-                                >
-                                    <option value={0}>Sélectionner...</option>
-                                    {productFamilies.map(family => (
-                                        <option key={family.id} value={family.id}>
-                                            {family.code} - {family.name}
-                                        </option>
-                                    ))}
-                                </select>
-                            </div>
-
-                            <div>
-                                <label className="block text-sm font-medium text-gray-700 mb-2">
-                                    Famille Partenaire
-                                </label>
-                                <select
-                                    value={newBoost.partner_family_id}
-                                    onChange={(e) => setNewBoost({ ...newBoost, partner_family_id: Number(e.target.value) })}
-                                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-yellow-500 focus:border-transparent"
-                                >
-                                    <option value={0}>Sélectionner...</option>
-                                    {partnerFamilies.map(family => (
-                                        <option key={family.id} value={family.id}>
-                                            {family.code} - {family.name}
-                                        </option>
-                                    ))}
-                                </select>
-                            </div>
-
-                            <div>
-                                <label className="block text-sm font-medium text-gray-700 mb-2">
-                                    Rang
-                                </label>
-                                <input
-                                    type="number"
-                                    value={newBoost.rank}
-                                    onChange={(e) => setNewBoost({ ...newBoost, rank: Number(e.target.value) })}
-                                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-yellow-500 focus:border-transparent"
-                                    min="1"
-                                />
-                            </div>
-
-                            <div>
-                                <label className="block text-sm font-medium text-gray-700 mb-2">
-                                    Facteur Boost
-                                </label>
-                                <input
-                                    type="number"
-                                    step="0.1"
-                                    value={newBoost.boost_factor}
-                                    onChange={(e) => setNewBoost({ ...newBoost, boost_factor: Number(e.target.value) })}
-                                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-yellow-500 focus:border-transparent"
-                                    min="0"
-                                />
-                            </div>
-                        </div>
-
-                        <div className="p-6 border-t border-gray-200 flex gap-3">
-                            <button
-                                onClick={() => setShowCreateModal(false)}
-                                className="flex-1 px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors"
-                            >
-                                Annuler
-                            </button>
-                            <button
-                                onClick={handleCreateBoost}
-                                className="flex-1 px-4 py-2 bg-yellow-500 text-white rounded-lg hover:bg-yellow-600 transition-colors"
-                            >
-                                Créer
-                            </button>
-                        </div>
-                    </div>
-                </div>
-            )}
-        </>
+        <MasterLayout
+            leftContent={<PromoNav />}
+            mainContent={pageContent}
+        />
     );
 };

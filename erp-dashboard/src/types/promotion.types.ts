@@ -2,10 +2,11 @@ export const PromotionType = {
     PERCENTAGE_DISCOUNT: 1,        // Type 1: Percentage (-10 = 10% off)
     AMOUNT_PER_UNIT: 2,           // Type 2: Amount Per Unit (-5 = 5 MAD off per unit)
     BEST_PRICE: 3,                // Type 3: Best Price (50 = max price 50 MAD)
-    FREE_UNIT: 4,                 // Type 4: Free Units (-2 = 2 free units)
-    FREE_PROMO_UNIT: 5,           // Type 5: Free Promo Units (-10 = 10 promo units free)
-    FLAT_AMOUNT_DISCOUNT: 6,      // Type 6: Flat Amount (-100 = 100 MAD off total)
-    REPLACE_PRICE: 7              // Type 7: Replace Price (76 = new price 76 MAD)
+    FREE_UNIT: 4,                 // Type 4: Free Units — same product (e.g. 1 free per 12 bought)
+    FREE_PROMO_UNIT: 5,           // Type 5: Free Promo Units — different product via free_product_code
+    FLAT_AMOUNT_DISCOUNT: 6,      // Type 6: Flat Amount distributed pro-rata across lines
+    REPLACE_PRICE: 7,             // Type 7: Replace Price (76 = new price 76 MAD)
+    CHEAPEST_FREE: 8,             // Type 8: Cheapest item free — backend auto-selects cheapest eligible line
 } as const;
 
 export type PromotionType = (typeof PromotionType)[keyof typeof PromotionType];
@@ -103,6 +104,19 @@ export interface Promotion {
     lines: PromotionLine[];
     partner_families: string[]; // List of Family Codes
     payment_terms: string[];    // List of Payment Term Codes
+
+    // ── Budget Cap (2026-07-11) ──
+    max_budget?: string | null;           // editable — null/0 = unlimited
+    current_spent?: string;              // READ-ONLY (engine)
+    budget_exhausted_at?: string | null; // READ-ONLY — non-null = auto-deactivated
+
+    // ── Cumulative monthly basis (2026-07-11) ──
+    cumulative_basis?: 'order' | 'monthly_partner'; // default: 'order'
+
+    // ── Happy Hours / Flash Sales (2026-07-11) ──
+    active_days?: number[] | null;        // ISO weekdays 1=Mon…7=Sun, null = every day
+    daily_start_time?: string | null;     // "HH:mm" format
+    daily_end_time?: string | null;       // must be > daily_start_time
 
     // Stats (ReadOnly)
     usage_count?: number;

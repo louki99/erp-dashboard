@@ -45,7 +45,6 @@ import {
     InfoWindow,
     Polyline,
     TrafficLayer,
-    StreetViewPanorama,
 } from '@react-google-maps/api';
 
 import { Button } from '@/components/ui/button';
@@ -70,9 +69,10 @@ import type {
     GeoAreaFeatureProperties,
 } from '@/types/routing.types';
 
+import { GOOGLE_MAPS_API_KEY } from '@/config/googleMaps';
+
 // ─── Google Maps API key & libraries ─────────────────────────────────────────
 
-const GOOGLE_MAPS_API_KEY = 'AIzaSyDe9hV0j21IKh1p9NhoFsE6bNa7WEGxB4M';
 const GOOGLE_MAPS_LIBRARIES: ('geometry' | 'places')[] = ['geometry'];
 const MAP_CONTAINER_STYLE = { height: '100%', width: '100%' };
 const DEFAULT_MAP_CENTER = { lat: 31.7917, lng: -7.0926 };
@@ -339,7 +339,7 @@ function MiniStreetView({ lat, lng }: { lat: number; lng: number }) {
     useEffect(() => {
         if (!window.google) return;
         const svService = new window.google.maps.StreetViewService();
-        svService.getPanorama({ location: { lat, lng }, radius: 50 }, (data, status) => {
+        svService.getPanorama({ location: { lat, lng }, radius: 50 }, (_data, status) => {
             if (status === window.google.maps.StreetViewStatus.OK) {
                 setHasStreetView(true);
             } else {
