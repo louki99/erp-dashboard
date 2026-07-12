@@ -23,6 +23,7 @@ import {
     X,
     Upload,
 } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 import toast from 'react-hot-toast';
 
 import { MasterLayout } from '@/components/layout/MasterLayout';
@@ -105,14 +106,18 @@ interface ResourceConfig {
     fields: FormField[];
 }
 
-const ActiveBadge = ({ active }: { active: boolean }) => (
-    <span className={`inline-flex items-center gap-1.5 text-xs font-medium ${active ? 'text-emerald-600' : 'text-gray-400'}`}>
-        <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${active ? 'bg-emerald-500' : 'bg-gray-300'}`} />
-        {active ? 'Actif' : 'Inactif'}
-    </span>
-);
+const ActiveBadge = ({ active }: { active: boolean }) => {
+    const { t } = useTranslation();
+    return (
+        <span className={`inline-flex items-center gap-1.5 text-xs font-medium ${active ? 'text-emerald-600' : 'text-gray-400'}`}>
+            <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${active ? 'bg-emerald-500' : 'bg-gray-300'}`} />
+            {active ? t('common.active') : t('common.inactive')}
+        </span>
+    );
+};
 
 const ResourceTab = ({ config }: { config: ResourceConfig }) => {
+    const { t } = useTranslation();
     const { data: items, loading, refetch } = config.useList();
     const { execute: create, loading: creating } = config.useCreate();
     const { execute: update, loading: updating } = config.useUpdate();
@@ -161,7 +166,7 @@ const ResourceTab = ({ config }: { config: ResourceConfig }) => {
     const handleSave = async () => {
         const missing = config.fields.filter((f) => f.required && (form[f.key] === '' || form[f.key] == null));
         if (missing.length > 0) {
-            toast.error(`Champs obligatoires : ${missing.map((f) => f.label).join(', ')}`);
+            toast.error(`${t('products.masterData.requiredFields')} : ${missing.map((f) => f.label).join(', ')}`);
             return;
         }
         const payload: any = {};
@@ -170,7 +175,7 @@ const ResourceTab = ({ config }: { config: ResourceConfig }) => {
                 payload[f.key] = form[f.key];
             }
         });
-        const toastId = toast.loading(editingId ? 'Mise à jour...' : 'Création...');
+        const toastId = toast.loading(editingId ? t('products.masterData.updating') : t('products.masterData.creating'));
         try {
             let res;
             if (editingId) {
@@ -180,52 +185,52 @@ const ResourceTab = ({ config }: { config: ResourceConfig }) => {
             }
             toast.dismiss(toastId);
             if (res.success) {
-                toast.success(res.message || (editingId ? 'Modifié' : 'Créé'));
+                toast.success(res.message || (editingId ? t('products.masterData.updated') : t('products.masterData.created')));
                 setShowModal(false);
                 resetForm();
                 await refetch();
             } else {
-                toast.error(res.message || 'Erreur');
+                toast.error(res.message || t('errors.generic'));
             }
         } catch (e: any) {
             toast.dismiss(toastId);
-            toast.error(e?.response?.data?.message || e.message || 'Erreur');
+            toast.error(e?.response?.data?.message || e.message || t('errors.generic'));
         }
     };
 
     const handleDelete = async (id: any) => {
-        if (!confirm('Supprimer cet élément ?')) return;
-        const toastId = toast.loading('Suppression...');
+        if (!confirm(t('products.masterData.deleteConfirm'))) return;
+        const toastId = toast.loading(t('products.masterData.deleting'));
         try {
             const res = await deleteItem(id);
             toast.dismiss(toastId);
             if (res.success) {
-                toast.success(res.message || 'Supprimé');
+                toast.success(res.message || t('products.masterData.deleted'));
                 await refetch();
             } else {
-                toast.error(res.message || 'Erreur');
+                toast.error(res.message || t('errors.generic'));
             }
         } catch (e: any) {
             toast.dismiss(toastId);
-            toast.error(e?.response?.data?.message || e.message || 'Erreur');
+            toast.error(e?.response?.data?.message || e.message || t('errors.generic'));
         }
     };
 
     const handleToggle = async (item: any) => {
         if (!toggle) return;
-        const toastId = toast.loading('Changement de statut...');
+        const toastId = toast.loading(t('common.saving'));
         try {
             const res = await toggle.execute(item[config.idKey]);
             toast.dismiss(toastId);
             if (res.success) {
-                toast.success(res.message || 'Statut mis à jour');
+                toast.success(res.message || t('products.masterData.updated'));
                 await refetch();
             } else {
-                toast.error(res.message || 'Erreur');
+                toast.error(res.message || t('errors.generic'));
             }
         } catch (e: any) {
             toast.dismiss(toastId);
-            toast.error(e?.response?.data?.message || e.message || 'Erreur');
+            toast.error(e?.response?.data?.message || e.message || t('errors.generic'));
         }
     };
 
@@ -236,7 +241,7 @@ const ResourceTab = ({ config }: { config: ResourceConfig }) => {
         const Icon = config.icon;
         const cols: any[] = [
             {
-                headerName: 'Code',
+                headerName: t('common.code'),
                 field: 'code',
                 width: 120,
                 flex: 0,
@@ -248,7 +253,7 @@ const ResourceTab = ({ config }: { config: ResourceConfig }) => {
                 },
             },
             {
-                headerName: 'Nom',
+                headerName: t('common.name'),
                 field: config.nameKey,
                 flex: 2,
                 minWidth: 160,
@@ -285,7 +290,7 @@ const ResourceTab = ({ config }: { config: ResourceConfig }) => {
                     } : {}),
                 })),
             ...(config.activeKey ? [{
-                headerName: 'Statut',
+                headerName: t('common.status'),
                 field: config.activeKey,
                 width: 110,
                 flex: 0,
@@ -294,7 +299,7 @@ const ResourceTab = ({ config }: { config: ResourceConfig }) => {
                 cellRenderer: (params: any) => <ActiveBadge active={!!params.value} />,
             }] : []),
             {
-                headerName: 'Actions',
+                headerName: t('common.actions'),
                 field: '__actions',
                 width: 120,
                 flex: 0,
@@ -310,7 +315,7 @@ const ResourceTab = ({ config }: { config: ResourceConfig }) => {
                                     onClick={() => handleToggle(item)}
                                     disabled={!!toggle.loading}
                                     className="p-1.5 text-gray-400 hover:text-sage-600 hover:bg-sage-50 rounded-lg transition-colors disabled:opacity-50"
-                                    title="Activer / Désactiver"
+                                    title={t('common.toggle')}
                                 >
                                     {item[config.activeKey!] ? <ToggleRight className="w-4 h-4 text-emerald-500" /> : <ToggleLeft className="w-4 h-4" />}
                                 </button>
@@ -318,7 +323,7 @@ const ResourceTab = ({ config }: { config: ResourceConfig }) => {
                             <button
                                 onClick={() => openEdit(item)}
                                 className="p-1.5 text-gray-400 hover:text-sage-600 hover:bg-sage-50 rounded-lg transition-colors"
-                                title="Modifier"
+                                title={t('common.edit')}
                             >
                                 <Edit className="w-3.5 h-3.5" />
                             </button>
@@ -326,7 +331,7 @@ const ResourceTab = ({ config }: { config: ResourceConfig }) => {
                                 onClick={() => handleDelete(item[config.idKey])}
                                 disabled={deleting}
                                 className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors disabled:opacity-50"
-                                title="Supprimer"
+                                title={t('common.delete')}
                             >
                                 <Trash2 className="w-3.5 h-3.5" />
                             </button>
@@ -347,7 +352,7 @@ const ResourceTab = ({ config }: { config: ResourceConfig }) => {
                     <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
                     <input
                         type="text"
-                        placeholder="Rechercher..."
+                        placeholder={t('common.search')}
                         value={search}
                         onChange={(e) => setSearch(e.target.value)}
                         className="w-full pl-9 pr-8 py-2 text-sm bg-white border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-sage-500"
@@ -362,7 +367,7 @@ const ResourceTab = ({ config }: { config: ResourceConfig }) => {
                     onClick={openCreate}
                     className="inline-flex items-center gap-1.5 px-4 py-2 bg-sage-600 text-white text-xs font-semibold rounded-lg hover:bg-sage-700 transition-colors shadow-sm"
                 >
-                    <Plus className="w-3.5 h-3.5" /> Ajouter
+                    <Plus className="w-3.5 h-3.5" /> {t('common.add')}
                 </button>
             </div>
 
@@ -383,10 +388,10 @@ const ResourceTab = ({ config }: { config: ResourceConfig }) => {
                     <DialogHeader>
                         <DialogTitle className="flex items-center gap-2 text-base">
                             <config.icon className="w-4 h-4 text-sage-500" />
-                            {editingId ? 'Modifier' : 'Ajouter'} {config.label}
+                            {editingId ? t('products.masterData.dialogEdit') : t('products.masterData.dialogCreate')} {config.label}
                         </DialogTitle>
                         <DialogDescription>
-                            {editingId ? 'Modifiez les informations ci-dessous.' : 'Remplissez les informations pour créer un nouvel élément.'}
+                            {editingId ? t('products.masterData.editHint') : t('products.masterData.createHint')}
                         </DialogDescription>
                     </DialogHeader>
                     <div className="space-y-4 pt-2">
@@ -433,7 +438,7 @@ const ResourceTab = ({ config }: { config: ResourceConfig }) => {
                             onClick={() => { setShowModal(false); resetForm(); }}
                             className="px-4 py-2 text-sm text-gray-600 hover:bg-gray-100 rounded-lg transition-colors"
                         >
-                            Annuler
+                            {t('common.cancel')}
                         </button>
                         <button
                             onClick={handleSave}
@@ -441,7 +446,7 @@ const ResourceTab = ({ config }: { config: ResourceConfig }) => {
                             className="px-5 py-2 text-sm bg-sage-600 text-white rounded-lg hover:bg-sage-700 disabled:opacity-50 flex items-center gap-2 shadow-sm transition-colors"
                         >
                             {isBusy && <Loader2 className="w-4 h-4 animate-spin" />}
-                            {editingId ? 'Mettre à jour' : 'Créer'}
+                            {editingId ? t('common.update') : t('common.create')}
                         </button>
                     </div>
                 </DialogContent>
@@ -467,9 +472,10 @@ interface PageImageUploadModalProps {
 }
 
 const PageImageUploadModal = ({ page, onClose, onUploaded }: PageImageUploadModalProps) => {
+    const { t } = useTranslation();
     const [slots, setSlots] = useState<ImageSlot[]>([
-        { field: 'logo', label: 'Logo', current: page.logo_url, file: null, preview: null },
-        { field: 'photo', label: 'Photo', current: page.photo_url, file: null, preview: null },
+        { field: 'logo', label: t('modules.products.logo'), current: page.logo_url, file: null, preview: null },
+        { field: 'photo', label: t('modules.products.photo'), current: page.photo_url, file: null, preview: null },
     ]);
     const [uploading, setUploading] = useState(false);
     const logoRef = useRef<HTMLInputElement>(null);
@@ -496,24 +502,24 @@ const PageImageUploadModal = ({ page, onClose, onUploaded }: PageImageUploadModa
     const hasChanges = slots.some(s => s.file !== null);
 
     const handleUpload = async () => {
-        if (!hasChanges) { toast.error('Sélectionnez au moins une image'); return; }
+        if (!hasChanges) { toast.error(t('common.noImage')); return; }
         setUploading(true);
-        const toastId = toast.loading('Envoi des images…');
+        const toastId = toast.loading(t('products.masterData.sending'));
         try {
             const files: { logo?: File; photo?: File } = {};
             slots.forEach(s => { if (s.file) files[s.field] = s.file; });
             const res = await productsApi.uploadProductPageImages(page.code, files);
             toast.dismiss(toastId);
             if (res.success) {
-                toast.success(res.message || 'Images mises à jour');
+                toast.success(res.message || t('products.masterData.updated'));
                 onUploaded();
                 onClose();
             } else {
-                toast.error(res.message || 'Erreur lors de l\'upload');
+                toast.error(res.message || t('errors.uploadFailed'));
             }
         } catch (e: any) {
             toast.dismiss(toastId);
-            toast.error(e?.response?.data?.message || 'Erreur lors de l\'upload');
+            toast.error(e?.response?.data?.message || t('errors.uploadFailed'));
         } finally {
             setUploading(false);
         }
@@ -562,13 +568,13 @@ const PageImageUploadModal = ({ page, onClose, onUploaded }: PageImageUploadModa
                                     ) : (
                                         <div className="flex flex-col items-center gap-1.5 text-gray-400">
                                             <ImagePlus className="w-8 h-8" />
-                                            <span className="text-xs">Cliquer pour choisir</span>
+                                            <span className="text-xs">{t('products.masterData.clickToChoose')}</span>
                                         </div>
                                     )}
                                     {/* New file badge */}
                                     {slot.file && (
                                         <div className="absolute top-2 right-2 bg-sage-600 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full">
-                                            Nouveau
+                                            {t('common.new')}
                                         </div>
                                     )}
                                 </div>
@@ -586,7 +592,7 @@ const PageImageUploadModal = ({ page, onClose, onUploaded }: PageImageUploadModa
                                     </div>
                                 ) : (
                                     <span className="text-[10px] text-gray-400 text-center">
-                                        {slot.current ? 'Image actuelle' : 'Aucune image'}
+                                        {slot.current ? t('products.masterData.currentImage') : t('products.masterData.noImage')}
                                     </span>
                                 )}
 
@@ -605,7 +611,7 @@ const PageImageUploadModal = ({ page, onClose, onUploaded }: PageImageUploadModa
                 {/* Footer */}
                 <div className="flex items-center justify-end gap-2 px-5 py-4 border-t border-gray-100 bg-gray-50">
                     <button onClick={onClose} className="px-4 py-2 text-sm text-gray-600 hover:bg-gray-200 rounded-lg transition-colors">
-                        Annuler
+                        {t('common.cancel')}
                     </button>
                     <button
                         onClick={handleUpload}
@@ -613,7 +619,7 @@ const PageImageUploadModal = ({ page, onClose, onUploaded }: PageImageUploadModa
                         className="flex items-center gap-2 px-4 py-2 text-sm font-semibold text-white bg-sage-600 rounded-lg hover:bg-sage-700 disabled:opacity-40 transition-colors shadow-sm"
                     >
                         {uploading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Upload className="w-3.5 h-3.5" />}
-                        Envoyer
+                        {t('common.send')}
                     </button>
                 </div>
             </div>
@@ -624,6 +630,7 @@ const PageImageUploadModal = ({ page, onClose, onUploaded }: PageImageUploadModa
 // ── ProductPages tab — wraps ResourceTab and injects image column + modal ──────
 
 const ProductPagesTab = ({ config }: { config: ResourceConfig }) => {
+    const { t } = useTranslation();
     const { data: pages, loading, refetch } = config.useList();
     const [imageTarget, setImageTarget] = useState<ProductPage | null>(null);
 
@@ -643,7 +650,7 @@ const ProductPagesTab = ({ config }: { config: ResourceConfig }) => {
     // Build columnDefs for the pages grid, including the images column
     const columnDefs = useMemo(() => [
         {
-            headerName: 'Code',
+            headerName: t('common.code'),
             field: 'code',
             width: 110,
             flex: 0,
@@ -652,7 +659,7 @@ const ProductPagesTab = ({ config }: { config: ResourceConfig }) => {
             ),
         },
         {
-            headerName: 'Nom',
+            headerName: t('common.name'),
             field: 'name',
             flex: 2,
             minWidth: 160,
@@ -682,7 +689,7 @@ const ProductPagesTab = ({ config }: { config: ResourceConfig }) => {
             cellRenderer: (p: any) => <span className="text-xs text-gray-500">{p.value ?? '—'}</span>,
         },
         {
-            headerName: 'Images',
+            headerName: t('products.masterData.images'),
             field: 'logo_url',
             width: 120,
             flex: 0,
@@ -714,14 +721,14 @@ const ProductPagesTab = ({ config }: { config: ResourceConfig }) => {
             },
         },
         {
-            headerName: 'Vendable',
+            headerName: t('common.status'),
             field: 'is_salable',
             width: 100,
             flex: 0,
             cellRenderer: (p: any) => <ActiveBadge active={!!p.value} />,
         },
         {
-            headerName: 'Actions',
+            headerName: t('common.actions'),
             field: '__actions',
             width: 130,
             flex: 0,
@@ -735,14 +742,14 @@ const ProductPagesTab = ({ config }: { config: ResourceConfig }) => {
                         <button
                             onClick={() => setImageTarget(item)}
                             className="p-1.5 text-gray-400 hover:text-sage-600 hover:bg-sage-50 rounded-lg transition-colors"
-                            title="Gérer les images"
+                            title={t('products.masterData.images')}
                         >
                             <ImagePlus className="w-3.5 h-3.5" />
                         </button>
                         <button
                             onClick={() => {/* edit handled by ResourceTab below */}}
                             className="p-1.5 text-gray-400 hover:text-sage-600 hover:bg-sage-50 rounded-lg transition-colors"
-                            title="Modifier (via liste)"
+                            title={t('common.edit')}
                         >
                             <Edit className="w-3.5 h-3.5" />
                         </button>
@@ -761,7 +768,7 @@ const ProductPagesTab = ({ config }: { config: ResourceConfig }) => {
                     <span className="text-xs text-gray-400">{pagesWithImages.length} page{pagesWithImages.length !== 1 ? 's' : ''}</span>
                     <div className="flex items-center gap-1.5 ml-auto">
                         <span className="text-[10px] text-gray-400 flex items-center gap-1">
-                            <ImagePlus className="w-3 h-3" /> Cliquez sur l'icône image pour gérer logo & photo
+                            <ImagePlus className="w-3 h-3" /> {t('products.masterData.manageHint')}
                         </span>
                     </div>
                 </div>
@@ -791,6 +798,7 @@ const ProductPagesTab = ({ config }: { config: ResourceConfig }) => {
 };
 
 export const ProductMasterDataPage = () => {
+    const { t } = useTranslation();
     const { data: categories, refetch: refetchCategories } = useCategories();
     const { data: pages, refetch: refetchPages } = useProductPagesList();
     const [activeTab, setActiveTab] = useState('brands');
@@ -807,23 +815,23 @@ export const ProductMasterDataPage = () => {
 
     const tabs: TabItem[] = useMemo(
         () => [
-            { id: 'brands', label: 'Marques', icon: Tag },
-            { id: 'categories', label: 'Catégories', icon: FolderTree },
-            { id: 'subcategories', label: 'Sous-catégories', icon: FolderTree },
-            { id: 'units', label: 'Unités', icon: Ruler },
-            { id: 'vat', label: 'TVA', icon: Percent },
-            { id: 'suppliers', label: 'Fournisseurs', icon: Truck },
-            { id: 'sales_groups', label: 'Groupes de vente', icon: Layers },
-            { id: 'pages', label: 'Pages produit', icon: FileText },
+            { id: 'brands', label: t('modules.products.brands'), icon: Tag },
+            { id: 'categories', label: t('modules.products.categories'), icon: FolderTree },
+            { id: 'subcategories', label: t('modules.products.subcategories'), icon: FolderTree },
+            { id: 'units', label: t('modules.products.units'), icon: Ruler },
+            { id: 'vat', label: t('modules.products.vat'), icon: Percent },
+            { id: 'suppliers', label: t('modules.products.suppliers'), icon: Truck },
+            { id: 'sales_groups', label: t('modules.products.salesGroups'), icon: Layers },
+            { id: 'pages', label: t('modules.products.pages'), icon: FileText },
         ],
-        []
+        [t]
     );
 
     const configs: Record<string, ResourceConfig> = useMemo(
         () => ({
             brands: {
                 key: 'brands',
-                label: 'Marque',
+                label: t('modules.products.brands'),
                 icon: Tag,
                 idKey: 'id',
                 nameKey: 'name',
@@ -834,13 +842,13 @@ export const ProductMasterDataPage = () => {
                 useDelete: useDeleteBrand,
                 useToggle: useToggleBrand,
                 fields: [
-                    { key: 'name', label: 'Nom', type: 'text', required: true },
-                    { key: 'is_active', label: 'Actif', type: 'checkbox' },
+                    { key: 'name', label: t('common.name'), type: 'text', required: true },
+                    { key: 'is_active', label: t('common.active'), type: 'checkbox' },
                 ],
             },
             categories: {
                 key: 'categories',
-                label: 'Catégorie',
+                label: t('modules.products.categories'),
                 icon: FolderTree,
                 idKey: 'id',
                 nameKey: 'name',
@@ -851,14 +859,14 @@ export const ProductMasterDataPage = () => {
                 useDelete: useDeleteCategory,
                 useToggle: useToggleCategory,
                 fields: [
-                    { key: 'name', label: 'Nom', type: 'text', required: true },
-                    { key: 'parent_id', label: 'Catégorie parente', type: 'select', options: categoryOptions },
-                    { key: 'is_active', label: 'Actif', type: 'checkbox' },
+                    { key: 'name', label: t('common.name'), type: 'text', required: true },
+                    { key: 'parent_id', label: t('modules.products.categories'), type: 'select', options: categoryOptions },
+                    { key: 'is_active', label: t('common.active'), type: 'checkbox' },
                 ],
             },
             subcategories: {
                 key: 'subcategories',
-                label: 'Sous-catégorie',
+                label: t('modules.products.subcategories'),
                 icon: FolderTree,
                 idKey: 'id',
                 nameKey: 'name',
@@ -869,14 +877,14 @@ export const ProductMasterDataPage = () => {
                 useDelete: useDeleteSubcategory,
                 useToggle: useToggleSubcategory,
                 fields: [
-                    { key: 'name', label: 'Nom', type: 'text', required: true },
-                    { key: 'parent_id', label: 'Catégorie parente', type: 'select', options: categoryOptions },
-                    { key: 'is_active', label: 'Actif', type: 'checkbox' },
+                    { key: 'name', label: t('common.name'), type: 'text', required: true },
+                    { key: 'parent_id', label: t('modules.products.categories'), type: 'select', options: categoryOptions },
+                    { key: 'is_active', label: t('common.active'), type: 'checkbox' },
                 ],
             },
             units: {
                 key: 'units',
-                label: 'Unité',
+                label: t('modules.products.units'),
                 icon: Ruler,
                 idKey: 'id',
                 nameKey: 'name',
@@ -887,14 +895,14 @@ export const ProductMasterDataPage = () => {
                 useDelete: useDeleteUnit,
                 useToggle: useToggleUnit,
                 fields: [
-                    { key: 'name', label: 'Nom', type: 'text', required: true },
-                    { key: 'allow_decimal', label: 'Décimales autorisées', type: 'checkbox' },
-                    { key: 'is_active', label: 'Actif', type: 'checkbox' },
+                    { key: 'name', label: t('common.name'), type: 'text', required: true },
+                    { key: 'allow_decimal', label: t('products.masterData.decimalsAllowed'), type: 'checkbox' },
+                    { key: 'is_active', label: t('common.active'), type: 'checkbox' },
                 ],
             },
             vat: {
                 key: 'vat',
-                label: 'TVA',
+                label: t('modules.products.vat'),
                 icon: Percent,
                 idKey: 'id',
                 nameKey: 'name',
@@ -905,14 +913,14 @@ export const ProductMasterDataPage = () => {
                 useDelete: useDeleteVatTax,
                 useToggle: useToggleVatTax,
                 fields: [
-                    { key: 'name', label: 'Nom', type: 'text', required: true },
-                    { key: 'percentage', label: 'Taux (%)', type: 'number', required: true },
-                    { key: 'is_active', label: 'Actif', type: 'checkbox' },
+                    { key: 'name', label: t('common.name'), type: 'text', required: true },
+                    { key: 'percentage', label: t('products.masterData.vatRate'), type: 'number', required: true },
+                    { key: 'is_active', label: t('common.active'), type: 'checkbox' },
                 ],
             },
             suppliers: {
                 key: 'suppliers',
-                label: 'Fournisseur',
+                label: t('modules.products.suppliers'),
                 icon: Truck,
                 idKey: 'id',
                 nameKey: 'name',
@@ -923,16 +931,16 @@ export const ProductMasterDataPage = () => {
                 useDelete: useDeleteSupplier,
                 useToggle: useToggleSupplier,
                 fields: [
-                    { key: 'name', label: 'Nom', type: 'text', required: true },
-                    { key: 'contact_name', label: 'Contact', type: 'text' },
-                    { key: 'contact_email', label: 'Email', type: 'text' },
-                    { key: 'phone', label: 'Téléphone', type: 'text' },
-                    { key: 'address', label: 'Adresse', type: 'text' },
+                    { key: 'name', label: t('common.name'), type: 'text', required: true },
+                    { key: 'contact_name', label: t('common.contact'), type: 'text' },
+                    { key: 'contact_email', label: t('common.email'), type: 'text' },
+                    { key: 'phone', label: t('common.phone'), type: 'text' },
+                    { key: 'address', label: t('common.address'), type: 'text' },
                 ],
             },
             sales_groups: {
                 key: 'sales_groups',
-                label: 'Groupe de vente',
+                label: t('modules.products.salesGroups'),
                 icon: Layers,
                 idKey: 'code',
                 nameKey: 'name',
@@ -943,14 +951,14 @@ export const ProductMasterDataPage = () => {
                 useDelete: useDeleteProductSalesGroup,
                 useToggle: useToggleProductSalesGroup,
                 fields: [
-                    { key: 'code', label: 'Code', type: 'text', required: true },
-                    { key: 'name', label: 'Nom', type: 'text', required: true },
-                    { key: 'is_active', label: 'Actif', type: 'checkbox' },
+                    { key: 'code', label: t('common.code'), type: 'text', required: true },
+                    { key: 'name', label: t('common.name'), type: 'text', required: true },
+                    { key: 'is_active', label: t('common.active'), type: 'checkbox' },
                 ],
             },
             pages: {
                 key: 'pages',
-                label: 'Page produit',
+                label: t('modules.products.pages'),
                 icon: FileText,
                 idKey: 'code',
                 nameKey: 'name',
@@ -960,15 +968,15 @@ export const ProductMasterDataPage = () => {
                 useUpdate: useUpdateProductPage,
                 useDelete: useDeleteProductPage,
                 fields: [
-                    { key: 'code', label: 'Code', type: 'text', required: true },
-                    { key: 'name', label: 'Nom', type: 'text', required: true },
+                    { key: 'code', label: t('common.code'), type: 'text', required: true },
+                    { key: 'name', label: t('common.name'), type: 'text', required: true },
                     { key: 'rank', label: 'Rang', type: 'number' },
-                    { key: 'parent_id', label: 'Page parente', type: 'select', options: pageOptions },
-                    { key: 'is_salable', label: 'Vendable', type: 'checkbox' },
+                    { key: 'parent_id', label: t('modules.products.pages'), type: 'select', options: pageOptions },
+                    { key: 'is_salable', label: t('common.status'), type: 'checkbox' },
                 ],
             },
         }),
-        [categoryOptions, pageOptions]
+        [categoryOptions, pageOptions, t]
     );
 
     const activeConfig = configs[activeTab];
@@ -978,8 +986,8 @@ export const ProductMasterDataPage = () => {
             leftContent={
                 <div className="h-full bg-white border-r border-gray-100 flex flex-col">
                     <div className="px-4 pt-4 pb-3 border-b border-gray-100">
-                        <h1 className="text-sm font-bold text-gray-900">Données de base</h1>
-                        <p className="text-[11px] text-gray-400 mt-0.5">Gestion des référentiels produits</p>
+                        <h1 className="text-sm font-bold text-gray-900">{t('products.masterData.title')}</h1>
+                        <p className="text-[11px] text-gray-400 mt-0.5">{t('products.masterData.subtitle')}</p>
                     </div>
                     <div className="flex-1 overflow-y-auto p-2 space-y-1">
                         {tabs.map((tab) => {
@@ -1007,7 +1015,7 @@ export const ProductMasterDataPage = () => {
                             </div>
                             <div>
                                 <h2 className="text-lg font-bold text-gray-900">{tabs.find((t) => t.id === activeTab)?.label}</h2>
-                                <p className="text-xs text-gray-400">Gérez les {activeConfig.label.toLowerCase()}s du référentiel produit.</p>
+                                <p className="text-xs text-gray-400">{t('products.masterData.manageHint')}</p>
                             </div>
                         </div>
                     </div>
@@ -1024,7 +1032,7 @@ export const ProductMasterDataPage = () => {
                     groups={[
                         {
                             items: [
-                                { icon: RefreshCw, label: 'Actualiser', variant: 'sage', onClick: () => { refetchCategories(); refetchPages(); } },
+                                { icon: RefreshCw, label: t('common.refresh'), variant: 'sage', onClick: () => { refetchCategories(); refetchPages(); } },
                             ],
                         },
                     ]}

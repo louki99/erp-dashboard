@@ -8,6 +8,7 @@ import { ConfirmationModal } from '@/components/common/ConfirmationModal';
 
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/context/AuthContext';
+import { LanguageSwitcher } from '@/components/common/LanguageSwitcher';
 import { useFilteredMenu } from '@/lib/menu/menuUtils';
 import { useMenuFavorites } from '@/hooks/menu/useMenuFavorites';
 
@@ -274,6 +275,9 @@ export const MasterLayout: React.FC<MasterLayoutProps> = ({
                     >
                         {isDark ? <Sun className="w-5 h-5" /> : <Moon className="w-5 h-5" />}
                     </button>
+
+                    {/* Language Switcher */}
+                    <LanguageSwitcher />
 
                     <button className="p-2 rounded-full hover:bg-white/10 text-gray-400 hover:text-white transition-colors relative">
                         <Bell className="w-5 h-5" />

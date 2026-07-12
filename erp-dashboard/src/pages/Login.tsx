@@ -1,11 +1,13 @@
-import React, { useState } from 'react';
+import { useState } from 'react';
 import { useForm } from 'react-hook-form';
+import { useTranslation } from 'react-i18next';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '@/context/AuthContext';
 import { Loader2, Lock, Mail } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 export const Login = () => {
+    const { t } = useTranslation();
     const { register, handleSubmit, formState: { errors } } = useForm();
     const { login } = useAuth();
     const navigate = useNavigate();
@@ -24,7 +26,7 @@ export const Login = () => {
         if (result.success) {
             navigate(from, { replace: true });
         } else {
-            setLoginError(result.message || "Login failed");
+            setLoginError(result.message || t('auth.loginError'));
         }
         setIsLoading(false);
     };
@@ -41,7 +43,7 @@ export const Login = () => {
                                 FoodSolutions
                             </span>
                         </div>
-                        <span className="text-xs text-gray-400 mt-1 uppercase tracking-widest font-semibold">Web Interface</span>
+                        <span className="text-xs text-gray-400 mt-1 uppercase tracking-widest font-semibold">{t('auth.loginSubtitle')}</span>
                     </div>
                 </div>
 
@@ -54,17 +56,17 @@ export const Login = () => {
                     )}
 
                     <div className="space-y-2">
-                        <label className="text-sm font-medium text-gray-700">Email Address</label>
+                        <label className="text-sm font-medium text-gray-700">{t('auth.email')}</label>
                         <div className="relative">
                             <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
                             <input
-                                {...register('email', { required: 'Email is required' })}
+                                {...register('email', { required: t('auth.email') })}
                                 type="email"
                                 className={cn(
                                     "w-full pl-9 pr-3 py-2 border rounded-md focus:outline-none focus:ring-1 transition-all text-sm",
                                     errors.email ? "border-red-300 focus:ring-red-200" : "border-gray-300 focus:border-sage-500 focus:ring-sage-200"
                                 )}
-                                placeholder="name@company.com"
+                                placeholder={t('auth.emailPlaceholder')}
                                 defaultValue="admin@foodsolutions.ma"
                             />
                         </div>
@@ -73,13 +75,13 @@ export const Login = () => {
 
                     <div className="space-y-2">
                         <div className="flex justify-between items-center">
-                            <label className="text-sm font-medium text-gray-700">Password</label>
-                            <a href="#" className="text-xs text-sage-600 hover:text-sage-700 font-medium">Forgot password?</a>
+                            <label className="text-sm font-medium text-gray-700">{t('auth.password')}</label>
+                            <a href="#" className="text-xs text-sage-600 hover:text-sage-700 font-medium">{t('auth.forgotPassword')}</a>
                         </div>
                         <div className="relative">
                             <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
                             <input
-                                {...register('password', { required: 'Password is required' })}
+                                {...register('password', { required: t('auth.password') })}
                                 type="password"
                                 className={cn(
                                     "w-full pl-9 pr-3 py-2 border rounded-md focus:outline-none focus:ring-1 transition-all text-sm",
@@ -98,7 +100,7 @@ export const Login = () => {
                         className="w-full bg-sage-600 hover:bg-sage-700 text-white font-medium py-2 px-4 rounded-md transition-all shadow-sm flex items-center justify-center gap-2 disabled:opacity-70 disabled:cursor-not-allowed"
                     >
                         {isLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
-                        {isLoading ? 'Signing in...' : 'Sign in'}
+                        {isLoading ? t('common.loading') : t('auth.signIn')}
                     </button>
                 </form>
 

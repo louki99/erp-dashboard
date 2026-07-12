@@ -683,3 +683,78 @@ tbody tr:hover {
 .shadow-intense {
   box-shadow: 0 8px 32px rgba(0, 0, 0, 0.12), 0 4px 8px rgba(0, 0, 0, 0.08);
 }
+
+/* ─── RTL support ─────────────────────────────────────────────────────────── */
+
+/* Arabic font for RTL mode — Cairo covers Arabic + Latin well */
+[dir="rtl"] body,
+[dir="rtl"] * {
+  font-family: 'Cairo', system-ui, -apple-system, sans-serif;
+  letter-spacing: 0;
+}
+
+[dir="rtl"] {
+  direction: rtl;
+  text-align: right;
+}
+
+[dir="rtl"] body {
+  direction: rtl;
+}
+
+/* Mirror absolutely-positioned UI elements that rely on left/right */
+[dir="rtl"] .left-0 {
+  right: 0;
+  left: auto;
+}
+
+[dir="rtl"] .right-0 {
+  left: 0;
+  right: auto;
+}
+
+[dir="rtl"] .left-2 {
+  right: 0.5rem;
+  left: auto;
+}
+
+[dir="rtl"] .right-2 {
+  left: 0.5rem;
+  right: auto;
+}
+
+[dir="rtl"] .left-3 {
+  right: 0.75rem;
+  left: auto;
+}
+
+[dir="rtl"] .right-3 {
+  left: 0.75rem;
+  right: auto;
+}
+
+[dir="rtl"] .left-4 {
+  right: 1rem;
+  left: auto;
+}
+
+[dir="rtl"] .right-4 {
+  left: 1rem;
+  right: auto;
+}
+
+/* Reverse horizontal arrow/menu indicators */
+[dir="rtl"] .chevron-ltr {
+  transform: rotate(180deg);
+}
+
+/* Make sure dropdowns anchored to the right still behave in RTL */
+[dir="rtl"] .dropdown-right {
+  right: auto;
+  left: 0;
+}
+
+[dir="rtl"] .dropdown-left {
+  left: auto;
+  right: 0;
+}

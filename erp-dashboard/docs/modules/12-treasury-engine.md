@@ -1533,7 +1533,18 @@ ORDER BY created_at;
 ## 14. Admin Finance API — `/api/backend/finance/` (2026-07-11)
 
 > **Audience :** équipe UI (écrans d'administration Finance)
-> **Rôles :** `root` | `admin` | `adv_agent` (caissier)
+> **Accès :** RBAC dynamique par **permissions** (jamais par rôles hardcodés) :
+>
+> | Permission | Donne accès à | Rôles jour-1 (remappables librement) |
+> |---|---|---|
+> | `browse-finance` | Tout le hub en lecture (groupe parent) | root, admin, adv_agent |
+> | `manage-finance-journals` | POST/PUT journals | root, admin |
+> | `adjust-finance-ledger` | POST ledger/{id}/adjust | root, admin |
+> | `manage-finance-transfers` | POST transfers + approve/reject | root, admin, adv_agent |
+> | `reconcile-settlements` | POST settlements/reconcile | root, admin, adv_agent |
+>
+> Référence RBAC complète (matrice, endpoints, guards) : `docs/api/rbac.md`.
+>
 > **Auth :** `Authorization: Bearer {token}` — réponses `{ success, data, message? }`
 >
 > Ces endpoints sont le **pilotage admin** du moteur décrit dans ce document. Ils
@@ -1852,4 +1863,42 @@ POST   /api/backend/finance/transfers/{id}/reject    Rejet (reason requis, trans
 GET    /api/backend/finance/settlements              Liste (pending_only=true)
 GET    /api/backend/finance/settlements/{id}         Détail + dette vendeur
 POST   /api/backend/finance/settlements/reconcile    Valider retour → écart → dette
+
+─── HELPERS (pickers de formulaires) ───────────────────────────────────────
+GET    /api/backend/finance/helpers/users            Users minimal (id, name, code, branch_id) — ?search=&branch_id=&limit=
+GET    /api/backend/finance/helpers/branches         Branches minimal (id, code, name) — ?search=
+GET    /api/backend/finance/helpers/methods          Codes méthode + libellés localisés (Accept-Language)
+                                                     → [{code:"ESP", label:"Espèces"}, {code:"CHQ", label:"Chèque"}, …]
+
+─── INTAKE LINES (encaissements — append-only, lecture seule) ──────────────
+GET    /api/backend/finance/intake-lines             ?journal_id=&payment_method=&from_date=&to_date=
+                                                     &untransferred_only=true → picker chèques/effets
+                                                       du formulaire transfert (exclut les lignes déjà liées
+                                                       à un transfert actif — non-divisibilité §6)
+
+─── AUDIT TRAIL (journal d'opérations — immuable, lecture seule) ───────────
+GET    /api/backend/finance/audit-logs               ?operation_type=&journal_code=&transfer_id=&user_id=&from_date=&to_date=
+
+─── TRANSFER ROUTES (matrice d'autorisation source→destination) ────────────
+GET    /api/backend/finance/transfer-routes          Paires de suffixes autorisées
+POST   /api/backend/finance/transfer-routes          { source_suffix, dest_suffix, description?, is_active? }
+                                                     422 FINANCE_ROUTE_DUPLICATE si la paire existe
+PUT    /api/backend/finance/transfer-routes/{id}     { description?, is_active? } — la paire est l'identité,
+                                                     recréer plutôt que re-pointer
 ```
+
+> **Couverture schéma complète** : les 6 tables treasury ont désormais leur surface admin —
+> `treasury_journals` (§14.1), `treasury_ledger_entries` (§14.2), `treasury_transfers` (§14.3),
+> `treasury_intake_lines`, `treasury_audit_logs`, `treasury_transfer_routes` (ci-dessus).
+> Intake lines, ledger et audit sont **lecture seule par conception** (append-only —
+> les écritures naissent des flux métier, jamais d'un CRUD admin).
+
+### Note UI — modal « Nouveau journal »
+
+Remplacez les champs « ID Utilisateur » / « ID Agence » saisis à la main par des
+selects alimentés par les helpers :
+1. `GET /finance/helpers/branches` → select Agence (optionnel, guard de cohérence)
+2. `GET /finance/helpers/users?search=&branch_id=` → autocomplete Propriétaire
+3. `GET /finance/helpers/methods` → select Méthode avec libellés localisés
+Le `code` du journal (ex. `C0002ESP`) est **auto-généré** — affichez un aperçu
+`C{code_user}{MÉTHODE}` en read-only dans le modal.

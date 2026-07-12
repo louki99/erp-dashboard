@@ -1,5 +1,6 @@
 import axios, { type AxiosInstance, type AxiosError, type InternalAxiosRequestConfig, type AxiosResponse } from 'axios';
 import toast from 'react-hot-toast';
+import i18n from '@/i18n';
 
 // Base API configuration
 const BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000';
@@ -14,7 +15,7 @@ const apiClient: AxiosInstance = axios.create({
     },
 });
 
-// Request interceptor - Add auth token
+// Request interceptor - Add auth token and active locale
 apiClient.interceptors.request.use(
     (config: InternalAxiosRequestConfig) => {
         // Get token from localStorage - using 'erp_token' to match AuthContext
@@ -22,6 +23,12 @@ apiClient.interceptors.request.use(
 
         if (token && config.headers) {
             config.headers.Authorization = `Bearer ${token}`;
+        }
+
+        // Send active locale so backend can return translated data and messages.
+        const locale = localStorage.getItem('erp_locale') || 'fr';
+        if (config.headers) {
+            config.headers['Accept-Language'] = locale;
         }
 
         return config;
@@ -44,41 +51,35 @@ apiClient.interceptors.response.use(
 
             switch (status) {
                 case 401:
-                    // Unauthorized - redirect to login
-                    toast.error('Session expirée. Veuillez vous reconnecter.');
+                    toast.error(i18n.t('errors.sessionExpired'));
                     localStorage.removeItem('erp_token');
                     localStorage.removeItem('erp_user');
                     window.location.href = '/login';
                     break;
 
                 case 403:
-                    // Forbidden
-                    toast.error('Accès refusé. Vous n\'avez pas les permissions nécessaires.');
+                    toast.error(i18n.t('errors.unauthorized'));
                     break;
 
                 case 404:
-                    // Not found
-                    toast.error('Ressource introuvable.');
+                    toast.error(i18n.t('errors.notFound'));
                     break;
 
                 case 422:
-                    // Validation error - handle in component
+                    // Validation error — handled in each component
                     break;
 
                 case 500:
-                    // Server error
-                    toast.error(data?.message || 'Erreur serveur. Veuillez réessayer.');
+                    toast.error(data?.message || i18n.t('errors.serverError'));
                     break;
 
                 default:
-                    toast.error(data?.message || 'Une erreur est survenue.');
+                    toast.error(data?.message || i18n.t('errors.generic'));
             }
         } else if (error.request) {
-            // Network error
-            toast.error('Erreur de connexion. Vérifiez votre connexion internet.');
+            toast.error(i18n.t('errors.network'));
         } else {
-            // Other errors
-            toast.error('Une erreur est survenue.');
+            toast.error(i18n.t('errors.generic'));
         }
 
         return Promise.reject(error);

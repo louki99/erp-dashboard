@@ -3,6 +3,20 @@ import type { Journal, LedgerEntry, LedgerTotals, Transfer, Settlement } from '@
 
 const FINANCE_BASE = '/api/backend/finance';
 
+export interface FinanceHelperUser {
+  id: number;
+  name: string;
+  code: string;
+  email?: string;
+  branch_id?: number;
+}
+
+export interface FinanceHelperBranch {
+  id: number;
+  code: string;
+  name: string;
+}
+
 export const financeApi = {
   // ==================== Journals ====================
   getJournals: async (params?: {
@@ -122,6 +136,23 @@ export const financeApi = {
     return response.data;
   },
 
+  // ==================== Helpers / Lookup ====================
+  getHelperUsers: async (params?: { search?: string; branch_id?: number; limit?: number }) => {
+    const response = await apiClient.get<{ success: boolean; data: FinanceHelperUser[] }>(`${FINANCE_BASE}/helpers/users`, { params });
+    return response.data;
+  },
+
+  getHelperBranches: async (params?: { search?: string; limit?: number }) => {
+    const response = await apiClient.get<{ success: boolean; data: FinanceHelperBranch[] }>(`${FINANCE_BASE}/helpers/branches`, { params });
+    return response.data;
+  },
+
+  getHelperMethods: async () => {
+    const response = await apiClient.get<{ success: boolean; data: Record<string, string> }>(`${FINANCE_BASE}/helpers/methods`);
+    return response.data;
+  },
+
+  // ==================== Settlements ====================
   reconcileSettlement: async (payload: {
     vendor_settlement_id?: number;
     work_session_id?: number;

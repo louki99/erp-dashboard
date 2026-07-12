@@ -6,6 +6,7 @@ import {
   ClipboardCheck,
   Database,
   FileText,
+  Globe,
   Grid3X3,
   Landmark,
   ListTodo,
@@ -636,6 +637,20 @@ export const MENU_MODULES: MenuModule[] = [
           { id: 'admin:sys:monitoring', label: 'Monitoring', route: '/admin/monitoring', permission: 'admin.monitoring.view' },
           { id: 'admin:sys:parametres', label: 'Paramètres Généraux', route: '/settings', permission: 'admin.settings.view' },
           { id: 'admin:sys:config-dyn', label: 'Configuration Dynamique', route: '/settings/configuration', permission: 'admin.settings.view' },
+        ],
+      },
+      {
+        id: 'localisation',
+        title: 'Localisation',
+        items: [
+          {
+            id: 'admin:i18n:translations',
+            label: 'Traductions',
+            route: '/translations',
+            permission: 'manage-master-data',
+            icon: Globe,
+            description: 'Traduire les libellés métier en arabe et anglais',
+          },
         ],
       },
     ],

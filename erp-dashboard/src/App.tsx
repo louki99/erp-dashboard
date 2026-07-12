@@ -1,8 +1,10 @@
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { Toaster } from 'react-hot-toast';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import '@/i18n';
 import { AuthProvider } from '@/context/AuthContext';
 import { ThemeProvider } from '@/context/ThemeContext';
+import { LanguageProvider } from '@/context/LanguageContext';
 import { ProtectedRoute } from '@/components/rbac';
 import { PERMISSIONS } from '@/lib/rbac/permissions';
 import { Login } from '@/pages/Login';
@@ -80,6 +82,7 @@ import { RolesListPage } from '@/pages/rbac/RolesListPage';
 import { PermissionMatrixPage } from '@/pages/rbac/PermissionMatrixPage';
 import { UsersAccessPage } from '@/pages/rbac/UsersAccessPage';
 import { AccessProfilesPage } from '@/pages/rbac/AccessProfilesPage';
+import { TranslationsPage } from '@/pages/translations/TranslationsPage';
 
 
 // Simple Navigation Wrapper to show active route in DevSwitcher style (optional, but let's stick to MegaMenu for now)
@@ -589,6 +592,13 @@ function AppRoutes() {
         </ProtectedRoute>
       } />
 
+      {/* Translations Module */}
+      <Route path="/translations" element={
+        <ProtectedRoute requiredPermission="manage-master-data">
+          <TranslationsPage />
+        </ProtectedRoute>
+      } />
+
       {/* Catch all */}
       <Route path="*" element={<Navigate to="/dashboard" replace />} />
     </Routes>
@@ -611,8 +621,10 @@ function App() {
       <BrowserRouter>
         <AuthProvider>
           <ThemeProvider>
-            <AppRoutes />
-            <Toaster position="top-right" />
+            <LanguageProvider>
+              <AppRoutes />
+              <Toaster position="top-right" />
+            </LanguageProvider>
           </ThemeProvider>
         </AuthProvider>
       </BrowserRouter>
