@@ -1,10 +1,11 @@
 import { useState, useEffect, useMemo, useCallback } from 'react';
 import { promotionsApi } from '@/services/api/promotionsApi';
-import { masterdataApi, type Product } from '@/services/api/masterdataApi';
+import { productsApi } from '@/services/api/productsApi';
+import type { Product } from '@/types/product.types';
 import type { ProductFamily } from '@/types/promotion.types';
 import {
     Package, Plus, RefreshCw, Edit, Trash2, Save, X,
-    Search, CheckCircle, Loader2, Tag,
+    Search, Loader2, Tag,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { ConfirmationModal } from '@/components/common/ConfirmationModal';
@@ -51,22 +52,16 @@ export const ProductFamiliesPage = () => {
     const loadAllProducts = useCallback(async () => {
         setLoadingProducts(true);
         try {
-            const data = await masterdataApi.products.getAll();
-            setAllProducts(data.product || []);
-        } catch { toast.error('Échec du chargement des produits'); }
-        finally { setLoadingProducts(false); }
+            const res = await productsApi.getList({ per_page: 500 });
+            const list = res.data?.data ?? [];
+            setAllProducts(list);
+        } catch (err) {
+            console.error('Failed to load products', err);
+            toast.error('Échec du chargement des produits');
+        } finally { setLoadingProducts(false); }
     }, []);
 
-    useEffect(() => { loadFamilies(); loadAllProducts(); }, []);
-
-    useEffect(() => {
-        const onKey = (e: KeyboardEvent) => {
-            if ((e.ctrlKey || e.metaKey) && e.key === 's' && showForm) { e.preventDefault(); handleSave(); }
-            if (e.key === 'Escape') { showProductModal ? setShowProductModal(false) : showForm && handleCancel(); }
-        };
-        window.addEventListener('keydown', onKey);
-        return () => window.removeEventListener('keydown', onKey);
-    }, [showForm, showProductModal, formData]);
+    useEffect(() => { loadFamilies(); loadAllProducts(); }, [loadFamilies, loadAllProducts]);
 
     const visibleFamilies = useMemo(() => {
         if (!listSearch.trim()) return families;
@@ -81,18 +76,18 @@ export const ProductFamiliesPage = () => {
 
     const handleEdit = (family: ProductFamily) => {
         const productCodes: string[] = Array.isArray(family.products)
-            ? family.products.map((p: any) => typeof p === 'string' ? p : (p.product_code ?? p.code ?? '')).filter(Boolean)
+            ? family.products.map((p: string | { product_code?: string; code?: string }) => typeof p === 'string' ? p : (p.product_code ?? p.code ?? '')).filter(Boolean)
             : [];
         setFormData({ ...family, products: productCodes });
         setIsEditMode(true); setActiveTab('info'); setShowForm(true);
     };
 
-    const handleCancel = () => {
+    const handleCancel = useCallback(() => {
         setShowForm(false);
         setFormData({ code: '', name: '', description: '', sales_group_code: '', products: [] });
-    };
+    }, []);
 
-    const handleSave = async () => {
+    const handleSave = useCallback(async () => {
         if (!formData.code || !formData.name) { toast.error('Code et Nom sont obligatoires'); return; }
         if (formData.code.length < 2)          { toast.error('Le code doit contenir au moins 2 caractères'); return; }
         if (formData.name.length < 3)          { toast.error('Le nom doit contenir au moins 3 caractères'); return; }
@@ -109,9 +104,24 @@ export const ProductFamiliesPage = () => {
             setShowForm(false);
             setFormData({ code: '', name: '', description: '', sales_group_code: '', products: [] });
             await loadFamilies();
-        } catch (err: any) { toast.error(err?.response?.data?.message || 'Échec de l\'opération'); }
+        } catch (err) {
+            const message = (err as { response?: { data?: { message?: string } } })?.response?.data?.message;
+            toast.error(message || 'Échec de l\'opération');
+        }
         finally { setIsSaving(false); }
-    };
+    }, [formData, isEditMode, families, loadFamilies]);
+
+    useEffect(() => {
+        const onKey = (e: KeyboardEvent) => {
+            if ((e.ctrlKey || e.metaKey) && e.key === 's' && showForm) { e.preventDefault(); handleSave(); }
+            if (e.key === 'Escape') {
+                if (showProductModal) setShowProductModal(false);
+                else if (showForm) handleCancel();
+            }
+        };
+        window.addEventListener('keydown', onKey);
+        return () => window.removeEventListener('keydown', onKey);
+    }, [showForm, showProductModal, formData, handleSave, handleCancel]);
 
     const handleDeleteClick = (id: number) => { setFamilyToDelete(id); setShowDeleteModal(true); };
     const handleDeleteConfirm = async () => {
@@ -123,7 +133,10 @@ export const ProductFamiliesPage = () => {
             if (selected?.id === familyToDelete) setSelected(null);
             setShowDeleteModal(false); setFamilyToDelete(null);
             await loadFamilies();
-        } catch (err: any) { toast.error(err?.response?.data?.message || 'Échec de la suppression'); }
+        } catch (err) {
+            const message = (err as { response?: { data?: { message?: string } } })?.response?.data?.message;
+            toast.error(message || 'Échec de la suppression');
+        }
         finally { setIsDeleting(false); }
     };
 
@@ -173,7 +186,7 @@ export const ProductFamiliesPage = () => {
     // ── Detail view (read-only) ───────────────────────────────────────────────
     const DetailView = ({ family }: { family: ProductFamily }) => {
         const productCodes: string[] = Array.isArray(family.products)
-            ? family.products.map((p: any) => typeof p === 'string' ? p : (p.product_code ?? p.code ?? '')).filter(Boolean)
+            ? family.products.map((p: string | { product_code?: string; code?: string }) => typeof p === 'string' ? p : (p.product_code ?? p.code ?? '')).filter(Boolean)
             : [];
         const count = productCodes.length || (family.products_count ?? 0);
         const activeCount = productCodes.filter(code => allProducts.find(p => p.code === code)?.is_active).length;
@@ -425,26 +438,63 @@ export const ProductFamiliesPage = () => {
                     ) : filteredProducts.length === 0 ? (
                         <div className="text-center py-12"><Package className="w-10 h-10 text-gray-200 mx-auto mb-2" /><p className="text-sm text-gray-400">Aucun produit trouvé</p></div>
                     ) : (
-                        <div className="grid grid-cols-2 gap-2">
-                            {filteredProducts.map(p => {
-                                const isSel = selectedProducts.includes(p.code);
-                                return (
-                                    <button key={p.code} onClick={() => handleToggleProduct(p.code)}
-                                        className={`p-3 rounded-xl border-2 text-left transition-all ${isSel ? 'border-blue-500 bg-blue-50' : 'border-gray-200 hover:border-blue-300 bg-white'}`}
-                                    >
-                                        <div className="flex items-start justify-between gap-2">
-                                            <div className="flex-1 min-w-0">
-                                                <p className="text-sm font-semibold text-gray-900 truncate">{p.name}</p>
-                                                <p className="text-xs text-gray-400 mt-0.5 font-mono">{p.code}</p>
-                                                <span className={`text-[10px] font-medium mt-1 inline-block ${p.is_active ? 'text-green-600' : 'text-gray-400'}`}>
-                                                    {p.is_active ? '● Actif' : '○ Inactif'}
-                                                </span>
-                                            </div>
-                                            {isSel && <CheckCircle className="w-4 h-4 text-blue-600 shrink-0 mt-0.5" />}
-                                        </div>
-                                    </button>
-                                );
-                            })}
+                        <div className="border border-gray-200 rounded-xl overflow-hidden">
+                            <table className="w-full text-sm">
+                                <thead className="bg-gray-50 border-b border-gray-200">
+                                    <tr>
+                                        <th className="w-10 px-3 py-2 text-left">
+                                            <input
+                                                type="checkbox"
+                                                checked={filteredProducts.length > 0 && filteredProducts.every(p => selectedProducts.includes(p.code))}
+                                                onChange={() => {
+                                                    const allCodes = filteredProducts.map(p => p.code);
+                                                    const allSelected = allCodes.every(code => selectedProducts.includes(code));
+                                                    setFormData({
+                                                        ...formData,
+                                                        products: allSelected
+                                                            ? selectedProducts.filter(code => !allCodes.includes(code))
+                                                            : [...new Set([...selectedProducts, ...allCodes])],
+                                                    });
+                                                }}
+                                                className="w-4 h-4 text-blue-600 rounded border-gray-300 focus:ring-blue-500"
+                                            />
+                                        </th>
+                                        <th className="px-3 py-2 text-left text-xs font-semibold text-gray-600 uppercase tracking-wide">Code</th>
+                                        <th className="px-3 py-2 text-left text-xs font-semibold text-gray-600 uppercase tracking-wide">Nom</th>
+                                        <th className="px-3 py-2 text-left text-xs font-semibold text-gray-600 uppercase tracking-wide">Statut</th>
+                                    </tr>
+                                </thead>
+                                <tbody className="divide-y divide-gray-100">
+                                    {filteredProducts.map(p => {
+                                        const isSel = selectedProducts.includes(p.code);
+                                        return (
+                                            <tr
+                                                key={p.id}
+                                                onClick={() => handleToggleProduct(p.code)}
+                                                className={`cursor-pointer transition-colors ${isSel ? 'bg-blue-50 hover:bg-blue-100' : 'hover:bg-gray-50'}`}
+                                            >
+                                                <td className="px-3 py-2.5">
+                                                    <input
+                                                        type="checkbox"
+                                                        checked={isSel}
+                                                        onChange={() => handleToggleProduct(p.code)}
+                                                        className="w-4 h-4 text-blue-600 rounded border-gray-300 focus:ring-blue-500 pointer-events-none"
+                                                    />
+                                                </td>
+                                                <td className="px-3 py-2.5 font-mono text-xs text-gray-500">{p.code}</td>
+                                                <td className="px-3 py-2.5">
+                                                    <p className="font-medium text-gray-900 truncate max-w-[220px]">{p.name}</p>
+                                                </td>
+                                                <td className="px-3 py-2.5">
+                                                    <span className={`text-[10px] font-medium px-2 py-0.5 rounded-full ${p.is_active ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'}`}>
+                                                        {p.is_active ? 'Actif' : 'Inactif'}
+                                                    </span>
+                                                </td>
+                                            </tr>
+                                        );
+                                    })}
+                                </tbody>
+                            </table>
                         </div>
                     )}
                 </div>
