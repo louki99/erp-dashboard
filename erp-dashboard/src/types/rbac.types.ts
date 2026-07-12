@@ -69,3 +69,59 @@ export interface PermissionCheckOptions {
     requireAll?: boolean; // If true, user must have ALL permissions. If false, ANY permission is enough
     checkBlacklist?: boolean; // If true, also check if permission is blacklisted
 }
+
+// ── RBAC Admin Module Types (backend facade) ──────────────────────────────────
+
+export interface RbacRole {
+  id: number;
+  name: string;
+  guard_name: string;
+  users_count: number;
+  permissions: string[];
+  is_protected: boolean;
+  is_root: boolean;
+}
+
+export interface RbacPermissionGroup {
+  [module: string]: Array<{ id: number; name: string }>;
+}
+
+export interface RbacPermissionCatalog {
+  total: number;
+  modules: RbacPermissionGroup;
+}
+
+export interface RbacStats {
+  total_roles: number;
+  total_permissions: number;
+  total_users_with_roles: number;
+}
+
+export interface RbacUserRow {
+  id: number;
+  name: string;
+  email: string;
+  phone: string | null;
+  branch_id: number | null;
+  is_active: boolean;
+  roles: string[];
+  access_profile: { id: number; name: string } | null;
+}
+
+export interface RbacUserAccess {
+  user: { id: number; name: string; email: string; branch_id: number | null };
+  roles: Array<{ id: number; name: string; is_protected: boolean }>;
+  direct_permissions: string[];
+  effective_permissions: string[];
+  effective_count: number;
+  blacklisted_permissions?: string[];
+}
+
+export interface AccessProfile {
+  id: number;
+  name: string;
+  description: string | null;
+  is_active: boolean;
+  users_count: number;
+  settings?: Record<string, unknown>;
+}

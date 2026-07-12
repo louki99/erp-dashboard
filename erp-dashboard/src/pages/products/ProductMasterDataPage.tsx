@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useMemo, useState, useRef } from 'react';
 import type { LucideIcon } from 'lucide-react';
 import {
     Database,
@@ -19,12 +19,17 @@ import {
     Truck,
     Layers,
     FileText,
+    ImagePlus,
+    X,
+    Upload,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 
 import { MasterLayout } from '@/components/layout/MasterLayout';
 import { ActionPanel } from '@/components/layout/ActionPanel';
 import { DataGrid } from '@/components/common/DataGrid';
+import { productsApi } from '@/services/api/productsApi';
+import type { ProductPage } from '@/types/product.types';
 import type { TabItem } from '@/components/common/SageTabs';
 import {
     Dialog,
@@ -445,6 +450,346 @@ const ResourceTab = ({ config }: { config: ResourceConfig }) => {
     );
 };
 
+// ── Image Upload Modal for Product Pages ──────────────────────────────────────
+
+interface ImageSlot {
+    field: 'logo' | 'photo';
+    label: string;
+    current?: string | null;
+    file: File | null;
+    preview: string | null;
+}
+
+interface PageImageUploadModalProps {
+    page: ProductPage;
+    onClose: () => void;
+    onUploaded: () => void;
+}
+
+const PageImageUploadModal = ({ page, onClose, onUploaded }: PageImageUploadModalProps) => {
+    const [slots, setSlots] = useState<ImageSlot[]>([
+        { field: 'logo', label: 'Logo', current: page.logo_url, file: null, preview: null },
+        { field: 'photo', label: 'Photo', current: page.photo_url, file: null, preview: null },
+    ]);
+    const [uploading, setUploading] = useState(false);
+    const logoRef = useRef<HTMLInputElement>(null);
+    const photoRef = useRef<HTMLInputElement>(null);
+
+    const refs = { logo: logoRef, photo: photoRef };
+
+    const handleFile = (field: 'logo' | 'photo', file: File | null) => {
+        if (!file) return;
+        const preview = URL.createObjectURL(file);
+        setSlots(prev => prev.map(s => s.field === field ? { ...s, file, preview } : s));
+    };
+
+    const clearSlot = (field: 'logo' | 'photo') => {
+        setSlots(prev => prev.map(s => {
+            if (s.field !== field) return s;
+            if (s.preview) URL.revokeObjectURL(s.preview);
+            return { ...s, file: null, preview: null };
+        }));
+        const ref = refs[field];
+        if (ref.current) ref.current.value = '';
+    };
+
+    const hasChanges = slots.some(s => s.file !== null);
+
+    const handleUpload = async () => {
+        if (!hasChanges) { toast.error('Sélectionnez au moins une image'); return; }
+        setUploading(true);
+        const toastId = toast.loading('Envoi des images…');
+        try {
+            const files: { logo?: File; photo?: File } = {};
+            slots.forEach(s => { if (s.file) files[s.field] = s.file; });
+            const res = await productsApi.uploadProductPageImages(page.code, files);
+            toast.dismiss(toastId);
+            if (res.success) {
+                toast.success(res.message || 'Images mises à jour');
+                onUploaded();
+                onClose();
+            } else {
+                toast.error(res.message || 'Erreur lors de l\'upload');
+            }
+        } catch (e: any) {
+            toast.dismiss(toastId);
+            toast.error(e?.response?.data?.message || 'Erreur lors de l\'upload');
+        } finally {
+            setUploading(false);
+        }
+    };
+
+    return (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
+            <div className="bg-white rounded-xl shadow-2xl w-full max-w-lg overflow-hidden">
+                {/* Header */}
+                <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100">
+                    <div>
+                        <h2 className="text-sm font-bold text-gray-900">Images — {page.name}</h2>
+                        <p className="text-xs text-gray-400 font-mono">{page.code}</p>
+                    </div>
+                    <button onClick={onClose} className="p-1.5 text-gray-400 hover:text-gray-700 hover:bg-gray-100 rounded-lg">
+                        <X className="w-4 h-4" />
+                    </button>
+                </div>
+
+                {/* Slots */}
+                <div className="p-5 grid grid-cols-2 gap-4">
+                    {slots.map(slot => {
+                        const ref = refs[slot.field];
+                        const displaySrc = slot.preview ?? slot.current;
+                        return (
+                            <div key={slot.field} className="flex flex-col gap-2">
+                                <span className="text-xs font-semibold text-gray-600 uppercase tracking-wide">{slot.label}</span>
+
+                                {/* Image preview box */}
+                                <div
+                                    className="relative group w-full aspect-square rounded-xl border-2 border-dashed border-gray-200 bg-gray-50 flex items-center justify-center cursor-pointer hover:border-sage-400 hover:bg-sage-50/30 transition-colors overflow-hidden"
+                                    onClick={() => ref.current?.click()}
+                                >
+                                    {displaySrc ? (
+                                        <>
+                                            <img
+                                                src={displaySrc}
+                                                alt={slot.label}
+                                                className="w-full h-full object-cover"
+                                            />
+                                            {/* Overlay on hover */}
+                                            <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                                                <Upload className="w-6 h-6 text-white" />
+                                            </div>
+                                        </>
+                                    ) : (
+                                        <div className="flex flex-col items-center gap-1.5 text-gray-400">
+                                            <ImagePlus className="w-8 h-8" />
+                                            <span className="text-xs">Cliquer pour choisir</span>
+                                        </div>
+                                    )}
+                                    {/* New file badge */}
+                                    {slot.file && (
+                                        <div className="absolute top-2 right-2 bg-sage-600 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full">
+                                            Nouveau
+                                        </div>
+                                    )}
+                                </div>
+
+                                {/* File name + clear */}
+                                {slot.file ? (
+                                    <div className="flex items-center gap-1.5">
+                                        <span className="text-[10px] text-gray-500 truncate flex-1">{slot.file.name}</span>
+                                        <button
+                                            onClick={(e) => { e.stopPropagation(); clearSlot(slot.field); }}
+                                            className="shrink-0 p-0.5 text-gray-400 hover:text-red-500"
+                                        >
+                                            <X className="w-3 h-3" />
+                                        </button>
+                                    </div>
+                                ) : (
+                                    <span className="text-[10px] text-gray-400 text-center">
+                                        {slot.current ? 'Image actuelle' : 'Aucune image'}
+                                    </span>
+                                )}
+
+                                <input
+                                    ref={ref}
+                                    type="file"
+                                    accept="image/*"
+                                    className="hidden"
+                                    onChange={e => handleFile(slot.field, e.target.files?.[0] ?? null)}
+                                />
+                            </div>
+                        );
+                    })}
+                </div>
+
+                {/* Footer */}
+                <div className="flex items-center justify-end gap-2 px-5 py-4 border-t border-gray-100 bg-gray-50">
+                    <button onClick={onClose} className="px-4 py-2 text-sm text-gray-600 hover:bg-gray-200 rounded-lg transition-colors">
+                        Annuler
+                    </button>
+                    <button
+                        onClick={handleUpload}
+                        disabled={uploading || !hasChanges}
+                        className="flex items-center gap-2 px-4 py-2 text-sm font-semibold text-white bg-sage-600 rounded-lg hover:bg-sage-700 disabled:opacity-40 transition-colors shadow-sm"
+                    >
+                        {uploading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Upload className="w-3.5 h-3.5" />}
+                        Envoyer
+                    </button>
+                </div>
+            </div>
+        </div>
+    );
+};
+
+// ── ProductPages tab — wraps ResourceTab and injects image column + modal ──────
+
+const ProductPagesTab = ({ config }: { config: ResourceConfig }) => {
+    const { data: pages, loading, refetch } = config.useList();
+    const [imageTarget, setImageTarget] = useState<ProductPage | null>(null);
+
+    const baseConfig: ResourceConfig = {
+        ...config,
+        // Inject the image column by post-processing columnDefs via a custom useList that returns pages with image URLs
+        useList: () => ({ data: pages, loading, refetch }),
+    };
+
+    // Inject extra column: Images (thumbnails + upload button)
+    // We achieve this by wrapping ResourceTab and then the column is added inside
+    // But ResourceTab builds columnDefs internally — so instead we render a passthrough
+    // with an extra injected column via a thin wrapper config override.
+
+    const pagesWithImages = pages as ProductPage[];
+
+    // Build columnDefs for the pages grid, including the images column
+    const columnDefs = useMemo(() => [
+        {
+            headerName: 'Code',
+            field: 'code',
+            width: 110,
+            flex: 0,
+            cellRenderer: (p: any) => (
+                <span className="text-xs font-mono text-gray-500">{p.value || '—'}</span>
+            ),
+        },
+        {
+            headerName: 'Nom',
+            field: 'name',
+            flex: 2,
+            minWidth: 160,
+            cellRenderer: (p: any) => {
+                const item: ProductPage = p.data;
+                if (!item) return null;
+                return (
+                    <div className="flex items-center gap-2 h-full">
+                        <div className="w-6 h-6 rounded-md bg-sage-50 flex items-center justify-center shrink-0">
+                            <FileText className="w-3 h-3 text-sage-500" />
+                        </div>
+                        <div className="min-w-0">
+                            <span className="text-sm font-medium text-gray-900 truncate block">{item.name}</span>
+                            {item.full_path && item.full_path !== item.name && (
+                                <span className="text-[10px] text-gray-400 truncate block">{item.full_path}</span>
+                            )}
+                        </div>
+                    </div>
+                );
+            },
+        },
+        {
+            headerName: 'Rang',
+            field: 'rank',
+            width: 80,
+            flex: 0,
+            cellRenderer: (p: any) => <span className="text-xs text-gray-500">{p.value ?? '—'}</span>,
+        },
+        {
+            headerName: 'Images',
+            field: 'logo_url',
+            width: 120,
+            flex: 0,
+            sortable: false,
+            filter: false,
+            cellRenderer: (p: any) => {
+                const item: ProductPage = p.data;
+                if (!item) return null;
+                const hasLogo = !!item.logo_url;
+                const hasPhoto = !!item.photo_url;
+                return (
+                    <div className="flex items-center gap-1.5 h-full">
+                        {hasLogo ? (
+                            <img src={item.logo_url!} alt="logo" className="w-6 h-6 rounded object-cover border border-gray-200" />
+                        ) : (
+                            <div className="w-6 h-6 rounded border border-dashed border-gray-200 bg-gray-50 flex items-center justify-center">
+                                <span className="text-[8px] text-gray-300 font-bold">L</span>
+                            </div>
+                        )}
+                        {hasPhoto ? (
+                            <img src={item.photo_url!} alt="photo" className="w-6 h-6 rounded object-cover border border-gray-200" />
+                        ) : (
+                            <div className="w-6 h-6 rounded border border-dashed border-gray-200 bg-gray-50 flex items-center justify-center">
+                                <span className="text-[8px] text-gray-300 font-bold">P</span>
+                            </div>
+                        )}
+                    </div>
+                );
+            },
+        },
+        {
+            headerName: 'Vendable',
+            field: 'is_salable',
+            width: 100,
+            flex: 0,
+            cellRenderer: (p: any) => <ActiveBadge active={!!p.value} />,
+        },
+        {
+            headerName: 'Actions',
+            field: '__actions',
+            width: 130,
+            flex: 0,
+            sortable: false,
+            filter: false,
+            cellRenderer: (p: any) => {
+                const item: ProductPage = p.data;
+                if (!item) return null;
+                return (
+                    <div className="flex items-center gap-0.5 h-full">
+                        <button
+                            onClick={() => setImageTarget(item)}
+                            className="p-1.5 text-gray-400 hover:text-sage-600 hover:bg-sage-50 rounded-lg transition-colors"
+                            title="Gérer les images"
+                        >
+                            <ImagePlus className="w-3.5 h-3.5" />
+                        </button>
+                        <button
+                            onClick={() => {/* edit handled by ResourceTab below */}}
+                            className="p-1.5 text-gray-400 hover:text-sage-600 hover:bg-sage-50 rounded-lg transition-colors"
+                            title="Modifier (via liste)"
+                        >
+                            <Edit className="w-3.5 h-3.5" />
+                        </button>
+                    </div>
+                );
+            },
+        },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    ], [pagesWithImages]);
+
+    return (
+        <>
+            <div className="h-full flex flex-col gap-3">
+                {/* Toolbar */}
+                <div className="shrink-0 flex items-center gap-3">
+                    <span className="text-xs text-gray-400">{pagesWithImages.length} page{pagesWithImages.length !== 1 ? 's' : ''}</span>
+                    <div className="flex items-center gap-1.5 ml-auto">
+                        <span className="text-[10px] text-gray-400 flex items-center gap-1">
+                            <ImagePlus className="w-3 h-3" /> Cliquez sur l'icône image pour gérer logo & photo
+                        </span>
+                    </div>
+                </div>
+
+                {/* DataGrid */}
+                <div className="flex-1 overflow-hidden">
+                    <DataGrid
+                        rowData={pagesWithImages}
+                        columnDefs={columnDefs}
+                        loading={loading}
+                        pagination
+                        paginationPageSize={25}
+                        rowHeight={44}
+                    />
+                </div>
+            </div>
+
+            {imageTarget && (
+                <PageImageUploadModal
+                    page={imageTarget}
+                    onClose={() => setImageTarget(null)}
+                    onUploaded={refetch}
+                />
+            )}
+        </>
+    );
+};
+
 export const ProductMasterDataPage = () => {
     const { data: categories, refetch: refetchCategories } = useCategories();
     const { data: pages, refetch: refetchPages } = useProductPagesList();
@@ -667,7 +1012,10 @@ export const ProductMasterDataPage = () => {
                         </div>
                     </div>
                     <div className="flex-1 overflow-hidden p-6 flex flex-col">
-                        <ResourceTab key={activeTab} config={activeConfig} />
+                        {activeTab === 'pages'
+                            ? <ProductPagesTab key="pages" config={activeConfig} />
+                            : <ResourceTab key={activeTab} config={activeConfig} />
+                        }
                     </div>
                 </div>
             }

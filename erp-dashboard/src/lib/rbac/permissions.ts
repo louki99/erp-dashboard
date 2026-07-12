@@ -268,6 +268,54 @@ export const PERMISSIONS = {
         PLANNING_MANAGE: 'admin.routing.planning.manage',
     },
 
+    // RBAC Management
+    RBAC: {
+        MANAGE: 'manage-rbac',
+    },
+
+    // Dynamic permissions (kebab-case — active since 2026-07-11)
+    DYNAMIC: {
+        BROWSE_WAREHOUSES: 'browse-warehouses',
+        CREATE_WAREHOUSES: 'create-warehouses',
+        EDIT_WAREHOUSES: 'edit-warehouses',
+        DELETE_WAREHOUSES: 'delete-warehouses',
+        BROWSE_STOCK: 'browse-stock',
+        BROWSE_STOCK_MOVEMENTS: 'browse-stock-movements',
+        CREATE_STOCK_MOVEMENTS: 'create-stock-movements',
+        ADJUST_STOCK: 'adjust-stock',
+        BROWSE_PREPARATION_BILLS: 'browse-preparation-bills',
+        CREATE_PREPARATION_BILLS: 'create-preparation-bills',
+        EDIT_PREPARATION_BILLS: 'edit-preparation-bills',
+        MANAGE_MASTER_DATA: 'manage-master-data',
+        MANAGE_PARTNERS: 'manage-partners',
+        BROWSE_LOADING_REQUESTS: 'browse-loading-requests',
+        REVIEW_LOADING_REQUESTS: 'review-loading-requests',
+        APPROVE_LOADING_REQUESTS: 'approve-loading-requests',
+        REJECT_AT_VENDOR_LOADING_REQUESTS: 'reject-loading-requests-at-vendor',
+        FULFILL_LOADING_REQUESTS: 'fulfill-loading-requests',
+        BROWSE_INVOICE_CANCELLATIONS: 'browse-invoice-cancellations',
+        APPROVE_INVOICE_CANCELLATIONS: 'approve-invoice-cancellations',
+        CONFIRM_DECHARGE_RECONCILIATION: 'confirm-decharge-reconciliation',
+        BROWSE_PAYMENT_OVERRIDES: 'browse-payment-overrides',
+        CREATE_PAYMENT_OVERRIDES: 'create-payment-overrides',
+        APPROVE_PAYMENT_OVERRIDES: 'approve-payment-overrides',
+        BROWSE_CREDIT_CONTROL: 'browse-credit-control',
+        BROWSE_POS_CATALOG: 'browse-pos-catalog',
+        VIEW_MANAGER_DASHBOARD: 'view-manager-dashboard',
+        MANAGE_SYSTEM_SETTINGS: 'manage-system-settings',
+        BROWSE_FINANCE: 'browse-finance',
+        MANAGE_FINANCE_JOURNALS: 'manage-finance-journals',
+        ADJUST_FINANCE_LEDGER: 'adjust-finance-ledger',
+        MANAGE_FINANCE_TRANSFERS: 'manage-finance-transfers',
+        RECONCILE_SETTLEMENTS: 'reconcile-settlements',
+        BROWSE_PRODUCTS: 'browse-products',
+        MANAGE_PRODUCTS: 'manage-products',
+        BROWSE_ORDERS: 'browse-orders',
+        MANAGE_ORDERS: 'manage-orders',
+        MANAGE_PRICING: 'manage-pricing',
+        MANAGE_EMPLOYEES: 'manage-employees',
+    },
+
     // Settings
     SETTINGS: {
         GENERAL: 'admin.settings.general',
@@ -429,6 +477,12 @@ export const PAGE_PERMISSIONS: Record<string, string | string[]> = {
     // Tasks
     '/tasks': PERMISSIONS.TASKS.DASHBOARD,
     '/tasks/:id': PERMISSIONS.TASKS.SHOW,
+
+    // RBAC Management
+    '/rbac/roles': 'manage-rbac',
+    '/rbac/matrix': 'manage-rbac',
+    '/rbac/users': 'manage-rbac',
+    '/rbac/access-profiles': 'manage-rbac',
 };
 
 /**

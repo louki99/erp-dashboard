@@ -76,6 +76,10 @@ import { BusinessNaturesPage } from '@/pages/routing/BusinessNaturesPage';
 import { ItinerariesPage } from '@/pages/routing/ItinerariesPage';
 import { ItineraryDesignerPage } from '@/pages/routing/ItineraryDesignerPage';
 import { PlanningPage } from '@/pages/routing/PlanningPage';
+import { RolesListPage } from '@/pages/rbac/RolesListPage';
+import { PermissionMatrixPage } from '@/pages/rbac/PermissionMatrixPage';
+import { UsersAccessPage } from '@/pages/rbac/UsersAccessPage';
+import { AccessProfilesPage } from '@/pages/rbac/AccessProfilesPage';
 
 
 // Simple Navigation Wrapper to show active route in DevSwitcher style (optional, but let's stick to MegaMenu for now)
@@ -560,6 +564,28 @@ function AppRoutes() {
       <Route path="/finance/settlements" element={
         <ProtectedRoute requiredPermission={PERMISSIONS.FINANCE.SETTLEMENTS}>
           <SettlementsPage />
+        </ProtectedRoute>
+      } />
+
+      {/* RBAC Module Routes */}
+      <Route path="/rbac/roles" element={
+        <ProtectedRoute requiredPermission="manage-rbac">
+          <RolesListPage />
+        </ProtectedRoute>
+      } />
+      <Route path="/rbac/matrix" element={
+        <ProtectedRoute requiredPermission="manage-rbac">
+          <PermissionMatrixPage />
+        </ProtectedRoute>
+      } />
+      <Route path="/rbac/users" element={
+        <ProtectedRoute requiredPermission="manage-rbac">
+          <UsersAccessPage />
+        </ProtectedRoute>
+      } />
+      <Route path="/rbac/access-profiles" element={
+        <ProtectedRoute requiredPermission="manage-rbac">
+          <AccessProfilesPage />
         </ProtectedRoute>
       } />
 

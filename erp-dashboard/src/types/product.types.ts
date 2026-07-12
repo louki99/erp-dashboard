@@ -474,6 +474,10 @@ export interface ProductPage {
     is_salable: boolean;
     parent_id: number | null;
     children?: ProductPage[];
+    full_path?: string;
+    logo_url?: string | null;
+    photo_url?: string | null;
+    photo_2_url?: string | null;
 }
 
 export interface ProductSalesGroupsResponse {

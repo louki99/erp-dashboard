@@ -521,4 +521,15 @@ export const productsApi = {
         const response = await apiClient.delete<ApiSuccessResponse>(`/api/backend/master-data/product-pages/${code}`);
         return response.data;
     },
+
+    uploadProductPageImages: async (code: string, files: { logo?: File; photo?: File }): Promise<{ success: boolean; message?: string; product_page?: ProductPage }> => {
+        const form = new FormData();
+        form.append('_method', 'PUT');
+        if (files.logo) form.append('logo', files.logo);
+        if (files.photo) form.append('photo', files.photo);
+        const response = await apiClient.post(`/api/backend/product-pages/${code}`, form, {
+            headers: { 'Content-Type': 'multipart/form-data' },
+        });
+        return response.data;
+    },
 };
