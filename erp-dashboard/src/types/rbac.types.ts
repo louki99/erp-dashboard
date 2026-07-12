@@ -108,13 +108,37 @@ export interface RbacUserRow {
   access_profile: { id: number; name: string } | null;
 }
 
+export interface RbacUserAccessUser {
+  id: number;
+  name: string;
+  email: string;
+  code?: string | null;
+  company_id?: number | null;
+  branch_id?: number | null;
+  shop_id?: number | null;
+  geo_area_id?: number | null;
+  geo_area_code?: string | null;
+  is_active: boolean;
+  is_blocked?: boolean;
+}
+
 export interface RbacUserAccess {
-  user: { id: number; name: string; email: string; branch_id: number | null };
+  user: RbacUserAccessUser;
   roles: Array<{ id: number; name: string; is_protected: boolean }>;
   direct_permissions: string[];
   effective_permissions: string[];
   effective_count: number;
   blacklisted_permissions?: string[];
+}
+
+export interface RbacUserInfoPayload {
+  branch_id?: number | null;
+  geo_area_id?: number | null;
+  shop_id?: number | null;
+  company_id?: number | null;
+  code?: string | null;
+  is_blocked?: boolean;
+  is_active?: boolean;
 }
 
 export interface AccessProfile {

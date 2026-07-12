@@ -1,9 +1,10 @@
-import { useState, useEffect, useCallback } from 'react';
-import { Search, X, BookOpen, RefreshCw } from 'lucide-react';
+import { useState, useEffect, useCallback, type ComponentType, type ReactNode } from 'react';
+import { Search, BookOpen, RefreshCw, Calendar, Filter, RotateCcw, FileSpreadsheet } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import toast from 'react-hot-toast';
 import { MasterLayout } from '@/components/layout/MasterLayout';
 import { DataGrid } from '@/components/common/DataGrid';
+import type { ICellRendererParams } from 'ag-grid-community';
 import { financeApi } from '@/services/api/financeApi';
 import type { LedgerEntry, LedgerTotals } from '@/types/finance.types';
 
@@ -39,8 +40,9 @@ const AdjustModal = ({ entry, onClose, onDone }: AdjustModalProps) => {
       toast.success(t('finance.ledger.saved'));
       onDone();
       onClose();
-    } catch (err: any) {
-      toast.error(err?.response?.data?.message ?? t('finance.ledger.error'));
+    } catch (err) {
+      const message = (err as { response?: { data?: { message?: string } } })?.response?.data?.message;
+      toast.error(message ?? t('finance.ledger.error'));
     } finally {
       setSaving(false);
     }
@@ -101,6 +103,7 @@ export const LedgerPage = () => {
   const [totals, setTotals] = useState<LedgerTotals>({ total_debit: 0, total_credit: 0 });
   const [loading, setLoading] = useState(false);
   const [adjustEntry, setAdjustEntry] = useState<LedgerEntry | null>(null);
+  const [resultCount, setResultCount] = useState(0);
 
   const [fromDate, setFromDate] = useState('');
   const [toDate, setToDate] = useState('');
@@ -119,7 +122,9 @@ export const LedgerPage = () => {
         ...(compteComptable ? { compte_comptable: compteComptable } : {}),
         per_page: 500,
       });
-      setEntries(Array.isArray(res.data) ? res.data : []);
+      const list = Array.isArray(res.data) ? res.data : (res.data?.data ?? []);
+      setEntries(list);
+      setResultCount(list.length);
       if (res.totals) setTotals(res.totals);
     } catch {
       toast.error(t('finance.ledger.loadError'));
@@ -128,7 +133,7 @@ export const LedgerPage = () => {
     }
   }, [fromDate, toDate, journalCode, typeFilter, compteComptable, t]);
 
-  useEffect(() => { load(); }, []);
+  useEffect(() => { load(); }, [load]);
 
   const handleReset = () => {
     setFromDate('');
@@ -149,7 +154,7 @@ export const LedgerPage = () => {
       headerName: t('finance.ledger.col.label'),
       field: 'libelle',
       flex: 2,
-      cellRenderer: (p: any) => {
+      cellRenderer: (p: ICellRendererParams<LedgerEntry>) => {
         const val: string = p.value ?? '';
         const isContre = val.startsWith('[CONTRE-ÉCRITURE');
         return (
@@ -169,7 +174,7 @@ export const LedgerPage = () => {
       field: 'debit_amount',
       width: 130,
       cellStyle: { textAlign: 'right' },
-      cellRenderer: (p: any) => {
+      cellRenderer: (p: ICellRendererParams<LedgerEntry>) => {
         const v = parseFloat(p.value ?? '0');
         return v > 0 ? <span className="text-green-700 font-semibold text-xs">{formatMAD(v)}</span> : <span className="text-gray-300 text-xs">—</span>;
       },
@@ -179,7 +184,7 @@ export const LedgerPage = () => {
       field: 'credit_amount',
       width: 130,
       cellStyle: { textAlign: 'right' },
-      cellRenderer: (p: any) => {
+      cellRenderer: (p: ICellRendererParams<LedgerEntry>) => {
         const v = parseFloat(p.value ?? '0');
         return v > 0 ? <span className="text-red-600 font-semibold text-xs">{formatMAD(v)}</span> : <span className="text-gray-300 text-xs">—</span>;
       },
@@ -190,7 +195,7 @@ export const LedgerPage = () => {
       width: 130,
       filter: false,
       sortable: false,
-      cellRenderer: (p: any) => (
+      cellRenderer: (p: ICellRendererParams<LedgerEntry>) => (
         <button
           onClick={() => setAdjustEntry(p.data)}
           className="text-xs px-2 py-1 rounded border border-amber-300 text-amber-700 hover:bg-amber-50"
@@ -201,67 +206,154 @@ export const LedgerPage = () => {
     },
   ];
 
+  const hasActiveFilters = fromDate || toDate || journalCode || typeFilter !== 'ALL' || compteComptable;
+
+  const FilterInput = ({
+    label,
+    icon: Icon,
+    children,
+  }: {
+    label: string;
+    icon?: ComponentType<{ className?: string }>;
+    children: ReactNode;
+  }) => (
+    <div className="space-y-1">
+      <label className="flex items-center gap-1.5 text-[11px] font-medium text-gray-500 uppercase tracking-wide">
+        {Icon && <Icon className="w-3.5 h-3.5" />}
+        {label}
+      </label>
+      {children}
+    </div>
+  );
+
   const filterBar = (
-    <div className="border-b border-gray-200 bg-white px-4 py-3">
-      <div className="flex flex-wrap items-end gap-3">
-        <div>
-          <label className="block text-xs text-gray-500 mb-1">{t('finance.ledger.filterFrom')}</label>
-          <input type="date" value={fromDate} onChange={e => setFromDate(e.target.value)}
-            className="border border-gray-300 rounded-lg px-2.5 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500" />
+    <div className="bg-white border-b border-gray-200 px-5 py-4">
+      <div className="flex items-center justify-between mb-3">
+        <div className="flex items-center gap-2 text-sm font-medium text-gray-700">
+          <Filter className="w-4 h-4 text-emerald-600" />
+          {t('common.filter')}
+          {hasActiveFilters && (
+            <span className="ml-2 inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200">
+              {t('common.active')}
+            </span>
+          )}
         </div>
-        <div>
-          <label className="block text-xs text-gray-500 mb-1">{t('finance.ledger.filterTo')}</label>
-          <input type="date" value={toDate} onChange={e => setToDate(e.target.value)}
-            className="border border-gray-300 rounded-lg px-2.5 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500" />
+        <div className="flex items-center gap-2">
+          <button
+            onClick={handleReset}
+            disabled={!hasActiveFilters}
+            className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-gray-600 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+          >
+            <RotateCcw className="w-3.5 h-3.5" />
+            {t('common.reset')}
+          </button>
+          <button
+            onClick={load}
+            className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-white bg-emerald-600 rounded-lg hover:bg-emerald-700 shadow-sm transition-colors"
+          >
+            <Search className="w-3.5 h-3.5" />
+            {t('common.search')}
+          </button>
         </div>
-        <div>
-          <label className="block text-xs text-gray-500 mb-1">{t('finance.ledger.filterJournal')}</label>
-          <input type="text" value={journalCode} onChange={e => setJournalCode(e.target.value)}
+      </div>
+
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
+        <FilterInput label={t('finance.ledger.filterFrom')} icon={Calendar}>
+          <input
+            type="date"
+            value={fromDate}
+            onChange={e => setFromDate(e.target.value)}
+            className="w-full h-10 border border-gray-300 rounded-lg px-3 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 transition-shadow"
+          />
+        </FilterInput>
+
+        <FilterInput label={t('finance.ledger.filterTo')} icon={Calendar}>
+          <input
+            type="date"
+            value={toDate}
+            onChange={e => setToDate(e.target.value)}
+            className="w-full h-10 border border-gray-300 rounded-lg px-3 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 transition-shadow"
+          />
+        </FilterInput>
+
+        <FilterInput label={t('finance.ledger.filterJournal')} icon={FileSpreadsheet}>
+          <input
+            type="text"
+            value={journalCode}
+            onChange={e => setJournalCode(e.target.value)}
             placeholder={t('finance.journals.col.code')}
-            className="border border-gray-300 rounded-lg px-2.5 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500 w-32" />
-        </div>
-        <div>
-          <label className="block text-xs text-gray-500 mb-1">{t('finance.ledger.filterType')}</label>
-          <select value={typeFilter} onChange={e => setTypeFilter(e.target.value as 'ALL' | 'IN' | 'OUT')}
-            className="border border-gray-300 rounded-lg px-2.5 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500">
+            className="w-full h-10 border border-gray-300 rounded-lg px-3 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 transition-shadow"
+          />
+        </FilterInput>
+
+        <FilterInput label={t('finance.ledger.filterType')}>
+          <select
+            value={typeFilter}
+            onChange={e => setTypeFilter(e.target.value as 'ALL' | 'IN' | 'OUT')}
+            className="w-full h-10 border border-gray-300 rounded-lg px-3 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 bg-white transition-shadow"
+          >
             <option value="ALL">{t('finance.ledger.allJournals')}</option>
             <option value="IN">IN</option>
             <option value="OUT">OUT</option>
           </select>
-        </div>
-        <div>
-          <label className="block text-xs text-gray-500 mb-1">{t('finance.ledger.filterAccount')}</label>
-          <input type="text" value={compteComptable} onChange={e => setCompteComptable(e.target.value)}
+        </FilterInput>
+
+        <FilterInput label={t('finance.ledger.filterAccount')}>
+          <input
+            type="text"
+            value={compteComptable}
+            onChange={e => setCompteComptable(e.target.value)}
             placeholder={t('finance.ledger.filterAccountPlaceholder')}
-            className="border border-gray-300 rounded-lg px-2.5 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500 w-28" />
-        </div>
-        <button onClick={load}
-          className="flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-white bg-emerald-600 rounded-lg hover:bg-emerald-700">
-          <Search className="w-4 h-4" /> {t('common.search')}
-        </button>
-        <button onClick={handleReset}
-          className="flex items-center gap-1.5 px-3 py-1.5 text-sm text-gray-600 border border-gray-300 rounded-lg hover:bg-gray-50">
-          <X className="w-4 h-4" /> {t('common.reset')}
-        </button>
+            className="w-full h-10 border border-gray-300 rounded-lg px-3 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 transition-shadow"
+          />
+        </FilterInput>
       </div>
     </div>
   );
 
   const mainContent = (
-    <div className="h-full flex flex-col">
-      <div className="px-4 py-3 border-b border-gray-200 flex items-center gap-2">
-        <BookOpen className="w-5 h-5 text-emerald-600" />
-        <h1 className="text-base font-semibold text-gray-800">{t('modules.finance.ledger')}</h1>
+    <div className="h-full flex flex-col bg-gray-50">
+      <div className="px-5 py-3 bg-white border-b border-gray-200 flex items-center justify-between">
+        <div className="flex items-center gap-3">
+          <div className="p-2 bg-emerald-50 rounded-lg">
+            <BookOpen className="w-5 h-5 text-emerald-600" />
+          </div>
+          <div>
+            <h1 className="text-base font-semibold text-gray-900">{t('modules.finance.ledger')}</h1>
+            <p className="text-[11px] text-gray-500">
+              {loading ? t('common.loading') : `${resultCount} ${t('finance.ledger.col.entry').toLowerCase()}(s)`}
+            </p>
+          </div>
+        </div>
+        <button
+          onClick={load}
+          disabled={loading}
+          className="p-2 text-gray-500 hover:text-emerald-600 hover:bg-emerald-50 rounded-lg transition-colors disabled:opacity-50"
+          title={t('common.refresh')}
+        >
+          <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
+        </button>
       </div>
       {filterBar}
-      <div className="flex-1 overflow-hidden">
+      <div className="flex-1 overflow-hidden p-1">
         <DataGrid rowData={entries} columnDefs={columnDefs} loading={loading} rowSelection="single" suppressAutoFit />
       </div>
-      <div className="border-t border-gray-200 bg-gray-50 px-4 py-2 flex items-center justify-end gap-8 text-sm">
-        <span className="text-gray-500">{t('finance.ledger.totalDebit')} :</span>
-        <span className="font-bold text-green-700">{formatMAD(totals.total_debit)}</span>
-        <span className="text-gray-500 ml-4">{t('finance.ledger.totalCredit')} :</span>
-        <span className="font-bold text-red-600">{formatMAD(totals.total_credit)}</span>
+      <div className="border-t border-gray-200 bg-white px-5 py-3 flex items-center justify-between text-sm">
+        <span className="text-xs text-gray-500">
+          {resultCount > 0
+            ? `${resultCount} ligne(s) affichée(s)`
+            : t('common.noData')}
+        </span>
+        <div className="flex items-center gap-6">
+          <div className="flex items-center gap-2">
+            <span className="text-xs text-gray-500">{t('finance.ledger.totalDebit')}</span>
+            <span className="font-bold text-green-700 bg-green-50 px-2.5 py-1 rounded-md">{formatMAD(totals.total_debit)}</span>
+          </div>
+          <div className="flex items-center gap-2">
+            <span className="text-xs text-gray-500">{t('finance.ledger.totalCredit')}</span>
+            <span className="font-bold text-red-600 bg-red-50 px-2.5 py-1 rounded-md">{formatMAD(totals.total_credit)}</span>
+          </div>
+        </div>
       </div>
     </div>
   );

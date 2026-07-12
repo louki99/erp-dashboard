@@ -406,8 +406,8 @@ export const TransfersPage = () => {
         }),
         financeApi.getJournals(),
       ]);
-      setTransfers(Array.isArray(tRes.data) ? tRes.data : []);
-      setJournals(Array.isArray(jRes.data) ? jRes.data : []);
+      setTransfers(Array.isArray(tRes.data) ? tRes.data : (tRes.data?.data ?? []));
+      setJournals(Array.isArray(jRes.data) ? jRes.data : (jRes.data?.data ?? []));
     } catch {
       toast.error(t('finance.transfers.loadError'));
     } finally {

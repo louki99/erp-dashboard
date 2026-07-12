@@ -461,8 +461,21 @@
       "tabs": {
         "roles": "Roles",
         "permissions": "Permissions",
-        "profile": "Access profile"
+        "profile": "Access profile",
+        "info": "Information"
       },
+      "infoCode": "User code",
+      "infoCodePlaceholder": "e.g. 0014",
+      "infoCompany": "Company",
+      "infoBranch": "Branch / Warehouse",
+      "infoShop": "Shop",
+      "infoGeoArea": "Geo area",
+      "infoActive": "Active",
+      "infoBlocked": "Blocked",
+      "infoSaved": "Information updated",
+      "infoSaveError": "Error updating information",
+      "infoLoadError": "Error loading reference data",
+      "infoGeoAreaHint": "geo_area_code is auto-synced from geo_area_id. Never send geo_area_code.",
       "grantMsg": "Permission granted",
       "revokeMsg": "Permission revoked",
       "blacklistMsg": "Permission blacklisted",

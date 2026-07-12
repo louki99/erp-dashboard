@@ -134,7 +134,12 @@ Vue complète des accès d'un utilisateur — pour l'onglet « Accès » d'une f
 {
   "success": true,
   "data": {
-    "user": { "id": 14, "name": "Ahmed Vendeur", "email": "ahmed@...", "branch_id": 3 },
+    "user": {
+      "id": 14, "name": "Ahmed Vendeur", "email": "ahmed@...",
+      "code": "0014", "company_id": 1, "branch_id": 3, "shop_id": null,
+      "geo_area_id": 7, "geo_area_code": "A0007",
+      "is_blocked": false, "is_active": true
+    },
     "roles": [ { "id": 3, "name": "magasinier", "is_protected": true } ],
     "direct_permissions": ["approve-loading-requests"],
     "effective_permissions": ["approve-loading-requests", "browse-stock", "browse-warehouses", "..."],
@@ -145,6 +150,32 @@ Vue complète des accès d'un utilisateur — pour l'onglet « Accès » d'une f
 
 > `effective_permissions` = ce que le backend applique réellement (rôles ∪ directes).
 > C'est LA liste à afficher quand on veut répondre à « pourquoi ce user voit/ne voit pas X ? ».
+
+### `PUT /api/backend/rbac/users/{id}/info`
+
+Mise à jour de l'affectation organisationnelle depuis l'écran RBAC.
+
+```json
+// Body — tous champs optionnels ("sometimes"), nullable où indiqué
+{
+  "branch_id": 3,          // nullable
+  "geo_area_id": 7,        // nullable — geo_area_code est AUTO-SYNCHRONISÉ (ne jamais l'envoyer)
+  "shop_id": null,         // nullable
+  "company_id": 1,
+  "code": "0014",          // unique
+  "is_blocked": false,
+  "is_active": true
+}
+
+// 200 → objet user complet mis à jour (mêmes champs que /access)
+```
+
+> ⚠️ **`geo_area_code` n'est pas un champ de saisie** : la table `users` porte
+> historiquement les deux colonnes (`geo_area_id` FK + `geo_area_code` miroir string
+> encore lu par l'auth, les itinéraires et les partenaires). L'API prend `geo_area_id`
+> comme source de vérité et synchronise le miroir automatiquement — le supprimer
+> viendra plus tard, une fois les lecteurs legacy migrés. Chaque modification est
+> journalisée (avant/après, auteur).
 
 ### `GET /api/backend/rbac/access-profiles`
 

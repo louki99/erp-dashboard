@@ -1,11 +1,13 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ChevronDown, ChevronRight, Plus, RefreshCw, Shield, Sliders, X } from 'lucide-react';
+import { ChevronDown, ChevronRight, Plus, RefreshCw, Shield, Sliders, User, X } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import toast from 'react-hot-toast';
 import { MasterLayout } from '@/components/layout/MasterLayout';
 import { rbacApi } from '@/services/api/rbacApi';
-import type { RbacUserRow, RbacUserAccess, RbacRole, AccessProfile, RbacPermissionCatalog } from '@/types/rbac.types';
+import { getBranches, getCompanies, getShops } from '@/services/api/configApi';
+import { getGeoAreas } from '@/services/api/routingApi';
+import type { RbacUserRow, RbacUserAccess, RbacRole, AccessProfile, RbacPermissionCatalog, RbacUserInfoPayload } from '@/types/rbac.types';
 import { RbacNav } from './RbacNav';
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -293,13 +295,190 @@ const ProfileTab = ({ userId, access, profiles, currentProfileId, onRefresh }: {
   );
 };
 
+// ── Tab: Informations utilisateur ─────────────────────────────────────────────
+
+const UserInfoTab = ({ user, onRefresh }: { user: RbacUserAccess['user']; onRefresh: () => void }) => {
+  const { t } = useTranslation();
+  const [saving, setSaving] = useState(false);
+  const [loading, setLoading] = useState(true);
+
+  const [form, setForm] = useState<RbacUserInfoPayload>({
+    code: user.code ?? '',
+    company_id: user.company_id ?? null,
+    branch_id: user.branch_id ?? null,
+    shop_id: user.shop_id ?? null,
+    geo_area_id: user.geo_area_id ?? null,
+    is_active: user.is_active,
+    is_blocked: user.is_blocked ?? false,
+  });
+
+  const [options, setOptions] = useState<{
+    companies: { id: number; name: string }[];
+    branches: { id: number; name: string }[];
+    shops: { id: number; name: string }[];
+    geoAreas: { id: number; name: string }[];
+  }>({ companies: [], branches: [], shops: [], geoAreas: [] });
+
+  useEffect(() => {
+    let cancelled = false;
+    setLoading(true);
+    Promise.all([
+      getCompanies(),
+      getBranches(),
+      getShops(),
+      getGeoAreas({ per_page: 500 }),
+    ])
+      .then(([companies, branches, shops, geoRes]) => {
+        if (cancelled) return;
+        setOptions({
+          companies: companies.map(c => ({ id: c.id, name: c.name })),
+          branches: branches.map(b => ({ id: b.id, name: b.name })),
+          shops: shops.map(s => ({ id: s.id, name: s.name })),
+          geoAreas: (geoRes.geoAreas?.data ?? []).map((g: { id: number; name: string }) => ({ id: g.id, name: g.name })),
+        });
+      })
+      .catch(() => toast.error(t('rbac.users.infoLoadError')))
+      .finally(() => setLoading(false));
+    return () => { cancelled = true; };
+  }, [t]);
+
+  const update = <K extends keyof RbacUserInfoPayload>(key: K, value: RbacUserInfoPayload[K]) => {
+    setForm(prev => ({ ...prev, [key]: value }));
+  };
+
+  const save = async () => {
+    setSaving(true);
+    try {
+      const payload: RbacUserInfoPayload = {
+        ...form,
+        code: form.code?.trim() || null,
+      };
+      const res = await rbacApi.updateUserInfo(user.id, payload);
+      if (res.success) {
+        toast.success(res.message || t('rbac.users.infoSaved'));
+        onRefresh();
+      } else {
+        toast.error(res.error || t('rbac.users.infoSaveError'));
+      }
+    } catch {
+      toast.error(t('rbac.users.infoSaveError'));
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const SelectField = ({
+    label,
+    value,
+    options: opts,
+    onChange,
+    disabled = false,
+  }: {
+    label: string;
+    value: number | null | undefined;
+    options: { id: number; name: string }[];
+    onChange: (id: number | null) => void;
+    disabled?: boolean;
+  }) => (
+    <div>
+      <label className="block text-xs font-medium text-gray-600 mb-1">{label}</label>
+      <select
+        value={value ?? ''}
+        onChange={e => onChange(e.target.value ? Number(e.target.value) : null)}
+        disabled={disabled || loading}
+        className="w-full text-sm border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-500 disabled:bg-gray-100"
+      >
+        <option value="">{t('common.selectPlaceholder')}</option>
+        {opts.map(o => <option key={o.id} value={o.id}>{o.name}</option>)}
+      </select>
+    </div>
+  );
+
+  return (
+    <div className="space-y-4">
+      {loading && <p className="text-xs text-gray-400">{t('common.loading')}</p>}
+
+      <div>
+        <label className="block text-xs font-medium text-gray-600 mb-1">{t('rbac.users.infoCode')}</label>
+        <input
+          type="text"
+          value={form.code ?? ''}
+          onChange={e => update('code', e.target.value)}
+          className="w-full text-sm border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+          placeholder={t('rbac.users.infoCodePlaceholder')}
+        />
+      </div>
+
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+        <SelectField
+          label={t('rbac.users.infoCompany')}
+          value={form.company_id}
+          options={options.companies}
+          onChange={v => update('company_id', v)}
+        />
+        <SelectField
+          label={t('rbac.users.infoBranch')}
+          value={form.branch_id}
+          options={options.branches}
+          onChange={v => update('branch_id', v)}
+        />
+        <SelectField
+          label={t('rbac.users.infoShop')}
+          value={form.shop_id}
+          options={options.shops}
+          onChange={v => update('shop_id', v)}
+        />
+        <SelectField
+          label={t('rbac.users.infoGeoArea')}
+          value={form.geo_area_id}
+          options={options.geoAreas}
+          onChange={v => update('geo_area_id', v)}
+        />
+      </div>
+
+      <div className="flex items-center gap-6 pt-1">
+        <label className="flex items-center gap-2 text-sm text-gray-700">
+          <input
+            type="checkbox"
+            checked={form.is_active}
+            onChange={e => update('is_active', e.target.checked)}
+            className="w-4 h-4 text-indigo-600 border-gray-300 rounded focus:ring-indigo-500"
+          />
+          {t('rbac.users.infoActive')}
+        </label>
+        <label className="flex items-center gap-2 text-sm text-gray-700">
+          <input
+            type="checkbox"
+            checked={form.is_blocked}
+            onChange={e => update('is_blocked', e.target.checked)}
+            className="w-4 h-4 text-indigo-600 border-gray-300 rounded focus:ring-indigo-500"
+          />
+          {t('rbac.users.infoBlocked')}
+        </label>
+      </div>
+
+      <div className="pt-2">
+        <button
+          onClick={save}
+          disabled={saving || loading}
+          className="px-3 py-1.5 text-sm font-medium text-white bg-indigo-600 rounded-lg hover:bg-indigo-700 disabled:opacity-50"
+        >
+          {saving ? t('common.saving') : t('common.save')}
+        </button>
+      </div>
+
+      <p className="text-[10px] text-gray-400">{t('rbac.users.infoGeoAreaHint')}</p>
+    </div>
+  );
+};
+
 // ── User Detail Panel ─────────────────────────────────────────────────────────
 
 const UserDetailPanel = ({ user, allRoles, profiles, catalog, onClose }: {
   user: RbacUserRow; allRoles: RbacRole[]; profiles: AccessProfile[]; catalog: RbacPermissionCatalog | null; onClose: () => void;
 }) => {
   const { t } = useTranslation();
-  const [tab, setTab] = useState<'roles' | 'perms' | 'profile'>('roles');
+  const [tab, setTab] = useState<'roles' | 'perms' | 'profile' | 'info'>('roles');
   const [access, setAccess] = useState<RbacUserAccess | null>(null);
   const [loadingAccess, setLoadingAccess] = useState(true);
 
@@ -320,6 +499,7 @@ const UserDetailPanel = ({ user, allRoles, profiles, catalog, onClose }: {
     { id: 'roles' as const, labelKey: 'rbac.users.tabs.roles', icon: Shield },
     { id: 'perms' as const, labelKey: 'rbac.users.tabs.permissions', icon: Plus },
     { id: 'profile' as const, labelKey: 'rbac.users.tabs.profile', icon: Sliders },
+    { id: 'info' as const, labelKey: 'rbac.users.tabs.info', icon: User },
   ];
 
   return (
@@ -359,6 +539,7 @@ const UserDetailPanel = ({ user, allRoles, profiles, catalog, onClose }: {
             {tab === 'roles' && <RolesTab userId={user.id} access={access} allRoles={allRoles} onRefresh={fetchAccess} />}
             {tab === 'perms' && <PermsTab userId={user.id} access={access} catalog={catalog} onRefresh={fetchAccess} />}
             {tab === 'profile' && <ProfileTab userId={user.id} access={access} profiles={profiles} currentProfileId={currentProfileId} onRefresh={fetchAccess} />}
+            {tab === 'info' && access && <UserInfoTab user={access.user} onRefresh={fetchAccess} />}
           </>
         ) : (
           <p className="text-sm text-gray-400">{t('rbac.users.loadAccessError')}</p>

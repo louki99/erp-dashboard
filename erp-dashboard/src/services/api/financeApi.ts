@@ -27,7 +27,9 @@ export const financeApi = {
     search?: string;
     per_page?: number;
   }) => {
-    const response = await apiClient.get<{ success: boolean; data: Journal[] }>(`${FINANCE_BASE}/journals`, { params });
+    // Backend returns a paginated object { data: { data: Journal[], ... } }
+    // but keep union for backward compatibility with bare-array responses.
+    const response = await apiClient.get<{ success: boolean; data: { data: Journal[] } | Journal[] }>(`${FINANCE_BASE}/journals`, { params });
     return response.data;
   },
 

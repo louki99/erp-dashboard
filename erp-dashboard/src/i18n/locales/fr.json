@@ -461,8 +461,21 @@
       "tabs": {
         "roles": "Rôles",
         "permissions": "Permissions",
-        "profile": "Profil d'accès"
+        "profile": "Profil d'accès",
+        "info": "Informations"
       },
+      "infoCode": "Code utilisateur",
+      "infoCodePlaceholder": "ex: 0014",
+      "infoCompany": "Société",
+      "infoBranch": "Agence / Dépôt",
+      "infoShop": "Point de vente",
+      "infoGeoArea": "Zone géographique",
+      "infoActive": "Actif",
+      "infoBlocked": "Bloqué",
+      "infoSaved": "Informations mises à jour",
+      "infoSaveError": "Erreur lors de la mise à jour",
+      "infoLoadError": "Erreur lors du chargement des référentiels",
+      "infoGeoAreaHint": "geo_area_code est synchronisé automatiquement depuis geo_area_id. N'envoyez jamais geo_area_code.",
       "grantMsg": "Permission accordée",
       "revokeMsg": "Permission révoquée",
       "blacklistMsg": "Permission blacklistée",

@@ -295,7 +295,8 @@ export const JournalsPage = () => {
     setLoading(true);
     try {
       const res = await financeApi.getJournals();
-      setJournals(Array.isArray(res.data) ? res.data : []);
+      const list = Array.isArray(res.data) ? res.data : res.data?.data ?? [];
+      setJournals(list);
     } catch {
       toast.error(t('finance.journals.loadError'));
     } finally {

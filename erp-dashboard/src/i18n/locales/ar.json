@@ -461,8 +461,21 @@
       "tabs": {
         "roles": "الأدوار",
         "permissions": "الصلاحيات",
-        "profile": "ملف الوصول"
+        "profile": "ملف الوصول",
+        "info": "المعلومات"
       },
+      "infoCode": "رمز المستخدم",
+      "infoCodePlaceholder": "مثال: 0014",
+      "infoCompany": "الشركة",
+      "infoBranch": "الفرع / المستودع",
+      "infoShop": "نقطة البيع",
+      "infoGeoArea": "المنطقة الجغرافية",
+      "infoActive": "نشط",
+      "infoBlocked": "محظور",
+      "infoSaved": "تم تحديث المعلومات",
+      "infoSaveError": "خطأ في تحديث المعلومات",
+      "infoLoadError": "خطأ في تحميل البيانات المرجعية",
+      "infoGeoAreaHint": "geo_area_code يتم مزامنته تلقائياً من geo_area_id. لا ترسل geo_area_code أبداً.",
       "grantMsg": "تم منح الصلاحية",
       "revokeMsg": "تم سحب الصلاحية",
       "blacklistMsg": "تمت إضافة الصلاحية للقائمة السوداء",

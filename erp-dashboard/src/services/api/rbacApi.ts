@@ -6,6 +6,7 @@ import type {
   RbacUserRow,
   RbacUserAccess,
   AccessProfile,
+  RbacUserInfoPayload,
 } from '@/types/rbac.types';
 
 const RBAC_BASE = '/api/backend/rbac';
@@ -54,6 +55,18 @@ export const rbacApi = {
       success: boolean;
       data: RbacUserAccess;
     }>(`${RBAC_BASE}/users/${userId}/access`);
+    return response.data;
+  },
+
+  // PUT /api/backend/rbac/users/{id}/info
+  updateUserInfo: async (userId: number, payload: RbacUserInfoPayload) => {
+    const response = await apiClient.put<{
+      success: boolean;
+      message?: string;
+      data?: RbacUserAccess['user'];
+      error?: string;
+      error_code?: string;
+    }>(`${RBAC_BASE}/users/${userId}/info`, payload);
     return response.data;
   },
 
