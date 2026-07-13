@@ -1,5 +1,6 @@
-import React, { useCallback } from 'react';
-import { Loader2, Plus, X, AlertTriangle, Copy, Upload, Eye, Edit, DollarSign } from 'lucide-react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import { useTranslation } from 'react-i18next';
+import { Loader2, Plus, X, AlertTriangle, Copy, Upload, Edit, DollarSign, ArrowRight } from 'lucide-react';
 import type {
     PriceList,
     PriceOverride,
@@ -8,13 +9,12 @@ import type {
     CreateLineRequest,
     DuplicateLineRequest,
     CreateOverrideRequest,
-    PreviewPriceRequest,
     ImportCsvParams,
     PreviewPriceResponse,
     CreatePackagingPriceRequest,
 } from '@/types/pricing.types';
 import { SearchSelect, type SearchSelectOption } from '@/components/common/SearchSelect';
-import { searchProducts, type ProductSearchResult, searchPartners, type PartnerSearchResult } from '@/services/api/pricingApi';
+import { searchProducts, type ProductSearchResult, searchPartners, type PartnerSearchResult, previewPrice } from '@/services/api/pricingApi';
 
 // ─── Shared modal wrapper ─────────────────────────────────────────────────────
 
@@ -211,6 +211,7 @@ interface ModalOverrideProps {
 }
 
 export const ModalOverride: React.FC<ModalOverrideProps> = ({ editingOverride, form, setForm, onClose, onSubmit, loading }) => {
+    const { t } = useTranslation();
     const handleProductSearch = useProductSearch();
     const handlePartnerSearch = usePartnerSearch();
 
@@ -222,144 +223,167 @@ export const ModalOverride: React.FC<ModalOverrideProps> = ({ editingOverride, f
         ? `${editingOverride.partner.name}`
         : undefined;
 
+    // Prix effectif calculé par le moteur v5 pour le couple (partner, product) sélectionné.
+    const [preview, setPreview] = useState<PreviewPriceResponse | null>(null);
+    const [previewLoading, setPreviewLoading] = useState(false);
+
+    useEffect(() => {
+        if (!form.partner_id || !form.product_id) {
+            setPreview(null);
+            return;
+        }
+        let cancelled = false;
+        setPreviewLoading(true);
+        const timer = setTimeout(async () => {
+            try {
+                const res = await previewPrice({ partner_id: form.partner_id!, product_id: form.product_id! });
+                if (!cancelled) setPreview(res);
+            } catch {
+                if (!cancelled) setPreview(null);
+            } finally {
+                if (!cancelled) setPreviewLoading(false);
+            }
+        }, 350);
+        return () => {
+            cancelled = true;
+            clearTimeout(timer);
+        };
+    }, [form.partner_id, form.product_id]);
+
+    // Prix résultant simulé en direct : reproduit la sélection du moteur
+    // (prix fixe court-circuite tout ; sinon remises sur le prix hiérarchie).
+    const resultingPrice = useMemo(() => {
+        if (!preview) return null;
+        if (form.fixed_price != null && !Number.isNaN(form.fixed_price)) return form.fixed_price;
+        let price = preview.base_price;
+        if (form.discount_rate != null && form.discount_rate > 0) price = price * (1 - form.discount_rate / 100);
+        if (form.discount_amount != null && form.discount_amount > 0) price = price - form.discount_amount;
+        return Math.max(price, 0);
+    }, [preview, form.fixed_price, form.discount_rate, form.discount_amount]);
+
+    const parseNumber = (raw: string): number | undefined =>
+        raw === '' ? undefined : Number(raw);
+
+    const hasFixedPrice = form.fixed_price != null && !Number.isNaN(form.fixed_price);
+    const rateInvalid = form.discount_rate != null && (form.discount_rate < 0 || form.discount_rate > 100);
+
     return (
         <ModalWrapper onClose={onClose}>
-            <ModalHeader icon={editingOverride ? Edit : Plus} title={editingOverride ? 'Modifier la dérogation' : 'Nouvelle dérogation'} onClose={onClose} />
+            <ModalHeader
+                icon={editingOverride ? Edit : Plus}
+                title={editingOverride ? t('pricing.overrides.edit') : t('pricing.overrides.create')}
+                onClose={onClose}
+            />
             <div className="p-4 space-y-4">
                 <div className="grid grid-cols-2 gap-3">
-                    <Field label="Partenaire" required>
+                    <Field label={t('pricing.overrides.partner')} required>
                         <SearchSelect
                             value={form.partner_id || null}
                             valueLabel={partnerLabel}
-                            onChange={(id) => setForm((prev: any) => ({ ...prev, partner_id: id || 0 }))}
+                            onChange={(id) => setForm((prev: any) => ({ ...prev, partner_id: id || undefined }))}
                             onSearch={handlePartnerSearch}
-                            placeholder="Rechercher un partenaire..."
+                            placeholder={t('pricing.preview.searchPartner')}
                             minChars={2}
                         />
                     </Field>
-                    <Field label="Produit" required>
+                    <Field label={t('pricing.overrides.product')} required>
                         <SearchSelect
                             value={form.product_id || null}
                             valueLabel={productLabel}
-                            onChange={(id) => setForm((prev: any) => ({ ...prev, product_id: id || 0 }))}
+                            onChange={(id) => setForm((prev: any) => ({ ...prev, product_id: id || undefined }))}
                             onSearch={handleProductSearch}
-                            placeholder="Rechercher un produit..."
+                            placeholder={t('pricing.preview.searchProduct')}
                             minChars={2}
                         />
                     </Field>
                 </div>
                 <div className="grid grid-cols-3 gap-3">
-                    <Field label="Prix fixe">
-                        <input type="number" step="0.01" value={form.fixed_price || ''} onChange={e => setForm((prev: any) => ({ ...prev, fixed_price: parseFloat(e.target.value) || 0 }))} className={inputCls} />
+                    <Field label={t('pricing.overrides.fixedPrice')}>
+                        <input
+                            type="number" step="0.001" min="0"
+                            value={form.fixed_price ?? ''}
+                            onChange={e => setForm((prev: any) => ({ ...prev, fixed_price: parseNumber(e.target.value) }))}
+                            className={inputCls}
+                            placeholder="10.500"
+                        />
                     </Field>
-                    <Field label="Remise %">
-                        <input type="number" step="0.01" value={form.discount_rate || ''} onChange={e => setForm((prev: any) => ({ ...prev, discount_rate: parseFloat(e.target.value) || 0 }))} className={inputCls} />
+                    <Field label={t('pricing.overrides.discountRate')}>
+                        <input
+                            type="number" step="0.01" min="0" max="100"
+                            value={form.discount_rate ?? ''}
+                            onChange={e => setForm((prev: any) => ({ ...prev, discount_rate: parseNumber(e.target.value) }))}
+                            className={`${inputCls} ${rateInvalid ? 'border-red-400 focus:ring-red-400' : ''} ${hasFixedPrice ? 'opacity-50' : ''}`}
+                            disabled={hasFixedPrice}
+                            placeholder="10"
+                        />
                     </Field>
-                    <Field label="Remise €">
-                        <input type="number" step="0.01" value={form.discount_amount || ''} onChange={e => setForm((prev: any) => ({ ...prev, discount_amount: parseFloat(e.target.value) || 0 }))} className={inputCls} />
+                    <Field label={t('pricing.overrides.discountAmount')}>
+                        <input
+                            type="number" step="0.01" min="0"
+                            value={form.discount_amount ?? ''}
+                            onChange={e => setForm((prev: any) => ({ ...prev, discount_amount: parseNumber(e.target.value) }))}
+                            className={`${inputCls} ${hasFixedPrice ? 'opacity-50' : ''}`}
+                            disabled={hasFixedPrice}
+                        />
                     </Field>
                 </div>
+                <p className={`text-[11px] ${rateInvalid ? 'text-red-600 font-medium' : 'text-gray-400'}`}>
+                    {rateInvalid ? t('pricing.overrides.discountRateInvalid') : t('pricing.overrides.discountRateHint')}
+                </p>
+                {hasFixedPrice && (
+                    <p className="text-[11px] text-amber-600">{t('pricing.overrides.fixedPriceHint')}</p>
+                )}
                 <div className="grid grid-cols-2 gap-3">
-                    <Field label="Valide du" required>
+                    <Field label={t('pricing.overrides.validFrom')}>
                         <input type="date" value={form.valid_from || ''} onChange={e => setForm((prev: any) => ({ ...prev, valid_from: e.target.value }))} className={inputCls} />
                     </Field>
-                    <Field label="Valide au" required>
+                    <Field label={t('pricing.overrides.validTo')}>
                         <input type="date" value={form.valid_to || ''} onChange={e => setForm((prev: any) => ({ ...prev, valid_to: e.target.value }))} className={inputCls} />
                     </Field>
                 </div>
                 <div className="grid grid-cols-2 gap-3">
-                    <Field label="Priorité">
-                        <input type="number" value={form.priority || ''} onChange={e => setForm((prev: any) => ({ ...prev, priority: parseInt(e.target.value) || 0 }))} className={inputCls} min="1" />
+                    <Field label={t('pricing.overrides.priority')}>
+                        <input type="number" value={form.priority ?? ''} onChange={e => setForm((prev: any) => ({ ...prev, priority: parseInt(e.target.value) || 0 }))} className={inputCls} min="0" />
                     </Field>
-                    <Field label="Statut">
+                    <Field label={t('common.status')}>
                         <select value={form.active ? 'active' : 'inactive'} onChange={e => setForm((prev: any) => ({ ...prev, active: e.target.value === 'active' }))} className={selectCls}>
-                            <option value="active">Active</option>
-                            <option value="inactive">Inactive</option>
+                            <option value="active">{t('common.active')}</option>
+                            <option value="inactive">{t('common.inactive')}</option>
                         </select>
                     </Field>
                 </div>
-            </div>
-            <ModalFooter onClose={onClose} onSubmit={onSubmit} loading={loading} label={editingOverride ? 'Enregistrer' : 'Créer'} />
-        </ModalWrapper>
-    );
-};
 
-// ═══════════════════════════════════════════════════════════════════════════════
-// Preview Price
-// ═══════════════════════════════════════════════════════════════════════════════
-
-interface ModalPreviewProps {
-    form: Partial<PreviewPriceRequest>;
-    setForm: (f: any) => void;
-    onClose: () => void;
-    onSubmit: () => void;
-    loading: boolean;
-    previewData: PreviewPriceResponse | null;
-}
-
-export const ModalPreview: React.FC<ModalPreviewProps> = ({ form, setForm, onClose, onSubmit, loading, previewData }) => {
-    const handleProductSearch = useProductSearch();
-    const handlePartnerSearch = usePartnerSearch();
-
-    return (
-        <ModalWrapper onClose={onClose}>
-            <ModalHeader icon={Eye} title="Prévisualiser le prix" onClose={onClose} />
-            <div className="p-4 space-y-4">
-                <div className="grid grid-cols-2 gap-3">
-                    <Field label="Partenaire" required>
-                        <SearchSelect
-                            value={form.partner_id || null}
-                            onChange={(id) => setForm((prev: any) => ({ ...prev, partner_id: id || 0 }))}
-                            onSearch={handlePartnerSearch}
-                            placeholder="Rechercher un partenaire..."
-                            minChars={2}
-                        />
-                    </Field>
-                    <Field label="Produit" required>
-                        <SearchSelect
-                            value={form.product_id || null}
-                            onChange={(id) => setForm((prev: any) => ({ ...prev, product_id: id || 0 }))}
-                            onSearch={handleProductSearch}
-                            placeholder="Rechercher un produit..."
-                            minChars={2}
-                        />
-                    </Field>
-                </div>
-                <Field label="Date">
-                    <input type="date" value={form.date || ''} onChange={e => setForm((prev: any) => ({ ...prev, date: e.target.value }))} className={inputCls} />
-                </Field>
-
-                {previewData && (
-                    <div className="p-4 bg-gradient-to-br from-sage-50 to-sage-50 rounded-lg border border-sage-200 space-y-3">
-                        <div className="text-center">
-                            <div className="text-xs text-sage-600 mb-1">Prix effectif</div>
-                            <div className="text-3xl font-bold text-sage-800">{previewData.final_price.toFixed(2)} €</div>
-                        </div>
-                        <div className="grid grid-cols-3 gap-2 text-center text-xs">
-                            <div className="p-2 bg-white rounded border border-sage-100">
-                                <div className="text-gray-500">Prix de base</div>
-                                <div className="font-bold text-gray-900">{previewData.base_price.toFixed(2)}</div>
+                {(preview || previewLoading) && (
+                    <div className="p-3 bg-gradient-to-br from-sage-50 to-white rounded-lg border border-sage-200">
+                        {previewLoading ? (
+                            <div className="flex items-center gap-2 text-xs text-sage-600">
+                                <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                                {t('pricing.preview.calculating')}
                             </div>
-                            <div className="p-2 bg-white rounded border border-sage-100">
-                                <div className="text-gray-500">Remise</div>
-                                <div className="font-bold text-amber-600">-{(previewData.base_price - previewData.final_price).toFixed(2)}</div>
-                            </div>
-                            <div className="p-2 bg-white rounded border border-sage-100">
-                                <div className="text-gray-500">Source</div>
-                                <div className="font-bold text-gray-700">{previewData.applied_rule}</div>
-                            </div>
-                        </div>
+                        ) : preview && (
+                            <>
+                                <div className="flex items-center justify-center gap-3">
+                                    <div className="text-center">
+                                        <div className="text-[10px] text-gray-500 uppercase tracking-wide">{t('pricing.overrides.currentPrice')}</div>
+                                        <div className="text-lg font-bold text-gray-700">{preview.final_price.toFixed(3)}</div>
+                                    </div>
+                                    <ArrowRight className="w-4 h-4 text-sage-400 shrink-0" />
+                                    <div className="text-center">
+                                        <div className="text-[10px] text-sage-600 uppercase tracking-wide">{t('pricing.overrides.resultingPrice')}</div>
+                                        <div className="text-lg font-bold text-sage-800">
+                                            {resultingPrice != null ? resultingPrice.toFixed(3) : '—'}
+                                        </div>
+                                    </div>
+                                </div>
+                                <p className="text-[10px] text-gray-400 text-center mt-1.5">
+                                    {t('pricing.overrides.previewHint', { source: preview.source, version: preview.algorithm_version })}
+                                </p>
+                            </>
+                        )}
                     </div>
                 )}
             </div>
-            <div className="flex items-center justify-end gap-2 p-4 border-t border-gray-100">
-                <button onClick={onClose} className="px-4 py-2 text-sm text-gray-600 hover:bg-gray-100 rounded-lg transition-colors">Fermer</button>
-                <button onClick={onSubmit} disabled={loading}
-                    className="px-4 py-2 text-sm bg-sage-500 text-white rounded-lg hover:bg-sage-600 disabled:opacity-50 transition-colors flex items-center gap-2">
-                    {loading && <Loader2 className="w-4 h-4 animate-spin" />}
-                    Calculer
-                </button>
-            </div>
+            <ModalFooter onClose={onClose} onSubmit={onSubmit} loading={loading} label={editingOverride ? t('common.save') : t('common.create')} />
         </ModalWrapper>
     );
 };

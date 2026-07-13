@@ -84,7 +84,6 @@ export interface PricingProduct {
 
 export interface PriceOverride {
     id: number;
-    price_list_id: number;
     partner_id: number;
     product_id: number;
     fixed_price: number | null;
@@ -102,6 +101,13 @@ export interface PriceOverride {
     product?: PricingProduct;
     created_at?: string;
     updated_at?: string;
+}
+
+// GET /pricing/overrides — response body shape
+export interface OverridesIndexResponse {
+    overrides: PaginatedResponse<PriceOverride>;
+    filters: { q: string; partner_id: number; product_id: number; active: boolean | null };
+    partners: Array<{ id: number; code: string; name: string }>;
 }
 
 // ─── Packaging Prices ────────────────────────────────────────────────────────
@@ -130,11 +136,10 @@ export interface PriceListFilters {
 }
 
 export interface OverrideFilters {
-    price_list_id?: number;
     partner_id?: number;
     product_id?: number;
     active?: boolean;
-    search?: string;
+    q?: string;
     page?: number;
     per_page?: number;
 }
@@ -196,12 +201,13 @@ export interface ImportCsvParams {
 }
 
 export interface CreateOverrideRequest {
-    price_list_id: number;
     partner_id: number;
     product_id: number;
-    fixed_price?: number;
-    discount_rate?: number;
-    discount_amount?: number;
+    // fixed_price = prix par unité de base; court-circuite les remises s'il est renseigné.
+    fixed_price?: number | null;
+    // discount_rate = POURCENTAGE 0–100 (envoyer 10 pour -10 %).
+    discount_rate?: number | null;
+    discount_amount?: number | null;
     valid_from?: string;
     valid_to?: string;
     priority?: number;
@@ -211,20 +217,19 @@ export interface CreateOverrideRequest {
 export interface PreviewPriceRequest {
     partner_id: number;
     product_id: number;
-    date?: string;
-    quantity?: number;
 }
 
+// POST /pricing/overrides/preview — prix effectif calculé par le moteur v5
 export interface PreviewPriceResponse {
     final_price: number;
     base_price: number;
-    applied_rule: 'base' | 'override' | 'promotion';
-    rule_details?: any;
-    breakdown: {
-        label: string;
-        value: number;
-        operation: 'add' | 'subtract' | 'set';
-    }[];
+    source: 'standard' | 'partner_override' | 'partner_override_discount' | string;
+    detail: {
+        sales_price?: string;
+        min_sales_price?: string;
+        max_sales_price?: string;
+    } | null;
+    algorithm_version: number;
 }
 
 export interface CreatePackagingPriceRequest {
@@ -232,4 +237,88 @@ export interface CreatePackagingPriceRequest {
     packaging_id: number;
     sales_price: number;
     return_price: number;
+}
+
+// ─── Channels & Business Chronologies (Module 20) ────────────────────────────
+
+export interface Channel {
+    id: number;
+    code: string;
+    name: string;
+    description?: string | null;
+    price_list_id?: number | null;
+    is_active: boolean;
+    sort_order: number;
+    partners_count?: number;
+    price_list?: { id: number; code: string; name: string; rank: number } | null;
+}
+
+export interface BusinessChronology {
+    id: number;
+    code: string;
+    name: string;
+    description?: string | null;
+    available_sub_types: string[];
+    is_active: boolean;
+    sort_order: number;
+    partners_count?: number;
+    promotions_count?: number;
+}
+
+export interface PartnerChronologyAssignment {
+    id: number;
+    code: string;
+    name: string;
+    sub_types: string[];
+    is_primary: boolean;
+}
+
+export interface SyncChronologiesRequest {
+    chronologies: Array<{
+        code: string;
+        sub_types?: string[];
+        is_primary?: boolean;
+    }>;
+}
+
+export interface PartnerChronologiesResponse {
+    success: boolean;
+    chronologies: PartnerChronologyAssignment[];
+    availableChronologies: BusinessChronology[];
+}
+
+export interface CreateChannelRequest {
+    code: string;
+    name: string;
+    description?: string | null;
+    price_list_id?: number | null;
+    is_active?: boolean;
+    sort_order?: number;
+}
+
+export interface UpdateChannelRequest {
+    code?: string;
+    name?: string;
+    description?: string | null;
+    price_list_id?: number | null;
+    is_active?: boolean;
+    sort_order?: number;
+}
+
+export interface CreateBusinessChronologyRequest {
+    code: string;
+    name: string;
+    description?: string | null;
+    available_sub_types?: string[];
+    is_active?: boolean;
+    sort_order?: number;
+}
+
+export interface UpdateBusinessChronologyRequest {
+    code?: string;
+    name?: string;
+    description?: string | null;
+    available_sub_types?: string[];
+    is_active?: boolean;
+    sort_order?: number;
 }

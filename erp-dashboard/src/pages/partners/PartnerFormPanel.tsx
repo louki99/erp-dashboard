@@ -18,6 +18,7 @@ import AddressMapPicker from '@/components/partners/AddressMapPicker';
 import type { AddressValue } from '@/components/partners/AddressMapPicker';
 import { usePartnerDraft, type PartnerDraft } from '@/hooks/usePartnerDraft';
 import { PartnerFileImportDialog } from '@/components/partners/PartnerFileImportDialog';
+import { PartnerChronologiesEditor } from '@/components/partners/PartnerChronologiesEditor';
 import {
     serializeToPartnerFile,
     downloadPartnerFile,
@@ -509,12 +510,13 @@ export const PartnerFormPanel: React.FC<PartnerFormPanelProps> = ({
         const tabs: TabItem[] = [];
         if (isCreate && withAccount) tabs.push({ id: 'account', label: 'Compte', icon: User });
         tabs.push(
-            { id: 'identity',   label: 'Identité',          icon: Briefcase  },
-            { id: 'commercial', label: 'Commercial',         icon: DollarSign },
-            { id: 'address',    label: 'Adresse & Contact',  icon: MapPin     },
-            { id: 'fiscal',     label: 'Fiscalité',          icon: FileText   },
-            { id: 'delivery',   label: 'Livraison',          icon: Truck      },
-            { id: 'options',    label: 'Options',            icon: Settings   },
+            { id: 'identity',     label: 'Identité',          icon: Briefcase  },
+            { id: 'commercial',   label: 'Commercial',        icon: DollarSign },
+            { id: 'address',      label: 'Adresse & Contact', icon: MapPin     },
+            { id: 'fiscal',       label: 'Fiscalité',         icon: FileText   },
+            { id: 'delivery',     label: 'Livraison',         icon: Truck      },
+            ...(isCreate ? [] : [{ id: 'chronologies', label: 'Chronologies', icon: Clock } as TabItem]),
+            { id: 'options',      label: 'Options',           icon: Settings   },
         );
         if ((masterData?.custom_fields ?? []).length > 0) {
             tabs.push({ id: 'custom', label: 'Champs perso.', icon: Tag });
@@ -1410,6 +1412,7 @@ export const PartnerFormPanel: React.FC<PartnerFormPanelProps> = ({
             case 'address': return renderAddressTab();
             case 'fiscal': return renderFiscalTab();
             case 'delivery': return renderDeliveryTab();
+            case 'chronologies': return partner?.id ? <PartnerChronologiesEditor partnerId={partner.id} /> : null;
             case 'options': return renderOptionsTab();
             case 'custom': return renderCustomTab();
             default: return renderIdentityTab();

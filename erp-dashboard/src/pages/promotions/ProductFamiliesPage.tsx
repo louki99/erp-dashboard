@@ -53,7 +53,7 @@ export const ProductFamiliesPage = () => {
         setLoadingProducts(true);
         try {
             const res = await productsApi.getList({ per_page: 500 });
-            const list = res.data?.data ?? [];
+            const list = Array.isArray(res.data) ? res.data : res.data?.data ?? [];
             setAllProducts(list);
         } catch (err) {
             console.error('Failed to load products', err);
@@ -140,10 +140,10 @@ export const ProductFamiliesPage = () => {
         finally { setIsDeleting(false); }
     };
 
-    const handleToggleProduct = (code: string) => {
-        const cur = (formData.products || []) as string[];
+    const handleToggleProduct = useCallback((code: string) => {
+        const cur = [...new Set((formData.products || []) as string[])];
         setFormData({ ...formData, products: cur.includes(code) ? cur.filter(c => c !== code) : [...cur, code] });
-    };
+    }, [formData]);
 
     const filteredProducts = useMemo(() => {
         let list = allProducts;
@@ -153,7 +153,18 @@ export const ProductFamiliesPage = () => {
         return list;
     }, [allProducts, productSearch, activeFilter]);
 
-    const selectedProducts = (formData.products || []) as string[];
+    const selectedProducts = useMemo(() => [...new Set((formData.products || []) as string[])], [formData.products]);
+
+    const handleSelectAllVisibleProducts = useCallback(() => {
+        setFormData(prev => {
+            const current = [...new Set((prev.products || []) as string[])];
+            return { ...prev, products: [...new Set([...current, ...filteredProducts.map(p => p.code)])] };
+        });
+    }, [filteredProducts]);
+
+    const handleClearAllProducts = useCallback(() => {
+        setFormData(prev => ({ ...prev, products: [] }));
+    }, []);
 
     // ── Sidebar card ──────────────────────────────────────────────────────────
     const FamilyCard = ({ family }: { family: ProductFamily }) => {
@@ -426,9 +437,9 @@ export const ProductFamiliesPage = () => {
                             ))}
                         </div>
                         <div className="flex gap-2">
-                            <button onClick={() => { const all = filteredProducts.map(p => p.code); setFormData({ ...formData, products: [...new Set([...selectedProducts, ...all])] as string[] }); }} className="text-xs text-blue-600 hover:text-blue-700 font-medium">Tout sélectionner</button>
+                            <button onClick={handleSelectAllVisibleProducts} className="text-xs text-blue-600 hover:text-blue-700 font-medium">Tout sélectionner</button>
                             <span className="text-gray-300">·</span>
-                            <button onClick={() => setFormData({ ...formData, products: [] })} className="text-xs text-gray-500 hover:text-gray-700 font-medium">Tout effacer</button>
+                            <button onClick={handleClearAllProducts} className="text-xs text-gray-500 hover:text-gray-700 font-medium">Tout effacer</button>
                         </div>
                     </div>
                 </div>

@@ -13,10 +13,18 @@ import type {
     DuplicateLineRequest,
     ImportCsvParams,
     CreateOverrideRequest,
+    PreviewPriceRequest,
+    PreviewPriceResponse,
     PackagingPrice,
     CreatePackagingPriceRequest,
     PriceListLine,
     LineDetail,
+    Channel,
+    BusinessChronology,
+    UpdateChannelRequest,
+    UpdateBusinessChronologyRequest,
+    PartnerChronologiesResponse,
+    SyncChronologiesRequest,
 } from '../../types/pricing.types';
 
 // ─── Price Lists Hooks ──────────────────────────────────────────────────────
@@ -114,29 +122,30 @@ export const useLineDetails = (priceListId: number | null, lineNumber: number | 
 
 export const useOverrides = (filters: OverrideFilters) => {
     const [data, setData] = useState<PaginatedResponse<PriceOverride> | null>(null);
+    const [partners, setPartners] = useState<Array<{ id: number; code: string; name: string }>>([]);
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
 
     const fetchOverrides = useCallback(async () => {
-        // Avoid fetching if minimal filters aren't present if needed, but usually we want to fetch initial data
         setLoading(true);
         setError(null);
         try {
             const response = await pricingApi.getOverrides(filters);
-            setData(response.data);
+            setData(response.overrides);
+            setPartners(response.partners ?? []);
         } catch (err) {
             setError(err instanceof Error ? err.message : 'Échec du chargement des dérogations');
             console.error(err);
         } finally {
             setLoading(false);
         }
-    }, [filters.page, filters.per_page, filters.price_list_id, filters.partner_id, filters.product_id, filters.active, filters.search]);
+    }, [filters.page, filters.per_page, filters.partner_id, filters.product_id, filters.active, filters.q]);
 
     useEffect(() => {
         fetchOverrides();
     }, [fetchOverrides]);
 
-    return { data, loading, error, refetch: fetchOverrides };
+    return { data, partners, loading, error, refetch: fetchOverrides };
 };
 
 // ─── Packaging Prices Hook ──────────────────────────────────────────────────
@@ -191,14 +200,20 @@ const useMutation = <T, R>(mutationFn: (args: T) => Promise<any>) => {
     return { execute, loading, error };
 };
 
-export const useCreatePriceList = () => useMutation(pricingApi.createPriceList);
+export const useCreatePriceList = () => {
+    const { loading, error, execute } = useMutation(pricingApi.createPriceList);
+    return { createPriceList: execute, execute, loading, error };
+};
 export const useUpdatePriceList = () => {
     const { loading, error, execute } = useMutation<{ id: number; data: UpdatePriceListRequest }, any>(
         async ({ id, data }) => pricingApi.updatePriceList(id, data)
     );
     return { updatePriceList: execute, loading, error };
 };
-export const useDeletePriceList = () => useMutation((id: number) => pricingApi.deletePriceList(id));
+export const useDeletePriceList = () => {
+    const { loading, error, execute } = useMutation((id: number) => pricingApi.deletePriceList(id));
+    return { deletePriceList: execute, execute, loading, error };
+};
 
 export const useCreateLine = () => {
     const { loading, error, execute } = useMutation<{ priceListId: number; data: CreateLineRequest }, PriceListLine>(
@@ -242,22 +257,163 @@ export const useImportCsv = () => {
     return { importCsv: execute, loading, error };
 };
 
-export const useCreateOverride = () => useMutation(pricingApi.createOverride);
+export const useCreateOverride = () => {
+    const { loading, error, execute } = useMutation<CreateOverrideRequest, any>(pricingApi.createOverride);
+    return { createOverride: execute, execute, loading, error };
+};
+// PUT exige le payload complet du formulaire (partner_id et product_id requis)
 export const useUpdateOverride = () => {
-    const { loading, error, execute } = useMutation<{ id: number; data: Partial<CreateOverrideRequest> }, PriceOverride>(
+    const { loading, error, execute } = useMutation<{ id: number; data: CreateOverrideRequest }, any>(
         async ({ id, data }) => pricingApi.updateOverride(id, data)
     );
     return { updateOverride: execute, loading, error };
 };
-export const useToggleOverride = () => useMutation(pricingApi.toggleOverride);
-export const useDeleteOverride = () => useMutation(pricingApi.deleteOverride);
-export const usePreviewPrice = () => useMutation(pricingApi.previewPrice);
+export const useToggleOverride = () => {
+    const { loading, error, execute } = useMutation<number, { success: boolean; message: string; active: boolean }>(pricingApi.toggleOverride);
+    return { toggleOverride: execute, loading, error };
+};
+export const useDeleteOverride = () => {
+    const { loading, error, execute } = useMutation<number, any>(pricingApi.deleteOverride);
+    return { deleteOverride: execute, loading, error };
+};
+export const usePreviewPrice = () => useMutation<PreviewPriceRequest, PreviewPriceResponse>(pricingApi.previewPrice);
 
-export const useCreatePackagingPrice = () => useMutation(pricingApi.createPackagingPrice);
+export const useCreatePackagingPrice = () => {
+    const { loading, error, execute } = useMutation(pricingApi.createPackagingPrice);
+    return { createPackagingPrice: execute, execute, loading, error };
+};
 export const useUpdatePackagingPrice = () => {
     const { loading, error, execute } = useMutation<{ id: number; data: Partial<CreatePackagingPriceRequest> }, PackagingPrice>(
         async ({ id, data }) => pricingApi.updatePackagingPrice(id, data)
     );
     return { updatePackagingPrice: execute, loading, error };
 };
-export const useDeletePackagingPrice = () => useMutation(pricingApi.deletePackagingPrice);
+export const useDeletePackagingPrice = () => {
+    const { loading, error, execute } = useMutation(pricingApi.deletePackagingPrice);
+    return { deletePackagingPrice: execute, execute, loading, error };
+};
+
+// ─── Channels (Module 20) ────────────────────────────────────────────────────
+
+export const useChannels = () => {
+    const [data, setData] = useState<Channel[] | null>(null);
+    const [loading, setLoading] = useState(true);
+    const [error, setError] = useState<string | null>(null);
+
+    const fetchChannels = useCallback(async () => {
+        setLoading(true);
+        setError(null);
+        try {
+            const result = await pricingApi.getChannels();
+            setData(result);
+        } catch (err) {
+            setError(err instanceof Error ? err.message : 'Échec du chargement des canaux');
+            console.error(err);
+        } finally {
+            setLoading(false);
+        }
+    }, []);
+
+    useEffect(() => {
+        fetchChannels();
+    }, [fetchChannels]);
+
+    return { data, loading, error, refetch: fetchChannels };
+};
+
+export const useCreateChannel = () => {
+    const { loading, error, execute } = useMutation(pricingApi.createChannel);
+    return { createChannel: execute, execute, loading, error };
+};
+export const useUpdateChannel = () => {
+    const { loading, error, execute } = useMutation<{ id: number; data: UpdateChannelRequest }, Channel>(
+        async ({ id, data }) => pricingApi.updateChannel(id, data)
+    );
+    return { updateChannel: execute, loading, error };
+};
+export const useDeleteChannel = () => {
+    const { loading, error, execute } = useMutation((id: number) => pricingApi.deleteChannel(id));
+    return { deleteChannel: execute, execute, loading, error };
+};
+
+// ─── Business Chronologies (Module 20) ───────────────────────────────────────
+
+export const useBusinessChronologies = () => {
+    const [data, setData] = useState<BusinessChronology[] | null>(null);
+    const [loading, setLoading] = useState(true);
+    const [error, setError] = useState<string | null>(null);
+
+    const fetchBusinessChronologies = useCallback(async () => {
+        setLoading(true);
+        setError(null);
+        try {
+            const result = await pricingApi.getBusinessChronologies();
+            setData(result);
+        } catch (err) {
+            setError(err instanceof Error ? err.message : 'Échec du chargement des chronologies');
+            console.error(err);
+        } finally {
+            setLoading(false);
+        }
+    }, []);
+
+    useEffect(() => {
+        fetchBusinessChronologies();
+    }, [fetchBusinessChronologies]);
+
+    return { data, loading, error, refetch: fetchBusinessChronologies };
+};
+
+export const useCreateBusinessChronology = () => {
+    const { loading, error, execute } = useMutation(pricingApi.createBusinessChronology);
+    return { createBusinessChronology: execute, execute, loading, error };
+};
+export const useUpdateBusinessChronology = () => {
+    const { loading, error, execute } = useMutation<{ id: number; data: UpdateBusinessChronologyRequest }, BusinessChronology>(
+        async ({ id, data }) => pricingApi.updateBusinessChronology(id, data)
+    );
+    return { updateBusinessChronology: execute, loading, error };
+};
+export const useDeleteBusinessChronology = () => {
+    const { loading, error, execute } = useMutation((id: number) => pricingApi.deleteBusinessChronology(id));
+    return { deleteBusinessChronology: execute, execute, loading, error };
+};
+
+// ─── Partner Chronology Assignments (Module 20) ──────────────────────────────
+
+export const usePartnerChronologies = (partnerId: number | null) => {
+    const [data, setData] = useState<PartnerChronologiesResponse | null>(null);
+    const [loading, setLoading] = useState(false);
+    const [error, setError] = useState<string | null>(null);
+
+    const fetchChronologies = useCallback(async () => {
+        if (!partnerId) {
+            setData(null);
+            return;
+        }
+        setLoading(true);
+        setError(null);
+        try {
+            const result = await pricingApi.getPartnerChronologies(partnerId);
+            setData(result);
+        } catch (err) {
+            setError(err instanceof Error ? err.message : 'Échec du chargement des chronologies client');
+            console.error(err);
+        } finally {
+            setLoading(false);
+        }
+    }, [partnerId]);
+
+    useEffect(() => {
+        fetchChronologies();
+    }, [fetchChronologies]);
+
+    return { data, loading, error, refetch: fetchChronologies };
+};
+
+export const useSyncPartnerChronologies = () => {
+    const { loading, error, execute } = useMutation<{ partnerId: number; data: SyncChronologiesRequest }, PartnerChronologiesResponse>(
+        async ({ partnerId, data }) => pricingApi.syncPartnerChronologies(partnerId, data)
+    );
+    return { syncChronologies: execute, loading, error };
+};

@@ -59,7 +59,13 @@ import { StockManagementPage } from '@/pages/stock/StockManagementPage';
 import { WarehousesPage } from '@/pages/stock/WarehousesPage';
 import { StockConsultationPage } from '@/pages/stock/StockConsultationPage';
 import { PreparationBillsPage } from '@/pages/stock/PreparationBillsPage';
-import { PricingManagementPage } from '@/pages/pricing/PricingManagementPage';
+import { PricingHubPage } from '@/pages/pricing/PricingHubPage';
+import { PriceListsPage } from '@/pages/pricing/PriceListsPage';
+import { OverridesPage } from '@/pages/pricing/OverridesPage';
+import { PackagingPricesPage } from '@/pages/pricing/PackagingPricesPage';
+import { PricePreviewPage } from '@/pages/pricing/PricePreviewPage';
+import { ChannelsPage } from '@/pages/pricing/ChannelsPage';
+import { BusinessChronologiesPage } from '@/pages/pricing/BusinessChronologiesPage';
 import { CustomFieldsPage } from '@/pages/custom-fields/CustomFieldsPage';
 import ReportingPage from '@/pages/reporting/ReportingPage';
 import ReportingAdminPage from '@/pages/reporting/ReportingAdminPage';
@@ -453,10 +459,40 @@ function AppRoutes() {
         </ProtectedRoute>
       } />
 
-      {/* Pricing Management */}
+      {/* Pricing Hub & Sub-pages */}
       <Route path="/pricing" element={
-        <ProtectedRoute>
-          <PricingManagementPage />
+        <ProtectedRoute requiredPermission={PERMISSIONS.DYNAMIC.MANAGE_PRICING}>
+          <PricingHubPage />
+        </ProtectedRoute>
+      } />
+      <Route path="/pricing/price-lists" element={
+        <ProtectedRoute requiredPermission={PERMISSIONS.DYNAMIC.MANAGE_PRICING}>
+          <PriceListsPage />
+        </ProtectedRoute>
+      } />
+      <Route path="/pricing/overrides" element={
+        <ProtectedRoute requiredPermission={PERMISSIONS.DYNAMIC.MANAGE_PRICING}>
+          <OverridesPage />
+        </ProtectedRoute>
+      } />
+      <Route path="/pricing/packaging-prices" element={
+        <ProtectedRoute requiredPermission={PERMISSIONS.DYNAMIC.MANAGE_PRICING}>
+          <PackagingPricesPage />
+        </ProtectedRoute>
+      } />
+      <Route path="/pricing/preview" element={
+        <ProtectedRoute requiredPermission={PERMISSIONS.DYNAMIC.MANAGE_PRICING}>
+          <PricePreviewPage />
+        </ProtectedRoute>
+      } />
+      <Route path="/pricing/channels" element={
+        <ProtectedRoute requiredPermission={PERMISSIONS.DYNAMIC.MANAGE_PARTNERS}>
+          <ChannelsPage />
+        </ProtectedRoute>
+      } />
+      <Route path="/pricing/chronologies" element={
+        <ProtectedRoute requiredPermission={PERMISSIONS.DYNAMIC.MANAGE_PARTNERS}>
+          <BusinessChronologiesPage />
         </ProtectedRoute>
       } />
 

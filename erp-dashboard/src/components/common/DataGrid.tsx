@@ -20,6 +20,7 @@ interface DataGridProps {
     getRowClass?: (params: any) => string;
     isRowSelectable?: (params: any) => boolean;
     defaultSelectedIds?: (row: any) => boolean; // Function to determine if a row should be selected by default
+    getRowId?: (data: any) => string;
     rowHeight?: number;
     /** When true, columns keep their explicit widths and AG Grid shows a horizontal scrollbar */
     suppressAutoFit?: boolean;
@@ -40,6 +41,7 @@ export const DataGrid = forwardRef<AgGridReact, DataGridProps>(({
     getRowClass,
     isRowSelectable,
     defaultSelectedIds,
+    getRowId,
     rowHeight: customRowHeight,
     suppressAutoFit = false,
 }, ref) => {
@@ -172,6 +174,7 @@ export const DataGrid = forwardRef<AgGridReact, DataGridProps>(({
                     }}
                     onCellValueChanged={onCellValueChanged}
                     onGridReady={onGridReady}
+                    getRowId={getRowId}
                     animateRows={true}
                     headerHeight={40}
                     rowHeight={customRowHeight ?? 36}

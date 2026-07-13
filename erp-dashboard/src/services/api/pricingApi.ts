@@ -14,15 +14,23 @@ import {
     type DuplicateLineRequest,
     type ImportCsvParams,
     type PriceOverride,
+    type OverridesIndexResponse,
     type OverrideFilters,
     type CreateOverrideRequest,
     type PreviewPriceRequest,
     type PreviewPriceResponse,
     type PackagingPrice,
     type CreatePackagingPriceRequest,
-    type PricingProduct,
     type ListsResponse,
     type PackagingPriceFilters,
+    type Channel,
+    type BusinessChronology,
+    type CreateChannelRequest,
+    type UpdateChannelRequest,
+    type CreateBusinessChronologyRequest,
+    type UpdateBusinessChronologyRequest,
+    type PartnerChronologiesResponse,
+    type SyncChronologiesRequest,
 } from '../../types/pricing.types';
 
 const BASE_PATH = '/api/backend/pricing';
@@ -235,46 +243,74 @@ export const getProductPackagings = async (productId: number) => {
 
 // ─── Overrides (Dérogations) ─────────────────────────────────────────────────
 
-export const getOverrides = async (filters: OverrideFilters) => {
-    const response = await apiClient.get<ApiSuccessResponse<PaginatedResponse<PriceOverride>>>(
+const toNumberOrNull = (value: unknown): number | null => {
+    if (value === null || value === undefined || value === '') return null;
+    const n = Number(value);
+    return Number.isNaN(n) ? null : n;
+};
+
+// Le backend renvoie les décimaux en string ("10.500", "0.000000") ;
+// un montant à 0 signifie "non renseigné" pour l'UI.
+const normalizeOverride = (raw: any): PriceOverride => ({
+    ...raw,
+    fixed_price: toNumberOrNull(raw.fixed_price),
+    discount_rate: toNumberOrNull(raw.discount_rate) || null,
+    discount_amount: toNumberOrNull(raw.discount_amount) || null,
+    active: Boolean(raw.active),
+    priority: Number(raw.priority ?? 0),
+});
+
+export const getOverrides = async (filters: OverrideFilters): Promise<OverridesIndexResponse> => {
+    const params: Record<string, any> = { ...filters };
+    if (params.active !== undefined) params.active = params.active ? 1 : 0;
+    const response = await apiClient.get<OverridesIndexResponse>(
         `${BASE_PATH}/overrides`,
-        { params: filters }
+        { params }
     );
-    return response.data;
+    const body = response.data;
+    return {
+        ...body,
+        overrides: {
+            ...body.overrides,
+            data: (body.overrides?.data ?? []).map(normalizeOverride),
+        },
+    };
 };
 
 export const createOverride = async (data: CreateOverrideRequest) => {
-    const response = await apiClient.post<ApiSuccessResponse<PriceOverride>>(
+    const response = await apiClient.post<{ success: boolean; message: string; override: PriceOverride }>(
         `${BASE_PATH}/overrides`,
         data
     );
     return response.data;
 };
 
-export const updateOverride = async (id: number, data: Partial<CreateOverrideRequest>) => {
-    const response = await apiClient.put<ApiSuccessResponse<PriceOverride>>(
+export const updateOverride = async (id: number, data: CreateOverrideRequest) => {
+    const response = await apiClient.put<{ success: boolean; message: string }>(
         `${BASE_PATH}/overrides/${id}`,
         data
     );
     return response.data;
 };
 
+// Révocation soft (historique conservé) — préférer au DELETE
 export const toggleOverride = async (id: number) => {
-    const response = await apiClient.patch<ApiSuccessResponse<PriceOverride>>(
+    const response = await apiClient.patch<{ success: boolean; message: string; active: boolean }>(
         `${BASE_PATH}/overrides/${id}/toggle`
     );
     return response.data;
 };
 
 export const deleteOverride = async (id: number) => {
-    const response = await apiClient.delete<ApiSuccessResponse<null>>(
+    const response = await apiClient.delete<{ success: boolean; message: string }>(
         `${BASE_PATH}/overrides/${id}`
     );
     return response.data;
 };
 
-export const previewPrice = async (data: PreviewPriceRequest) => {
-    const response = await apiClient.post<ApiSuccessResponse<PreviewPriceResponse>>(
+// Prix effectif calculé par le moteur v5 — la réponse est le payload direct (non enveloppé)
+export const previewPrice = async (data: PreviewPriceRequest): Promise<PreviewPriceResponse> => {
+    const response = await apiClient.post<PreviewPriceResponse>(
         `${BASE_PATH}/overrides/preview`,
         data
     );
@@ -318,6 +354,91 @@ export const getAjaxPackagings = async (query: string) => {
     const response = await apiClient.get<ApiSuccessResponse<any[]>>(
         `${BASE_PATH}/packaging-prices/ajax/packagings`,
         { params: { q: query } }
+    );
+    return response.data;
+};
+
+// ─── Channels (Module 20) ────────────────────────────────────────────────────
+
+const CHANNELS_PATH = '/api/backend/channels';
+
+export const getChannels = async () => {
+    const response = await apiClient.get<{ success: boolean; channels: Channel[] }>(
+        CHANNELS_PATH
+    );
+    return response.data.channels;
+};
+
+export const createChannel = async (data: CreateChannelRequest) => {
+    const response = await apiClient.post<ApiSuccessResponse<Channel>>(
+        CHANNELS_PATH,
+        data
+    );
+    return response.data;
+};
+
+export const updateChannel = async (id: number, data: UpdateChannelRequest) => {
+    const response = await apiClient.put<ApiSuccessResponse<Channel>>(
+        `${CHANNELS_PATH}/${id}`,
+        data
+    );
+    return response.data;
+};
+
+export const deleteChannel = async (id: number) => {
+    const response = await apiClient.delete<ApiSuccessResponse<null>>(
+        `${CHANNELS_PATH}/${id}`
+    );
+    return response.data;
+};
+
+// ─── Business Chronologies (Module 20) ───────────────────────────────────────
+
+const CHRONOLOGIES_PATH = '/api/backend/business-chronologies';
+
+export const getBusinessChronologies = async () => {
+    const response = await apiClient.get<{ success: boolean; business_chronologies: BusinessChronology[] }>(
+        CHRONOLOGIES_PATH
+    );
+    return response.data.business_chronologies;
+};
+
+export const createBusinessChronology = async (data: CreateBusinessChronologyRequest) => {
+    const response = await apiClient.post<ApiSuccessResponse<BusinessChronology>>(
+        CHRONOLOGIES_PATH,
+        data
+    );
+    return response.data;
+};
+
+export const updateBusinessChronology = async (id: number, data: UpdateBusinessChronologyRequest) => {
+    const response = await apiClient.put<ApiSuccessResponse<BusinessChronology>>(
+        `${CHRONOLOGIES_PATH}/${id}`,
+        data
+    );
+    return response.data;
+};
+
+export const deleteBusinessChronology = async (id: number) => {
+    const response = await apiClient.delete<ApiSuccessResponse<null>>(
+        `${CHRONOLOGIES_PATH}/${id}`
+    );
+    return response.data;
+};
+
+// ─── Partner Chronology Assignments (Module 20) ──────────────────────────────
+
+export const getPartnerChronologies = async (partnerId: number): Promise<PartnerChronologiesResponse> => {
+    const response = await apiClient.get<PartnerChronologiesResponse>(
+        `/api/backend/partners/${partnerId}/chronologies`
+    );
+    return response.data;
+};
+
+export const syncPartnerChronologies = async (partnerId: number, data: SyncChronologiesRequest): Promise<PartnerChronologiesResponse> => {
+    const response = await apiClient.post<PartnerChronologiesResponse>(
+        `/api/backend/partners/${partnerId}/chronologies`,
+        data
     );
     return response.data;
 };
