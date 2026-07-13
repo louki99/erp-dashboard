@@ -1,10 +1,11 @@
 import { useState, useEffect, useMemo, useCallback } from 'react';
 import { promotionsApi } from '@/services/api/promotionsApi';
-import { masterdataApi, type Partner } from '@/services/api/masterdataApi';
+import { getPartners } from '@/services/api/partnerApi';
+import type { Partner } from '@/types/partner.types';
 import type { PartnerFamily } from '@/types/promotion.types';
 import {
     Users, Plus, RefreshCw, Edit, Trash2, Save, X,
-    Search, CheckCircle, Loader2, Download, Code,
+    Search, Loader2, Download, Code,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { ConfirmationModal } from '@/components/common/ConfirmationModal';
@@ -59,23 +60,16 @@ export const PartnerFamiliesPage = () => {
     const loadAllPartners = useCallback(async () => {
         setLoadingPartners(true);
         try {
-            const data = await masterdataApi.partners.getAll();
-            setAllPartners(data.partner || []);
-        } catch { toast.error('Échec du chargement des partenaires'); }
-        finally { setLoadingPartners(false); }
+            const res = await getPartners({ per_page: 500 });
+            const list = res.partners?.data ?? [];
+            setAllPartners(list);
+        } catch (err) {
+            console.error('Failed to load partners', err);
+            toast.error('Échec du chargement des partenaires');
+        } finally { setLoadingPartners(false); }
     }, []);
 
-    useEffect(() => { loadFamilies(); loadAllPartners(); }, []);
-
-    useEffect(() => {
-        const onKey = (e: KeyboardEvent) => {
-            if ((e.ctrlKey || e.metaKey) && e.key === 's' && showForm) { e.preventDefault(); handleSave(); }
-            if (e.key === 'Escape') { showPartnerModal ? setShowPartnerModal(false) : showForm && handleCancel(); }
-            if ((e.ctrlKey || e.metaKey) && e.key === 'n' && !showForm) { e.preventDefault(); handleCreateNew(); }
-        };
-        window.addEventListener('keydown', onKey);
-        return () => window.removeEventListener('keydown', onKey);
-    }, [showForm, showPartnerModal, formData, families]);
+    useEffect(() => { loadFamilies(); loadAllPartners(); }, [loadFamilies, loadAllPartners]);
 
     const visibleFamilies = useMemo(() => {
         if (!listSearch.trim()) return families;
@@ -90,18 +84,18 @@ export const PartnerFamiliesPage = () => {
 
     const handleEdit = (family: PartnerFamily) => {
         const partnerCodes: string[] = Array.isArray(family.partners)
-            ? family.partners.map((p: any) => typeof p === 'string' ? p : (p.partner_code ?? p.code ?? '')).filter(Boolean)
+            ? family.partners.map((p: string | { partner_code?: string; code?: string }) => typeof p === 'string' ? p : (p.partner_code ?? p.code ?? '')).filter(Boolean)
             : [];
         setFormData({ ...family, partners: partnerCodes });
         setIsEditMode(true); setActiveTab('info'); setShowForm(true);
     };
 
-    const handleCancel = () => {
+    const handleCancel = useCallback(() => {
         setShowForm(false);
         setFormData({ code: '', name: '', partner_condition: '', partners: [] });
-    };
+    }, []);
 
-    const handleSave = async () => {
+    const handleSave = useCallback(async () => {
         if (!formData.code || !formData.name) { toast.error('Code et Nom sont obligatoires'); return; }
         if (formData.code.length < 2)          { toast.error('Le code doit contenir au moins 2 caractères'); return; }
         if (formData.name.length < 3)          { toast.error('Le nom doit contenir au moins 3 caractères'); return; }
@@ -118,9 +112,25 @@ export const PartnerFamiliesPage = () => {
             setShowForm(false);
             setFormData({ code: '', name: '', partner_condition: '', partners: [] });
             await loadFamilies();
-        } catch (err: any) { toast.error(err?.response?.data?.message || 'Échec de l\'opération'); }
+        } catch (err) {
+            const message = (err as { response?: { data?: { message?: string } } })?.response?.data?.message;
+            toast.error(message || 'Échec de l\'opération');
+        }
         finally { setIsSaving(false); }
-    };
+    }, [formData, isEditMode, families, loadFamilies]);
+
+    useEffect(() => {
+        const onKey = (e: KeyboardEvent) => {
+            if ((e.ctrlKey || e.metaKey) && e.key === 's' && showForm) { e.preventDefault(); handleSave(); }
+            if (e.key === 'Escape') {
+                if (showPartnerModal) setShowPartnerModal(false);
+                else if (showForm) handleCancel();
+            }
+            if ((e.ctrlKey || e.metaKey) && e.key === 'n' && !showForm) { e.preventDefault(); handleCreateNew(); }
+        };
+        window.addEventListener('keydown', onKey);
+        return () => window.removeEventListener('keydown', onKey);
+    }, [showForm, showPartnerModal, formData, handleSave, handleCancel]);
 
     const handleDeleteClick = (id: number) => { setFamilyToDelete(id); setShowDeleteModal(true); };
     const handleDeleteConfirm = async () => {
@@ -132,7 +142,10 @@ export const PartnerFamiliesPage = () => {
             if (selected?.id === familyToDelete) setSelected(null);
             setShowDeleteModal(false); setFamilyToDelete(null);
             await loadFamilies();
-        } catch (err: any) { toast.error(err?.response?.data?.message || 'Échec de la suppression'); }
+        } catch (err) {
+            const message = (err as { response?: { data?: { message?: string } } })?.response?.data?.message;
+            toast.error(message || 'Échec de la suppression');
+        }
         finally { setIsDeleting(false); }
     };
 
@@ -171,7 +184,7 @@ export const PartnerFamiliesPage = () => {
         toast.success('Famille exportée');
     };
 
-    const selectedPartners = (formData.partners || []) as string[];
+    const selectedPartners = useMemo(() => (formData.partners || []) as string[], [formData.partners]);
 
     const creditStats = useMemo(() => {
         const total = selectedPartners.reduce((s, c) => s + (parseFloat(allPartners.find(p => p.code === c)?.credit_limit ?? '0') || 0), 0);
@@ -210,7 +223,7 @@ export const PartnerFamiliesPage = () => {
     // ── Detail view ───────────────────────────────────────────────────────────
     const DetailView = ({ family }: { family: PartnerFamily }) => {
         const partnerCodes: string[] = Array.isArray(family.partners)
-            ? family.partners.map((p: any) => typeof p === 'string' ? p : (p.partner_code ?? p.code ?? '')).filter(Boolean)
+            ? family.partners.map((p: string | { partner_code?: string; code?: string }) => typeof p === 'string' ? p : (p.partner_code ?? p.code ?? '')).filter(Boolean)
             : [];
         const count = partnerCodes.length || (family.partners_count ?? 0);
         const totalCredit = partnerCodes.reduce((s, c) => s + (parseFloat(allPartners.find(p => p.code === c)?.credit_limit ?? '0') || 0), 0);
@@ -483,7 +496,7 @@ export const PartnerFamiliesPage = () => {
                                 { key: 'medium', label: '50–100K', active: 'bg-blue-600 text-white border-blue-600' },
                                 { key: 'low', label: '< 50K', active: 'bg-orange-600 text-white border-orange-600' },
                             ] as const).map(f => (
-                                <button key={f.key} onClick={() => setCreditFilter(f.key as any)}
+                                <button key={f.key} onClick={() => setCreditFilter(f.key as 'all' | 'high' | 'medium' | 'low')}
                                     className={`px-2.5 py-1 text-xs rounded-full border transition-colors font-medium
                                         ${creditFilter === f.key ? f.active : 'border-gray-200 text-gray-600 hover:bg-gray-50'}`}
                                 >{f.label}</button>
@@ -502,29 +515,69 @@ export const PartnerFamiliesPage = () => {
                     ) : filteredPartners.length === 0 ? (
                         <div className="text-center py-12"><Users className="w-10 h-10 text-gray-200 mx-auto mb-2" /><p className="text-sm text-gray-400">Aucun partenaire trouvé</p></div>
                     ) : (
-                        <div className="grid grid-cols-2 gap-2">
-                            {filteredPartners.map(p => {
-                                const isSel = selectedPartners.includes(p.code);
-                                const tier = creditTier(p.credit_limit);
-                                return (
-                                    <button key={p.code} onClick={() => handleTogglePartner(p.code)}
-                                        className={`p-3 rounded-xl border-2 text-left transition-all ${isSel ? 'border-violet-500 bg-violet-50' : 'border-gray-200 hover:border-violet-300 bg-white'}`}
-                                    >
-                                        <div className="flex items-start justify-between gap-2">
-                                            <div className="flex-1 min-w-0">
-                                                <p className="text-sm font-semibold text-gray-900 truncate">{p.name}</p>
-                                                <p className="text-xs text-gray-400 mt-0.5 font-mono">{p.code}</p>
-                                                <div className="flex items-center gap-2 mt-1.5">
-                                                    <span className="text-xs font-medium text-emerald-700">{fmt(parseFloat(p.credit_limit))} Dh</span>
-                                                    <span className={`text-[10px] px-1.5 py-0.5 rounded-full border ${tier.cls}`}>{tier.label}</span>
-                                                </div>
-                                                {p.price_list && <p className="text-[11px] text-gray-400 mt-0.5 truncate">{p.price_list.name}</p>}
-                                            </div>
-                                            {isSel && <CheckCircle className="w-4 h-4 text-violet-600 shrink-0 mt-0.5" />}
-                                        </div>
-                                    </button>
-                                );
-                            })}
+                        <div className="border border-gray-200 rounded-xl overflow-hidden">
+                            <table className="w-full text-sm">
+                                <thead className="bg-gray-50 border-b border-gray-200">
+                                    <tr>
+                                        <th className="w-10 px-3 py-2 text-left">
+                                            <input
+                                                type="checkbox"
+                                                checked={filteredPartners.length > 0 && filteredPartners.every(p => selectedPartners.includes(p.code))}
+                                                onChange={() => {
+                                                    const allCodes = filteredPartners.map(p => p.code);
+                                                    const allSelected = allCodes.every(code => selectedPartners.includes(code));
+                                                    setFormData({
+                                                        ...formData,
+                                                        partners: allSelected
+                                                            ? selectedPartners.filter(code => !allCodes.includes(code))
+                                                            : [...new Set([...selectedPartners, ...allCodes])],
+                                                    });
+                                                }}
+                                                className="w-4 h-4 text-violet-600 rounded border-gray-300 focus:ring-violet-500"
+                                            />
+                                        </th>
+                                        <th className="px-3 py-2 text-left text-xs font-semibold text-gray-600 uppercase tracking-wide">Code</th>
+                                        <th className="px-3 py-2 text-left text-xs font-semibold text-gray-600 uppercase tracking-wide">Nom</th>
+                                        <th className="px-3 py-2 text-left text-xs font-semibold text-gray-600 uppercase tracking-wide">Crédit</th>
+                                        <th className="px-3 py-2 text-left text-xs font-semibold text-gray-600 uppercase tracking-wide">Liste de prix</th>
+                                    </tr>
+                                </thead>
+                                <tbody className="divide-y divide-gray-100">
+                                    {filteredPartners.map(p => {
+                                        const isSel = selectedPartners.includes(p.code);
+                                        const tier = creditTier(p.credit_limit);
+                                        return (
+                                            <tr
+                                                key={p.id}
+                                                onClick={() => handleTogglePartner(p.code)}
+                                                className={`cursor-pointer transition-colors ${isSel ? 'bg-violet-50 hover:bg-violet-100' : 'hover:bg-gray-50'}`}
+                                            >
+                                                <td className="px-3 py-2.5">
+                                                    <input
+                                                        type="checkbox"
+                                                        checked={isSel}
+                                                        onChange={() => handleTogglePartner(p.code)}
+                                                        className="w-4 h-4 text-violet-600 rounded border-gray-300 focus:ring-violet-500 pointer-events-none"
+                                                    />
+                                                </td>
+                                                <td className="px-3 py-2.5 font-mono text-xs text-gray-500">{p.code}</td>
+                                                <td className="px-3 py-2.5">
+                                                    <p className="font-medium text-gray-900 truncate max-w-[200px]">{p.name}</p>
+                                                </td>
+                                                <td className="px-3 py-2.5">
+                                                    <div className="flex items-center gap-2">
+                                                        <span className="text-xs font-medium text-emerald-700">{fmt(parseFloat(p.credit_limit))} Dh</span>
+                                                        <span className={`text-[10px] px-1.5 py-0.5 rounded-full border ${tier.cls}`}>{tier.label}</span>
+                                                    </div>
+                                                </td>
+                                                <td className="px-3 py-2.5">
+                                                    <p className="text-xs text-gray-500 truncate max-w-[140px]">{p.price_list?.name ?? '—'}</p>
+                                                </td>
+                                            </tr>
+                                        );
+                                    })}
+                                </tbody>
+                            </table>
                         </div>
                     )}
                 </div>
