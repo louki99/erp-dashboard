@@ -3,9 +3,10 @@
 > **Audience:** Frontend developers consuming the Partner API
 > **Base URL:** `https://api.omni360.cloud/api/backend`
 > **Auth:** `Authorization: Bearer <token>`
-> **Rôle requis (partenaires) :** `root` ou `admin` — les autres rôles reçoivent `403`
-> **Rôle requis (credit-v2) :** `root`, `admin`, `adv_agent`, ou `sfa_supervisor`
-> **Idempotency:** Toutes les mutations (POST/PUT/PATCH/DELETE) requièrent `Idempotency-Key: <unique-string>`
+> **Rôle requis (partenaires) :** permission `manage-partners` (via `DynamicRbacPermissionsSeeder` — pas restreint à `root`/`admin`, tout rôle qui reçoit la permission passe)
+> **Rôle requis (credit-v2) :** permission `browse-credit-control`
+> **Idempotency:** ⚠️ contrairement à une version antérieure de cette doc, les routes `POST/PUT/DELETE /partners*` **n'exigent PAS** de header `Idempotency-Key` (aucun middleware `idempotency.required` sur le groupe `partners` dans `routes/backend.php`) — seule `POST /credit-v2/partners/{id}/recalculate` l'exige. Ne pas bloquer l'UI sur ce header pour le CRUD fiche client.
+> **Statut :** revue "Deep Review" post-nettoyage crédit effectuée le 2026-07-14 — §3, §4, §11 et §19 mis à jour avec des captures réelles ; voir [§20](#20-deep-review--points-de-vigilance-2026-07-14) pour les constats et bugs corrigés.
 
 ---
 
@@ -35,6 +36,7 @@
 17. [Recherche & Statistiques](#17-recherche--statistiques)
 18. [TypeScript Interfaces](#18-typescript-interfaces)
 19. [Database Schema Reference](#19-database-schema-reference)
+20. [Deep Review — points de vigilance (2026-07-14)](#20-deep-review--points-de-vigilance-2026-07-14)
 
 ---
 
@@ -44,7 +46,7 @@ Un **Partner** représente un client B2B (supermarché, épicerie, CHR, grossist
 
 | Dimension | Description |
 |---|---|
-| **Identité** | code, nom, type de canal, segment |
+| **Identité** | code, nom, canal (table `channels`), chronologies commerciales |
 | **Tarification** | liste de prix par défaut + remplacements produit |
 | **Conditions de paiement** | multiple conditions avec une en défaut |
 | **Crédit** | limite, usage, exposition en temps réel, historique d'approbation |
@@ -54,10 +56,19 @@ Un **Partner** représente un client B2B (supermarché, épicerie, CHR, grossist
 | **Activité commerciale** | commandes BC, bons de livraison BL |
 | **Soldes** | points, budget, avoir |
 
-**Trois niveaux de crédit coexistent :**
-- `partners.credit_limit` / `credit_used` — colonnes simples (héritage)
-- `partner_financial_profiles` — profil versionnée avec règles métier (risque, tolérance, approbation)
-- `partner_credit_states` — état matérialisé de l'exposition réelle (calculé en temps réel)
+**Depuis le nettoyage financier (`9fe56ac4`), une seule source de vérité crédit existe :**
+- `partner_financial_profiles` — profil versionné avec règles métier (risque, tolérance, approbation, `change_reason` obligatoire)
+- `partner_credit_states` — état matérialisé de l'exposition réelle (colonnes `GENERATED` `total_exposure`/`available_credit`, recalculé en temps réel)
+
+Les colonnes `partners.credit_limit` / `credit_used` / `credit_available` /
+`credit_hold` / `credit_hold_reason` ont été **supprimées** de la table
+(migration `2026_07_14_000001_drop_credit_columns_from_partners.php`).
+`Partner` expose toujours `credit_limit`, `credit_used`, etc. comme
+**accessors PHP** (`getCreditLimitAttribute()`…) qui lisent à travers
+`financialProfile()`/`creditState()` — donc **côté API la forme JSON n'a pas
+changé** pour ces champs, seul le stockage a bougé. Voir
+[08-payment-credit.md](08-payment-credit.md) §3.3 et §9.0 pour le détail des
+endpoints `GET/PUT /partners/{id}/financial-profile` et `GET /partners/{id}/balances`.
 
 ---
 
@@ -110,12 +121,37 @@ curl "https://api.omni360.cloud/api/backend/masterdata/for-partner-form" \
 
 `GET /backend/masterdata/payment-terms`
 
+> ⚠️ Il n'existe **pas** de route `/api/backend/payment-terms` — le référentiel
+> vit sous `masterdata/`. Contrat FIGÉ : **enveloppe** `{success, data: [...]}`
+> (jamais un array nu), lignes = modèles `payment_terms` complets, filtrés
+> `active = true`, triés `rank` puis `id`.
+
 ```bash
 curl "https://api.omni360.cloud/api/backend/masterdata/payment-terms" \
-  -H "Authorization: Bearer {TOKEN}"
+  -H "Authorization: Bearer {TOKEN}" \
+  -H "Accept: application/json"
 ```
 
-**Response `200` :** `{"success": true, "data": [ ... 16 payment_terms ... ]}`
+**Response `200` :**
+```json
+{
+  "success": true,
+  "data": [
+    {
+      "id": 1, "code": "IMMEDIATE", "name": "Paiement immédiat",
+      "days_number": 0, "discount": null, "rank": 10,
+      "is_credit": false, "is_cash": true, "is_bank_transfer": false,
+      "is_avoir": false, "is_system": false, "is_temporary": false,
+      "active": true, "calculation_type": "IMMEDIATE",
+      "created_at": "…", "updated_at": "…"
+    }
+  ]
+}
+```
+
+Clés stables sur lesquelles l'UI peut compter : `id`, `code`, `name`,
+`days_number`, `discount`, `rank`, `is_credit`, `is_cash`, `is_bank_transfer`,
+`is_avoir`, `is_system`, `is_temporary`, `active`.
 
 ---
 
@@ -123,101 +159,79 @@ curl "https://api.omni360.cloud/api/backend/masterdata/payment-terms" \
 
 `GET /backend/partners/{id}`
 
-Retourne le partenaire avec ses relations préchargées : liste de prix, payment_term par défaut, zone géo, commercial, adresses, itinéraires, commandes et BLs récents.
+Retourne le partenaire avec ses relations préchargées : liste de prix,
+payment_term par défaut, canal, hiérarchie parent/enfants, profil
+financier/état crédit (§8), chronologies commerciales, zone géo, commandes et
+BLs récents.
 
 ```bash
-curl "https://api.omni360.cloud/api/backend/partners/472" \
-  -H "Authorization: Bearer {TOKEN}"
+curl "https://api.omni360.cloud/api/backend/partners/1492" \
+  -H "Authorization: Bearer {TOKEN}" \
+  -H "Accept: application/json"
 ```
 
-**Response `200` :**
+**Response `200` — capture réelle (staging, 2026-07-14) :**
 ```json
 {
   "partner": {
-    "id": 472,
-    "code": "CL00472",
-    "name": "ABDERRAHMAN SUPERETTE",
-    "name_ar": "ABDERRAHMAN SUPERETTE",
-    "partner_type": "CUSTOMER",
-    "channel": "DETAIL",
-    "status": "ACTIVE",
-    "risk_score": 0,
-    "segment_code": null,
-    "company_id": 1,
-
-    "price_list": {
-      "id": 4,
-      "code": "C05",
-      "name": "DETAILS",
-      "rank": 40
-    },
-
-    "payment_term": {
-      "id": 15,
-      "code": "SPLIT_30_60_90",
-      "name": "33% à 30j / 33% à 60j / 34% à 90j",
-      "is_credit": true,
-      "is_cash": false,
-      "days_number": 90,
-      "calculation_type": "SPLIT"
-    },
-
-    "credit_limit": "0.00",
-    "credit_used": "0.00",
-    "credit_available": "0.00",
-    "credit_hold": false,
-    "credit_hold_reason": null,
-
+    "id": 1492,
+    "code": "CL001484",
+    "name": "SNACK LA MARINA",
+    "customer_id": null,
+    "price_list_id": 4,
+    "currency": "MAD",
     "default_discount_rate": "0.000000",
     "default_discount_amount": "0.000000",
     "max_discount_rate": "0.000000",
-    "vat_group_code": "VAT_14",
-    "tax_exempt": false,
-    "tax_number_ice": null,
+    "tax_number_ice": "003344556000078",
     "tax_number_if": null,
-    "currency": "MAD",
-
-    "phone": null,
-    "whatsapp": null,
-    "email": null,
-    "website": null,
-
-    "address_line1": "BAB KHAMISS EL MADINA",
-    "address_line2": null,
-    "city": null,
-    "region": null,
-    "country": "MA",
-    "postal_code": null,
-    "geo_lat": "34.036003",
-    "geo_lng": "-6.819938",
-    "delivery_instructions": null,
-    "min_order_amount": "0.000",
-
-    "geo_area": {
-      "id": 1,
-      "code": "A0001",
-      "name": "Agence Casablanca",
-      "geo_area_type_id": 3
-    },
-
-    "salesperson": null,
-    "parent": null,
-    "children": [],
-
-    "payment_behavior_score": 100,
+    "tax_exempt": false,
+    "vat_group_code": null,
+    "partner_type": "CUSTOMER",
+    "risk_score": 0,
+    "status": "ACTIVE",
     "blocked_until": null,
     "block_reason": null,
-    "allow_show_on_pos": false,
-    "allocation_priority": "normal",
-    "min_allocation_pct": "0.00",
-
+    "phone": "0661000001",
+    "whatsapp": null,
+    "email": "marina@test.ma",
+    "website": null,
+    "address_line1": "Bd de la Corniche",
+    "address_line2": null,
+    "city": "Casablanca",
+    "region": null,
+    "country": null,
+    "postal_code": null,
+    "geo_lat": "33.602100",
+    "geo_lng": "-7.632000",
+    "default_address_id": null,
+    "geo_area_id": null,
+    "channel_id": 5,
+    "channel": "CHR",
+    "salesperson_id": null,
+    "min_order_amount": "500.000",
     "opening_hours": [],
     "last_order_date": null,
     "last_payment_date": null,
     "total_orders_count": 0,
     "total_orders_value": "0.00",
     "average_order_value": "0.00",
+    "payment_behavior_score": 100,
+    "allow_show_on_pos": false,
+    "allocation_priority": "normal",
+    "min_allocation_pct": "0.00",
 
+    "price_list": { "id": 4, "code": "C05", "name": "DETAILS", "rank": 40 },
+    "parent": null,
+    "salesperson": null,
+    "payment_term": null,
+    "channel_ref": { "id": 5, "code": "CHR", "name": "Cafés, Hôtels, Restaurants", "price_list_id": 4 },
+    "customer": null,
+    "business_chronologies": [],
+    "financial_profile": null,
+    "credit_state": null,
+    "children": [],
+    "geo_area": null,
     "orders": [],
     "delivery_notes": [],
     "itinerary_partners": []
@@ -227,11 +241,20 @@ curl "https://api.omni360.cloud/api/backend/partners/472" \
     "partner_rib": {
       "label": "RIB",
       "value": null,
-      "type": "text"
+      "formatted_value": null,
+      "type": "text",
+      "field": { "id": 10, "field_name": "partner_rib", "field_label": "RIB", "is_required": true }
     }
   }
 }
 ```
+
+> `financial_profile` / `credit_state` sont `null` tant qu'aucun profil n'a
+> été initialisé pour ce partner (voir [08-payment-credit.md](08-payment-credit.md)
+> §9.0). `address_line1`…`postal_code` + `geo_lat`/`geo_lng` sont les colonnes
+> plates de `partners` — c'est le **seul** chemin d'écriture utilisé par la
+> fiche client (`default_address_id`/table `addresses` polymorphe est un
+> système séparé, non alimenté par ce endpoint — voir [§20.1](#201-adresses--colonnes-plates-vs-polymorphe-address)).
 
 **Pour une vue 360° complète, combiner avec :**
 - `GET /partners/{id}/payment-terms` — toutes les conditions de paiement (§6)
@@ -251,19 +274,55 @@ curl "https://api.omni360.cloud/api/backend/partners/472" \
 
 | Paramètre | Type | Description |
 |---|---|---|
-| `search` | `string` | Recherche trigram sur code, nom, email, téléphone |
+| `q` | `string` | Recherche `ILIKE` sur `name`, `code`, `phone`, `email` |
 | `status` | `string` | `ACTIVE`, `ON_HOLD`, `BLOCKED`, `CLOSED` |
-| `channel` | `string` | `GMS`, `GROS`, `DETAIL`, `CHR`, `SOM_GROS`, `OTHER` |
+| `channel` | `string` | Code canal legacy (`GMS`, `GROS`, `DETAIL`, `CHR`, `SOM_GROS`, `OTHER`) — filtre via `Partner::scopeChannelCode()` |
+| `channel_id` | `number` | Filtre direct sur `partners.channel_id` (recommandé — évite l'ambiguïté du code legacy) |
 | `partner_type` | `string` | `CUSTOMER`, `SUPPLIER`, `BOTH` |
-| `geo_area_id` | `number` | Filtrer par zone géographique |
-| `salesperson_id` | `number` | Filtrer par commercial |
+| `salesperson_id` | `number` | Filtrer par commercial assigné (`partners.salesperson_id`) |
 | `price_list_id` | `number` | Filtrer par liste de prix |
-| `page` | `number` | Pagination — 20 par page par défaut |
+| `sort_by` | `string` | Whitelist stricte : `name, code, created_at, last_order_date, total_orders_count, total_orders_value, average_order_value` — toute autre valeur retombe sur `name` |
+| `sort_dir` | `string` | `asc` \| `desc` (défaut `asc`) |
+| `per_page` | `number` | Pagination — 20 par page par défaut |
 
 ```bash
-curl "https://api.omni360.cloud/api/backend/partners?status=ACTIVE&channel=DETAIL&page=1" \
-  -H "Authorization: Bearer {TOKEN}"
+curl "https://api.omni360.cloud/api/backend/partners?channel_id=5&sort_by=total_orders_value&sort_dir=desc&per_page=2" \
+  -H "Authorization: Bearer {TOKEN}" \
+  -H "Accept: application/json"
 ```
+
+**Response `200` — capture réelle (extrait) :**
+```json
+{
+  "partners": {
+    "current_page": 1,
+    "data": [
+      {
+        "id": 1492, "code": "CL001484", "name": "SNACK LA MARINA",
+        "price_list_id": 4, "channel_id": 5, "channel": "CHR",
+        "total_orders_count": 0, "total_orders_value": "0.00", "average_order_value": "0.00",
+        "price_list": { "id": 4, "code": "C05", "name": "DETAILS" },
+        "channel_ref": { "id": 5, "code": "CHR", "name": "Cafés, Hôtels, Restaurants", "price_list_id": 4 }
+      }
+    ],
+    "per_page": 2, "total": 1, "last_page": 1
+  },
+  "filters": {
+    "q": "", "status": "", "partner_type": "", "channel": "",
+    "channel_id": 5, "salesperson_id": 0, "price_list_id": 0,
+    "sort_by": "total_orders_value", "sort_dir": "desc"
+  },
+  "priceLists": [
+    { "id": 1, "code": "C01", "name": "DEMI-GROS" },
+    { "id": 2, "code": "C03", "name": "GROS" },
+    { "id": 3, "code": "C04", "name": "GMS" },
+    { "id": 4, "code": "C05", "name": "DETAILS" }
+  ]
+}
+```
+
+> `priceLists` est renvoyé avec la liste (alimente le dropdown filtre sans
+> appel séparé). Les colonnes KPI CRM sont triables directement.
 
 ---
 
@@ -271,37 +330,111 @@ curl "https://api.omni360.cloud/api/backend/partners?status=ACTIVE&channel=DETAI
 
 `POST /backend/partners`
 
+Le payload accepte les champs **soit à la racine, soit sous une clé `partner`**
+(les deux formes sont acceptées ; c'est la forme `{"partner": {...}}` qu'utilise
+l'écran ERP). **Champs requis :** `name` (ou `partner.name`), `price_list_id`
+(ou `partner.price_list_id`, doit exister dans `price_lists`).
+
+**Code :** optionnel — si omis, **auto-généré** au format `CL######` (prochain
+numéro de séquence sur `partners.code LIKE 'CL%'`, verrouillé en transaction —
+voir [§20.5](#205-bugs-corrigés-pendant-cette-revue-bloquants-préexistants)).
+Si fourni, doit être **unique** sur `partners.code` (`422` sinon).
+
 ```bash
 curl -X POST "https://api.omni360.cloud/api/backend/partners" \
   -H "Authorization: Bearer {TOKEN}" \
+  -H "Accept: application/json" \
   -H "Content-Type: application/json" \
-  -H "Idempotency-Key: partner:create:$(date +%s)" \
   -d '{
-    "name": "Supermarché Alami",
-    "name_ar": "سوبرماركت العلامي",
-    "price_list_id": 4,
-    "payment_term_id": 15,
-    "channel": "DETAIL",
-    "partner_type": "CUSTOMER",
-    "vat_group_code": "VAT_14",
-    "geo_area_id": 1,
-    "salesperson_id": 4,
-    "address_line1": "Rue Hassan II",
-    "city": "Casablanca",
-    "country": "MA",
-    "geo_lat": 33.5731,
-    "geo_lng": -7.5898,
-    "phone": "+212600000001",
-    "credit_limit": 50000,
-    "custom_fields": {
-      "partner_rib": "123456789012345678901234"
+    "partner": {
+      "name": "SNACK LA MARINA",
+      "phone": "0661000001",
+      "email": "marina@test.ma",
+      "channel": "CHR",
+      "price_list_id": 4,
+      "payment_term_id": 1,
+      "address_line1": "Bd de la Corniche",
+      "city": "Casablanca",
+      "geo_lat": 33.6021,
+      "geo_lng": -7.6320,
+      "tax_number_ice": "003344556000078",
+      "min_order_amount": 500
     }
   }'
 ```
 
-**Champs requis :** `name`, `price_list_id`
+**Response `201` — capture réelle :**
+```json
+{
+  "success": true,
+  "message": "Partner created successfully",
+  "partner": {
+    "id": 1495,
+    "code": "CL001487",
+    "name": "SNACK LA MARINA",
+    "price_list_id": 4,
+    "currency": "MAD",
+    "tax_number_ice": "003344556000078",
+    "channel_id": 5,
+    "channel": "CHR",
+    "phone": "0661000001",
+    "email": "marina@test.ma",
+    "address_line1": "Bd de la Corniche",
+    "city": "Casablanca",
+    "geo_lat": "33.602100",
+    "geo_lng": "-7.632000",
+    "min_order_amount": "500.000"
+  },
+  "data": {
+    "partner_id": 1495,
+    "partner_code": "CL001487",
+    "customer_id": null,
+    "user_id": null
+  }
+}
+```
 
-**Response `201` :** objet `partner` complet (même forme que `GET /partners/{id}`).
+> `channel` accepte un **code** (`"CHR"`, `"GROS"`, …) résolu en `channel_id`
+> côté serveur (`OTHER` par défaut si code inconnu). `currency` par défaut lit
+> `finance.currency_code` (`ConfigurationSetting`, fallback `MAD`).
+> `payment_term_id` n'écrit **pas** de colonne `partners` (supprimée) : il
+> attache la ligne par défaut sur le pivot `partner_payment_terms`.
+
+**Erreur de validation — `422` :**
+```bash
+curl -X POST "https://api.omni360.cloud/api/backend/partners" \
+  -H "Authorization: Bearer {TOKEN}" \
+  -H "Content-Type: application/json" \
+  -d '{"partner": {"phone": "0600000000"}}'
+```
+```json
+{
+  "message": "The partner.name field is required when name is not present. (and 3 more errors)",
+  "errors": {
+    "partner.name": ["The partner.name field is required when name is not present."],
+    "partner.price_list_id": ["The partner.price list id field is required when price list id is not present."],
+    "name": ["The name field is required when partner.name is not present."],
+    "price_list_id": ["The price list id field is required when partner.price list id is not present."]
+  }
+}
+```
+> Le message dédouble le champ racine et le champ `partner.*` (les deux
+> emplacements sont validés en parallèle) — normal, l'UI doit lire les deux
+> clés en résolvant le premier message trouvé.
+
+**Règles de validation (état réel — `PartnerRequest`) :**
+
+| Champ | Règle | Note |
+|---|---|---|
+| `code` | `nullable, string, max:50, unique:partners,code[,{id}]` | pas de contrainte de format ; vide ⇒ auto-génération `CL######` |
+| `name` | `required_without` (racine/`partner.*`), `max:255` | |
+| `price_list_id` | `required_without`, doit exister dans `price_lists` | requis même en `PUT` (§4.4) |
+| `phone` / `whatsapp` | `nullable, string, max:30` | ⚠️ **aucun format regex** appliqué côté serveur actuellement |
+| `tax_number_ice` / `tax_number_if` | `nullable, string, max:100` | ⚠️ **aucun format IF/Patente** appliqué côté serveur actuellement |
+| `email` | `nullable, email, max:255` | |
+| `geo_lat` / `geo_lng` | `between:-90,90` / `between:-180,180` | |
+| `status` | `in:ACTIVE,ON_HOLD,BLOCKED,CLOSED` | |
+| `salesperson_id` | `nullable, exists:users,id` | pas de vérification de rôle — n'importe quel user id valide passe |
 
 ---
 
@@ -315,23 +448,40 @@ Voir §3 — `GET /backend/partners/{id}`
 
 `PUT /backend/partners/{id}`
 
-Tous les champs sont optionnels — envoyer uniquement ce qui change. **C'est cet endpoint qui gère le changement de liste de prix, de zone géo, de commercial, d'adresse, etc.**
+Même forme de payload que la création (racine ou `{"partner": {...}}`).
+**`price_list_id` reste obligatoire même en update** — la validation
+`required_without` s'applique aussi bien en `PUT` qu'en `POST` (pas de règle
+`sometimes` partielle actuellement) : un payload qui omet `price_list_id`/`partner.price_list_id`
+renvoie `422`.
 
 ```bash
-curl -X PUT "https://api.omni360.cloud/api/backend/partners/472" \
+curl -X PUT "https://api.omni360.cloud/api/backend/partners/1494" \
   -H "Authorization: Bearer {TOKEN}" \
+  -H "Accept: application/json" \
   -H "Content-Type: application/json" \
-  -H "Idempotency-Key: partner:472:update:$(date +%s)" \
   -d '{
-    "phone": "+212600112233",
-    "address_line1": "Bd Mohammed V",
-    "city": "Rabat",
-    "geo_lat": 34.036003,
-    "geo_lng": -6.819938
+    "partner": {
+      "name": "TEST PUT TARGET RENAMED",
+      "channel": "GROS",
+      "price_list_id": 4,
+      "whatsapp": "0662000002"
+    }
   }'
 ```
 
-**Response `200` :** objet `partner` mis à jour.
+**Response `200` :**
+```json
+{ "success": true, "message": "Partner updated successfully" }
+```
+
+> ⚠️ **Bug corrigé pendant cette revue (2026-07-14)** — `PartnerController::update()`
+> ignorait silencieusement tout payload envoyé sous la forme `{"partner": {...}}`
+> (il ne dépliait pas la clé imbriquée avant de la passer à `PartnerRepository::edit()`,
+> contrairement à `store()`) : le serveur répondait `success: true` sans qu'aucun
+> champ ne soit réellement persisté. C'était un **no-op silencieux sur tous les
+> `PUT /partners/{id}`** envoyés par l'écran ERP (qui utilise systématiquement
+> l'enveloppe `partner`). Corrigé et vérifié par relecture (`GET /partners/{id}`)
+> après la capture ci-dessus.
 
 ---
 
@@ -914,13 +1064,58 @@ curl -X PATCH "https://api.omni360.cloud/api/backend/partners/472/toggle" \
 
 ## 11. Tournée (Itinéraire)
 
-Un partenaire peut être affecté à un ou plusieurs itinéraires de livraison via la table pivot `itinerary_partners`. Le champ `itinerary_partners` est inclus dans la réponse `GET /partners/{id}`.
+Un partenaire peut être affecté à un ou plusieurs itinéraires de livraison via
+la table pivot `itinerary_partners` (clé **`partner_code`**, pas `partner_id` —
+soft FK). Le champ `itinerary_partners` est aussi inclus (à plat, sans
+enrichissement) dans la réponse `GET /partners/{id}`.
 
-### 11.1 Lister les tournées du partenaire
+### 11.1 Séquence de visite dédiée — `GET /partners/{id}/itinerary`
 
-Les tournées actuelles du partenaire sont visibles dans `partner.itinerary_partners[]` (réponse du §2).
+Endpoint ajouté pendant la revue "Deep Review" (2026-07-14) — expose la
+séquence de visite enrichie (nom/type d'itinéraire, rang, fenêtre horaire)
+sans avoir à recharger toute la fiche 360.
 
-Pour lister tous les itinéraires disponibles :
+```bash
+curl "https://api.omni360.cloud/api/backend/partners/1486/itinerary" \
+  -H "Authorization: Bearer {TOKEN}" \
+  -H "Accept: application/json"
+```
+
+**Response `200` — capture réelle :**
+```json
+{
+  "success": true,
+  "partner": { "id": 1486, "code": "GOLD-P01", "name": "Golden Partner One" },
+  "allocation": { "allocation_priority": "normal", "min_allocation_pct": 0 },
+  "itineraries": [
+    {
+      "itinerary_id": 16,
+      "itinerary_code": "ITNA0001STD016",
+      "itinerary_name": "Centre Ville",
+      "itinerary_type": "IT-DAILY",
+      "is_active": true,
+      "line_number": 1,
+      "rank": 1,
+      "is_stop_point": true,
+      "visit_date": "2026-07-13T23:00:00.000000Z",
+      "start_time": null,
+      "end_time": null,
+      "visit_frequency_days": 7
+    }
+  ]
+}
+```
+
+> `allocation_priority`/`min_allocation_pct` viennent des colonnes `partners`
+> (allocation stock, indépendante de l'itinéraire) — exposées ici pour éviter
+> un aller-retour supplémentaire côté UI carte/itinéraire.
+>
+> ⚠️ **Réassignation de commercial** — changer `partners.salesperson_id`
+> (§12) **ne cascade pas** sur `itinerary_partners`/`itinerary_user`. Voir
+> [§20.4](#204-réassignation-salesperson--itinéraires--sync-mobile) pour le
+> détail de cette limitation architecturale.
+
+### 11.2 Lister tous les itinéraires disponibles
 
 ```bash
 curl "https://api.omni360.cloud/api/backend/itineraries" \
@@ -929,7 +1124,7 @@ curl "https://api.omni360.cloud/api/backend/itineraries" \
 
 ---
 
-### 11.2 Affecter le partenaire à une tournée
+### 11.3 Affecter le partenaire à une tournée
 
 `POST /backend/itineraries/{itineraryId}/assign-partner`
 
@@ -962,7 +1157,7 @@ curl -X POST "https://api.omni360.cloud/api/backend/itineraries/3/assign-partner
 
 ---
 
-### 11.3 Retirer le partenaire d'une tournée
+### 11.4 Retirer le partenaire d'une tournée
 
 `DELETE /backend/itineraries/{itineraryId}/partner/{itineraryPartnerId}`
 
@@ -1014,9 +1209,15 @@ curl "https://api.omni360.cloud/api/backend/geo-areas" \
 curl -X PUT "https://api.omni360.cloud/api/backend/partners/472" \
   -H "Authorization: Bearer {TOKEN}" \
   -H "Content-Type: application/json" \
-  -H "Idempotency-Key: partner:472:salesperson:$(date +%s)" \
-  -d '{ "salesperson_id": 7 }'
+  -d '{ "partner": { "salesperson_id": 7, "price_list_id": 4 } }'
 ```
+
+> ⚠️ `salesperson_id` sur `partners` est le représentant "responsable de
+> compte" par défaut (filtres/reporting, §4.1) — **indépendant** de
+> l'assignation d'itinéraire réelle (`itinerary_user`/`itinerary_partners`).
+> Changer ce champ ne transfère **pas** automatiquement les points de visite
+> du client vers le nouveau commercial. Voir
+> [§20.4](#204-réassignation-salesperson--itinéraires--sync-mobile).
 
 ---
 
@@ -1206,14 +1407,17 @@ curl -X DELETE "https://api.omni360.cloud/api/backend/partners/bulk/delete" \
 
 `GET /backend/partners/generate-code`
 
-Retourne le prochain code disponible selon le séquencement interne.
+Retourne le prochain code disponible selon le séquencement interne
+(`prefix` par défaut `CL`, `digits` par défaut 6). **Ce n'est qu'un aperçu** —
+la génération réelle a lieu côté serveur à la création (§4.2) si `code` est
+omis ; les deux utilisent la même logique de séquence sur `partners.code`.
 
 ```bash
 curl "https://api.omni360.cloud/api/backend/partners/generate-code" \
   -H "Authorization: Bearer {TOKEN}"
 ```
 
-**Response `200` :** `{"code": "CL00473"}`
+**Response `200` :** `{"success": true, "code": "CL001488", "sequence": 1488}`
 
 ---
 
@@ -1347,9 +1551,9 @@ interface Partner {
   name_ar?: string;
   description?: string | null;
   perimeter?: string | null;
-  segment_code?: string | null;
   partner_type: PartnerType;
-  channel: PartnerChannel;
+  channel: PartnerChannel; // code string from the channels table (accessor over channel_id)
+  channel_id?: number | null;
   status: PartnerStatus;
   risk_score: number;
   company_id: number;
@@ -1377,12 +1581,15 @@ interface Partner {
   tax_exempt: boolean;
   vat_group_code?: string | null;
 
-  // Crédit (colonnes simples)
+  // Crédit — accessors PHP lisant financial_profile/credit_state
+  // (colonnes DB supprimées le 2026-07-14 ; forme JSON inchangée)
   credit_limit: string;
   credit_used: string;
   credit_available: string;
   credit_hold: boolean;
   credit_hold_reason?: string | null;
+  financial_profile?: Record<string, unknown> | null;
+  credit_state?: PartnerCreditState | null;
 
   // Statut & Blocage
   blocked_until?: string | null;
@@ -1561,25 +1768,35 @@ interface PartnerPriceOverride {
 | `code` | `varchar(50)` | Code interne unique (ex: `CL00472`) |
 | `name` | `varchar(255)` | Nom commercial |
 | `name_ar` | `varchar(255)` | Nom en arabe |
-| `partner_type` | `enum` | `CUSTOMER`, `SUPPLIER`, `BOTH` |
-| `channel` | `enum` | `GMS`, `GROS`, `DETAIL`, `CHR`, `SOM_GROS`, `OTHER` |
+| `partner_type` | `varchar` | `CUSTOMER`, `SUPPLIER`, `BOTH` |
+| `channel_id` | `bigint FK → channels` | Canal (remplace l'ancien enum `channel` — voir [20-channels-chronologies.md](20-channels-chronologies.md)) |
 | `status` | `enum` | `ACTIVE`, `ON_HOLD`, `BLOCKED`, `CLOSED` |
 | `price_list_id` | `bigint FK → price_lists` | Liste de prix par défaut |
-| `payment_term_id` | `bigint FK → payment_terms` | Condition de paiement par défaut |
-| `default_payment_method` | `enum` | Mode de paiement par défaut |
-| `allowed_payment_methods` | `jsonb` | Modes autorisés |
-| `credit_limit` | `decimal(14,3)` | Limite de crédit |
-| `credit_used` | `decimal(14,3)` | Crédit consommé |
-| `credit_available` | `decimal(14,3)` | **GENERATED** : `credit_limit - credit_used` |
-| `geo_area_id` | `bigint FK → geo_areas` | Zone géographique |
-| `salesperson_id` | `bigint FK → users` | Commercial assigné |
+| `default_address_id` | `bigint FK → addresses` | **Non alimenté par la fiche client** — voir [§20.1](#201-adresses--colonnes-plates-vs-polymorphe-address) |
+| `address_line1/2`, `city`, `region`, `country`, `postal_code` | `varchar` | Adresse plate — **seul** chemin d'écriture utilisé par `POST`/`PUT /partners` |
 | `geo_lat` / `geo_lng` | `decimal(10,7)` | Coordonnées GPS |
+| `tax_number_ice` / `tax_number_if` | `varchar(100)` | Identifiants fiscaux — pas de validation de format serveur |
+| `tax_exempt` | `boolean` | Stocké et lu (POS dashboard) — **non consommé par l'Invoice Engine** (§20.2) |
+| `vat_group_code` | `varchar(50)` | Idem `tax_exempt` |
+| `geo_area_id` | `bigint FK → geo_areas` | Zone géographique |
+| `salesperson_id` | `bigint FK → users` | Commercial "responsable de compte" — indépendant de l'assignation itinéraire (§20.4) |
 | `opening_hours` | `jsonb` | Horaires d'ouverture |
 | `blocked_until` | `timestamp` | Expiration automatique du blocage |
 | `block_reason` | `text` | Raison du blocage |
 | `risk_score` | `smallint` | Score de risque (0–100) |
 | `allocation_priority` | `varchar` | `high`, `normal`, `low` |
 | `allow_show_on_pos` | `boolean` | Visible sur TPV |
+| `last_order_date`, `total_orders_count`, `total_orders_value`, `average_order_value` | mixed | KPI CRM — recalcul synchrone à chaque commande soumise, voir [§20.3](#203-kpi-performance--recalcul-async) |
+
+> ⚠️ **`credit_limit` / `credit_used` / `credit_available` / `credit_hold` /
+> `credit_hold_reason` ont été supprimées** de cette table le 2026-07-14
+> (migration `drop_credit_columns_from_partners`). Le crédit vit désormais
+> exclusivement dans `partner_financial_profiles` / `partner_credit_states`
+> (voir plus bas) ; `Partner` expose toujours ces noms comme **accessors PHP**
+> pour compatibilité API — la table `partners` elle-même ne les contient plus.
+> Le legacy `payment_term_id`/`default_payment_method`/`allowed_payment_methods`
+> sur `partners` ont également été retirés — la condition par défaut vit sur
+> le pivot `partner_payment_terms` (`is_default: true`).
 
 ### `partner_payment_terms` (pivot)
 
@@ -1652,3 +1869,113 @@ Unique sur `(partner_id, payment_term_id)`.
 *Source: `app/Http/Controllers/Backend/PartnerController.php`, `app/Http/Controllers/Backend/CreditControlV2Controller.php`, `app/Http/Controllers/API/PartnerBalanceController.php`, `app/Models/Partner.php`, `app/Models/PartnerPaymentTerms.php`, `app/Models/PartnerBalance.php`, `app/Models/PartnerPriceOverride.php`, `app/Models/ItineraryPartner.php`, `database/migrations/`, `routes/backend.php`*
 
 *Créé: 2026-06-30 — Documentation Partner 360° complète : CRUD, tarification, conditions de paiement, crédit V2, statut/blocage, tournées, zone géo, balances, overrides de prix, opérations en masse, TypeScript interfaces.*
+
+---
+
+## 20. Deep Review — points de vigilance (2026-07-14)
+
+Revue de production-readiness de la fiche Partner effectuée après le
+nettoyage financier (`9fe56ac4`), sur les 4 points de vigilance identifiés :
+adresses/géo, taxes/facturation, KPI performance, réassignation
+commercial/itinéraire. Captures et corrections faites en staging avant mise à
+jour de ce document.
+
+### 20.1 Adresses — colonnes plates vs polymorphe `Address`
+
+Les **deux** systèmes coexistent : `partners` a des colonnes plates
+(`address_line1`, `address_line2`, `city`, `region`, `country`, `postal_code`,
+`geo_lat`, `geo_lng`) **et** une relation `defaultAddress()` (`default_address_id`
+→ `addresses`) plus une relation polymorphe `addresses()` (`morphMany`, table
+`addresses`, `addressable_type/id`).
+
+**Le chemin d'écriture de la fiche client (`POST`/`PUT /partners`, §4) n'écrit
+QUE les colonnes plates** — `default_address_id` n'est jamais renseigné par
+`PartnerRepository::normalize()`/`edit()`. La table `addresses` polymorphe est
+un système **séparé**, alimenté par `AddressController`/`AddressRepository`
+(adresses de livraison multiples, cf. `OrderDeliveryAddressResolver`), pas par
+la fiche 360. `geo_lat`/`geo_lng` vivent uniquement sur les colonnes plates de
+`partners` et sont bien persistées/retournées telles quelles (vérifié §3, §4.2).
+**Aucune perte de données** — les deux systèmes ne se recouvrent pas dans le
+flux actuel de la fiche client.
+
+### 20.2 Taxes & Facturation — `tax_exempt` / `vat_group_code`
+
+Ces deux champs sont bien **stockés** sur `partners` (create/update
+fonctionnels, §4.2) et **survivent intacts** au nettoyage crédit (colonnes
+indépendantes des colonnes crédit supprimées). Ils sont **lus en lecture
+seule** dans `PosManagerDashboardService` (bloc `fiscal` du dashboard POS).
+
+**Ils ne sont branchés nulle part dans le moteur de facturation**
+(`InvoiceService`, `GenerateInvoiceJob`, `PaymentCalculationService`,
+`InvoicePayload` — aucune référence trouvée). Le calcul de taxe actuel est
+**uniquement au niveau ligne produit** (`tax_rate` produit), sans notion
+d'exonération partenaire ni de groupe TVA. **Ce n'est pas une régression** du
+nettoyage crédit — ces champs n'ont jamais été consommés par l'Invoice Engine.
+C'est un gap fonctionnel pré-existant à trancher en produit (faut-il que
+`tax_exempt=true` force `tax_rate=0` sur les lignes de facture générées pour ce
+partner ? qui décide du mapping `vat_group_code` ?) — pas de logique de calcul
+implémentée sans spec produit validée.
+
+### 20.3 KPI Performance — recalcul async
+
+`last_order_date`, `total_orders_count`, `total_orders_value`,
+`average_order_value` sont recalculés **de façon synchrone** (pas de job async)
+via `CreditManagementService::recordOrderKpis()`, appelé sans condition depuis
+`SubmitOrderDecision` pour **toute** commande soumise (crédit ou comptant) —
+avant même le check `is_credit_sale`. L'écriture est enveloppée dans
+`DB::transaction()` + `try/catch` non bloquant (un échec KPI n'annule jamais la
+commande, juste un `Log::warning`).
+
+> ⚠️ **Comportement corrigé pendant cette revue** — ce recalcul était
+> auparavant imbriqué dans la logique crédit et ne se déclenchait donc **que**
+> pour les ventes à crédit. Extrait dans une méthode dédiée
+> (`recordOrderKpis()`) et appelé pour tous les modes de paiement.
+
+### 20.4 Réassignation salesperson ↔ itinéraires ↔ sync mobile
+
+**Constat : `partners.salesperson_id` et l'assignation d'itinéraire sont deux
+mécanismes indépendants, sans cascade automatique.** `salesperson_id` sur
+`partners` est le représentant "responsable de compte" par défaut (utilisé pour
+filtrer/reporter, §4.1). Le routage de visite réel est porté par
+`Itinerary` → pivot `itinerary_user` (assigne un ou plusieurs users à un
+itinéraire géographique) et `itinerary_partners` (rattache un partner à un
+itinéraire **par `partner_code`**, pas `partner_id`). Changer `salesperson_id`
+sur la fiche client ne modifie **ni** `itinerary_user` **ni** `itinerary_partners`.
+
+Ce n'est pas une régression : c'est l'architecture actuelle (un itinéraire est
+géographique/tournant, pas propriété exclusive d'un seul rep). Mais cela veut
+dire que réassigner un client à un nouveau rep depuis la fiche 360 **ne
+transfère pas automatiquement ses points de visite** — à faire manuellement
+côté écran Itinéraires (§11.3/§11.4). La sync mobile
+(`SalespersonSyncEngineService`) suit le même modèle : elle synchronise les
+itinéraires assignés via `itinerary_user`, indépendamment de
+`partners.salesperson_id`.
+
+**Recommandation (non implémentée — nécessite une décision produit) :** si le
+métier attend une cascade automatique, il faudrait un listener sur
+`Partner::updated()` détectant le changement de `salesperson_id` et
+proposant/exécutant un ré-rattachement des lignes `itinerary_partners`
+correspondantes — actuellement absent.
+
+### 20.5 Bugs corrigés pendant cette revue (bloquants, pré-existants)
+
+1. **`SettingsService` interrogeait une table `company_settings` inexistante**
+   (`SQLSTATE[42P01]`) — bloquait *toute* création de partner (résolution de
+   `currency_code`). Réécrit pour lire `ConfigurationSetting` (colonnes typées
+   `string_value`/`int_value`/`bool_value`/`decimal_value`/`json_value`,
+   résolues via `resolveStoredValue()` en fonction du `value_type` déclaré
+   dans `sfa_params`).
+2. **Auto-génération du code partner (`'CL'`) cassée** —
+   `PartnerService::createPartner()` appelait `DocumentNumberingService` sur le
+   système `token_series` plat (colonnes `invoice_prefix`/`order_prefix`/…),
+   qui n'a jamais eu de colonnes `client_prefix`/`client_next_number` : ce
+   système ne couvre que les documents transactionnels. Remplacé par une
+   génération de séquence dédiée sur `partners.code LIKE 'CL%'` (verrouillée en
+   transaction), reprenant la logique déjà existante et correcte de
+   `PartnerController::generateCode()` (§16.4).
+3. **`PUT /partners/{id}` no-op silencieux** — voir §4.4.
+
+Ces trois bugs empêchaient purement et simplement la création/modification de
+partenaires sur toute base fraîchement provisionnée (`db:fresh` + seed) — ils
+ne sont pas une régression de ce sprint, mais n'avaient jamais été exercés en
+staging avec un flux de bout en bout avant cette revue.

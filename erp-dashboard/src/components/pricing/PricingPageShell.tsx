@@ -43,42 +43,38 @@ export function PricingPageShell({ title, subtitle, children, badge }: PricingPa
     return (
         <div className="h-full flex flex-col bg-slate-50/60">
             {/* ERP-style header */}
-            <div className="bg-white border-b border-gray-200 px-5 py-3.5 shrink-0">
-                {/* Breadcrumbs */}
-                <nav className="flex items-center gap-1.5 text-[11px] text-gray-500 mb-2.5">
-                    <Link
-                        to="/dashboard"
-                        className="hover:text-sage-600 transition-colors"
-                    >
-                        {t('navigation.dashboard')}
-                    </Link>
-                    <ChevronRight className="w-3 h-3 text-gray-300" />
-                    <Link
-                        to="/pricing"
-                        className="hover:text-sage-600 transition-colors"
-                    >
-                        {t('navigation.pricing')}
-                    </Link>
-                    <ChevronRight className="w-3 h-3 text-gray-300" />
-                    <span className="text-gray-700 font-medium">{t(activeItem.labelKey)}</span>
-                </nav>
-
-                <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-3">
-                    <div className="flex items-center gap-3">
-                        <div className="hidden sm:flex w-9 h-9 rounded-lg bg-gradient-to-br from-sage-500 to-sage-600 items-center justify-center text-white shadow-sm">
-                            <Tag className="w-4 h-4" />
-                        </div>
-                        <div>
-                            <div className="flex items-center gap-2">
-                                <h1 className="text-base font-bold text-gray-900">{title}</h1>
-                                {badge}
+            <div className="bg-white border-b border-gray-200 px-4 py-3 shrink-0">
+                <div className="flex flex-col gap-2.5">
+                    {/* Breadcrumbs + Title row */}
+                    <div className="flex items-center justify-between gap-4">
+                        <div className="flex items-center gap-2 min-w-0">
+                            <div className="hidden sm:flex w-8 h-8 rounded-md bg-gradient-to-br from-sage-500 to-sage-600 items-center justify-center text-white shadow-sm shrink-0">
+                                <Tag className="w-3.5 h-3.5" />
                             </div>
-                            {subtitle && <p className="text-xs text-gray-500">{subtitle}</p>}
+                            <div className="min-w-0">
+                                <div className="flex items-center gap-2">
+                                    <h1 className="text-sm font-bold text-gray-900 truncate">{title}</h1>
+                                    {badge}
+                                </div>
+                                {subtitle && <p className="text-[11px] text-gray-500 truncate">{subtitle}</p>}
+                            </div>
                         </div>
+
+                        <nav className="hidden sm:flex items-center gap-1 text-[11px] text-gray-500 shrink-0">
+                            <Link to="/dashboard" className="hover:text-sage-600 transition-colors">
+                                {t('navigation.dashboard')}
+                            </Link>
+                            <ChevronRight className="w-3 h-3 text-gray-300" />
+                            <Link to="/pricing" className="hover:text-sage-600 transition-colors">
+                                {t('navigation.pricing')}
+                            </Link>
+                            <ChevronRight className="w-3 h-3 text-gray-300" />
+                            <span className="text-gray-700 font-medium">{t(activeItem.labelKey)}</span>
+                        </nav>
                     </div>
 
-                    {/* Module sub-navigation */}
-                    <nav className="flex items-center gap-1 overflow-x-auto pb-1 lg:pb-0 no-scrollbar">
+                    {/* Module sub-navigation - wraps on small screens */}
+                    <nav className="flex flex-wrap items-center gap-1">
                         {NAV_ITEMS.map((item) => {
                             const isActive = item.route === '/pricing'
                                 ? pathname === '/pricing'
@@ -88,7 +84,7 @@ export function PricingPageShell({ title, subtitle, children, badge }: PricingPa
                                     key={item.id}
                                     to={item.route}
                                     className={cn(
-                                        'flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium whitespace-nowrap transition-all border',
+                                        'flex items-center gap-1.5 px-2.5 py-1 rounded-md text-[11px] font-medium transition-all border',
                                         isActive
                                             ? 'bg-sage-50 text-sage-700 border-sage-200 shadow-sm'
                                             : 'text-gray-500 hover:bg-gray-50 hover:text-gray-700 border-transparent'

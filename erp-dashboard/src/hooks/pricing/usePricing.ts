@@ -4,6 +4,7 @@ import type {
     PriceListFilters,
     PriceList,
     PaginatedResponse,
+    ApiSuccessResponse,
     UpdatePriceListRequest,
     OverrideFilters,
     PriceOverride,
@@ -12,6 +13,11 @@ import type {
     UpsertDetailsRequest,
     DuplicateLineRequest,
     ImportCsvParams,
+    BulkUpdateRequest,
+    BulkUpdateResponse,
+    ImportPriceListParams,
+    ImportPriceListResponse,
+    ExportPriceListParams,
     CreateOverrideRequest,
     PreviewPriceRequest,
     PreviewPriceResponse,
@@ -225,6 +231,38 @@ export const useImportCsv = () => {
         async ({ priceListId, lineId, params }) => pricingApi.importLineCsv(priceListId, lineId, params)
     );
     return { importCsv: execute, loading, error };
+};
+
+// ─── Price List Bulk Operations (Full-Screen Grid Enterprise ERP) ─────────────
+
+export const useBulkUpdatePriceList = () => {
+    const { loading, error, execute } = useMutation<
+        { priceListId: number; data: BulkUpdateRequest },
+        ApiSuccessResponse<BulkUpdateResponse>
+    >(
+        async ({ priceListId, data }) => pricingApi.bulkUpdatePriceList(priceListId, data)
+    );
+    return { bulkUpdatePriceList: execute, loading, error };
+};
+
+export const useImportPriceList = () => {
+    const { loading, error, execute } = useMutation<
+        { priceListId: number; params: ImportPriceListParams },
+        ApiSuccessResponse<ImportPriceListResponse>
+    >(
+        async ({ priceListId, params }) => pricingApi.importPriceList(priceListId, params)
+    );
+    return { importPriceList: execute, loading, error };
+};
+
+export const useExportPriceList = () => {
+    const { loading, error, execute } = useMutation<
+        { priceListId: number; params: ExportPriceListParams },
+        Blob
+    >(
+        async ({ priceListId, params }) => pricingApi.exportPriceList(priceListId, params)
+    );
+    return { exportPriceList: execute, loading, error };
 };
 
 export const useCreateOverride = () => {

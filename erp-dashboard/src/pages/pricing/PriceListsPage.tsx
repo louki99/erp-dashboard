@@ -484,6 +484,17 @@ export function PriceListsPage() {
                 ),
             },
             {
+                headerName: t('pricing.priceLists.products'),
+                width: 90,
+                valueGetter: (p: any) => p.data?.details?.length ?? 0,
+                cellStyle: { textAlign: 'center' } as any,
+                cellRenderer: (p: any) => (
+                    <span className="inline-flex items-center justify-center px-2 py-0.5 rounded-full bg-slate-100 text-slate-700 text-[11px] font-semibold min-w-[24px]">
+                        {p.value}
+                    </span>
+                ),
+            },
+            {
                 headerName: t('common.actions'),
                 width: 150,
                 cellRenderer: (params: any) => (
@@ -551,14 +562,25 @@ export function PriceListsPage() {
             {
                 field: 'product_id',
                 headerName: t('pricing.priceLists.details.product'),
-                width: 130,
+                width: 280,
+                minWidth: 200,
+                flex: 1,
                 pinned: 'left',
-                cellRenderer: (p: any) => (
-                    <div className="flex items-center gap-1.5">
-                        <Hash className="w-3 h-3 text-gray-400 shrink-0" />
-                        <span className="font-medium text-gray-800">{p.data?.product?.name || p.value}</span>
-                    </div>
-                ),
+                cellRenderer: (p: any) => {
+                    const product = p.data?.product;
+                    return (
+                        <div className="flex flex-col justify-center min-w-0 py-1">
+                            <span className="font-medium text-gray-900 truncate text-[13px]">
+                                {product?.name || `#${p.value}`}
+                            </span>
+                            {product?.code && (
+                                <span className="text-[11px] text-gray-500 font-mono truncate">
+                                    {product.code}
+                                </span>
+                            )}
+                        </div>
+                    );
+                },
             },
             numCol('sales_price', t('pricing.priceLists.details.salesPrice'), '#059669'),
             numCol('return_price', t('pricing.priceLists.details.returnPrice')),
@@ -673,6 +695,7 @@ export function PriceListsPage() {
                                         loading={priceListsLoading}
                                         rowSelection="single"
                                         onRowDoubleClicked={handleSelectPriceList}
+                                        defaultSelectedIds={(row) => row.id === selectedPriceList?.id}
                                     />
                                 </div>
                             )}
@@ -764,51 +787,8 @@ export function PriceListsPage() {
                                                 isOpen={openSections.info}
                                                 onOpenChange={(open) => toggleSection('info', open)}
                                             >
-                                                <div className="space-y-4">
-                                                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                                                        {[
-                                                            {
-                                                                label: t('pricing.priceLists.code'),
-                                                                value: priceListDetail.code,
-                                                                theme: 'blue' as const,
-                                                            },
-                                                            {
-                                                                label: t('pricing.priceLists.rank'),
-                                                                value: priceListDetail.rank,
-                                                                theme: 'purple' as const,
-                                                            },
-                                                            {
-                                                                label: t('pricing.priceLists.lines'),
-                                                                value: priceListDetail.lines_count || 0,
-                                                                theme: 'emerald' as const,
-                                                            },
-                                                            {
-                                                                label: t('pricing.priceLists.products'),
-                                                                value: (priceListDetail.lines ?? []).reduce(
-                                                                    (a: number, l: PriceListLine) => a + (l.details?.length ?? 0),
-                                                                    0
-                                                                ),
-                                                                theme: 'amber' as const,
-                                                            },
-                                                        ].map((kpi) => {
-                                                            const palette: Record<string, { bg: string; border: string; text: string }> = {
-                                                                blue: { bg: 'bg-blue-50', border: 'border-blue-100', text: 'text-blue-700' },
-                                                                purple: { bg: 'bg-purple-50', border: 'border-purple-100', text: 'text-purple-700' },
-                                                                emerald: { bg: 'bg-emerald-50', border: 'border-emerald-100', text: 'text-emerald-700' },
-                                                                amber: { bg: 'bg-amber-50', border: 'border-amber-100', text: 'text-amber-700' },
-                                                            };
-                                                            const colors = palette[kpi.theme];
-                                                            return (
-                                                                <div key={kpi.label} className={`${colors.bg} rounded-lg p-3 border ${colors.border}`}>
-                                                                    <div className="text-[11px] uppercase font-semibold text-gray-500 mb-1 tracking-wide">{kpi.label}</div>
-                                                                    <div className={`text-xl font-bold ${colors.text}`}>{kpi.value}</div>
-                                                                </div>
-                                                            );
-                                                        })}
-                                                    </div>
-
-                                                    <div className="bg-white rounded-lg border border-gray-100 p-4">
-                                                        <div className="grid grid-cols-2 gap-y-4 gap-x-6">
+                                                <div className="bg-white rounded-lg border border-gray-100 p-4">
+                                                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-y-4 gap-x-6">
                                                             <div>
                                                                 <label className="block text-[11px] font-medium text-gray-400 uppercase tracking-wider mb-0.5">
                                                                     {t('pricing.priceLists.fullName')}
@@ -851,7 +831,6 @@ export function PriceListsPage() {
                                                             </div>
                                                         </div>
                                                     </div>
-                                                </div>
                                             </SageCollapsible>
                                         )}
 

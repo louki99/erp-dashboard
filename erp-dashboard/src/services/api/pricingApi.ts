@@ -12,6 +12,11 @@ import {
     type UpsertDetailsRequest,
     type DuplicateLineRequest,
     type ImportCsvParams,
+    type BulkUpdateRequest,
+    type BulkUpdateResponse,
+    type ImportPriceListParams,
+    type ImportPriceListResponse,
+    type ExportPriceListParams,
     type PriceOverride,
     type OverridesIndexResponse,
     type OverrideFilters,
@@ -193,6 +198,55 @@ export const importLineCsv = async (priceListId: number, lineNumber: number, par
             headers: {
                 'Content-Type': 'multipart/form-data',
             },
+        }
+    );
+    return response.data;
+};
+
+// ─── Price List Bulk Operations (Full-Screen Grid Enterprise ERP) ─────────────
+
+export const bulkUpdatePriceList = async (id: number, data: BulkUpdateRequest) => {
+    const response = await apiClient.post<ApiSuccessResponse<BulkUpdateResponse>>(
+        `${BASE_PATH}/${id}/bulk-update`,
+        data
+    );
+    return response.data;
+};
+
+export const importPriceList = async (id: number, params: ImportPriceListParams) => {
+    const formData = new FormData();
+    formData.append('file', params.file);
+    if (params.line_number !== undefined) {
+        formData.append('line_number', String(params.line_number));
+    }
+    formData.append('mode', params.mode);
+    formData.append('has_header', params.has_header ? '1' : '0');
+    formData.append('product_identifier', params.product_identifier);
+    if (params.sheet_index !== undefined) {
+        formData.append('sheet_index', String(params.sheet_index));
+    }
+
+    const response = await apiClient.post<ApiSuccessResponse<ImportPriceListResponse>>(
+        `${BASE_PATH}/${id}/import`,
+        formData,
+        {
+            headers: {
+                'Content-Type': 'multipart/form-data',
+            },
+        }
+    );
+    return response.data;
+};
+
+export const exportPriceList = async (id: number, params: ExportPriceListParams): Promise<Blob> => {
+    const response = await apiClient.get<Blob>(
+        `${BASE_PATH}/${id}/export`,
+        {
+            params: {
+                line_number: params.line_number,
+                format: params.format,
+            },
+            responseType: 'blob',
         }
     );
     return response.data;

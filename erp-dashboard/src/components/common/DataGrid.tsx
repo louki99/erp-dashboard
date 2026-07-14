@@ -67,41 +67,40 @@ export const DataGrid = forwardRef<AgGridReact, DataGridProps>(({
         }
     };
 
-    // Sync grid selection with external selected IDs
+    // Sync grid selection with external selected IDs (single or multiple)
     useEffect(() => {
-        if (!gridApi || !defaultSelectedIds || rowSelection !== 'multiple' || !rowData || rowData.length === 0) {
+        if (!gridApi || !defaultSelectedIds || !rowData || rowData.length === 0) {
             return;
         }
 
-        // Build a set of IDs that should be selected
-        const shouldBeSelectedSet = new Set<any>();
-        rowData.forEach(row => {
+        const shouldBeSelectedIds = new Set<any>();
+        rowData.forEach((row) => {
             if (defaultSelectedIds(row)) {
-                // Use a unique identifier - try common ID fields
                 const id = row.id || row.code || row.name || JSON.stringify(row);
-                shouldBeSelectedSet.add(id);
+                shouldBeSelectedIds.add(id);
             }
         });
 
-        // Check if selection state has actually changed
+        // For single selection, keep only the first matching row
+        const effectiveSelectedIds = rowSelection === 'single'
+            ? new Set(shouldBeSelectedIds.size > 0 ? [Array.from(shouldBeSelectedIds)[0]] : [])
+            : shouldBeSelectedIds;
+
         const hasChanged =
-            shouldBeSelectedSet.size !== previousSelectedIdsRef.current.size ||
-            Array.from(shouldBeSelectedSet).some(id => !previousSelectedIdsRef.current.has(id));
+            effectiveSelectedIds.size !== previousSelectedIdsRef.current.size ||
+            Array.from(effectiveSelectedIds).some((id) => !previousSelectedIdsRef.current.has(id));
 
         if (!hasChanged) {
-            return; // No change needed
+            return;
         }
 
-        // Update the ref
-        previousSelectedIdsRef.current = shouldBeSelectedSet;
-
-        // Set flag to indicate we're programmatically updating selection
+        previousSelectedIdsRef.current = effectiveSelectedIds;
         isInitializingSelection.current = true;
 
-        // Update grid selection to match
         gridApi.forEachNode((node: any) => {
             if (node.data) {
-                const shouldBeSelected = defaultSelectedIds(node.data);
+                const id = node.data.id || node.data.code || node.data.name || JSON.stringify(node.data);
+                const shouldBeSelected = effectiveSelectedIds.has(id);
                 const isCurrentlySelected = node.isSelected();
 
                 if (shouldBeSelected !== isCurrentlySelected) {
@@ -110,14 +109,13 @@ export const DataGrid = forwardRef<AgGridReact, DataGridProps>(({
             }
         });
 
-        // Reset flag after a brief delay to allow for any pending updates
         setTimeout(() => {
             isInitializingSelection.current = false;
         }, 50);
     }, [gridApi, rowData, defaultSelectedIds, rowSelection]);
 
     return (
-        <div className="h-full w-full">
+        <div className="ag-theme-sage h-full w-full">
             <AgGridReact
                     ref={ref}
                     theme={themeQuartz}

@@ -216,6 +216,70 @@ export interface ImportCsvParams {
     product_identifier: 'id' | 'code';
 }
 
+// ─── Bulk Operations (Full-Screen Grid Enterprise ERP) ───────────────────────
+
+export type BulkUpdateOperation =
+    | 'increase_rate'
+    | 'decrease_rate'
+    | 'increase_amount'
+    | 'decrease_amount'
+    | 'set_value'
+    | 'multiply'
+    | 'copy_from_list';
+
+export type BulkUpdateField =
+    | 'sales_price'
+    | 'return_price'
+    | 'min_sales_price'
+    | 'max_sales_price'
+    | 'discount_rate'
+    | 'discount_amount';
+
+export interface BulkUpdateFilter {
+    product_ids?: number[];
+    min_price?: number;
+    max_price?: number;
+}
+
+export interface BulkUpdateRequest {
+    line_number?: number;
+    operation: BulkUpdateOperation;
+    field: BulkUpdateField;
+    value: number;
+    scope?: 'all' | 'selected';
+    filters?: BulkUpdateFilter;
+    source_price_list_id?: number;
+    source_line_number?: number;
+}
+
+export interface BulkUpdateResponse {
+    updated_count: number;
+    line_number?: number;
+}
+
+export interface ImportPriceListParams {
+    file: File;
+    line_number?: number;
+    mode: 'merge' | 'replace';
+    has_header: boolean;
+    product_identifier: 'id' | 'code';
+    sheet_index?: number;
+}
+
+export interface ImportPriceListResponse {
+    imported: number;
+    updated: number;
+    errors: number;
+    line_number?: number;
+}
+
+export type ExportFormat = 'csv' | 'xlsx';
+
+export interface ExportPriceListParams {
+    line_number?: number;
+    format: ExportFormat;
+}
+
 export interface CreateOverrideRequest {
     partner_id: number;
     product_id: number;
