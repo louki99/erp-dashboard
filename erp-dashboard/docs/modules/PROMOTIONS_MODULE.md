@@ -104,6 +104,24 @@ promotions
 
 **Transaction-wide (nouveau, 2026-07-11)** : une ligne de promo **sans** `paid_product_code` NI `paid_product_family_code` s'applique à **toute la commande** (types 1, 2, 6 uniquement). Exemple : « 5% sur toute commande ≥ 5000 MAD » sans créer de famille englobante.
 
+> **Contrat renforcé (2026-07-14)** : le back-office **rejette en `422`** un
+> `promo_type` 3/4/5/7/8 sur une ligne transaction-wide (store **et** update),
+> erreurs clés `lines.{i}.details.{j}.promo_type`. Les types à gratuité /
+> remplacement de prix exigent une cible `paid_*` — plus de configuration
+> silencieusement inopérante.
+
+**Boosts — `POST /backend/promotions/boosts/bulk-sync` (maintenu ✅)** :
+full-replace par famille de produits — supprime puis recrée tous les boosts de
+`product_family_id`. Idéal pour le "réordonner les rangs en masse" de la page
+Boosts (l'UI envoie l'état final de la grille).
+```json
+{ "product_family_id": 3,
+  "boosts": [
+    { "partner_family_id": 1, "rank": 1, "boost_factor": 2.5 },
+    { "partner_family_id": 4, "rank": 2, "boost_factor": 1.2 } ] }
+```
+Response `200`: `{ "success": true, "message": "Boosts synchronized successfully", "boosts": [ …rows créées… ] }`.
+
 ---
 
 ## 4. Cycle de vie d'une promo dans le flux vendeur (SFA mobile)
@@ -238,6 +256,18 @@ product_family_partner_family_boosts
 
 **Garde-fous existants :** une famille (produit ou partenaire) utilisée dans un boost ne peut pas être supprimée (422), et le couple (product_family × partner_family) est unique.
 
+### Bannière promo écran client + badges catalogue (mobile)
+
+**Bannière `PROMO_BANNER` — écran `partner.detail.v1` :**
+- Slot `partner_promotions_banner` (seedé, sort 3, juste sous les infos client) résolu par `partner_promotions_banner_resolver`.
+- 1 promo active → nom de la promo + date d'expiration ; N promos → « N promotions actives pour ce client » + échéance la plus proche ; icône 🎁 si au moins une gratuité (types 4/5/8), 🏷️ sinon.
+- 0 promo → le slot est **entièrement omis** de l'écran (convention moteur `['_skip' => true]`, ajoutée à `DynamicScreenTreeEngine` pour tout slot optionnel).
+- Réutilise le cache promo partenaire (1h + invalidation instantanée) — fenêtres horaires et budgets respectés.
+
+**Badges catalogue (`ProductCatalogView.tsx` mobile) :**
+- `promo_active: true` → badge vert « 🏷️ Promo » sur la card produit **et** dans le modal quantité.
+- `is_boosted: true` → badge « ⭐ Mis en avant » (le tri serveur place déjà ces produits en tête).
+
 ---
 
 ## 7. Limitations connues & roadmap proposée
@@ -302,7 +332,11 @@ detail: {minimum_value:8, amount:100, promo_type:6}
 - [x] POS : `PosCheckoutService`/`PosCartController` appellent déjà le moteur
 - [x] Facturation conventionnelle : `DirectInvoiceBulkService::applyToDraftOrder` déjà en place
 - [x] Invalidation instantanée du cache promo à l'édition admin — **implémenté** (version bump via model events + CRUD)
-- [ ] Test E2E : créer une promo bracket + placer une commande mobile + vérifier `order_promotion_details`
+- [x] Migration `2026_07_11_120000_add_advanced_promotion_features` appliquée (colonnes + ledger vérifiés en base)
+- [x] Tests unitaires : `PromotionCumulativeTest` (5 ✓) + `PromotionAdvancedFeaturesTest` (9 ✓ : happy hours, budget cap, transaction-wide, type 8, guard anti-double-remise)
+- [x] Catalogue vendeur : `promo_active` réel (était codé en dur à false) + boosts merchandising
+- [x] Payload lignes panier : `original_unit_price` + `promotion_discount` exposés (prix barré mobile)
+- [ ] Test E2E manuel : créer une promo bracket + placer une commande mobile + vérifier `order_promotion_details`
 ```
 php artisan tinker
 >>> app(\App\Services\Promotions\PromotionService::class)->getPartnerApplicablePromo('PARTNER_CODE', now(), null)

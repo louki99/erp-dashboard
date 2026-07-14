@@ -93,7 +93,7 @@ interface BoostFormState {
 const FORM_DEFAULTS: BoostFormState = { product_family_id: 0, partner_family_id: 0, rank: 1, boost_factor: 1.0 };
 
 const BoostFormModal = ({
-    open, onClose, onSaved, editing, productFamilies, partnerFamilies, saving, onSubmit,
+    open, onClose, editing, productFamilies, partnerFamilies, saving, onSubmit,
 }: {
     open: boolean; onClose: () => void; onSaved: () => void;
     editing: ProductFamilyBoost | null;

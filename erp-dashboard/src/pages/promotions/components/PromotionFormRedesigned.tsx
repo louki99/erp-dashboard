@@ -16,7 +16,7 @@ import {
     Clock,
     AlertTriangle,
 } from 'lucide-react';
-import type { Promotion, PromotionType } from '@/types/promotion.types';
+import type { Promotion, PromotionType, PromotionWritePayload } from '@/types/promotion.types';
 import { BreakpointType } from '@/types/promotion.types';
 import { promotionsApi } from '@/services/api/promotionsApi';
 import { PromotionRulesSection } from './PromotionRulesSection';
@@ -48,6 +48,7 @@ export const PromotionFormRedesigned = () => {
             is_closed: false,
             partner_families: [],
             payment_terms: [],
+            business_chronologies: [],
             lines: [],
             // New fields (2026-07-11)
             max_budget: null,
@@ -97,20 +98,22 @@ export const PromotionFormRedesigned = () => {
                 : [];
 
             const normalizedPaymentTerms = Array.isArray(promo.payment_terms)
-                ? promo.payment_terms.map((item: any) => 
+                ? promo.payment_terms.map((item: any) =>
                     typeof item === 'string' ? item : (item.code || '')
                   ).filter(Boolean)
                 : [];
 
-            const normalizedLines = promo.lines?.map((line: any, index: number) => {
-                console.log(`Loading line ${index}:`, {
-                    paid_based_on_product: line.paid_based_on_product,
-                    paid_code: line.paid_code,
-                    paid_product_code: line.paid_product_code,
-                    paid_product_family_code: line.paid_product_family_code,
-                    full_line: line
-                });
+            // Ciblage chronologies : le backend renvoie des objets (pivot) — on garde {code, sub_types}
+            const normalizedChronologies = Array.isArray((promo as any).business_chronologies)
+                ? (promo as any).business_chronologies
+                      .map((item: any) => ({
+                          code: typeof item === 'string' ? item : (item.code ?? ''),
+                          sub_types: Array.isArray(item?.sub_types) ? item.sub_types : [],
+                      }))
+                      .filter((c: any) => c.code)
+                : [];
 
+            const normalizedLines = promo.lines?.map((line: any) => {
                 let paid_product_code = undefined;
                 let paid_product_family_code = undefined;
                 
@@ -130,12 +133,6 @@ export const PromotionFormRedesigned = () => {
                     paid_product_family_code = line.paid_product_family_code || line.paid_code || line.family_code;
                 }
 
-                console.log(`Normalized line ${index}:`, {
-                    paid_based_on_product,
-                    paid_product_code,
-                    paid_product_family_code
-                });
-
                 return {
                     ...line,
                     paid_based_on_product,
@@ -151,8 +148,9 @@ export const PromotionFormRedesigned = () => {
                 end_date: promo.end_date ? promo.end_date.split('T')[0] : '',
                 partner_families: normalizedPartnerFamilies,
                 payment_terms: normalizedPaymentTerms,
+                business_chronologies: normalizedChronologies,
                 lines: normalizedLines
-            }); 
+            });
             setFormReady(true);
         } catch (error: any) {
             console.error('Failed to load promotion:', error);
@@ -188,12 +186,10 @@ export const PromotionFormRedesigned = () => {
         }
 
         setSaving(true);
-        
-        try {
-            console.log('Form data before transformation:', JSON.stringify(data, null, 2));
 
+        try {
             // Transform data to API format
-            const apiData = {
+            const apiData: PromotionWritePayload = {
                 ...data,
                 code: data.code.trim().toUpperCase(),
                 name: data.name.trim(),
@@ -201,6 +197,13 @@ export const PromotionFormRedesigned = () => {
                 sequence: Number(data.sequence),
                 breakpoint_type: Number(data.breakpoint_type) as BreakpointType,
                 scale_method: Number(data.scale_method) as 1 | 2,
+                // Dérivé : la promo est dépendante du paiement dès qu'une condition est cochée
+                payment_term_dependent: (data.payment_terms?.length ?? 0) > 0,
+                // Ciblage chronologies (module 20) — additif avec partner_families
+                business_chronologies: (data.business_chronologies ?? []).map(c => ({
+                    code: c.code,
+                    sub_types: c.sub_types ?? [],
+                })),
                 lines: data.lines.map(line => {
                     // Map paid_code based on paid_based_on_product
                     let paid_code = undefined;
@@ -209,13 +212,6 @@ export const PromotionFormRedesigned = () => {
                     } else if (line.paid_based_on_product === 'family' && line.paid_product_family_code) {
                         paid_code = line.paid_product_family_code;
                     }
-
-                    console.log(`Line "${line.name}":`, {
-                        paid_based_on_product: line.paid_based_on_product,
-                        paid_product_code: line.paid_product_code,
-                        paid_product_family_code: line.paid_product_family_code,
-                        paid_code
-                    });
 
                     // Convert assortment_type to integer for API
                     const assortment_type = parseInt(String(line.assortment_type || '0'));
@@ -248,8 +244,6 @@ export const PromotionFormRedesigned = () => {
                     };
                 })
             };
-
-            console.log('API payload:', JSON.stringify(apiData, null, 2));
 
             if (isEdit && id) {
                 await promotionsApi.updatePromotion(Number(id), apiData);

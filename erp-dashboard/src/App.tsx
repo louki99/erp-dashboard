@@ -39,7 +39,6 @@ import { ProductMasterDataPage } from '@/pages/products/ProductMasterDataPage';
 import { SettingsPage } from '@/pages/settings/SettingsPage';
 import { ConfigurationSettingsPage } from '@/pages/settings/ConfigurationSettingsPage';
 import { PromotionsPage } from '@/pages/promotions/PromotionsPage';
-import { PromotionForm } from '@/pages/promotions/components/PromotionForm';
 import { PromotionFormRedesigned } from '@/pages/promotions/components/PromotionFormRedesigned';
 import { PartnerFamiliesPage } from '@/pages/promotions/PartnerFamiliesPage';
 import { ProductFamiliesPage } from '@/pages/promotions/ProductFamiliesPage';
@@ -339,37 +338,17 @@ function AppRoutes() {
         </ProtectedRoute>
       } />
 
-      {/* Partner Families Routes */}
+      {/* Partner Families Routes — création/édition gérées dans la page */}
       <Route path="/promotions/partner-families" element={
         <ProtectedRoute>
           <PartnerFamiliesPage />
         </ProtectedRoute>
       } />
-      <Route path="/promotions/partner-families/new" element={
-        <ProtectedRoute>
-          <PromotionForm />
-        </ProtectedRoute>
-      } />
-      <Route path="/promotions/partner-families/:id/edit" element={
-        <ProtectedRoute>
-          <PromotionForm isEdit />
-        </ProtectedRoute>
-      } />
 
-      {/* Product Families Routes */}
+      {/* Product Families Routes — création/édition gérées dans la page */}
       <Route path="/promotions/product-families" element={
         <ProtectedRoute>
           <ProductFamiliesPage />
-        </ProtectedRoute>
-      } />
-      <Route path="/promotions/product-families/new" element={
-        <ProtectedRoute>
-          <PromotionForm />
-        </ProtectedRoute>
-      } />
-      <Route path="/promotions/product-families/:id/edit" element={
-        <ProtectedRoute>
-          <PromotionForm isEdit />
         </ProtectedRoute>
       } />
 
@@ -486,12 +465,12 @@ function AppRoutes() {
         </ProtectedRoute>
       } />
       <Route path="/pricing/channels" element={
-        <ProtectedRoute requiredPermission={PERMISSIONS.DYNAMIC.MANAGE_PARTNERS}>
+        <ProtectedRoute requiredPermission={PERMISSIONS.DYNAMIC.MANAGE_CHANNELS}>
           <ChannelsPage />
         </ProtectedRoute>
       } />
       <Route path="/pricing/chronologies" element={
-        <ProtectedRoute requiredPermission={PERMISSIONS.DYNAMIC.MANAGE_PARTNERS}>
+        <ProtectedRoute requiredPermission={PERMISSIONS.DYNAMIC.MANAGE_CHRONOLOGIES}>
           <BusinessChronologiesPage />
         </ProtectedRoute>
       } />

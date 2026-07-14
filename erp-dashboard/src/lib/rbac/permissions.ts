@@ -313,6 +313,8 @@ export const PERMISSIONS = {
         BROWSE_ORDERS: 'browse-orders',
         MANAGE_ORDERS: 'manage-orders',
         MANAGE_PRICING: 'manage-pricing',
+        MANAGE_CHANNELS: 'manage-channels',
+        MANAGE_CHRONOLOGIES: 'manage-chronologies',
         MANAGE_EMPLOYEES: 'manage-employees',
     },
 

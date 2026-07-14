@@ -555,8 +555,15 @@
     "hub": {
       "title": "Pricing",
       "subtitle": "Hub de tarification et moteur de prix v5",
-      "engineTitle": "Moteur de prix",
-      "engineDescription": "Le moteur de tarification unifie les listes de prix, les dérogations partenaires, les conditionnements et les paliers de quantité."
+      "modules": "Modules",
+      "engineTitle": "Moteur de prix v5",
+      "engineDescription": "Le moteur de tarification unifie les listes de prix, les dérogations partenaires (N1), les paliers (N2) et les prix linéaires (N3). La source est tracée sur chaque prix calculé.",
+      "stats": {
+        "priceLists": "Listes de prix",
+        "activeOverrides": "Dérogations actives",
+        "activeChannels": "Canaux actifs",
+        "activeChronologies": "Chronologies actives"
+      }
     },
     "priceLists": {
       "title": "Listes de prix",
@@ -648,16 +655,28 @@
       "validTo": "Valide au",
       "missingPartnerProduct": "Sélectionnez un partenaire et un produit.",
       "discountRateInvalid": "La remise doit être un pourcentage entre 0 et 100.",
-      "discountRateHint": "Remise en pourcentage 0–100 (saisir 10 pour −10 %). Appliquée uniquement sans prix fixe.",
-      "fixedPriceHint": "Le prix fixe court-circuite les remises.",
+      "discountRateHint": "Remise en pourcentage 0–100 (saisir 10 pour −10 %).",
+      "fixedPriceHint": "Le prix fixe court-circuite toutes les remises.",
+      "priceMode": "Mode de tarification",
+      "modePrix": "Prix fixe",
+      "modeRate": "Remise %",
+      "modeAmount": "Remise montant",
       "currentPrice": "Prix actuel (moteur)",
       "resultingPrice": "Prix résultant",
       "previewHint": "Source moteur : {{source}} · algorithme v{{version}}",
-      "results": "{{count}} dérogation(s)"
+      "results": "{{count}} dérogation(s)",
+      "statsTotal": "Total",
+      "statsActive": "Actives",
+      "statsInactive": "Inactives",
+      "validityActive": "En cours",
+      "validityExpired": "Expiré",
+      "validityUpcoming": "À venir",
+      "validityPermanent": "Permanent",
+      "exportCsv": "Exporter CSV"
     },
     "packagingPrices": {
       "title": "Prix de conditionnement",
-      "subtitle": "Prix par packaging et liste de prix",
+      "subtitle": "Colisages et prix dérivés par produit (moteur v5)",
       "lineDetail": "Ligne détail",
       "packaging": "Conditionnement",
       "salesPrice": "Prix de vente",
@@ -667,7 +686,20 @@
       "deleteSuccess": "Prix supprimé",
       "updateSuccess": "Prix mis à jour",
       "createSuccess": "Prix créé",
-      "description": "Prix spécifiques par conditionnement et liste de prix"
+      "description": "Prix spécifiques par conditionnement et liste de prix",
+      "derivedHint": "Les prix de colisage sont dérivés par le moteur v5 : prix de l'unité de base × quantité du conditionnement.",
+      "emptyTitle": "Aucun produit sélectionné",
+      "emptySubtitle": "Recherchez un produit pour consulter ses colisages.",
+      "noPackagings": "Aucun colisage pour ce produit.",
+      "unit": "Unité",
+      "resolvedPrice": "Prix résolu",
+      "notSellable": "Non tarifé",
+      "defaultPackaging": "Colisage par défaut",
+      "modeNone": "Structure seule (sans prix)",
+      "modePriceList": "Prix par liste de prix",
+      "modePartner": "Prix pour un client",
+      "priceListHint": "Prix résolus par le moteur v5 sur la ligne active de la liste sélectionnée.",
+      "partnerHint": "Liste effective du client (directe → tarif de masse du canal) + dérogations Niveau 1 appliquées."
     },
     "preview": {
       "title": "Simulateur de prix",
@@ -695,7 +727,9 @@
       "detailTitle": "Détail tarif standard",
       "salesPrice": "Prix vente",
       "minPrice": "Prix min",
-      "maxPrice": "Prix max"
+      "maxPrice": "Prix max",
+      "packagingTitle": "Prix par conditionnement",
+      "packagingHint": "Prix effectifs dérivés par le moteur v5 pour ce client"
     },
     "channels": {
       "title": "Canaux",
@@ -714,7 +748,11 @@
       "updateSuccess": "Canal mis à jour",
       "deleteSuccess": "Canal supprimé",
       "priceListsLoadError": "Impossible de charger les listes de prix",
-      "description": "Canaux de vente et tarif de masse par canal"
+      "description": "Canaux de vente et tarif de masse par canal",
+      "filterAll": "Tous",
+      "searchPlaceholder": "Rechercher un canal…",
+      "noChannels": "Aucun canal configuré",
+      "noChannelsHint": "Les canaux définissent les circuits de distribution et le tarif de masse."
     },
     "chronologies": {
       "title": "Chronologies commerciales",
@@ -725,8 +763,8 @@
       "editDescription": "Modifier le catalogue de tags.",
       "deleteWarning": "Supprimer la chronologie \"{{name}}\" ?",
       "tags": "Tags disponibles",
-      "tagsPlaceholder": "shawarma, tacos, burger",
-      "tagsHint": "Séparez les tags par des virgules ou des retours à la ligne.",
+      "tagsPlaceholder": "ex. shawarma, burger",
+      "tagsHint": "Appuyez sur Entrée ou saisissez une virgule pour ajouter un tag.",
       "tagsEditWarning": "Cette chronologie est utilisée par {{count}} client(s). Retirer un tag du catalogue n'efface pas les affectations existantes.",
       "partnersCount": "Clients",
       "promotionsCount": "Promotions",
@@ -736,7 +774,12 @@
       "createSuccess": "Chronologie créée",
       "updateSuccess": "Chronologie mise à jour",
       "deleteSuccess": "Chronologie supprimée",
-      "description": "Natures d'activité et catalogue de tags métiers"
+      "description": "Natures d'activité et catalogue de tags métiers",
+      "filterAll": "Toutes",
+      "searchPlaceholder": "Rechercher par code, nom ou tag…",
+      "noChronologies": "Aucune chronologie configurée",
+      "noChronologiesHint": "Les chronologies définissent les natures d'activité commerciale.",
+      "noTags": "Aucun tag défini"
     },
     "partnerChronologies": {
       "title": "Chronologies & tags",
@@ -749,6 +792,16 @@
       "onePrimaryOnly": "Une seule chronologie peut être principale.",
       "invalidTags": "Tags invalides pour la chronologie {{code}}.",
       "saveSuccess": "Chronologies enregistrées"
+    },
+    "sources": {
+      "partner_override": "Dérogation (prix fixe)",
+      "partner_override_discount": "Dérogation (remise)",
+      "tier": "Palier quantité",
+      "override": "Ligne promo",
+      "standard": "Tarif standard",
+      "linear": "Prix linéaire",
+      "colisage_unpriced": "Non tarifé (colisage)",
+      "no_base": "Non tarifé"
     }
   }
 }

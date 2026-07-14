@@ -1,10 +1,9 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 import toast from 'react-hot-toast';
 import { isAxiosError } from 'axios';
 import {
-    Eye,
-    Calculator,
+    Eye, Calculator, Package, Star,
 } from 'lucide-react';
 
 import { MasterLayout } from '@/components/layout/MasterLayout';
@@ -13,21 +12,15 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { SearchSelect, type SearchSelectOption } from '@/components/common/SearchSelect';
 import { usePreviewPrice } from '@/hooks/pricing/usePricing';
-import { searchProducts, searchPartners } from '@/services/api/pricingApi';
-import type { PreviewPriceRequest, PreviewPriceResponse } from '@/types/pricing.types';
+import { searchProducts, searchPartners, getProductPackagings } from '@/services/api/pricingApi';
+import { PriceSourceBadge } from '@/components/pricing/PriceSourceBadge';
+import type { PreviewPriceRequest, PreviewPriceResponse, ProductPackaging } from '@/types/pricing.types';
 
 function getErrorMessage(error: unknown): string {
     if (isAxiosError(error)) return error.response?.data?.message ?? error.message;
     if (error instanceof Error) return error.message;
     return 'Une erreur est survenue.';
 }
-
-// Libellés lisibles des sources du moteur v5 (fallback: valeur brute)
-const SOURCE_LABEL_KEYS: Record<string, string> = {
-    standard: 'pricing.preview.sourceStandard',
-    partner_override: 'pricing.preview.sourceOverride',
-    partner_override_discount: 'pricing.preview.sourceOverrideDiscount',
-};
 
 export function PricePreviewPage() {
     const { t } = useTranslation();
@@ -38,6 +31,18 @@ export function PricePreviewPage() {
         product_id: undefined,
     });
     const [result, setResult] = useState<PreviewPriceResponse | null>(null);
+    const [packagings, setPackagings] = useState<ProductPackaging[]>([]);
+    const [packagingsLoading, setPackagingsLoading] = useState(false);
+
+    // Auto-load packaging breakdown whenever we have a result + product + partner
+    useEffect(() => {
+        if (!result || !form.product_id || !form.partner_id) { setPackagings([]); return; }
+        setPackagingsLoading(true);
+        getProductPackagings(form.product_id, { partner_id: form.partner_id })
+            .then(setPackagings)
+            .catch(() => setPackagings([]))
+            .finally(() => setPackagingsLoading(false));
+    }, [result, form.product_id, form.partner_id]);
 
     const handleProductSearch = useCallback(async (query: string): Promise<SearchSelectOption[]> => {
         const results = await searchProducts(query);
@@ -68,9 +73,6 @@ export function PricePreviewPage() {
     };
 
     const discount = result ? result.base_price - result.final_price : 0;
-    const sourceLabel = result
-        ? (SOURCE_LABEL_KEYS[result.source] ? t(SOURCE_LABEL_KEYS[result.source]) : result.source)
-        : '';
 
     return (
         <MasterLayout
@@ -127,9 +129,7 @@ export function PricePreviewPage() {
                                         <div className="text-xs font-medium text-sage-600 uppercase tracking-wider mb-1">{t('pricing.preview.effectivePrice')}</div>
                                         <div className="text-4xl font-bold text-sage-800">{result.final_price.toFixed(3)}</div>
                                         <div className="flex items-center justify-center gap-2 mt-2">
-                                            <Badge variant="outline" className="text-[10px]">
-                                                {t('pricing.preview.source')}: {sourceLabel}
-                                            </Badge>
+                                            <PriceSourceBadge source={result.source} />
                                             <Badge variant="secondary" className="text-[10px]">
                                                 {t('pricing.preview.engineVersion', { version: result.algorithm_version })}
                                             </Badge>
@@ -166,6 +166,56 @@ export function PricePreviewPage() {
                                                     <div className="text-sm font-bold text-gray-600">{Number(result.detail.max_sales_price ?? 0).toFixed(3)}</div>
                                                 </div>
                                             </div>
+                                        </div>
+                                    )}
+                                </div>
+                            )}
+
+                            {/* Packaging breakdown */}
+                            {result && (packagings.length > 0 || packagingsLoading) && (
+                                <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
+                                    <div className="flex items-center gap-2 px-5 py-3 border-b border-gray-100 bg-gray-50/60">
+                                        <Package className="w-4 h-4 text-emerald-600" />
+                                        <span className="text-xs font-semibold text-gray-700">{t('pricing.preview.packagingTitle')}</span>
+                                        <span className="text-[10px] text-gray-400 ml-1">{t('pricing.preview.packagingHint')}</span>
+                                    </div>
+                                    {packagingsLoading ? (
+                                        <div className="p-4 space-y-2">
+                                            {[1, 2, 3].map((i) => (
+                                                <div key={i} className="h-10 bg-gray-100 rounded animate-pulse" />
+                                            ))}
+                                        </div>
+                                    ) : (
+                                        <div className="divide-y divide-gray-100">
+                                            {packagings.map((pkg) => (
+                                                <div key={pkg.id} className="flex items-center justify-between px-5 py-3 hover:bg-gray-50/50">
+                                                    <div className="flex items-center gap-2 min-w-0">
+                                                        {pkg.is_default && (
+                                                            <Star className="w-3 h-3 text-amber-400 fill-current shrink-0" />
+                                                        )}
+                                                        <span className="text-sm font-medium text-gray-800 truncate">{pkg.label}</span>
+                                                        <span className="text-[11px] text-gray-400 font-mono shrink-0">
+                                                            {pkg.unit?.code} × {pkg.quantity}
+                                                        </span>
+                                                    </div>
+                                                    <div className="flex items-center gap-2 shrink-0">
+                                                        {pkg.price ? (
+                                                            <>
+                                                                {pkg.price.sellable ? (
+                                                                    <span className="text-sm font-bold text-emerald-700">
+                                                                        {Number(pkg.price.unit_price).toFixed(3)}
+                                                                    </span>
+                                                                ) : (
+                                                                    <span className="text-xs text-red-500 font-semibold">{t('pricing.packagingPrices.notSellable')}</span>
+                                                                )}
+                                                                <PriceSourceBadge source={pkg.price.source} />
+                                                            </>
+                                                        ) : (
+                                                            <span className="text-xs text-gray-400">—</span>
+                                                        )}
+                                                    </div>
+                                                </div>
+                                            ))}
                                         </div>
                                     )}
                                 </div>

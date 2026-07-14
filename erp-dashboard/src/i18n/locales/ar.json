@@ -569,7 +569,11 @@
       "updateSuccess": "تم تحديث القناة",
       "deleteSuccess": "تم حذف القناة",
       "priceListsLoadError": "تعذّر تحميل قوائم الأسعار",
-      "description": "قنوات البيع وقائمة الأسعار الجماعية لكل قناة"
+      "description": "قنوات البيع وقائمة الأسعار الجماعية لكل قناة",
+      "filterAll": "الكل",
+      "searchPlaceholder": "البحث في القنوات…",
+      "noChannels": "لا توجد قنوات مُهيَّأة",
+      "noChannelsHint": "القنوات تحدد دوائر التوزيع والأسعار الجماعية."
     },
     "chronologies": {
       "title": "الخط الزمني التجاري",
@@ -580,8 +584,8 @@
       "editDescription": "تعديل كتالوج الوسوم.",
       "deleteWarning": "حذف الخط الزمني \"{{name}}\"؟",
       "tags": "الوسوم المتاحة",
-      "tagsPlaceholder": "shawarma, tacos, burger",
-      "tagsHint": "افصل بين الوسوم بفاصلة أو سطر جديد.",
+      "tagsPlaceholder": "مثال: شاورما، برغر",
+      "tagsHint": "اضغط Enter أو فاصلة لإضافة وسم.",
       "tagsEditWarning": "يستخدم هذا الخط الزمني {{count}} عميل/عملاء. إزالة وسم من الكتالوج لا تمحو التخصيصات الحالية.",
       "partnersCount": "العملاء",
       "promotionsCount": "العروض الترويجية",
@@ -591,7 +595,12 @@
       "createSuccess": "تم إنشاء الخط الزمني",
       "updateSuccess": "تم تحديث الخط الزمني",
       "deleteSuccess": "تم حذف الخط الزمني",
-      "description": "طبيعة الأنشطة التجارية وكتالوج الوسوم"
+      "description": "طبيعة الأنشطة التجارية وكتالوج الوسوم",
+      "filterAll": "الكل",
+      "searchPlaceholder": "البحث بالرمز أو الاسم أو الوسم…",
+      "noChronologies": "لا توجد خطوط زمنية",
+      "noChronologiesHint": "الخطوط الزمنية تحدد طبيعة الأنشطة التجارية.",
+      "noTags": "لا توجد وسوم محددة"
     },
     "partnerChronologies": {
       "title": "الخط الزمني والوسوم",
@@ -608,8 +617,15 @@
     "hub": {
       "title": "التسعير",
       "subtitle": "مركز التسعير ومحرك الأسعار v5",
-      "engineTitle": "محرك الأسعار",
-      "engineDescription": "يوحّد محرك التسعير قوائم الأسعار واستثناءات الشركاء وأسعار التعبئة وشرائح الكمية."
+      "modules": "الوحدات",
+      "engineTitle": "محرك الأسعار v5",
+      "engineDescription": "يوحّد محرك التسعير قوائم الأسعار واستثناءات الشركاء (N1) والشرائح (N2) والأسعار الخطية (N3). المصدر مُتتبَّع على كل سعر محسوب.",
+      "stats": {
+        "priceLists": "قوائم الأسعار",
+        "activeOverrides": "الاستثناءات النشطة",
+        "activeChannels": "القنوات النشطة",
+        "activeChronologies": "الخطوط الزمنية النشطة"
+      }
     },
     "priceLists": {
       "title": "قوائم الأسعار",
@@ -701,16 +717,28 @@
       "validTo": "صالح إلى",
       "missingPartnerProduct": "اختر شريكًا ومنتجًا.",
       "discountRateInvalid": "يجب أن يكون الخصم نسبة مئوية بين 0 و 100.",
-      "discountRateHint": "الخصم كنسبة مئوية 0–100 (أدخل 10 لخصم 10%). يُطبّق فقط بدون سعر ثابت.",
-      "fixedPriceHint": "السعر الثابت يتجاوز الخصومات.",
+      "discountRateHint": "الخصم كنسبة مئوية 0–100 (أدخل 10 لخصم 10%).",
+      "fixedPriceHint": "السعر الثابت يتجاوز جميع الخصومات.",
+      "priceMode": "نوع التسعير",
+      "modePrix": "سعر ثابت",
+      "modeRate": "خصم %",
+      "modeAmount": "خصم مبلغ",
       "currentPrice": "السعر الحالي (المحرك)",
       "resultingPrice": "السعر الناتج",
       "previewHint": "مصدر المحرك: {{source}} · الخوارزمية v{{version}}",
-      "results": "{{count}} استثناء"
+      "results": "{{count}} استثناء",
+      "statsTotal": "الإجمالي",
+      "statsActive": "النشطة",
+      "statsInactive": "غير النشطة",
+      "validityActive": "نشط",
+      "validityExpired": "منتهي",
+      "validityUpcoming": "قادم",
+      "validityPermanent": "دائم",
+      "exportCsv": "تصدير CSV"
     },
     "packagingPrices": {
       "title": "أسعار التعبئة",
-      "subtitle": "الأسعار حسب التعبئة وقائمة الأسعار",
+      "subtitle": "التعبئات والأسعار المشتقة حسب المنتج (المحرك v5)",
       "description": "أسعار خاصة حسب التعبئة وقائمة الأسعار",
       "lineDetail": "تفصيل السطر",
       "packaging": "التعبئة",
@@ -720,7 +748,20 @@
       "deleteConfirm": "حذف هذا السعر؟",
       "deleteSuccess": "تم حذف السعر",
       "updateSuccess": "تم تحديث السعر",
-      "createSuccess": "تم إنشاء السعر"
+      "createSuccess": "تم إنشاء السعر",
+      "derivedHint": "أسعار التعبئة مشتقة بواسطة المحرك v5: سعر الوحدة الأساسية × كمية التعبئة.",
+      "emptyTitle": "لم يتم اختيار منتج",
+      "emptySubtitle": "ابحث عن منتج لعرض تعبئاته.",
+      "noPackagings": "لا توجد تعبئات لهذا المنتج.",
+      "unit": "الوحدة",
+      "resolvedPrice": "السعر المحسوب",
+      "notSellable": "غير مسعّر",
+      "defaultPackaging": "التعبئة الافتراضية",
+      "modeNone": "الهيكل فقط (بدون أسعار)",
+      "modePriceList": "الأسعار حسب قائمة الأسعار",
+      "modePartner": "الأسعار لشريك",
+      "priceListHint": "الأسعار محسوبة بواسطة المحرك v5 على السطر النشط للقائمة المختارة.",
+      "partnerHint": "القائمة الفعلية للشريك (مباشرة ← تعرفة القناة) + استثناءات المستوى 1 مطبقة."
     },
     "preview": {
       "title": "محاكي الأسعار",
@@ -748,7 +789,19 @@
       "detailTitle": "تفاصيل التعرفة القياسية",
       "salesPrice": "سعر البيع",
       "minPrice": "السعر الأدنى",
-      "maxPrice": "السعر الأقصى"
+      "maxPrice": "السعر الأقصى",
+      "packagingTitle": "السعر حسب التعبئة",
+      "packagingHint": "الأسعار الفعلية المحسوبة بواسطة المحرك v5 لهذا العميل"
+    },
+    "sources": {
+      "partner_override": "استثناء (سعر ثابت)",
+      "partner_override_discount": "استثناء (خصم)",
+      "tier": "شريحة كمية",
+      "override": "سطر ترويجي",
+      "standard": "التعرفة القياسية",
+      "linear": "سعر خطي",
+      "colisage_unpriced": "غير مسعّر (تعبئة)",
+      "no_base": "غير مسعّر"
     }
   }
 }

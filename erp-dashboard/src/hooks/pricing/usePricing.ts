@@ -15,8 +15,6 @@ import type {
     CreateOverrideRequest,
     PreviewPriceRequest,
     PreviewPriceResponse,
-    PackagingPrice,
-    CreatePackagingPriceRequest,
     PriceListLine,
     LineDetail,
     Channel,
@@ -148,34 +146,6 @@ export const useOverrides = (filters: OverrideFilters) => {
     return { data, partners, loading, error, refetch: fetchOverrides };
 };
 
-// ─── Packaging Prices Hook ──────────────────────────────────────────────────
-
-export const usePackagingPrices = (filters: { price_list_id?: number; line_detail_id?: number; page?: number; per_page?: number }) => {
-    const [data, setData] = useState<PaginatedResponse<PackagingPrice> | null>(null);
-    const [loading, setLoading] = useState(true);
-    const [error, setError] = useState<string | null>(null);
-
-    const fetchPrices = useCallback(async () => {
-        setLoading(true);
-        setError(null);
-        try {
-            const response = await pricingApi.getPackagingPrices(filters);
-            setData(response);
-        } catch (err) {
-            setError(err instanceof Error ? err.message : 'Échec du chargement des prix conditionnements');
-            console.error(err);
-        } finally {
-            setLoading(false);
-        }
-    }, [filters.page, filters.per_page, filters.price_list_id, filters.line_detail_id]);
-
-    useEffect(() => {
-        fetchPrices();
-    }, [fetchPrices]);
-
-    return { data, loading, error, refetch: fetchPrices };
-};
-
 // ─── Mutation Hooks ─────────────────────────────────────────────────────────
 
 // Helper for basic mutations
@@ -277,21 +247,6 @@ export const useDeleteOverride = () => {
     return { deleteOverride: execute, loading, error };
 };
 export const usePreviewPrice = () => useMutation<PreviewPriceRequest, PreviewPriceResponse>(pricingApi.previewPrice);
-
-export const useCreatePackagingPrice = () => {
-    const { loading, error, execute } = useMutation(pricingApi.createPackagingPrice);
-    return { createPackagingPrice: execute, execute, loading, error };
-};
-export const useUpdatePackagingPrice = () => {
-    const { loading, error, execute } = useMutation<{ id: number; data: Partial<CreatePackagingPriceRequest> }, PackagingPrice>(
-        async ({ id, data }) => pricingApi.updatePackagingPrice(id, data)
-    );
-    return { updatePackagingPrice: execute, loading, error };
-};
-export const useDeletePackagingPrice = () => {
-    const { loading, error, execute } = useMutation(pricingApi.deletePackagingPrice);
-    return { deletePackagingPrice: execute, execute, loading, error };
-};
 
 // ─── Channels (Module 20) ────────────────────────────────────────────────────
 

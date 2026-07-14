@@ -12,8 +12,6 @@ import {
     Edit,
     Trash2,
     Clock,
-    CheckCircle,
-    XCircle,
     Copy,
     Zap,
     Loader2,
@@ -23,7 +21,6 @@ import {
     Search,
     CalendarRange,
     Layers,
-    TrendingUp,
     ChevronRight,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
@@ -140,7 +137,6 @@ export const PromotionsPage = () => {
     const [promotions, setPromotions] = useState<Promotion[]>([]);
     const [selectedPromotion, setSelectedPromotion] = useState<Promotion | null>(null);
     const [loading, setLoading] = useState(true);
-    const [stats, setStats] = useState({ total: 0, active: 0, expired: 0, upcoming: 0 });
     const [showDeleteModal, setShowDeleteModal] = useState(false);
     const [promotionToDelete, setPromotionToDelete] = useState<number | null>(null);
     const [isDeleting, setIsDeleting] = useState(false);
@@ -174,7 +170,6 @@ export const PromotionsPage = () => {
             setLoading(true);
             const data = await promotionsApi.getPromotions();
             setPromotions(data.promotions.data || []);
-            setStats(data.statistics);
         } catch (error) {
             console.error('Failed to load promotions', error);
             toast.error('Échec du chargement des promotions');
@@ -219,17 +214,6 @@ export const PromotionsPage = () => {
             console.error('Failed to clone promotion:', error);
             toast.error('Échec du clonage');
         }
-    };
-
-    const getStatusBadge = (promotion: Promotion) => {
-        const s = getPromoStatus(promotion);
-        const st = STATUS_STYLE[s.color];
-        const Icon = s.color === 'green' ? CheckCircle : s.color === 'gray' ? XCircle : Clock;
-        return (
-            <span className={`text-xs px-2 py-0.5 rounded flex items-center gap-1 w-fit ${st.badge}`}>
-                <Icon className="w-3 h-3" /> {s.label}
-            </span>
-        );
     };
 
     useEffect(() => {

@@ -19,6 +19,7 @@ import type { AddressValue } from '@/components/partners/AddressMapPicker';
 import { usePartnerDraft, type PartnerDraft } from '@/hooks/usePartnerDraft';
 import { PartnerFileImportDialog } from '@/components/partners/PartnerFileImportDialog';
 import { PartnerChronologiesEditor } from '@/components/partners/PartnerChronologiesEditor';
+import { getChannels } from '@/services/api/pricingApi';
 import {
     serializeToPartnerFile,
     downloadPartnerFile,
@@ -416,6 +417,24 @@ export const PartnerFormPanel: React.FC<PartnerFormPanelProps> = ({
         [masterData?.price_lists]
     );
 
+    // Canaux dynamiques (table channels — l'enum hardcodé est mort) ;
+    // fallback sur l'ancienne liste statique si l'API est indisponible.
+    const [channels, setChannels] = useState<{ code: string; name: string; is_active: boolean }[]>([]);
+    useEffect(() => {
+        getChannels().then(setChannels).catch(() => setChannels([]));
+    }, []);
+    const channelOptions = useMemo<SelectOption[]>(() => {
+        if (channels.length === 0) return CHANNEL_OPTIONS;
+        const opts: SelectOption[] = channels
+            .filter(c => c.is_active)
+            .map(c => ({ value: c.code, label: c.name, badge: c.code }));
+        // conserve la valeur courante si le canal du partner est inactif/inconnu
+        if (pForm.channel && !opts.some(o => o.value === pForm.channel)) {
+            opts.push({ value: pForm.channel, label: pForm.channel });
+        }
+        return opts;
+    }, [channels, pForm.channel]);
+
     const paymentTermOptions = useMemo<SelectOption[]>(() =>
         (masterData?.payment_terms ?? []).map(pt => ({
             value: pt.id,
@@ -671,7 +690,8 @@ export const PartnerFormPanel: React.FC<PartnerFormPanelProps> = ({
             name:              pForm.name!,
             code:              pForm.code              || undefined,
             partner_type:      pForm.partner_type      || 'CUSTOMER',
-            channel:           pForm.channel           || 'DIRECT',
+            // code string toujours accepté par le backend (routé vers channel_id)
+            channel:           pForm.channel           || undefined,
             status:            (pForm.status as PartnerStatus) || 'ACTIVE',
             risk_score:        pForm.risk_score        ?? undefined,
             salesperson_id:    pForm.salesperson_id    ?? undefined,
@@ -1028,7 +1048,7 @@ export const PartnerFormPanel: React.FC<PartnerFormPanelProps> = ({
                         <SearchableSelect options={TYPE_OPTIONS} value={pForm.partner_type || 'CUSTOMER'} onChange={v => up('partner_type', v)} />
                     </FormField>
                     <FormField label="Canal de vente">
-                        <SearchableSelect options={CHANNEL_OPTIONS} value={pForm.channel || 'DIRECT'} onChange={v => up('channel', v)} />
+                        <SearchableSelect options={channelOptions} value={pForm.channel || ''} onChange={v => up('channel', v)} placeholder="— Sélectionner un canal —" />
                     </FormField>
                 </div>
             </SectionCard>

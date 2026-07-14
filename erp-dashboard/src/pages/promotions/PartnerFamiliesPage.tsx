@@ -20,8 +20,10 @@ const ACCENT = {
 };
 
 const fmt = (n: number) => n.toLocaleString('fr-FR');
-const creditTier = (limit: string) => {
-    const v = parseFloat(limit);
+// credit_limit arrive tantôt en string (API), tantôt en number (type Partner)
+const toCredit = (v: unknown): number => Number(v ?? 0) || 0;
+const creditTier = (limit: string | number) => {
+    const v = toCredit(limit);
     if (v >= 100000) return { label: '> 100K', cls: 'bg-emerald-50 text-emerald-700 border-emerald-200' };
     if (v >= 50000)  return { label: '50–100K', cls: 'bg-blue-50 text-blue-700 border-blue-200' };
     return { label: '< 50K', cls: 'bg-orange-50 text-orange-700 border-orange-200' };
@@ -159,7 +161,7 @@ export const PartnerFamiliesPage = () => {
         if (partnerSearch) { const q = partnerSearch.toLowerCase(); list = list.filter(p => p.code.toLowerCase().includes(q) || p.name.toLowerCase().includes(q)); }
         if (creditFilter !== 'all') {
             list = list.filter(p => {
-                const v = parseFloat(p.credit_limit);
+                const v = toCredit(p.credit_limit);
                 if (creditFilter === 'high')   return v >= 100000;
                 if (creditFilter === 'medium') return v >= 50000 && v < 100000;
                 if (creditFilter === 'low')    return v < 50000;
@@ -187,7 +189,7 @@ export const PartnerFamiliesPage = () => {
     const selectedPartners = useMemo(() => (formData.partners || []) as string[], [formData.partners]);
 
     const creditStats = useMemo(() => {
-        const total = selectedPartners.reduce((s, c) => s + (parseFloat(allPartners.find(p => p.code === c)?.credit_limit ?? '0') || 0), 0);
+        const total = selectedPartners.reduce((s, c) => s + toCredit(allPartners.find(p => p.code === c)?.credit_limit), 0);
         const avg = selectedPartners.length > 0 ? Math.round(total / selectedPartners.length) : 0;
         return { total, avg };
     }, [selectedPartners, allPartners]);
@@ -226,7 +228,7 @@ export const PartnerFamiliesPage = () => {
             ? family.partners.map((p: string | { partner_code?: string; code?: string }) => typeof p === 'string' ? p : (p.partner_code ?? p.code ?? '')).filter(Boolean)
             : [];
         const count = partnerCodes.length || (family.partners_count ?? 0);
-        const totalCredit = partnerCodes.reduce((s, c) => s + (parseFloat(allPartners.find(p => p.code === c)?.credit_limit ?? '0') || 0), 0);
+        const totalCredit = partnerCodes.reduce((s, c) => s + toCredit(allPartners.find(p => p.code === c)?.credit_limit), 0);
         const avgCredit   = count > 0 ? Math.round(totalCredit / count) : 0;
 
         return (
@@ -304,7 +306,7 @@ export const PartnerFamiliesPage = () => {
                                             </div>
                                             {p && (
                                                 <div className="flex items-center gap-2 shrink-0">
-                                                    <span className="text-xs font-medium text-emerald-700">{fmt(parseFloat(p.credit_limit))} Dh</span>
+                                                    <span className="text-xs font-medium text-emerald-700">{fmt(toCredit(p.credit_limit))} Dh</span>
                                                     {tier && <span className={`text-[10px] px-1.5 py-0.5 rounded-full border font-medium ${tier.cls}`}>{tier.label}</span>}
                                                 </div>
                                             )}
@@ -450,7 +452,7 @@ export const PartnerFamiliesPage = () => {
                                             </div>
                                             {p && (
                                                 <div className="flex items-center gap-2 shrink-0">
-                                                    <span className="text-xs font-medium text-emerald-700">{fmt(parseFloat(p.credit_limit))} Dh</span>
+                                                    <span className="text-xs font-medium text-emerald-700">{fmt(toCredit(p.credit_limit))} Dh</span>
                                                     {tier && <span className={`text-[10px] px-1.5 py-0.5 rounded-full border ${tier.cls}`}>{tier.label}</span>}
                                                 </div>
                                             )}
@@ -566,7 +568,7 @@ export const PartnerFamiliesPage = () => {
                                                 </td>
                                                 <td className="px-3 py-2.5">
                                                     <div className="flex items-center gap-2">
-                                                        <span className="text-xs font-medium text-emerald-700">{fmt(parseFloat(p.credit_limit))} Dh</span>
+                                                        <span className="text-xs font-medium text-emerald-700">{fmt(toCredit(p.credit_limit))} Dh</span>
                                                         <span className={`text-[10px] px-1.5 py-0.5 rounded-full border ${tier.cls}`}>{tier.label}</span>
                                                     </div>
                                                 </td>

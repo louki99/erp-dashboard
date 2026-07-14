@@ -216,6 +216,13 @@ export const PromotionRulesSection = () => {
         setIsFamilyDrawerOpen(true);
     };
 
+    // Transaction-wide (panier entier) : seuls ces promo_type sont acceptés par le moteur
+    const TW_ALLOWED_TYPES: number[] = [
+        PromotionType.PERCENTAGE_DISCOUNT,
+        PromotionType.AMOUNT_PER_UNIT,
+        PromotionType.FLAT_AMOUNT_DISCOUNT,
+    ];
+
     const promoTypeOptions = [
         { value: PromotionType.PERCENTAGE_DISCOUNT, label: '% Remise Pourcentage', example: '-10 = 10% de remise', amountLabel: 'Pourcentage (%)', amountPlaceholder: '-10 (pour 10% de remise)' },
         { value: PromotionType.AMOUNT_PER_UNIT, label: 'MAD par Unité', example: '-5 = 5 MAD de remise/unité', amountLabel: 'Montant (MAD/unité)', amountPlaceholder: '-5 (pour 5 MAD de remise)' },
@@ -223,7 +230,8 @@ export const PromotionRulesSection = () => {
         { value: PromotionType.FREE_UNIT, label: 'Unités Gratuites', example: '-2 = 2 unités gratuites', amountLabel: 'Unités Gratuites', amountPlaceholder: '-2 (pour 2 unités gratuites)' },
         { value: PromotionType.FREE_PROMO_UNIT, label: 'Unités Promo Gratuites', example: '-10 = 10 promo gratuites', amountLabel: 'Unités Promo Gratuites', amountPlaceholder: '-10 (pour 10 promo gratuites)' },
         { value: PromotionType.FLAT_AMOUNT_DISCOUNT, label: 'Remise Forfaitaire', example: '-100 = 100 MAD de remise', amountLabel: 'Montant Forfaitaire (MAD)', amountPlaceholder: '-100 (pour 100 MAD de remise)' },
-        { value: PromotionType.REPLACE_PRICE, label: 'Remplacer Prix', example: '76 = nouveau prix 76 MAD', amountLabel: 'Nouveau Prix (MAD)', amountPlaceholder: '76 (nouveau prix)' }
+        { value: PromotionType.REPLACE_PRICE, label: 'Remplacer Prix', example: '76 = nouveau prix 76 MAD', amountLabel: 'Nouveau Prix (MAD)', amountPlaceholder: '76 (nouveau prix)' },
+        { value: PromotionType.CHEAPEST_FREE, label: '🎁 Le Moins Cher Offert', example: '3 achetés → le moins cher gratuit', amountLabel: 'Unités offertes', amountPlaceholder: '-1 (le moins cher offert)' }
     ];
 
     const getPromoTypeConfig = (promoType: number) => {
@@ -430,7 +438,10 @@ export const PromotionRulesSection = () => {
 
                                         {paidBasedOn === 'cart' && (
                                             <div className="flex-1 flex items-end pb-0.5">
-                                                <p className="text-xs text-gray-400 italic">La remise s'applique sur l'ensemble du panier — aucun code requis.</p>
+                                                <p className="text-xs text-gray-400 italic">
+                                                    La remise s'applique sur l'ensemble du panier — aucun code requis.{' '}
+                                                    <span className="text-amber-600 not-italic font-medium">Seuls les types % Remise, MAD/Unité et Remise Forfaitaire sont supportés en panier entier.</span>
+                                                </p>
                                             </div>
                                         )}
                                     </div>
@@ -674,7 +685,10 @@ export const PromotionRulesSection = () => {
                                                                 <div>
                                                                     <label className="block text-xs font-medium text-gray-600 mb-1.5">Type de Remise</label>
                                                                     <SearchableSelect
-                                                                        options={promoTypeOptions.map(o => ({ value: o.value, label: o.label }))}
+                                                                        options={promoTypeOptions
+                                                                            // Panier entier : le backend n'accepte que %, MAD/unité et forfaitaire (422 sinon)
+                                                                            .filter(o => paidBasedOn !== 'cart' || TW_ALLOWED_TYPES.includes(o.value))
+                                                                            .map(o => ({ value: o.value, label: o.label }))}
                                                                         value={detail.promo_type}
                                                                         onChange={(v) => {
                                                                             const line = fields[lineIndex];
@@ -684,6 +698,11 @@ export const PromotionRulesSection = () => {
                                                                             update(lineIndex, { ...line, details: newDetails });
                                                                         }}
                                                                     />
+                                                                    {paidBasedOn === 'cart' && !TW_ALLOWED_TYPES.includes(Number(detail.promo_type)) && (
+                                                                        <p className="text-[11px] text-red-600 mt-1">
+                                                                            Type invalide en panier entier — le backend refusera (422).
+                                                                        </p>
+                                                                    )}
                                                                 </div>
                                                                 <div>
                                                                     <label className="block text-xs font-medium text-gray-600 mb-1.5">

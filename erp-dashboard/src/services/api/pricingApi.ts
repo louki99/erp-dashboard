@@ -1,7 +1,6 @@
 import apiClient from './client';
 import {
     type ApiSuccessResponse,
-    type PaginatedResponse,
     type PriceList,
     type PriceListFilters,
     type CreatePriceListRequest,
@@ -19,10 +18,9 @@ import {
     type CreateOverrideRequest,
     type PreviewPriceRequest,
     type PreviewPriceResponse,
-    type PackagingPrice,
-    type CreatePackagingPriceRequest,
+    type ProductPackaging,
+    type PackagingResolutionParams,
     type ListsResponse,
-    type PackagingPriceFilters,
     type Channel,
     type BusinessChronology,
     type CreateChannelRequest,
@@ -234,9 +232,15 @@ export const searchPartners = async (query: string): Promise<PartnerSearchResult
     return response.data.data;
 };
 
-export const getProductPackagings = async (productId: number) => {
-    const response = await apiClient.get<ApiSuccessResponse<any[]>>( // Type to be defined if stringent
-        `${BASE_PATH}/products/${productId}/packagings`
+// Colisages d'un produit avec prix résolus par le moteur v5 — contrat §6.1c figé :
+// array nu ; ?price_list_id= ou ?partner_id= pour résoudre les prix (sinon price: null).
+export const getProductPackagings = async (
+    productId: number,
+    params?: PackagingResolutionParams
+): Promise<ProductPackaging[]> => {
+    const response = await apiClient.get<ProductPackaging[]>(
+        `${BASE_PATH}/products/${productId}/packagings`,
+        { params }
     );
     return response.data;
 };
@@ -317,46 +321,8 @@ export const previewPrice = async (data: PreviewPriceRequest): Promise<PreviewPr
     return response.data;
 };
 
-// ─── Packaging Prices ────────────────────────────────────────────────────────
-
-export const getPackagingPrices = async (filters: PackagingPriceFilters) => {
-    const response = await apiClient.get<PaginatedResponse<PackagingPrice>>(
-        `${BASE_PATH}/packaging-prices`,
-        { params: filters }
-    );
-    return response.data;
-};
-
-export const createPackagingPrice = async (data: CreatePackagingPriceRequest) => {
-    const response = await apiClient.post<ApiSuccessResponse<PackagingPrice>>(
-        `${BASE_PATH}/packaging-prices`,
-        data
-    );
-    return response.data;
-};
-
-export const updatePackagingPrice = async (id: number, data: Partial<CreatePackagingPriceRequest>) => {
-    const response = await apiClient.put<ApiSuccessResponse<PackagingPrice>>(
-        `${BASE_PATH}/packaging-prices/${id}`,
-        data
-    );
-    return response.data;
-};
-
-export const deletePackagingPrice = async (id: number) => {
-    const response = await apiClient.delete<ApiSuccessResponse<null>>(
-        `${BASE_PATH}/packaging-prices/${id}`
-    );
-    return response.data;
-};
-
-export const getAjaxPackagings = async (query: string) => {
-    const response = await apiClient.get<ApiSuccessResponse<any[]>>(
-        `${BASE_PATH}/packaging-prices/ajax/packagings`,
-        { params: { q: query } }
-    );
-    return response.data;
-};
+// ⚠️ /pricing/packaging-prices n'existe pas côté backend (fantôme du legacy).
+// Les prix de colisage sont dérivés — voir getProductPackagings ci-dessus.
 
 // ─── Channels (Module 20) ────────────────────────────────────────────────────
 

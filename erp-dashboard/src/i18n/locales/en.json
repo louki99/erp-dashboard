@@ -569,7 +569,11 @@
       "updateSuccess": "Channel updated",
       "deleteSuccess": "Channel deleted",
       "priceListsLoadError": "Unable to load price lists",
-      "description": "Sales channels and per-channel mass price list"
+      "description": "Sales channels and per-channel mass price list",
+      "filterAll": "All",
+      "searchPlaceholder": "Search channels…",
+      "noChannels": "No channels configured",
+      "noChannelsHint": "Channels define distribution circuits and mass pricing."
     },
     "chronologies": {
       "title": "Business chronologies",
@@ -580,8 +584,8 @@
       "editDescription": "Edit the tag catalog.",
       "deleteWarning": "Delete chronology \"{{name}}\"?",
       "tags": "Available tags",
-      "tagsPlaceholder": "shawarma, tacos, burger",
-      "tagsHint": "Separate tags with commas or line breaks.",
+      "tagsPlaceholder": "e.g. shawarma, burger",
+      "tagsHint": "Press Enter or comma to add a tag.",
       "tagsEditWarning": "This chronology is used by {{count}} customer(s). Removing a tag from the catalog does not clear existing assignments.",
       "partnersCount": "Customers",
       "promotionsCount": "Promotions",
@@ -591,7 +595,12 @@
       "createSuccess": "Chronology created",
       "updateSuccess": "Chronology updated",
       "deleteSuccess": "Chronology deleted",
-      "description": "Business activity natures and tag catalog"
+      "description": "Business activity natures and tag catalog",
+      "filterAll": "All",
+      "searchPlaceholder": "Search by code, name or tag…",
+      "noChronologies": "No chronologies configured",
+      "noChronologiesHint": "Chronologies define business activity types.",
+      "noTags": "No tags defined"
     },
     "partnerChronologies": {
       "title": "Chronologies & tags",
@@ -608,8 +617,15 @@
     "hub": {
       "title": "Pricing",
       "subtitle": "Pricing hub and price engine v5",
-      "engineTitle": "Price engine",
-      "engineDescription": "The pricing engine unifies price lists, partner overrides, packaging prices and quantity tiers."
+      "modules": "Modules",
+      "engineTitle": "Price engine v5",
+      "engineDescription": "The pricing engine unifies price lists, partner overrides (L1), quantity tiers (L2) and linear prices (L3). The source is tracked on every computed price.",
+      "stats": {
+        "priceLists": "Price lists",
+        "activeOverrides": "Active overrides",
+        "activeChannels": "Active channels",
+        "activeChronologies": "Active chronologies"
+      }
     },
     "priceLists": {
       "title": "Price lists",
@@ -701,16 +717,28 @@
       "validTo": "Valid to",
       "missingPartnerProduct": "Select a partner and a product.",
       "discountRateInvalid": "Discount must be a percentage between 0 and 100.",
-      "discountRateHint": "Discount as a percentage 0–100 (enter 10 for −10%). Only applied without a fixed price.",
-      "fixedPriceHint": "A fixed price bypasses discounts.",
+      "discountRateHint": "Discount as a percentage 0–100 (enter 10 for −10%).",
+      "fixedPriceHint": "A fixed price bypasses all discounts.",
+      "priceMode": "Pricing mode",
+      "modePrix": "Fixed price",
+      "modeRate": "Discount %",
+      "modeAmount": "Discount amount",
       "currentPrice": "Current price (engine)",
       "resultingPrice": "Resulting price",
       "previewHint": "Engine source: {{source}} · algorithm v{{version}}",
-      "results": "{{count}} override(s)"
+      "results": "{{count}} override(s)",
+      "statsTotal": "Total",
+      "statsActive": "Active",
+      "statsInactive": "Inactive",
+      "validityActive": "Active",
+      "validityExpired": "Expired",
+      "validityUpcoming": "Upcoming",
+      "validityPermanent": "Permanent",
+      "exportCsv": "Export CSV"
     },
     "packagingPrices": {
       "title": "Packaging prices",
-      "subtitle": "Prices per packaging and price list",
+      "subtitle": "Packagings and derived prices per product (engine v5)",
       "description": "Specific prices per packaging and price list",
       "lineDetail": "Line detail",
       "packaging": "Packaging",
@@ -720,7 +748,20 @@
       "deleteConfirm": "Delete this price?",
       "deleteSuccess": "Price deleted",
       "updateSuccess": "Price updated",
-      "createSuccess": "Price created"
+      "createSuccess": "Price created",
+      "derivedHint": "Packaging prices are derived by engine v5: base unit price × packaging quantity.",
+      "emptyTitle": "No product selected",
+      "emptySubtitle": "Search a product to view its packagings.",
+      "noPackagings": "No packagings for this product.",
+      "unit": "Unit",
+      "resolvedPrice": "Resolved price",
+      "notSellable": "Unpriced",
+      "defaultPackaging": "Default packaging",
+      "modeNone": "Structure only (no prices)",
+      "modePriceList": "Prices by price list",
+      "modePartner": "Prices for a partner",
+      "priceListHint": "Prices resolved by engine v5 on the active line of the selected list.",
+      "partnerHint": "Effective partner list (direct → channel mass tariff) + Level 1 overrides applied."
     },
     "preview": {
       "title": "Price simulator",
@@ -748,7 +789,19 @@
       "detailTitle": "Standard price detail",
       "salesPrice": "Sales price",
       "minPrice": "Min price",
-      "maxPrice": "Max price"
+      "maxPrice": "Max price",
+      "packagingTitle": "Price by packaging",
+      "packagingHint": "Effective prices derived by the v5 engine for this customer"
+    },
+    "sources": {
+      "partner_override": "Override (fixed price)",
+      "partner_override_discount": "Override (discount)",
+      "tier": "Quantity tier",
+      "override": "Promo line",
+      "standard": "Standard price list",
+      "linear": "Linear price",
+      "colisage_unpriced": "Unpriced (packaging)",
+      "no_base": "Unpriced"
     }
   }
 }

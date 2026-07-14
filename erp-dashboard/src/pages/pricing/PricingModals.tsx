@@ -1,20 +1,19 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Loader2, Plus, X, AlertTriangle, Copy, Upload, Edit, DollarSign, ArrowRight } from 'lucide-react';
+import { Loader2, Plus, X, AlertTriangle, Copy, Upload, Edit, ArrowRight } from 'lucide-react';
 import type {
     PriceList,
     PriceOverride,
-    PackagingPrice,
     CreatePriceListRequest,
     CreateLineRequest,
     DuplicateLineRequest,
     CreateOverrideRequest,
     ImportCsvParams,
     PreviewPriceResponse,
-    CreatePackagingPriceRequest,
 } from '@/types/pricing.types';
 import { SearchSelect, type SearchSelectOption } from '@/components/common/SearchSelect';
 import { searchProducts, type ProductSearchResult, searchPartners, type PartnerSearchResult, previewPrice } from '@/services/api/pricingApi';
+import { PriceSourceBadge } from '@/components/pricing/PriceSourceBadge';
 
 // ─── Shared modal wrapper ─────────────────────────────────────────────────────
 
@@ -201,6 +200,14 @@ const usePartnerSearch = () =>
 // Override
 // ═══════════════════════════════════════════════════════════════════════════════
 
+type PriceMode = 'fixed_price' | 'rate' | 'amount';
+
+function initPriceMode(form: Partial<CreateOverrideRequest>): PriceMode {
+    if (form.fixed_price != null) return 'fixed_price';
+    if (form.discount_amount != null) return 'amount';
+    return 'rate';
+}
+
 interface ModalOverrideProps {
     editingOverride: PriceOverride | null;
     form: Partial<CreateOverrideRequest>;
@@ -215,23 +222,27 @@ export const ModalOverride: React.FC<ModalOverrideProps> = ({ editingOverride, f
     const handleProductSearch = useProductSearch();
     const handlePartnerSearch = usePartnerSearch();
 
-    // Build display labels for currently selected values when editing
-    const productLabel = editingOverride?.product
-        ? `${editingOverride.product.name}`
-        : undefined;
-    const partnerLabel = editingOverride?.partner
-        ? `${editingOverride.partner.name}`
-        : undefined;
+    const productLabel = editingOverride?.product ? editingOverride.product.name : undefined;
+    const partnerLabel = editingOverride?.partner ? editingOverride.partner.name : undefined;
 
-    // Prix effectif calculé par le moteur v5 pour le couple (partner, product) sélectionné.
+    // Mode exclusif : prix fixe OU remise % OU remise montant (mutually exclusive).
+    const [priceMode, setPriceMode] = useState<PriceMode>(() => initPriceMode(form));
+
+    const handleModeChange = (mode: PriceMode) => {
+        setPriceMode(mode);
+        setForm((prev: any) => ({
+            ...prev,
+            fixed_price: undefined,
+            discount_rate: undefined,
+            discount_amount: undefined,
+        }));
+    };
+
     const [preview, setPreview] = useState<PreviewPriceResponse | null>(null);
     const [previewLoading, setPreviewLoading] = useState(false);
 
     useEffect(() => {
-        if (!form.partner_id || !form.product_id) {
-            setPreview(null);
-            return;
-        }
+        if (!form.partner_id || !form.product_id) { setPreview(null); return; }
         let cancelled = false;
         setPreviewLoading(true);
         const timer = setTimeout(async () => {
@@ -244,28 +255,29 @@ export const ModalOverride: React.FC<ModalOverrideProps> = ({ editingOverride, f
                 if (!cancelled) setPreviewLoading(false);
             }
         }, 350);
-        return () => {
-            cancelled = true;
-            clearTimeout(timer);
-        };
+        return () => { cancelled = true; clearTimeout(timer); };
     }, [form.partner_id, form.product_id]);
 
-    // Prix résultant simulé en direct : reproduit la sélection du moteur
-    // (prix fixe court-circuite tout ; sinon remises sur le prix hiérarchie).
     const resultingPrice = useMemo(() => {
         if (!preview) return null;
-        if (form.fixed_price != null && !Number.isNaN(form.fixed_price)) return form.fixed_price;
+        if (priceMode === 'fixed_price' && form.fixed_price != null) return form.fixed_price;
         let price = preview.base_price;
-        if (form.discount_rate != null && form.discount_rate > 0) price = price * (1 - form.discount_rate / 100);
-        if (form.discount_amount != null && form.discount_amount > 0) price = price - form.discount_amount;
+        if (priceMode === 'rate' && form.discount_rate != null && form.discount_rate > 0)
+            price = price * (1 - form.discount_rate / 100);
+        if (priceMode === 'amount' && form.discount_amount != null && form.discount_amount > 0)
+            price = price - form.discount_amount;
         return Math.max(price, 0);
-    }, [preview, form.fixed_price, form.discount_rate, form.discount_amount]);
+    }, [preview, priceMode, form.fixed_price, form.discount_rate, form.discount_amount]);
 
-    const parseNumber = (raw: string): number | undefined =>
-        raw === '' ? undefined : Number(raw);
+    const parseNumber = (raw: string): number | undefined => raw === '' ? undefined : Number(raw);
 
-    const hasFixedPrice = form.fixed_price != null && !Number.isNaN(form.fixed_price);
-    const rateInvalid = form.discount_rate != null && (form.discount_rate < 0 || form.discount_rate > 100);
+    const rateInvalid = priceMode === 'rate' && form.discount_rate != null && (form.discount_rate < 0 || form.discount_rate > 100);
+
+    const MODES: { value: PriceMode; label: string }[] = [
+        { value: 'fixed_price', label: t('pricing.overrides.modePrix') },
+        { value: 'rate', label: t('pricing.overrides.modeRate') },
+        { value: 'amount', label: t('pricing.overrides.modeAmount') },
+    ];
 
     return (
         <ModalWrapper onClose={onClose}>
@@ -297,7 +309,29 @@ export const ModalOverride: React.FC<ModalOverrideProps> = ({ editingOverride, f
                         />
                     </Field>
                 </div>
-                <div className="grid grid-cols-3 gap-3">
+
+                {/* Sélecteur de mode — radio segmenté (Prix fixe / Remise % / Remise montant) */}
+                <div>
+                    <label className="block text-xs text-gray-500 mb-2 font-medium">{t('pricing.overrides.priceMode')}</label>
+                    <div className="flex gap-1 p-1 bg-gray-100 rounded-lg">
+                        {MODES.map(m => (
+                            <button
+                                key={m.value}
+                                type="button"
+                                onClick={() => handleModeChange(m.value)}
+                                className={`flex-1 px-3 py-1.5 text-xs font-medium rounded-md transition-all ${
+                                    priceMode === m.value
+                                        ? 'bg-white text-gray-900 shadow-sm'
+                                        : 'text-gray-500 hover:text-gray-700'
+                                }`}
+                            >
+                                {m.label}
+                            </button>
+                        ))}
+                    </div>
+                </div>
+
+                {priceMode === 'fixed_price' && (
                     <Field label={t('pricing.overrides.fixedPrice')}>
                         <input
                             type="number" step="0.001" min="0"
@@ -306,33 +340,34 @@ export const ModalOverride: React.FC<ModalOverrideProps> = ({ editingOverride, f
                             className={inputCls}
                             placeholder="10.500"
                         />
+                        <p className="text-[11px] text-amber-600 mt-1">{t('pricing.overrides.fixedPriceHint')}</p>
                     </Field>
+                )}
+                {priceMode === 'rate' && (
                     <Field label={t('pricing.overrides.discountRate')}>
                         <input
                             type="number" step="0.01" min="0" max="100"
                             value={form.discount_rate ?? ''}
                             onChange={e => setForm((prev: any) => ({ ...prev, discount_rate: parseNumber(e.target.value) }))}
-                            className={`${inputCls} ${rateInvalid ? 'border-red-400 focus:ring-red-400' : ''} ${hasFixedPrice ? 'opacity-50' : ''}`}
-                            disabled={hasFixedPrice}
+                            className={`${inputCls} ${rateInvalid ? 'border-red-400 focus:ring-red-400' : ''}`}
                             placeholder="10"
                         />
+                        <p className={`text-[11px] mt-1 ${rateInvalid ? 'text-red-600 font-medium' : 'text-gray-400'}`}>
+                            {rateInvalid ? t('pricing.overrides.discountRateInvalid') : t('pricing.overrides.discountRateHint')}
+                        </p>
                     </Field>
+                )}
+                {priceMode === 'amount' && (
                     <Field label={t('pricing.overrides.discountAmount')}>
                         <input
                             type="number" step="0.01" min="0"
                             value={form.discount_amount ?? ''}
                             onChange={e => setForm((prev: any) => ({ ...prev, discount_amount: parseNumber(e.target.value) }))}
-                            className={`${inputCls} ${hasFixedPrice ? 'opacity-50' : ''}`}
-                            disabled={hasFixedPrice}
+                            className={inputCls}
                         />
                     </Field>
-                </div>
-                <p className={`text-[11px] ${rateInvalid ? 'text-red-600 font-medium' : 'text-gray-400'}`}>
-                    {rateInvalid ? t('pricing.overrides.discountRateInvalid') : t('pricing.overrides.discountRateHint')}
-                </p>
-                {hasFixedPrice && (
-                    <p className="text-[11px] text-amber-600">{t('pricing.overrides.fixedPriceHint')}</p>
                 )}
+
                 <div className="grid grid-cols-2 gap-3">
                     <Field label={t('pricing.overrides.validFrom')}>
                         <input type="date" value={form.valid_from || ''} onChange={e => setForm((prev: any) => ({ ...prev, valid_from: e.target.value }))} className={inputCls} />
@@ -375,9 +410,10 @@ export const ModalOverride: React.FC<ModalOverrideProps> = ({ editingOverride, f
                                         </div>
                                     </div>
                                 </div>
-                                <p className="text-[10px] text-gray-400 text-center mt-1.5">
-                                    {t('pricing.overrides.previewHint', { source: preview.source, version: preview.algorithm_version })}
-                                </p>
+                                <div className="flex items-center justify-center gap-2 mt-1.5">
+                                    <PriceSourceBadge source={preview.source} />
+                                    <span className="text-[10px] text-gray-400">v{preview.algorithm_version}</span>
+                                </div>
                             </>
                         )}
                     </div>
@@ -387,75 +423,6 @@ export const ModalOverride: React.FC<ModalOverrideProps> = ({ editingOverride, f
         </ModalWrapper>
     );
 };
-
-// ═══════════════════════════════════════════════════════════════════════════════
-// Packaging Price
-// ═══════════════════════════════════════════════════════════════════════════════
-
-interface ModalPackagingPriceProps {
-    editingPackaging: PackagingPrice | null;
-    form: Partial<CreatePackagingPriceRequest>;
-    setForm: (f: any) => void;
-    onClose: () => void;
-    onSubmit: () => void;
-    loading: boolean;
-}
-
-export const ModalPackagingPrice: React.FC<ModalPackagingPriceProps> = ({ editingPackaging, form, setForm, onClose, onSubmit, loading }) => (
-    <ModalWrapper onClose={onClose}>
-        <ModalHeader
-            icon={DollarSign}
-            title={editingPackaging ? 'Modifier le prix de conditionnement' : 'Nouveau prix de conditionnement'}
-            onClose={onClose}
-        />
-        <div className="p-4 space-y-4">
-            <div className="grid grid-cols-2 gap-3">
-                <Field label="ID Détail de ligne" required>
-                    <input
-                        type="number"
-                        value={form.line_detail_id || ''}
-                        onChange={e => setForm((prev: any) => ({ ...prev, line_detail_id: parseInt(e.target.value) || 0 }))}
-                        className={inputCls}
-                    />
-                </Field>
-                <Field label="ID Conditionnement" required>
-                    <input
-                        type="number"
-                        value={form.packaging_id || ''}
-                        onChange={e => setForm((prev: any) => ({ ...prev, packaging_id: parseInt(e.target.value) || 0 }))}
-                        className={inputCls}
-                    />
-                </Field>
-            </div>
-            <div className="grid grid-cols-2 gap-3">
-                <Field label="Prix vente" required>
-                    <input
-                        type="number"
-                        step="0.01"
-                        value={form.sales_price || ''}
-                        onChange={e => setForm((prev: any) => ({ ...prev, sales_price: parseFloat(e.target.value) || 0 }))}
-                        className={inputCls}
-                    />
-                </Field>
-                <Field label="Prix retour" required>
-                    <input
-                        type="number"
-                        step="0.01"
-                        value={form.return_price || ''}
-                        onChange={e => setForm((prev: any) => ({ ...prev, return_price: parseFloat(e.target.value) || 0 }))}
-                        className={inputCls}
-                    />
-                </Field>
-            </div>
-        </div>
-        <ModalFooter
-            onClose={onClose}
-            onSubmit={onSubmit}
-            loading={loading}
-            label={editingPackaging ? 'Enregistrer' : 'Créer'}
-        />
-    </ModalWrapper>
-);
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // Import CSV

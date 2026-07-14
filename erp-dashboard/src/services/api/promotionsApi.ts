@@ -1,6 +1,7 @@
 import apiClient from './client';
-import type { 
-    Promotion, 
+import type {
+    Promotion,
+    PromotionWritePayload,
     PromotionListResponse,
     PartnerFamily,
     PartnerFamilyListResponse,
@@ -40,12 +41,12 @@ export const promotionsApi = {
         return response.data;
     },
 
-    createPromotion: async (data: Partial<Promotion>) => {
+    createPromotion: async (data: PromotionWritePayload | Partial<Promotion>) => {
         const response = await apiClient.post<{ success: boolean; promotion: Promotion }>(PROMOTIONS_BASE, data);
         return response.data;
     },
 
-    updatePromotion: async (id: number, data: Partial<Promotion>) => {
+    updatePromotion: async (id: number, data: PromotionWritePayload | Partial<Promotion>) => {
         const response = await apiClient.put<{ success: boolean; promotion: Promotion }>(`${PROMOTIONS_BASE}/${id}`, data);
         return response.data;
     },
@@ -168,8 +169,12 @@ export const promotionsApi = {
     },
 
     // ==================== Auxiliary Data ====================
+    // Contrat figé (doc 18 §2) : enveloppe {success, data}, actifs triés rank puis id
     getPaymentTerms: async () => {
-        const response = await apiClient.get<any[]>('/api/backend/payment-terms');
-        return response.data;
+        const response = await apiClient.get<{
+            success: boolean;
+            data: Array<{ id: number; code: string; name: string; is_credit?: boolean; is_cash?: boolean }>;
+        }>('/api/backend/masterdata/payment-terms');
+        return response.data.data;
     }
 };

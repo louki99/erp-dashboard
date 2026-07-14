@@ -1,4 +1,5 @@
 import { PartnerFamilySelector } from './PartnerFamilySelector';
+import { PromotionChronologiesSelector } from './PromotionChronologiesSelector';
 
 export const PromotionPartnersSection = () => {
     return (
@@ -10,11 +11,16 @@ export const PromotionPartnersSection = () => {
 
             <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
                 <p className="text-sm text-blue-800">
-                    <strong>Note:</strong> Si aucune famille de partenaires n'est sélectionnée, la promotion s'appliquera à tous les partenaires.
+                    <strong>Note:</strong> Sans famille NI chronologie sélectionnée, la promotion s'applique à tous les partenaires.
+                    Les deux axes de ciblage sont cumulables.
                 </p>
             </div>
 
             <PartnerFamilySelector />
+
+            <div className="border-t border-gray-200 pt-6">
+                <PromotionChronologiesSelector />
+            </div>
         </div>
     );
 };

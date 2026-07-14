@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import {
     Loader2, Plus, X, AlertTriangle, Edit, Shield, Ban, CreditCard,
 } from 'lucide-react';
@@ -11,6 +11,7 @@ import type {
     UpdateCreditRequest,
     PaymentTermOption,
 } from '@/types/partner.types';
+import { getChannels } from '@/services/api/pricingApi';
 
 // ─── Shared modal primitives ────────────────────────────────────────────────
 
@@ -74,7 +75,8 @@ const STATUS_OPTIONS: { value: PartnerStatus; label: string }[] = [
 ];
 
 const TYPE_OPTIONS = ['CUSTOMER', 'SUPPLIER', 'BOTH'];
-const CHANNEL_OPTIONS = ['OTHER', 'B2B', 'B2C', 'ECOMMERCE', 'RETAIL'];
+// Fallback si GET /channels échoue — l'enum hardcodé est remplacé par la table channels
+const CHANNEL_FALLBACK = ['OTHER', 'B2B', 'B2C', 'ECOMMERCE', 'RETAIL'];
 
 interface ModalCreateEditProps {
     editing: Partner | null;
@@ -89,7 +91,15 @@ interface ModalCreateEditProps {
 
 export const ModalCreateEdit: React.FC<ModalCreateEditProps> = ({
     editing, form, setForm, onClose, onSubmit, loading, priceLists = [], paymentTerms = [],
-}) => (
+}) => {
+    const [channelOptions, setChannelOptions] = useState<{ code: string; name: string }[]>([]);
+    useEffect(() => {
+        getChannels()
+            .then(list => setChannelOptions(list.filter(c => c.is_active).map(c => ({ code: c.code, name: c.name }))))
+            .catch(() => setChannelOptions(CHANNEL_FALLBACK.map(c => ({ code: c, name: c }))));
+    }, []);
+
+    return (
     <ModalWrapper onClose={onClose} wide>
         <ModalHeader icon={editing ? Edit : Plus} title={editing ? 'Modifier le partenaire' : 'Nouveau partenaire'} onClose={onClose} />
         <div className="p-4 space-y-4">
@@ -115,8 +125,9 @@ export const ModalCreateEdit: React.FC<ModalCreateEditProps> = ({
                     </select>
                 </Field>
                 <Field label="Canal">
-                    <select value={form.channel || 'OTHER'} onChange={e => setForm((p: any) => ({ ...p, channel: e.target.value }))} className={selectCls}>
-                        {CHANNEL_OPTIONS.map(c => <option key={c} value={c}>{c}</option>)}
+                    <select value={form.channel || ''} onChange={e => setForm((p: any) => ({ ...p, channel: e.target.value }))} className={selectCls}>
+                        <option value="">— Sélectionner —</option>
+                        {channelOptions.map(c => <option key={c.code} value={c.code}>{c.name}</option>)}
                     </select>
                 </Field>
             </div>
@@ -187,7 +198,8 @@ export const ModalCreateEdit: React.FC<ModalCreateEditProps> = ({
         </div>
         <ModalFooter onClose={onClose} onSubmit={onSubmit} loading={loading} label={editing ? 'Enregistrer' : 'Créer'} />
     </ModalWrapper>
-);
+    );
+};
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // Delete Confirmation

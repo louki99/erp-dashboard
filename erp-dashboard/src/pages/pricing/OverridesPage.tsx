@@ -3,13 +3,8 @@ import { useTranslation } from 'react-i18next';
 import toast from 'react-hot-toast';
 import { isAxiosError } from 'axios';
 import {
-    Plus,
-    Edit2,
-    Trash2,
-    RefreshCw,
-    Search,
-    ChevronLeft,
-    ChevronRight,
+    Plus, Edit2, Trash2, RefreshCw, Search, ChevronLeft, ChevronRight,
+    Download, CheckCircle2, XCircle, Clock, Minus,
 } from 'lucide-react';
 
 import { MasterLayout } from '@/components/layout/MasterLayout';
@@ -17,6 +12,7 @@ import { ActionPanel, type ActionItemProps } from '@/components/layout/ActionPan
 import { PricingPageShell } from '@/components/pricing/PricingPageShell';
 import { DataGrid } from '@/components/common/DataGrid';
 import { Button } from '@/components/ui/button';
+import { Badge } from '@/components/ui/badge';
 import SearchableSelect from '@/components/common/SearchableSelect';
 
 import {
@@ -38,6 +34,39 @@ function getErrorMessage(error: unknown): string {
 // Les inputs date attendent yyyy-MM-dd ; le backend renvoie des ISO complets.
 function toDateInput(value: string | null | undefined): string | undefined {
     return value ? value.slice(0, 10) : undefined;
+}
+
+type ValidityStatus = 'permanent' | 'active' | 'expired' | 'upcoming';
+
+function getValidityStatus(validFrom: string | null, validTo: string | null): ValidityStatus {
+    if (!validFrom && !validTo) return 'permanent';
+    const today = new Date().toISOString().slice(0, 10);
+    if (validTo && validTo.slice(0, 10) < today) return 'expired';
+    if (validFrom && validFrom.slice(0, 10) > today) return 'upcoming';
+    return 'active';
+}
+
+function exportToCsv(overrides: PriceOverride[]) {
+    const headers = ['Partner', 'Product', 'Fixed Price', 'Discount Rate', 'Discount Amount', 'Valid From', 'Valid To', 'Priority', 'Active'];
+    const rows = overrides.map((o) => [
+        o.partner?.name ?? o.partner_id,
+        o.product?.name ?? o.product_id,
+        o.fixed_price ?? '',
+        o.discount_rate ?? '',
+        o.discount_amount ?? '',
+        toDateInput(o.valid_from) ?? '',
+        toDateInput(o.valid_to) ?? '',
+        o.priority,
+        o.active ? 'Yes' : 'No',
+    ]);
+    const csv = [headers, ...rows].map((r) => r.join(',')).join('\n');
+    const blob = new Blob([csv], { type: 'text/csv' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `overrides-${new Date().toISOString().slice(0, 10)}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
 }
 
 type CellParams = { value: unknown; data?: PriceOverride };
@@ -214,24 +243,52 @@ export function OverridesPage() {
             {
                 field: 'valid_from',
                 headerName: t('pricing.overrides.validity'),
-                minWidth: 170,
+                minWidth: 220,
                 cellRenderer: (params: CellParams) => {
                     const ov = params.data as PriceOverride;
                     const from = toDateInput(ov.valid_from);
                     const to = toDateInput(ov.valid_to);
-                    if (!from && !to) return <span className="text-xs text-gray-400">—</span>;
+                    const status = getValidityStatus(ov.valid_from, ov.valid_to);
+                    const statusConfig = {
+                        permanent: { icon: Minus, cls: 'text-gray-500 bg-gray-100', label: t('pricing.overrides.validityPermanent') },
+                        active: { icon: CheckCircle2, cls: 'text-emerald-700 bg-emerald-50', label: t('pricing.overrides.validityActive') },
+                        expired: { icon: XCircle, cls: 'text-red-600 bg-red-50', label: t('pricing.overrides.validityExpired') },
+                        upcoming: { icon: Clock, cls: 'text-blue-600 bg-blue-50', label: t('pricing.overrides.validityUpcoming') },
+                    }[status];
+                    const Icon = statusConfig.icon;
                     return (
-                        <span className="text-xs text-gray-600 font-mono">
-                            {from ?? '…'} → {to ?? '…'}
-                        </span>
+                        <div className="flex items-center gap-2">
+                            <span className={`inline-flex items-center gap-1 text-[10px] font-semibold px-1.5 py-0.5 rounded ${statusConfig.cls}`}>
+                                <Icon className="w-2.5 h-2.5" />
+                                {statusConfig.label}
+                            </span>
+                            {(from || to) && (
+                                <span className="text-[11px] text-gray-500 font-mono">
+                                    {from ?? '…'} → {to ?? '…'}
+                                </span>
+                            )}
+                        </div>
                     );
                 },
             },
             {
                 field: 'priority',
                 headerName: t('pricing.overrides.priority'),
-                minWidth: 80,
-                cellRenderer: (params: CellParams) => <span className="text-xs font-medium">{Number(params.value ?? 0)}</span>,
+                minWidth: 90,
+                sortable: true,
+                cellRenderer: (params: CellParams) => {
+                    const v = Number(params.value ?? 0);
+                    const cls = v === 0
+                        ? 'bg-gray-100 text-gray-500'
+                        : v <= 5
+                            ? 'bg-blue-50 text-blue-700'
+                            : v <= 15
+                                ? 'bg-amber-50 text-amber-700'
+                                : 'bg-red-50 text-red-700';
+                    return (
+                        <span className={`text-[11px] font-bold px-2 py-0.5 rounded-full ${cls}`}>{v}</span>
+                    );
+                },
             },
             {
                 field: 'active',
@@ -298,8 +355,62 @@ export function OverridesPage() {
                         subtitle={t('pricing.overrides.subtitle')}
                     >
                         <div className="h-full flex flex-col">
-                            <div className="px-4 pt-4 flex flex-wrap items-center gap-2">
-                                <div className="relative flex-1 min-w-[220px] max-w-sm">
+                            {/* Stats bar */}
+                            <div className="px-4 pt-3 pb-2 flex items-center gap-2 flex-wrap border-b border-gray-100">
+                                <button
+                                    onClick={() => setFilters((prev) => ({ ...prev, active: undefined, page: 1 }))}
+                                    className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-medium transition-colors ${
+                                        filters.active === undefined
+                                            ? 'bg-gray-800 text-white'
+                                            : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                                    }`}
+                                >
+                                    {t('pricing.overrides.statsTotal')}
+                                    <span className="font-bold">{total}</span>
+                                </button>
+                                <button
+                                    onClick={() => setFilters((prev) => ({ ...prev, active: true, page: 1 }))}
+                                    className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-medium transition-colors ${
+                                        filters.active === true
+                                            ? 'bg-emerald-600 text-white'
+                                            : 'bg-emerald-50 text-emerald-700 hover:bg-emerald-100'
+                                    }`}
+                                >
+                                    <CheckCircle2 className="w-3 h-3" />
+                                    {t('pricing.overrides.statsActive')}
+                                    {filters.active === true && <span className="font-bold">{total}</span>}
+                                </button>
+                                <button
+                                    onClick={() => setFilters((prev) => ({ ...prev, active: false, page: 1 }))}
+                                    className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-medium transition-colors ${
+                                        filters.active === false
+                                            ? 'bg-gray-600 text-white'
+                                            : 'bg-gray-100 text-gray-500 hover:bg-gray-200'
+                                    }`}
+                                >
+                                    <XCircle className="w-3 h-3" />
+                                    {t('pricing.overrides.statsInactive')}
+                                    {filters.active === false && <span className="font-bold">{total}</span>}
+                                </button>
+                                <div className="ml-auto flex items-center gap-1.5">
+                                    {overrides.length > 0 && (
+                                        <Button
+                                            variant="outline"
+                                            size="sm"
+                                            className="h-7 px-2.5 text-xs gap-1.5"
+                                            onClick={() => exportToCsv(overrides)}
+                                            title={t('pricing.overrides.exportCsv')}
+                                        >
+                                            <Download className="w-3.5 h-3.5" />
+                                            {t('pricing.overrides.exportCsv')}
+                                        </Button>
+                                    )}
+                                </div>
+                            </div>
+
+                            {/* Filters */}
+                            <div className="px-4 py-2.5 flex flex-wrap items-center gap-2">
+                                <div className="relative flex-1 min-w-[200px] max-w-sm">
                                     <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
                                     <input
                                         type="text"
@@ -311,7 +422,7 @@ export function OverridesPage() {
                                         className="w-full pl-9 pr-3 py-2 text-sm border border-gray-200 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-sage-500/20 focus:border-sage-400"
                                     />
                                 </div>
-                                <div className="w-56">
+                                <div className="w-52">
                                     <SearchableSelect
                                         options={partnerOptions}
                                         value={filters.partner_id ?? null}
@@ -322,21 +433,6 @@ export function OverridesPage() {
                                         clearable
                                     />
                                 </div>
-                                <select
-                                    value={filters.active === undefined ? 'all' : filters.active ? '1' : '0'}
-                                    onChange={(e) =>
-                                        setFilters((prev) => ({
-                                            ...prev,
-                                            active: e.target.value === 'all' ? undefined : e.target.value === '1',
-                                            page: 1,
-                                        }))
-                                    }
-                                    className="px-3 py-2 text-sm border border-gray-200 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-sage-500/20"
-                                >
-                                    <option value="all">{t('pricing.overrides.filterAll')}</option>
-                                    <option value="1">{t('common.active')}</option>
-                                    <option value="0">{t('common.inactive')}</option>
-                                </select>
                             </div>
 
                             <div className="flex-1 p-4 overflow-hidden">

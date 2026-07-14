@@ -617,6 +617,66 @@ Remise seule : `base_price` = prix hiérarchie, `final_price` = prix remisé :
 Après `toggle` off, le preview retombe sur `source: standard` — même contrat
 que le panier vendeur et le catalogue : **un seul moteur, zéro divergence**.
 
+### 6.1c Packagings helper — `GET /pricing/products/{productId}/packagings`
+
+> **Contrat FIGÉ** (capturé staging 2026-07-14) : **ARRAY NU** (pas
+> d'enveloppe `{success, ...}` — consommateur select legacy préservé).
+> `id` + `label` sont les champs historiques ; le reste est additif.
+> `price` est `null` sans contexte tarifaire.
+
+Query params optionnels :
+
+| Param | Effet |
+|---|---|
+| `price_list_id` | Prix résolus par le moteur v5 sur la ligne ACTIVE de cette liste |
+| `line_number` | Épingle une ligne précise (défaut : ligne active) |
+| `partner_id` | Liste EFFECTIVE du client (directe → fallback canal) **+ overrides N1 appliqués** |
+
+```bash
+curl "https://api.omni360.cloud/api/backend/pricing/products/3/packagings?price_list_id=4" \
+  -H "Authorization: Bearer {TOKEN}" -H "Accept: application/json"
+```
+
+**Response `200`** (array nu) :
+```json
+[
+  {
+    "id": 2,
+    "label": "Pièce (Qty: 1)",
+    "unit": { "id": 1, "code": "PCS", "name": "Pièce" },
+    "quantity": 1,
+    "is_default": true,
+    "price": { "unit_price": 31.09, "source": "standard", "min_price": 26.427, "max_price": 35.754, "sellable": true }
+  },
+  {
+    "id": 213,
+    "label": "Carton (Qty: 100)",
+    "unit": { "id": 4, "code": "CTN", "name": "Carton" },
+    "quantity": 100,
+    "is_default": false,
+    "price": { "unit_price": 3109, "source": "standard", "min_price": 2642.65, "max_price": 3575.35, "sellable": true }
+  }
+]
+```
+
+Avec `?partner_id=140` (client porteur d'un override N1 `fixed_price: 9.999`) :
+```json
+[
+  { "id": 2,   "label": "Pièce (Qty: 1)",    "quantity": 1,   "is_default": true,
+    "price": { "unit_price": 9.999, "source": "partner_override", "min_price": null, "max_price": null, "sellable": true } },
+  { "id": 213, "label": "Carton (Qty: 100)", "quantity": 100, "is_default": false,
+    "price": { "unit_price": 999.9, "source": "partner_override", "min_price": null, "max_price": null, "sellable": true } }
+]
+```
+
+Notes :
+- `price.source` = mêmes valeurs que le moteur (`partner_override`,
+  `partner_override_discount`, `tier`, `override`, `standard`, `linear`,
+  `colisage_unpriced`, `no_base`) ; `sellable: false` quand aucun prix.
+- Pas de `return_price` ici — c'est un helper de RÉSOLUTION (prix de vente
+  effectif) ; les colonnes brutes `sales_price`/`return_price` par ligne se
+  gèrent via les endpoints CRUD `price-lists/{id}/lines/{n}/details`.
+
 ### 6.2 Channel Price Lists (mass fallback)
 
 The effective price list for a partner is:

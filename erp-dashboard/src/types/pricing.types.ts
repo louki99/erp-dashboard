@@ -18,13 +18,6 @@ export interface ListsResponse<T> {
     filters: Record<string, any>;
 }
 
-export interface PackagingPriceFilters {
-    price_list_id?: number;
-    line_detail_id?: number;
-    page?: number;
-    per_page?: number;
-}
-
 // ─── Price List Entities ─────────────────────────────────────────────────────
 
 export interface PriceList {
@@ -110,20 +103,43 @@ export interface OverridesIndexResponse {
     partners: Array<{ id: number; code: string; name: string }>;
 }
 
-// ─── Packaging Prices ────────────────────────────────────────────────────────
+// ─── Packagings (colisages) — contrat §6.1c figé ─────────────────────────────
+// GET /pricing/products/{id}/packagings → ARRAY NU.
+// Sans query param → price: null (mode dropdown).
+// ?price_list_id=N → prix résolu sur la ligne active de cette liste.
+// ?partner_id=N → liste effective du client (directe → canal) + overrides N1.
 
-export interface PackagingPrice {
+// Vocabulaire unique des sources du moteur v5 (badges UI partout)
+export type PriceSource =
+    | 'partner_override'
+    | 'partner_override_discount'
+    | 'tier'
+    | 'override'
+    | 'standard'
+    | 'linear'
+    | 'colisage_unpriced'
+    | 'no_base';
+
+export interface ResolvedPackagingPrice {
+    unit_price: number;
+    source: PriceSource | string;
+    min_price?: number | null;
+    max_price?: number | null;
+    sellable: boolean;
+}
+
+export interface ProductPackaging {
     id: number;
-    line_detail_id: number;
-    packaging_id: number;
-    sales_price: number;
-    return_price: number;
-    packaging?: {
-        id: number;
-        code: string;
-        name: string;
-        quantity: number;
-    };
+    label: string;              // ex: "Carton (Qty: 100)"
+    unit: { id: number; code: string; name: string };
+    quantity: number;
+    is_default: boolean;
+    price: ResolvedPackagingPrice | null;
+}
+
+export interface PackagingResolutionParams {
+    price_list_id?: number;
+    partner_id?: number;
 }
 
 // ─── Filters & Requests ──────────────────────────────────────────────────────
@@ -230,13 +246,6 @@ export interface PreviewPriceResponse {
         max_sales_price?: string;
     } | null;
     algorithm_version: number;
-}
-
-export interface CreatePackagingPriceRequest {
-    line_detail_id: number;
-    packaging_id: number;
-    sales_price: number;
-    return_price: number;
 }
 
 // ─── Channels & Business Chronologies (Module 20) ────────────────────────────

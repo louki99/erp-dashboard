@@ -104,6 +104,8 @@ export interface Promotion {
     lines: PromotionLine[];
     partner_families: string[]; // List of Family Codes
     payment_terms: string[];    // List of Payment Term Codes
+    // Ciblage chronologies commerciales (module 20) — additif avec partner_families
+    business_chronologies?: Array<{ code: string; sub_types?: string[] }>;
 
     // ── Budget Cap (2026-07-11) ──
     max_budget?: string | null;           // editable — null/0 = unlimited
@@ -122,6 +124,36 @@ export interface Promotion {
     usage_count?: number;
     total_discount?: number;
 }
+
+// Payload d'écriture (POST/PUT) — le backend attend paid_based_on_product en boolean
+// alors que l'UI manipule 'cart' | 'family' | 'product'.
+export interface PromotionLineWritePayload {
+    name: string;
+    paid_based_on_product: boolean;
+    paid_product_code?: string;
+    paid_product_family_code?: string;
+    paid_code?: string;
+    free_based_on_product?: string;
+    free_code?: string;
+    assortment_type: number;
+    minimum_cart_amount?: number;
+    assortments: Array<{
+        based_on_product: string;
+        product_code?: string;
+        product_family_code?: string;
+        minimum: number;
+    }>;
+    details: Array<{
+        promo_type: PromotionType;
+        minimum_value: number;
+        amount: number;
+        repeating: boolean;
+    }>;
+}
+
+export type PromotionWritePayload = Omit<Partial<Promotion>, 'lines'> & {
+    lines: PromotionLineWritePayload[];
+};
 
 export interface PromotionStats {
     total: number;

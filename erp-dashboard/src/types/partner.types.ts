@@ -11,7 +11,8 @@ export interface Partner {
     payment_term_id: number | null;
     status: PartnerStatus;
     partner_type: string;
-    channel: string;
+    channel: string;            // code (rétrocompatible)
+    channel_id?: number | null; // FK vers la table channels (refonte segmentation)
     email: string | null;
     phone: string | null;
     whatsapp: string | null;
@@ -397,7 +398,9 @@ export interface CreatePartnerFullPayload {
         name: string;
         code?: string;
         partner_type: string;
-        channel: string;
+        // code string (accepté) ou channel_id — les deux routés vers la FK channels
+        channel?: string;
+        channel_id?: number;
         status: PartnerStatus;
         risk_score?: number;
         parent_partner_id?: number | null;

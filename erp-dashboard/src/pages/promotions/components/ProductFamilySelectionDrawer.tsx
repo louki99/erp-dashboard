@@ -12,11 +12,10 @@ interface ProductFamilySelectionDrawerProps {
     currentCode?: string;
 }
 
-export const ProductFamilySelectionDrawer = ({ 
-    isOpen, 
-    onClose, 
+export const ProductFamilySelectionDrawer = ({
+    isOpen,
+    onClose,
     onSelect,
-    currentCode 
 }: ProductFamilySelectionDrawerProps) => {
     const [families, setFamilies] = useState<ProductFamily[]>([]);
     const [loading, setLoading] = useState(false);
