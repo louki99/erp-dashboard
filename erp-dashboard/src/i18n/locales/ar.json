@@ -37,6 +37,13 @@
     "confirm": "تأكيد",
     "reset": "إعادة تعيين",
     "filter": "تصفية",
+    "attention": "انتباه",
+    "file": "ملف",
+    "header": "رأس",
+    "id": "المعرف",
+    "identifier": "المعرف",
+    "merge": "دمج",
+    "replace": "استبدال",
     "clear": "مسح",
     "all": "الكل",
     "none": "لا شيء",
@@ -640,9 +647,11 @@
       "createdAt": "تاريخ الإنشاء",
       "updatedAt": "تاريخ التعديل",
       "create": "قائمة أسعار جديدة",
+      "edit": "تعديل قائمة الأسعار",
       "createSuccess": "تم إنشاء قائمة الأسعار",
       "updateSuccess": "تم تحديث قائمة الأسعار",
       "deleteSuccess": "تم حذف قائمة الأسعار",
+      "deleteConfirmMessage": "هل أنت متأكد من حذف قائمة الأسعار هذه؟",
       "searchPlaceholder": "ابحث عن قائمة أسعار…",
       "sectionGeneralInfo": "معلومات عامة",
       "tabInfo": "معلومات",
@@ -663,6 +672,8 @@
         "updateSuccess": "تم تحديث السطر",
         "duplicate": "تكرار",
         "duplicateSuccess": "تم تكرار السطر",
+        "sourceLine": "السطر المصدر",
+        "targetLine": "السطر الهدف",
         "copyOf": "نسخة من",
         "importCsv": "استيراد CSV",
         "clearDetails": "مسح التفاصيل",
@@ -687,7 +698,8 @@
         "saveSuccess": "تم حفظ {{count}} تفصيل"
       },
       "import": {
-        "success": "اكتمل الاستيراد"
+        "success": "اكتمل الاستيراد",
+        "replaceWarning": "سيحذف وضع الاستبدال جميع التفاصيل الموجودة في هذا السطر قبل الاستيراد."
       }
     },
     "overrides": {

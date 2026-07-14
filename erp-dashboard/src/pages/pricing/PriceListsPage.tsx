@@ -407,9 +407,27 @@ export function PriceListsPage() {
     // ── Columns ───────────────────────────────────────────────────────────────
     const priceListColumns = useMemo<ColDef[]>(
         () => [
-            { field: 'code', headerName: t('pricing.priceLists.code'), width: 100, cellStyle: { fontWeight: '600' } as any },
-            { field: 'name', headerName: t('pricing.priceLists.name'), flex: 1, minWidth: 150 },
-            { field: 'rank', headerName: t('pricing.priceLists.rank'), width: 80, cellStyle: { textAlign: 'center' } as any },
+            {
+                field: 'code',
+                headerName: t('pricing.priceLists.code'),
+                width: 110,
+                cellRenderer: (p: any) => (
+                    <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[11px] font-mono font-medium bg-slate-100 text-slate-700">
+                        {p.value}
+                    </span>
+                ),
+            },
+            { field: 'name', headerName: t('pricing.priceLists.name'), flex: 1, minWidth: 160, cellStyle: { fontWeight: '500' } as any },
+            {
+                field: 'rank',
+                headerName: t('pricing.priceLists.rank'),
+                width: 80,
+                cellRenderer: (p: any) => (
+                    <span className="inline-flex items-center justify-center w-6 h-6 rounded-full bg-sage-50 text-sage-700 text-[11px] font-bold">
+                        {p.value}
+                    </span>
+                ),
+            },
             {
                 field: 'lines_count',
                 headerName: t('pricing.priceLists.lines'),
@@ -451,57 +469,56 @@ export function PriceListsPage() {
             {
                 field: 'closed',
                 headerName: t('common.status'),
-                width: 100,
+                width: 110,
                 cellRenderer: (p: any) => (
-                    <div className={`flex items-center gap-1.5 ${p.value ? 'text-gray-500' : 'text-emerald-600'}`}>
-                        {p.value ? (
-                            <>
-                                <X className="w-3.5 h-3.5" /> {t('pricing.priceLists.line.closed')}
-                            </>
-                        ) : (
-                            <>
-                                <CheckCircle2 className="w-3.5 h-3.5" /> {t('pricing.priceLists.line.open')}
-                            </>
-                        )}
-                    </div>
+                    <span
+                        className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] font-semibold ${
+                            p.value
+                                ? 'bg-gray-100 text-gray-600'
+                                : 'bg-emerald-50 text-emerald-700 border border-emerald-100'
+                        }`}
+                    >
+                        {p.value ? <X className="w-3 h-3" /> : <CheckCircle2 className="w-3 h-3" />}
+                        {p.value ? t('pricing.priceLists.line.closed') : t('pricing.priceLists.line.open')}
+                    </span>
                 ),
             },
             {
-                headerName: '',
+                headerName: t('common.actions'),
                 width: 150,
                 cellRenderer: (params: any) => (
-                    <div className="flex items-center justify-end gap-1">
+                    <div className="flex items-center justify-end gap-0.5">
+                        <button
+                            onClick={() => handleViewLineDetails(params.data)}
+                            className="p-1.5 hover:bg-sage-50 rounded-md text-gray-400 hover:text-sage-600 transition-colors"
+                            title={t('pricing.priceLists.line.viewDetails')}
+                        >
+                            <Eye className="w-3.5 h-3.5" />
+                        </button>
                         <button
                             onClick={() => handleEditLine(params.data)}
-                            className="p-1 hover:bg-gray-100 rounded text-sage-600"
+                            className="p-1.5 hover:bg-gray-100 rounded-md text-gray-400 hover:text-gray-700 transition-colors"
                             title={t('common.edit')}
                         >
                             <Edit2 className="w-3.5 h-3.5" />
                         </button>
                         <button
                             onClick={() => handleDuplicateLine(params.data)}
-                            className="p-1 hover:bg-gray-100 rounded text-gray-500"
+                            className="p-1.5 hover:bg-gray-100 rounded-md text-gray-400 hover:text-gray-700 transition-colors"
                             title={t('pricing.priceLists.line.duplicate')}
                         >
                             <Copy className="w-3.5 h-3.5" />
                         </button>
                         <button
                             onClick={() => handleImportCsv(params.data)}
-                            className="p-1 hover:bg-gray-100 rounded text-gray-500"
+                            className="p-1.5 hover:bg-gray-100 rounded-md text-gray-400 hover:text-gray-700 transition-colors"
                             title={t('pricing.priceLists.line.importCsv')}
                         >
                             <Upload className="w-3.5 h-3.5" />
                         </button>
                         <button
-                            onClick={() => handleViewLineDetails(params.data)}
-                            className="p-1 hover:bg-gray-100 rounded text-gray-500"
-                            title={t('pricing.priceLists.line.viewDetails')}
-                        >
-                            <Eye className="w-3.5 h-3.5" />
-                        </button>
-                        <button
                             onClick={() => handleClearLineDetailsClick(params.data)}
-                            className="p-1 hover:bg-gray-100 rounded text-red-500"
+                            className="p-1.5 hover:bg-red-50 rounded-md text-gray-400 hover:text-red-600 transition-colors"
                             title={t('pricing.priceLists.line.clearDetails')}
                         >
                             <Trash2 className="w-3.5 h-3.5" />
@@ -602,26 +619,37 @@ export function PriceListsPage() {
             <MasterLayout
                 leftContent={
                     <div className="h-full bg-white border-r border-gray-200 flex flex-col">
-                        <div className="px-3 pt-3 pb-2.5 border-b border-gray-100 shrink-0">
-                            <div className="flex items-center justify-between mb-2">
-                                <h2 className="text-sm font-bold text-gray-900 tracking-tight">{t('pricing.priceLists.title')}</h2>
-                                <span className="px-1.5 py-0.5 text-[10px] font-semibold rounded-full bg-sage-50 text-sage-600">
-                                    {priceLists.length}
-                                </span>
+                        <div className="px-4 pt-4 pb-3 border-b border-gray-100 shrink-0">
+                            <div className="flex items-center justify-between mb-3">
+                                <div className="flex items-center gap-2">
+                                    <h2 className="text-sm font-bold text-gray-900">{t('pricing.priceLists.title')}</h2>
+                                    <span className="px-2 py-0.5 text-[10px] font-semibold rounded-full bg-sage-50 text-sage-600 border border-sage-100">
+                                        {priceLists.length}
+                                    </span>
+                                </div>
+                                <Button
+                                    variant="outline"
+                                    size="sm"
+                                    onClick={handleCreatePL}
+                                    className="h-7 px-2 text-xs border-sage-200 text-sage-700 hover:bg-sage-50 hover:text-sage-800"
+                                >
+                                    <Plus className="w-3.5 h-3.5 mr-1" />
+                                    {t('common.new')}
+                                </Button>
                             </div>
                             <div className="relative">
-                                <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400" />
+                                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400" />
                                 <input
                                     type="text"
                                     placeholder={t('pricing.priceLists.searchPlaceholder')}
                                     value={searchQuery}
                                     onChange={(e) => handleSearch(e.target.value)}
-                                    className="w-full pl-8 pr-8 py-1.5 text-xs border border-gray-200 rounded-md focus:outline-none focus:ring-2 focus:ring-sage-500 bg-gray-50"
+                                    className="w-full pl-9 pr-8 py-2 text-xs border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-sage-500/20 focus:border-sage-500 bg-gray-50/70 transition-all"
                                 />
                                 {searchQuery && (
                                     <button
                                         onClick={() => handleSearch('')}
-                                        className="absolute right-2 top-1/2 -translate-y-1/2 p-0.5 rounded hover:bg-gray-200"
+                                        className="absolute right-2.5 top-1/2 -translate-y-1/2 p-0.5 rounded hover:bg-gray-200"
                                     >
                                         <X className="w-3 h-3 text-gray-400" />
                                     </button>
@@ -660,27 +688,28 @@ export function PriceListsPage() {
                             {showDetailPanel && priceListDetail ? (
                                 <div className="flex-1 flex flex-col bg-slate-50 min-w-0 overflow-hidden">
                                     {/* Detail Header */}
-                                    <div className="bg-white px-5 py-3.5 border-b border-gray-200 shrink-0">
-                                        <div className="flex items-start justify-between">
-                                            <div className="flex items-center gap-3.5">
-                                                <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-sage-500 to-sage-600 flex items-center justify-center text-white text-sm font-bold shadow-sm">
+                                    <div className="bg-white px-5 py-4 border-b border-gray-200 shrink-0">
+                                        <div className="flex items-start justify-between gap-4">
+                                            <div className="flex items-center gap-3.5 min-w-0">
+                                                <div className="w-11 h-11 rounded-xl bg-gradient-to-br from-sage-500 to-sage-600 flex items-center justify-center text-white text-sm font-bold shadow-sm shrink-0">
                                                     {priceListDetail.code?.slice(0, 2) || 'PL'}
                                                 </div>
-                                                <div>
-                                                    <div className="flex items-center gap-2">
-                                                        <h1 className="text-lg font-bold text-gray-900 tracking-tight">{priceListDetail.name}</h1>
-                                                        <span className="px-1.5 py-0.5 text-[10px] font-mono bg-sage-50 text-sage-600 rounded-md border border-sage-100">
+                                                <div className="min-w-0">
+                                                    <div className="flex items-center gap-2 flex-wrap">
+                                                        <h1 className="text-base font-bold text-gray-900 tracking-tight truncate">{priceListDetail.name}</h1>
+                                                        <span className="px-2 py-0.5 text-[10px] font-mono bg-sage-50 text-sage-600 rounded-md border border-sage-100 shrink-0">
                                                             {priceListDetail.code}
                                                         </span>
                                                     </div>
-                                                    <div className="flex items-center gap-3 text-[11px] text-gray-400 mt-0.5">
+                                                    <div className="flex items-center gap-3 text-[11px] text-gray-500 mt-1 flex-wrap">
                                                         <span className="flex items-center gap-1">
-                                                            {t('pricing.priceLists.rank')} <strong className="text-gray-600">{priceListDetail.rank}</strong>
+                                                            {t('pricing.priceLists.rank')} <strong className="text-gray-700">{priceListDetail.rank}</strong>
                                                         </span>
-                                                        <span>·</span>
+                                                        <span className="text-gray-300">|</span>
                                                         <span>{priceListDetail.lines_count || 0} {t('pricing.priceLists.lines')}</span>
-                                                        <span>·</span>
-                                                        <span>
+                                                        <span className="text-gray-300">|</span>
+                                                        <span className="flex items-center gap-1">
+                                                            {t('pricing.priceLists.createdAt')}{' '}
                                                             {priceListDetail.created_at
                                                                 ? new Date(priceListDetail.created_at).toLocaleDateString()
                                                                 : '-'}
@@ -688,30 +717,36 @@ export function PriceListsPage() {
                                                     </div>
                                                 </div>
                                             </div>
-                                            <div className="flex items-center gap-1">
-                                                <button
+                                            <div className="flex items-center gap-1 shrink-0">
+                                                <Button
+                                                    variant="ghost"
+                                                    size="icon"
                                                     onClick={() => {
                                                         refetchDetail();
                                                         toast.success(t('common.refreshed'));
                                                     }}
-                                                    className="p-1.5 rounded-lg hover:bg-gray-100 text-gray-400 transition-colors"
+                                                    className="h-8 w-8 text-gray-400 hover:text-sage-600"
                                                     title={t('common.refresh')}
                                                 >
                                                     <RefreshCw className="w-4 h-4" />
-                                                </button>
-                                                <button
+                                                </Button>
+                                                <Button
+                                                    variant="ghost"
+                                                    size="icon"
                                                     onClick={() => handleEditPL(priceListDetail)}
-                                                    className="p-1.5 rounded-lg hover:bg-sage-50 text-sage-600 transition-colors"
+                                                    className="h-8 w-8 text-gray-400 hover:text-sage-600"
                                                     title={t('common.edit')}
                                                 >
                                                     <Edit2 className="w-4 h-4" />
-                                                </button>
-                                                <button
+                                                </Button>
+                                                <Button
+                                                    variant="ghost"
+                                                    size="icon"
                                                     onClick={() => setShowDetailPanel(false)}
-                                                    className="p-1.5 rounded-lg hover:bg-gray-100 text-gray-400 transition-colors"
+                                                    className="h-8 w-8 text-gray-400 hover:text-gray-600"
                                                 >
                                                     <X className="w-4 h-4" />
-                                                </button>
+                                                </Button>
                                             </div>
                                         </div>
                                     </div>
@@ -730,25 +765,46 @@ export function PriceListsPage() {
                                                 onOpenChange={(open) => toggleSection('info', open)}
                                             >
                                                 <div className="space-y-4">
-                                                    <div className="grid grid-cols-4 gap-3">
+                                                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
                                                         {[
-                                                            { label: t('pricing.priceLists.code'), value: priceListDetail.code, color: 'blue' },
-                                                            { label: t('pricing.priceLists.rank'), value: priceListDetail.rank, color: 'purple' },
-                                                            { label: t('pricing.priceLists.lines'), value: priceListDetail.lines_count || 0, color: 'emerald' },
+                                                            {
+                                                                label: t('pricing.priceLists.code'),
+                                                                value: priceListDetail.code,
+                                                                theme: 'blue' as const,
+                                                            },
+                                                            {
+                                                                label: t('pricing.priceLists.rank'),
+                                                                value: priceListDetail.rank,
+                                                                theme: 'purple' as const,
+                                                            },
+                                                            {
+                                                                label: t('pricing.priceLists.lines'),
+                                                                value: priceListDetail.lines_count || 0,
+                                                                theme: 'emerald' as const,
+                                                            },
                                                             {
                                                                 label: t('pricing.priceLists.products'),
                                                                 value: (priceListDetail.lines ?? []).reduce(
                                                                     (a: number, l: PriceListLine) => a + (l.details?.length ?? 0),
                                                                     0
                                                                 ),
-                                                                color: 'amber',
+                                                                theme: 'amber' as const,
                                                             },
-                                                        ].map((kpi) => (
-                                                            <div key={kpi.label} className={`bg-${kpi.color}-50 rounded-lg p-3 border border-${kpi.color}-100`}>
-                                                                <div className="text-[11px] uppercase font-medium text-gray-500 mb-1">{kpi.label}</div>
-                                                                <div className={`text-xl font-bold text-${kpi.color}-700`}>{kpi.value}</div>
-                                                            </div>
-                                                        ))}
+                                                        ].map((kpi) => {
+                                                            const palette: Record<string, { bg: string; border: string; text: string }> = {
+                                                                blue: { bg: 'bg-blue-50', border: 'border-blue-100', text: 'text-blue-700' },
+                                                                purple: { bg: 'bg-purple-50', border: 'border-purple-100', text: 'text-purple-700' },
+                                                                emerald: { bg: 'bg-emerald-50', border: 'border-emerald-100', text: 'text-emerald-700' },
+                                                                amber: { bg: 'bg-amber-50', border: 'border-amber-100', text: 'text-amber-700' },
+                                                            };
+                                                            const colors = palette[kpi.theme];
+                                                            return (
+                                                                <div key={kpi.label} className={`${colors.bg} rounded-lg p-3 border ${colors.border}`}>
+                                                                    <div className="text-[11px] uppercase font-semibold text-gray-500 mb-1 tracking-wide">{kpi.label}</div>
+                                                                    <div className={`text-xl font-bold ${colors.text}`}>{kpi.value}</div>
+                                                                </div>
+                                                            );
+                                                        })}
                                                     </div>
 
                                                     <div className="bg-white rounded-lg border border-gray-100 p-4">
@@ -801,23 +857,24 @@ export function PriceListsPage() {
 
                                         {activeTab === 'lines' && (
                                             <div className="space-y-3">
-                                                <div className="flex justify-between items-center">
-                                                    <h3 className="text-sm font-medium text-gray-900 flex items-center gap-2">
-                                                        <Layers className="w-4 h-4 text-gray-500" />
+                                                <div className="flex justify-between items-center bg-white rounded-lg border border-gray-200 px-4 py-3 shadow-sm">
+                                                    <h3 className="text-sm font-semibold text-gray-900 flex items-center gap-2">
+                                                        <Layers className="w-4 h-4 text-sage-500" />
                                                         {t('pricing.priceLists.line.title')}
-                                                        <span className="ml-1 px-1.5 py-0.5 text-[10px] font-semibold rounded-full bg-gray-100 text-gray-500">
+                                                        <span className="ml-1 px-2 py-0.5 text-[10px] font-semibold rounded-full bg-gray-100 text-gray-600">
                                                             {priceListDetail.lines?.length ?? 0}
                                                         </span>
                                                     </h3>
-                                                    <button
+                                                    <Button
+                                                        size="sm"
                                                         onClick={handleCreateLine}
-                                                        className="text-xs flex items-center gap-1.5 text-white bg-sage-500 hover:bg-sage-600 px-3 py-1.5 rounded-lg shadow-sm transition-colors"
+                                                        className="h-8 text-xs bg-sage-600 hover:bg-sage-700 text-white"
                                                     >
-                                                        <Plus className="w-3 h-3" /> {t('pricing.priceLists.line.create')}
-                                                    </button>
+                                                        <Plus className="w-3.5 h-3.5 mr-1.5" /> {t('pricing.priceLists.line.create')}
+                                                    </Button>
                                                 </div>
 
-                                                <div className="bg-white rounded-lg border border-gray-200 shadow-sm h-[220px]">
+                                                <div className="bg-white rounded-lg border border-gray-200 shadow-sm h-[260px]">
                                                     <DataGrid
                                                         rowData={priceListDetail.lines || []}
                                                         columnDefs={linesColumns}
@@ -828,7 +885,8 @@ export function PriceListsPage() {
                                                 </div>
 
                                                 {!priceListDetail.lines?.length && !detailLoading && (
-                                                    <div className="text-center text-xs text-gray-400 py-2">
+                                                    <div className="flex flex-col items-center justify-center py-6 text-xs text-gray-500 bg-white rounded-lg border border-dashed border-gray-200">
+                                                        <Layers className="w-8 h-8 mb-2 text-gray-300" />
                                                         {t('pricing.priceLists.line.empty')}
                                                     </div>
                                                 )}
@@ -836,21 +894,21 @@ export function PriceListsPage() {
                                                 {/* Line Details Editor */}
                                                 {selectedDetailsLine && (
                                                     <div className="bg-white rounded-lg border border-gray-200 shadow-sm overflow-hidden">
-                                                        <div className="flex items-center justify-between px-4 py-2.5 bg-gradient-to-r from-slate-50 to-white border-b border-gray-200">
-                                                            <div className="flex items-center gap-3">
+                                                        <div className="flex items-center justify-between px-4 py-3 bg-gray-50/70 border-b border-gray-200">
+                                                            <div className="flex items-center gap-3 min-w-0">
                                                                 <div
-                                                                    className={`w-8 h-8 rounded-lg flex items-center justify-center text-xs font-bold ${
-                                                                        selectedDetailsLine.closed ? 'bg-red-50 text-red-600' : 'bg-emerald-50 text-emerald-600'
+                                                                    className={`w-9 h-9 rounded-lg flex items-center justify-center text-xs font-bold shrink-0 ${
+                                                                        selectedDetailsLine.closed ? 'bg-red-100 text-red-700' : 'bg-emerald-100 text-emerald-700'
                                                                     }`}
                                                                 >
                                                                     L{selectedDetailsLine.line_number}
                                                                 </div>
-                                                                <div>
-                                                                    <div className="text-sm font-semibold text-gray-900">{selectedDetailsLine.name}</div>
-                                                                    <div className="text-[11px] text-gray-400 flex items-center gap-2">
+                                                                <div className="min-w-0">
+                                                                    <div className="text-sm font-semibold text-gray-900 truncate">{selectedDetailsLine.name}</div>
+                                                                    <div className="text-[11px] text-gray-500 flex items-center gap-2 flex-wrap">
                                                                         <span>{(selectedDetailsLine.details ?? []).length} {t('pricing.priceLists.products')}</span>
-                                                                        <span>·</span>
-                                                                        <span className={selectedDetailsLine.closed ? 'text-red-500' : 'text-emerald-500'}>
+                                                                        <span className="text-gray-300">|</span>
+                                                                        <span className={selectedDetailsLine.closed ? 'text-red-600 font-medium' : 'text-emerald-600 font-medium'}>
                                                                             {selectedDetailsLine.closed
                                                                                 ? t('pricing.priceLists.line.closed')
                                                                                 : t('pricing.priceLists.line.open')}
@@ -859,51 +917,60 @@ export function PriceListsPage() {
                                                                 </div>
                                                             </div>
 
-                                                            <div className="flex items-center gap-1.5">
+                                                            <div className="flex items-center gap-1.5 shrink-0">
                                                                 {editedDetails.size > 0 && (
                                                                     <>
-                                                                        <span className="text-[11px] text-amber-600 font-medium mr-1">
+                                                                        <span className="hidden sm:inline text-[11px] text-amber-600 font-medium mr-1">
                                                                             {t('pricing.priceLists.details.modified', { count: editedDetails.size })}
                                                                         </span>
-                                                                        <button
+                                                                        <Button
+                                                                            variant="outline"
+                                                                            size="sm"
                                                                             onClick={handleResetDetails}
-                                                                            className="flex items-center gap-1 px-2 py-1 text-[11px] text-gray-600 hover:text-gray-800 bg-gray-100 hover:bg-gray-200 rounded-md transition-colors"
+                                                                            className="h-7 px-2 text-xs text-gray-600 border-gray-200 hover:bg-gray-100"
                                                                         >
-                                                                            <RotateCcw className="w-3 h-3" /> {t('pricing.priceLists.details.reset')}
-                                                                        </button>
-                                                                        <button
+                                                                            <RotateCcw className="w-3 h-3 mr-1" /> {t('pricing.priceLists.details.reset')}
+                                                                        </Button>
+                                                                        <Button
+                                                                            size="sm"
                                                                             onClick={handleSaveDetails}
                                                                             disabled={upsertLoading}
-                                                                            className="flex items-center gap-1 px-2.5 py-1 text-[11px] text-white bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 rounded-md shadow-sm transition-colors"
+                                                                            className="h-7 px-2 text-xs bg-emerald-600 hover:bg-emerald-700 text-white"
                                                                         >
-                                                                            <Save className="w-3 h-3" /> {t('pricing.priceLists.details.save')}
-                                                                        </button>
+                                                                            <Save className="w-3 h-3 mr-1" /> {t('pricing.priceLists.details.save')}
+                                                                        </Button>
                                                                     </>
                                                                 )}
-                                                                <button
+                                                                <Button
+                                                                    variant="outline"
+                                                                    size="sm"
                                                                     onClick={() => handleImportCsv(selectedDetailsLine)}
-                                                                    className="flex items-center gap-1 px-2 py-1 text-[11px] text-gray-500 hover:text-gray-700 bg-gray-50 hover:bg-gray-100 rounded-md transition-colors"
+                                                                    className="h-7 px-2 text-xs text-gray-600 border-gray-200 hover:bg-gray-50"
                                                                     title={t('pricing.priceLists.line.importCsv')}
                                                                 >
                                                                     <Upload className="w-3 h-3" />
-                                                                </button>
-                                                                <button
+                                                                </Button>
+                                                                <Button
+                                                                    variant="outline"
+                                                                    size="sm"
                                                                     onClick={() => handleClearLineDetailsClick(selectedDetailsLine)}
-                                                                    className="flex items-center gap-1 px-2 py-1 text-[11px] text-red-500 hover:text-red-700 bg-red-50 hover:bg-red-100 rounded-md transition-colors"
+                                                                    className="h-7 px-2 text-xs text-red-600 border-red-100 hover:bg-red-50 hover:text-red-700"
                                                                     title={t('pricing.priceLists.line.clearDetails')}
                                                                 >
                                                                     <Trash2 className="w-3 h-3" />
-                                                                </button>
-                                                                <button
+                                                                </Button>
+                                                                <Button
+                                                                    variant="ghost"
+                                                                    size="icon"
                                                                     onClick={() => setSelectedDetailsLine(null)}
-                                                                    className="p-1 rounded hover:bg-gray-100 text-gray-400 ml-1"
+                                                                    className="h-7 w-7 text-gray-400 hover:text-gray-600"
                                                                 >
                                                                     <X className="w-4 h-4" />
-                                                                </button>
+                                                                </Button>
                                                             </div>
                                                         </div>
 
-                                                        <div className="h-[350px]">
+                                                        <div className="h-[360px]">
                                                             <DataGrid
                                                                 rowData={selectedDetailsLine.details ?? []}
                                                                 columnDefs={detailsColumns}
@@ -913,7 +980,8 @@ export function PriceListsPage() {
                                                         </div>
 
                                                         {!(selectedDetailsLine.details ?? []).length && (
-                                                            <div className="py-4 text-center text-xs text-gray-400 border-t border-gray-100">
+                                                            <div className="py-6 text-center text-xs text-gray-400 border-t border-gray-100 bg-gray-50/30">
+                                                                <FileText className="w-8 h-8 mx-auto mb-2 text-gray-300" />
                                                                 {t('pricing.priceLists.details.empty')}
                                                             </div>
                                                         )}
@@ -921,8 +989,10 @@ export function PriceListsPage() {
                                                 )}
 
                                                 {!selectedDetailsLine && (priceListDetail.lines?.length ?? 0) > 0 && (
-                                                    <div className="flex items-center justify-center py-4 text-xs text-gray-400 bg-white rounded-lg border border-dashed border-gray-200">
-                                                        <Eye className="w-4 h-4 mr-1.5 opacity-40" />
+                                                    <div className="flex items-center justify-center py-5 text-xs text-gray-500 bg-white rounded-lg border border-dashed border-gray-200">
+                                                        <div className="w-8 h-8 rounded-full bg-gray-50 flex items-center justify-center mr-3">
+                                                            <Eye className="w-4 h-4 text-gray-400" />
+                                                        </div>
                                                         {t('pricing.priceLists.details.hint')}
                                                     </div>
                                                 )}
@@ -931,14 +1001,23 @@ export function PriceListsPage() {
                                     </div>
                                 </div>
                             ) : (
-                                <div className="flex-1 flex flex-col items-center justify-center bg-gradient-to-br from-slate-50 to-gray-100 text-gray-400">
-                                    <div className="w-20 h-20 bg-white rounded-2xl flex items-center justify-center mb-5 shadow-md border border-gray-100">
-                                        <DollarSign className="w-10 h-10 text-gray-200" />
+                                <div className="flex-1 flex flex-col items-center justify-center bg-slate-50/80 text-gray-400">
+                                    <div className="w-24 h-24 bg-white rounded-2xl flex items-center justify-center mb-5 shadow-lg border border-gray-100">
+                                        <DollarSign className="w-12 h-12 text-gray-200" />
                                     </div>
-                                    <h3 className="text-lg font-semibold text-gray-700">{t('pricing.priceLists.noSelectionTitle')}</h3>
-                                    <p className="text-sm mt-1.5 text-gray-400 max-w-xs text-center">
+                                    <h3 className="text-lg font-semibold text-gray-800">{t('pricing.priceLists.noSelectionTitle')}</h3>
+                                    <p className="text-sm mt-2 text-gray-500 max-w-sm text-center leading-relaxed">
                                         {t('pricing.priceLists.noSelectionSubtitle')}
                                     </p>
+                                    <Button
+                                        variant="outline"
+                                        size="sm"
+                                        onClick={handleCreatePL}
+                                        className="mt-5 border-sage-200 text-sage-700 hover:bg-sage-50"
+                                    >
+                                        <Plus className="w-4 h-4 mr-1.5" />
+                                        {t('pricing.priceLists.create')}
+                                    </Button>
                                 </div>
                             )}
                         </div>

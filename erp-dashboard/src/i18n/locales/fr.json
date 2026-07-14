@@ -37,6 +37,13 @@
     "confirm": "Confirmer",
     "reset": "Réinitialiser",
     "filter": "Filtrer",
+    "attention": "Attention",
+    "file": "Fichier",
+    "header": "En-tête",
+    "id": "ID",
+    "identifier": "Identifiant",
+    "merge": "Fusionner",
+    "replace": "Remplacer",
     "clear": "Effacer",
     "all": "Tous",
     "none": "Aucun",
@@ -578,9 +585,11 @@
       "createdAt": "Créé le",
       "updatedAt": "Modifié le",
       "create": "Nouveau tarif",
+      "edit": "Modifier le tarif",
       "createSuccess": "Tarif créé",
       "updateSuccess": "Tarif mis à jour",
       "deleteSuccess": "Tarif supprimé",
+      "deleteConfirmMessage": "Êtes-vous sûr de vouloir supprimer ce tarif ?",
       "searchPlaceholder": "Rechercher un tarif…",
       "sectionGeneralInfo": "Informations générales",
       "tabInfo": "Informations",
@@ -601,6 +610,8 @@
         "updateSuccess": "Ligne mise à jour",
         "duplicate": "Dupliquer",
         "duplicateSuccess": "Ligne dupliquée",
+        "sourceLine": "Ligne source",
+        "targetLine": "Ligne cible",
         "copyOf": "Copie de",
         "importCsv": "Import CSV",
         "clearDetails": "Vider les détails",
@@ -625,7 +636,8 @@
         "saveSuccess": "{{count}} détail(s) enregistré(s)"
       },
       "import": {
-        "success": "Import terminé"
+        "success": "Import terminé",
+        "replaceWarning": "Le mode Remplacer supprimera tous les détails existants de cette ligne avant l'import."
       }
     },
     "overrides": {

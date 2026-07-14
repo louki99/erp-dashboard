@@ -1,12 +1,5 @@
 import React from 'react';
-import { Settings, Printer, Download, Trash, Edit, Plus, Share2, Copy, Archive } from 'lucide-react';
 import { cn } from '@/lib/utils';
-
-const ActionGroup = ({ children }: { children: React.ReactNode }) => (
-    <div className="flex flex-col gap-2 py-3 border-b border-gray-100 dark:border-gray-800 last:border-0 relative">
-        {children}
-    </div>
-);
 
 export interface ActionItemProps {
     icon: React.ElementType;
@@ -16,36 +9,6 @@ export interface ActionItemProps {
     disabled?: boolean;
 }
 
-const ActionItem = ({ icon: Icon, label, onClick, variant = 'default', disabled = false }: ActionItemProps) => {
-    const variants = {
-        default: "text-gray-500 hover:text-gray-800 dark:text-gray-400 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-800",
-        primary: "text-blue-600 hover:text-blue-700 hover:bg-blue-50 dark:hover:bg-blue-900/20",
-        sage: "text-sage-600 hover:text-sage-700 hover:bg-sage-50 dark:hover:bg-sage-900/20",
-        success: "text-emerald-600 hover:text-emerald-700 hover:bg-emerald-50 dark:hover:bg-emerald-900/20",
-        warning: "text-amber-600 hover:text-amber-700 hover:bg-amber-50 dark:hover:bg-amber-900/20",
-        danger: "text-red-600 hover:text-red-700 hover:bg-red-50 dark:hover:bg-red-900/20",
-    };
-
-    return (
-        <button
-            onClick={onClick}
-            disabled={disabled}
-            className={cn(
-                "group relative w-10 h-10 flex items-center justify-center rounded-xl transition-all duration-200 mx-auto shadow-sm border border-transparent hover:border-current/10 hover:shadow-md",
-                disabled ? 'opacity-30 cursor-not-allowed' : variants[variant]
-            )}
-        >
-            <Icon className="w-4 h-4 transition-transform group-hover:scale-110" />
-
-            {/* Tooltip - Left Side */}
-            <span className="absolute right-full mr-3 top-1/2 -translate-y-1/2 px-2.5 py-1 bg-gray-900 text-white text-[11px] font-medium rounded-md opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none z-50 shadow-lg translate-x-1 group-hover:translate-x-0">
-                {label}
-                <span className="absolute top-1/2 -translate-y-1/2 -right-1 border-4 border-transparent border-l-gray-900"></span>
-            </span>
-        </button>
-    );
-};
-
 export interface ActionPanelGroup {
     items: ActionItemProps[];
 }
@@ -54,42 +17,54 @@ export interface ActionPanelProps {
     groups?: ActionPanelGroup[];
 }
 
-const DEFAULT_GROUPS: ActionPanelGroup[] = [
-    {
-        items: [
-            { icon: Plus, label: 'New Record', variant: 'sage' },
-            { icon: Edit, label: 'Edit Record', variant: 'default' },
-            { icon: Copy, label: 'Duplicate', variant: 'default' },
-        ],
-    },
-    {
-        items: [
-            { icon: Printer, label: 'Print Record', variant: 'default' },
-            { icon: Download, label: 'Export PDF', variant: 'default' },
-            { icon: Share2, label: 'Assign / Share', variant: 'primary' },
-        ],
-    },
-    {
-        items: [
-            { icon: Archive, label: 'Archive', variant: 'default' },
-            { icon: Trash, label: 'Delete', variant: 'danger' },
-        ],
-    },
-    {
-        items: [{ icon: Settings, label: 'Settings', variant: 'default' }],
-    },
-];
+const ActionItem = ({ icon: Icon, label, onClick, variant = 'default', disabled = false }: ActionItemProps) => {
+    const variants = {
+        default: 'text-gray-500 hover:text-gray-700 hover:bg-gray-100 dark:text-gray-400 dark:hover:text-gray-200 dark:hover:bg-gray-800',
+        primary: 'text-blue-600 hover:text-blue-700 hover:bg-blue-50 dark:hover:bg-blue-900/20',
+        sage: 'text-sage-600 hover:text-sage-700 hover:bg-sage-50 dark:hover:bg-sage-900/20',
+        success: 'text-emerald-600 hover:text-emerald-700 hover:bg-emerald-50 dark:hover:bg-emerald-900/20',
+        warning: 'text-amber-600 hover:text-amber-700 hover:bg-amber-50 dark:hover:bg-amber-900/20',
+        danger: 'text-red-600 hover:text-red-700 hover:bg-red-50 dark:hover:bg-red-900/20',
+    };
+
+    return (
+        <button
+            onClick={onClick}
+            disabled={disabled}
+            className={cn(
+                'group relative w-10 h-10 flex items-center justify-center rounded-xl transition-all duration-200 mx-auto shadow-sm border border-gray-100 hover:shadow-md',
+                disabled ? 'opacity-30 cursor-not-allowed' : variants[variant]
+            )}
+            title={label}
+        >
+            <Icon className="w-4 h-4 transition-transform group-hover:scale-110" />
+
+            {/* Tooltip - Left Side */}
+            <span className="absolute right-full mr-3 top-1/2 -translate-y-1/2 px-2.5 py-1 bg-gray-900 text-white text-[11px] font-medium rounded-md opacity-0 group-hover:opacity-100 transition-all whitespace-nowrap pointer-events-none z-50 shadow-lg translate-x-1 group-hover:translate-x-0">
+                {label}
+                <span className="absolute top-1/2 -translate-y-1/2 -right-1 border-4 border-transparent border-l-gray-900" />
+            </span>
+        </button>
+    );
+};
 
 export const ActionPanel = ({ groups }: ActionPanelProps) => {
-    const resolvedGroups = groups && groups.length > 0 ? groups : DEFAULT_GROUPS;
+    if (!groups || groups.length === 0) {
+        return (
+            <div className="flex flex-col h-full bg-white dark:bg-black border-l border-gray-200 dark:border-gray-800 w-14 shrink-0 z-50" />
+        );
+    }
 
     return (
         <div className="flex flex-col h-full bg-white dark:bg-black border-l border-gray-200 dark:border-gray-800 w-14 shrink-0 shadow-[0_0_15px_rgba(0,0,0,0.05)] z-50 transition-all duration-300">
-            {resolvedGroups.map((group, idx) => (
-                <ActionGroup key={idx}>
+            {groups.map((group, idx) => (
+                <div
+                    key={idx}
+                    className="flex flex-col gap-2 py-3 border-b border-gray-100 dark:border-gray-800 last:border-0 relative"
+                >
                     {idx === 0 && (
                         <div className="w-full flex justify-center mb-1">
-                            <div className="w-6 h-0.5 bg-sage-500 rounded-full opacity-50"></div>
+                            <div className="w-5 h-0.5 bg-sage-500 rounded-full opacity-60" />
                         </div>
                     )}
                     {group.items.map((item) => (
@@ -102,7 +77,7 @@ export const ActionPanel = ({ groups }: ActionPanelProps) => {
                             disabled={item.disabled}
                         />
                     ))}
-                </ActionGroup>
+                </div>
             ))}
         </div>
     );

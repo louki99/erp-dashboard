@@ -1,5 +1,5 @@
 import { AgGridReact } from 'ag-grid-react';
-import { AllCommunityModule, ModuleRegistry } from 'ag-grid-community';
+import { AllCommunityModule, ModuleRegistry, themeQuartz } from 'ag-grid-community';
 import { useState, useEffect, useRef, forwardRef } from 'react';
 
 // Register all Community features
@@ -56,8 +56,8 @@ export const DataGrid = forwardRef<AgGridReact, DataGridProps>(({
         sortable: true,
         resizable: true,
         floatingFilter: true,
-        cellStyle: { fontSize: '12px', display: 'flex', alignItems: 'center' },
-        headerClass: 'text-xs font-semibold text-gray-600 bg-gray-50',
+        cellStyle: { fontSize: '13px', display: 'flex', alignItems: 'center' },
+        headerClass: 'text-xs font-semibold uppercase tracking-wide text-gray-600 bg-gray-50',
     };
 
     const onGridReady = (params: any) => {
@@ -117,29 +117,10 @@ export const DataGrid = forwardRef<AgGridReact, DataGridProps>(({
     }, [gridApi, rowData, defaultSelectedIds, rowSelection]);
 
     return (
-        <div className="h-full w-full mx-auto ag-theme-quartz-auto-dark">
-            <style>
-                {`
-          .ag-theme-custom {
-              --ag-header-height: 30px;
-              --ag-font-size: 10px;
-              --ag-header-background-color: #ccd6db;
-              --ag-odd-row-background-color: #ffffff;
-              --ag-row-hover-color: #f2fcf6ff;
-              --ag-selected-row-background-color: #ccd6db;
-              --ag-cell-horizontal-padding: 12px;
-          }
-          .ag-theme-custom .ag-row {
-              cursor: pointer;
-          }
-          .ag-header-cell-label {
-             font-weight: 600;
-          }
-        `}
-            </style>
-            <div className="h-full w-full ag-theme-custom">
-                <AgGridReact
+        <div className="h-full w-full">
+            <AgGridReact
                     ref={ref}
+                    theme={themeQuartz}
                     rowData={rowData}
                     columnDefs={columnDefs}
                     defaultColDef={defaultColDef}
@@ -181,9 +162,8 @@ export const DataGrid = forwardRef<AgGridReact, DataGridProps>(({
                     loading={loading}
                     paginationPageSize={paginationPageSize}
                     pagination={pagination}
-                    overlayLoadingTemplate={'<span class="ag-overlay-loading-center">Chargement...</span>'}
+                    overlayLoadingTemplate={'<span class="ag-overlay-loading-center">Loading...</span>'}
                 />
-            </div>
         </div>
     );
 });

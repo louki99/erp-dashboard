@@ -9,6 +9,7 @@ interface SageCollapsibleProps {
     onOpenChange?: (open: boolean) => void;
     children: React.ReactNode;
     className?: string;
+    rightContent?: React.ReactNode;
 }
 
 export const SageCollapsible: React.FC<SageCollapsibleProps> = ({
@@ -17,7 +18,8 @@ export const SageCollapsible: React.FC<SageCollapsibleProps> = ({
     isOpen: controlledIsOpen,
     onOpenChange,
     children,
-    className
+    className,
+    rightContent,
 }) => {
     const [internalIsOpen, setInternalIsOpen] = useState(defaultOpen);
 
@@ -33,17 +35,22 @@ export const SageCollapsible: React.FC<SageCollapsibleProps> = ({
     };
 
     return (
-        <div className={cn("bg-white border border-gray-200 shadow-sm rounded-sm mb-3 overflow-hidden", className)}>
+        <div className={cn("bg-white border border-gray-200 shadow-sm rounded-lg overflow-hidden", className)}>
             <button
                 onClick={handleToggle}
-                className="w-full flex items-center justify-between px-4 py-3 bg-white hover:bg-gray-50 transition-colors border-b border-transparent data-[open=true]:border-gray-100"
-                data-open={currentIsOpen}
+                className={cn(
+                    "w-full flex items-center justify-between px-4 py-3 transition-colors border-b",
+                    currentIsOpen ? "bg-gray-50/60 border-gray-100" : "bg-white border-transparent hover:bg-gray-50"
+                )}
             >
-                <span className="font-bold text-gray-800 text-sm">{title}</span>
-                <ChevronDown className={cn(
-                    "w-4 h-4 text-gray-500 transition-transform duration-200 shrink-0",
-                    !currentIsOpen && "-rotate-90"
-                )} />
+                <div className="flex items-center gap-2">
+                    <ChevronDown className={cn(
+                        "w-4 h-4 text-gray-400 transition-transform duration-200 shrink-0",
+                        !currentIsOpen && "-rotate-90"
+                    )} />
+                    <span className="font-semibold text-gray-800 text-sm">{title}</span>
+                </div>
+                {rightContent}
             </button>
 
             {currentIsOpen && (

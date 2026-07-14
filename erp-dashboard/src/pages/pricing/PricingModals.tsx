@@ -14,46 +14,87 @@ import type {
 import { SearchSelect, type SearchSelectOption } from '@/components/common/SearchSelect';
 import { searchProducts, type ProductSearchResult, searchPartners, type PartnerSearchResult, previewPrice } from '@/services/api/pricingApi';
 import { PriceSourceBadge } from '@/components/pricing/PriceSourceBadge';
+import { Button } from '@/components/ui/button';
 
 // ─── Shared modal wrapper ─────────────────────────────────────────────────────
 
-const ModalWrapper: React.FC<{ onClose: () => void; children: React.ReactNode }> = ({ onClose, children }) => (
-    <div className="fixed inset-0 z-[9999] bg-black/50 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in duration-200" onClick={onClose}>
-        <div className="bg-white rounded-xl shadow-2xl w-full max-w-lg max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
-            {children}
+const ModalWrapper: React.FC<{ onClose: () => void; children: React.ReactNode; size?: 'sm' | 'md' | 'lg' }> = ({
+    onClose,
+    children,
+    size = 'md',
+}) => {
+    const width = { sm: 'max-w-md', md: 'max-w-lg', lg: 'max-w-2xl' }[size];
+    return (
+        <div
+            className="fixed inset-0 z-[9999] bg-black/50 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in duration-200"
+            onClick={onClose}
+        >
+            <div
+                className={`bg-white rounded-xl shadow-2xl w-full ${width} max-h-[90vh] overflow-y-auto border border-gray-100`}
+                onClick={(e) => e.stopPropagation()}
+            >
+                {children}
+            </div>
         </div>
-    </div>
-);
+    );
+};
 
-const ModalHeader: React.FC<{ icon: React.ElementType; title: string; onClose: () => void }> = ({ icon: Icon, title, onClose }) => (
+const ModalHeader: React.FC<{ icon: React.ElementType; title: string; onClose: () => void }> = ({
+    icon: Icon,
+    title,
+    onClose,
+}) => (
     <div className="flex items-center justify-between p-4 border-b border-gray-100">
-        <div className="flex items-center gap-2">
-            <div className="w-8 h-8 rounded-lg bg-sage-50 flex items-center justify-center"><Icon className="w-4 h-4 text-sage-600" /></div>
-            <h2 className="text-lg font-semibold text-gray-900">{title}</h2>
+        <div className="flex items-center gap-3">
+            <div className="w-9 h-9 rounded-lg bg-sage-50 flex items-center justify-center border border-sage-100">
+                <Icon className="w-4 h-4 text-sage-600" />
+            </div>
+            <h2 className="text-base font-semibold text-gray-900">{title}</h2>
         </div>
-        <button onClick={onClose} className="p-1.5 rounded-md hover:bg-gray-100 transition-colors"><X className="w-5 h-5 text-gray-400" /></button>
+        <Button variant="ghost" size="icon" onClick={onClose} className="h-8 w-8 text-gray-400 hover:text-gray-600">
+            <X className="w-5 h-5" />
+        </Button>
     </div>
 );
 
-const ModalFooter: React.FC<{ onClose: () => void; onSubmit: () => void; loading: boolean; label: string }> = ({ onClose, onSubmit, loading, label }) => (
-    <div className="flex items-center justify-end gap-2 p-4 border-t border-gray-100">
-        <button onClick={onClose} className="px-4 py-2 text-sm text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded-lg transition-colors">Annuler</button>
-        <button onClick={onSubmit} disabled={loading}
-            className="px-4 py-2 text-sm bg-sage-500 text-white rounded-lg hover:bg-sage-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center gap-2">
-            {loading && <Loader2 className="w-4 h-4 animate-spin" />}
-            {label}
-        </button>
-    </div>
-);
+const ModalFooter: React.FC<{ onClose: () => void; onSubmit: () => void; loading: boolean; label: string }> = ({
+    onClose,
+    onSubmit,
+    loading,
+    label,
+}) => {
+    const { t } = useTranslation();
+    return (
+        <div className="flex items-center justify-end gap-2 p-4 border-t border-gray-100 bg-gray-50/50">
+            <Button variant="outline" onClick={onClose} className="text-gray-600 border-gray-200 hover:bg-gray-100">
+                {t('common.cancel')}
+            </Button>
+            <Button onClick={onSubmit} disabled={loading} className="bg-sage-600 hover:bg-sage-700 text-white">
+                {loading && <Loader2 className="w-4 h-4 animate-spin mr-1.5" />}
+                {label}
+            </Button>
+        </div>
+    );
+};
 
-const Field: React.FC<{ label: string; required?: boolean; children: React.ReactNode }> = ({ label, required, children }) => (
+const Field: React.FC<{ label: string; required?: boolean; children: React.ReactNode; hint?: string }> = ({
+    label,
+    required,
+    children,
+    hint,
+}) => (
     <div>
-        <label className="block text-xs text-gray-500 mb-1 font-medium">{label}{required && ' *'}</label>
+        <label className="block text-xs font-medium text-gray-600 mb-1.5">
+            {label}
+            {required && <span className="text-red-500 ml-0.5">*</span>}
+        </label>
         {children}
+        {hint && <p className="text-[11px] text-gray-400 mt-1">{hint}</p>}
     </div>
 );
 
-const inputCls = "w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-sage-500 text-sm";
+const inputCls =
+    'w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-sage-500/20 focus:border-sage-500 text-sm transition-all';
 const selectCls = `${inputCls} bg-white`;
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -69,25 +110,55 @@ interface ModalCreatePLProps {
     loading: boolean;
 }
 
-export const ModalCreatePL: React.FC<ModalCreatePLProps> = ({ editingPL, plForm, setPlForm, onClose, onSubmit, loading }) => (
-    <ModalWrapper onClose={onClose}>
-        <ModalHeader icon={editingPL ? Edit : Plus} title={editingPL ? 'Modifier le tarif' : 'Nouveau tarif'} onClose={onClose} />
-        <div className="p-4 space-y-4">
-            <div className="grid grid-cols-2 gap-3">
-                <Field label="Code" required>
-                    <input type="text" value={plForm.code || ''} onChange={e => setPlForm((prev: any) => ({ ...prev, code: e.target.value }))} className={`${inputCls} font-mono`} placeholder="TARIF01" />
-                </Field>
-                <Field label="Rang" required>
-                    <input type="number" value={plForm.rank || ''} onChange={e => setPlForm((prev: any) => ({ ...prev, rank: parseInt(e.target.value) || 0 }))} className={inputCls} min="1" />
+export const ModalCreatePL: React.FC<ModalCreatePLProps> = ({ editingPL, plForm, setPlForm, onClose, onSubmit, loading }) => {
+    const { t } = useTranslation();
+    return (
+        <ModalWrapper onClose={onClose} size="md">
+            <ModalHeader
+                icon={editingPL ? Edit : Plus}
+                title={editingPL ? t('pricing.priceLists.edit') : t('pricing.priceLists.create')}
+                onClose={onClose}
+            />
+            <div className="p-5 space-y-4">
+                <div className="grid grid-cols-2 gap-4">
+                    <Field label={t('pricing.priceLists.code')} required>
+                        <input
+                            type="text"
+                            value={plForm.code || ''}
+                            onChange={(e) => setPlForm((prev: any) => ({ ...prev, code: e.target.value }))}
+                            className={`${inputCls} font-mono`}
+                            placeholder="TARIF01"
+                        />
+                    </Field>
+                    <Field label={t('pricing.priceLists.rank')} required>
+                        <input
+                            type="number"
+                            value={plForm.rank || ''}
+                            onChange={(e) => setPlForm((prev: any) => ({ ...prev, rank: parseInt(e.target.value) || 0 }))}
+                            className={inputCls}
+                            min="1"
+                        />
+                    </Field>
+                </div>
+                <Field label={t('pricing.priceLists.name')} required>
+                    <input
+                        type="text"
+                        value={plForm.name || ''}
+                        onChange={(e) => setPlForm((prev: any) => ({ ...prev, name: e.target.value }))}
+                        className={inputCls}
+                        placeholder={t('pricing.priceLists.name')}
+                    />
                 </Field>
             </div>
-            <Field label="Nom" required>
-                <input type="text" value={plForm.name || ''} onChange={e => setPlForm((prev: any) => ({ ...prev, name: e.target.value }))} className={inputCls} placeholder="Tarif standard" />
-            </Field>
-        </div>
-        <ModalFooter onClose={onClose} onSubmit={onSubmit} loading={loading} label={editingPL ? 'Enregistrer' : 'Créer'} />
-    </ModalWrapper>
-);
+            <ModalFooter
+                onClose={onClose}
+                onSubmit={onSubmit}
+                loading={loading}
+                label={editingPL ? t('common.save') : t('common.create')}
+            />
+        </ModalWrapper>
+    );
+};
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // Create Line
@@ -101,36 +172,74 @@ interface ModalCreateLineProps {
     loading: boolean;
 }
 
-export const ModalCreateLine: React.FC<ModalCreateLineProps> = ({ lineForm, setLineForm, onClose, onSubmit, loading }) => (
-    <ModalWrapper onClose={onClose}>
-        <ModalHeader icon={Plus} title="Nouvelle ligne (version)" onClose={onClose} />
-        <div className="p-4 space-y-4">
-            <div className="grid grid-cols-2 gap-3">
-                <Field label="N° de ligne" required>
-                    <input type="number" value={lineForm.line_number || ''} onChange={e => setLineForm((prev: any) => ({ ...prev, line_number: parseInt(e.target.value) || 0 }))} className={inputCls} min="1" />
+export const ModalCreateLine: React.FC<ModalCreateLineProps> = ({ lineForm, setLineForm, onClose, onSubmit, loading }) => {
+    const { t } = useTranslation();
+    return (
+        <ModalWrapper onClose={onClose} size="md">
+            <ModalHeader
+                icon={Plus}
+                title={t('pricing.priceLists.line.create')}
+                onClose={onClose}
+            />
+            <div className="p-5 space-y-4">
+                <div className="grid grid-cols-2 gap-4">
+                    <Field label={t('pricing.priceLists.line.number')} required>
+                        <input
+                            type="number"
+                            value={lineForm.line_number || ''}
+                            onChange={(e) => setLineForm((prev: any) => ({ ...prev, line_number: parseInt(e.target.value) || 0 }))}
+                            className={inputCls}
+                            min="1"
+                        />
+                    </Field>
+                    <Field label={t('common.status')}>
+                        <select
+                            value={lineForm.closed ? 'closed' : 'open'}
+                            onChange={(e) => setLineForm((prev: any) => ({ ...prev, closed: e.target.value === 'closed' }))}
+                            className={selectCls}
+                        >
+                            <option value="open">{t('pricing.priceLists.line.open')}</option>
+                            <option value="closed">{t('pricing.priceLists.line.closed')}</option>
+                        </select>
+                    </Field>
+                </div>
+                <Field label={t('pricing.priceLists.line.name')} required>
+                    <input
+                        type="text"
+                        value={lineForm.name || ''}
+                        onChange={(e) => setLineForm((prev: any) => ({ ...prev, name: e.target.value }))}
+                        className={inputCls}
+                        placeholder={t('pricing.priceLists.line.defaultName')}
+                    />
                 </Field>
-                <Field label="Statut">
-                    <select value={lineForm.closed ? 'closed' : 'open'} onChange={e => setLineForm((prev: any) => ({ ...prev, closed: e.target.value === 'closed' }))} className={selectCls}>
-                        <option value="open">Ouverte</option>
-                        <option value="closed">Fermée</option>
-                    </select>
-                </Field>
+                <div className="grid grid-cols-2 gap-4">
+                    <Field label={t('pricing.priceLists.line.startDate')} required>
+                        <input
+                            type="date"
+                            value={lineForm.start_date || ''}
+                            onChange={(e) => setLineForm((prev: any) => ({ ...prev, start_date: e.target.value }))}
+                            className={inputCls}
+                        />
+                    </Field>
+                    <Field label={t('pricing.priceLists.line.endDate')} required>
+                        <input
+                            type="date"
+                            value={lineForm.end_date || ''}
+                            onChange={(e) => setLineForm((prev: any) => ({ ...prev, end_date: e.target.value }))}
+                            className={inputCls}
+                        />
+                    </Field>
+                </div>
             </div>
-            <Field label="Nom" required>
-                <input type="text" value={lineForm.name || ''} onChange={e => setLineForm((prev: any) => ({ ...prev, name: e.target.value }))} className={inputCls} placeholder="Version Février 2026" />
-            </Field>
-            <div className="grid grid-cols-2 gap-3">
-                <Field label="Date début" required>
-                    <input type="date" value={lineForm.start_date || ''} onChange={e => setLineForm((prev: any) => ({ ...prev, start_date: e.target.value }))} className={inputCls} />
-                </Field>
-                <Field label="Date fin" required>
-                    <input type="date" value={lineForm.end_date || ''} onChange={e => setLineForm((prev: any) => ({ ...prev, end_date: e.target.value }))} className={inputCls} />
-                </Field>
-            </div>
-        </div>
-        <ModalFooter onClose={onClose} onSubmit={onSubmit} loading={loading} label="Créer la ligne" />
-    </ModalWrapper>
-);
+            <ModalFooter
+                onClose={onClose}
+                onSubmit={onSubmit}
+                loading={loading}
+                label={t('common.create')}
+            />
+        </ModalWrapper>
+    );
+};
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // Duplicate Line
@@ -144,40 +253,86 @@ interface ModalDuplicateLineProps {
     loading: boolean;
 }
 
-export const ModalDuplicateLine: React.FC<ModalDuplicateLineProps> = ({ dupForm, setDupForm, onClose, onSubmit, loading }) => (
-    <ModalWrapper onClose={onClose}>
-        <ModalHeader icon={Copy} title="Dupliquer une ligne" onClose={onClose} />
-        <div className="p-4 space-y-4">
-            <div className="grid grid-cols-2 gap-3">
-                <Field label="Ligne source" required>
-                    <input type="number" value={dupForm.source_line_number || ''} onChange={e => setDupForm((prev: any) => ({ ...prev, source_line_number: parseInt(e.target.value) || 0 }))} className={inputCls} min="1" />
+export const ModalDuplicateLine: React.FC<ModalDuplicateLineProps> = ({
+    dupForm,
+    setDupForm,
+    onClose,
+    onSubmit,
+    loading,
+}) => {
+    const { t } = useTranslation();
+    return (
+        <ModalWrapper onClose={onClose} size="md">
+            <ModalHeader
+                icon={Copy}
+                title={t('pricing.priceLists.line.duplicate')}
+                onClose={onClose}
+            />
+            <div className="p-5 space-y-4">
+                <div className="grid grid-cols-2 gap-4">
+                    <Field label={t('pricing.priceLists.line.sourceLine')} required>
+                        <input
+                            type="number"
+                            value={dupForm.source_line_number || ''}
+                            onChange={(e) => setDupForm((prev: any) => ({ ...prev, source_line_number: parseInt(e.target.value) || 0 }))}
+                            className={inputCls}
+                            min="1"
+                        />
+                    </Field>
+                    <Field label={t('pricing.priceLists.line.targetLine')} required>
+                        <input
+                            type="number"
+                            value={dupForm.new_line_number || ''}
+                            onChange={(e) => setDupForm((prev: any) => ({ ...prev, new_line_number: parseInt(e.target.value) || 0 }))}
+                            className={inputCls}
+                            min="1"
+                        />
+                    </Field>
+                </div>
+                <Field label={t('pricing.priceLists.line.name')} required>
+                    <input
+                        type="text"
+                        value={dupForm.new_name || ''}
+                        onChange={(e) => setDupForm((prev: any) => ({ ...prev, new_name: e.target.value }))}
+                        className={inputCls}
+                        placeholder={t('pricing.priceLists.line.copyOf')}
+                    />
                 </Field>
-                <Field label="Ligne cible" required>
-                    <input type="number" value={dupForm.new_line_number || ''} onChange={e => setDupForm((prev: any) => ({ ...prev, new_line_number: parseInt(e.target.value) || 0 }))} className={inputCls} min="1" />
-                </Field>
+                <div className="grid grid-cols-2 gap-4">
+                    <Field label={t('pricing.priceLists.line.startDate')} required>
+                        <input
+                            type="date"
+                            value={dupForm.new_start_date || ''}
+                            onChange={(e) => setDupForm((prev: any) => ({ ...prev, new_start_date: e.target.value }))}
+                            className={inputCls}
+                        />
+                    </Field>
+                    <Field label={t('pricing.priceLists.line.endDate')} required>
+                        <input
+                            type="date"
+                            value={dupForm.new_end_date || ''}
+                            onChange={(e) => setDupForm((prev: any) => ({ ...prev, new_end_date: e.target.value }))}
+                            className={inputCls}
+                        />
+                    </Field>
+                </div>
             </div>
-            <Field label="Nom" required>
-                <input type="text" value={dupForm.new_name || ''} onChange={e => setDupForm((prev: any) => ({ ...prev, new_name: e.target.value }))} className={inputCls} placeholder="Copie de Version Février" />
-            </Field>
-            <div className="grid grid-cols-2 gap-3">
-                <Field label="Date début" required>
-                    <input type="date" value={dupForm.new_start_date || ''} onChange={e => setDupForm((prev: any) => ({ ...prev, new_start_date: e.target.value }))} className={inputCls} />
-                </Field>
-                <Field label="Date fin" required>
-                    <input type="date" value={dupForm.new_end_date || ''} onChange={e => setDupForm((prev: any) => ({ ...prev, new_end_date: e.target.value }))} className={inputCls} />
-                </Field>
-            </div>
-        </div>
-        <ModalFooter onClose={onClose} onSubmit={onSubmit} loading={loading} label="Dupliquer" />
-    </ModalWrapper>
-);
+            <ModalFooter
+                onClose={onClose}
+                onSubmit={onSubmit}
+                loading={loading}
+                label={t('common.duplicate')}
+            />
+        </ModalWrapper>
+    );
+};
 
 // ─── Search helpers ──────────────────────────────────────────────────────────
 
 const useProductSearch = () =>
     useCallback(async (query: string): Promise<SearchSelectOption[]> => {
         const results: ProductSearchResult[] = await searchProducts(query);
-        return results.map(r => ({
+        return results.map((r) => ({
             id: r.id,
             label: r.name,
             sublabel: r.code,
@@ -188,7 +343,7 @@ const useProductSearch = () =>
 const usePartnerSearch = () =>
     useCallback(async (query: string): Promise<SearchSelectOption[]> => {
         const results: PartnerSearchResult[] = await searchPartners(query);
-        return results.map(r => ({
+        return results.map((r) => ({
             id: r.id,
             label: r.name,
             sublabel: `${r.code}${r.status ? ` · ${r.status}` : ''}`,
@@ -225,7 +380,6 @@ export const ModalOverride: React.FC<ModalOverrideProps> = ({ editingOverride, f
     const productLabel = editingOverride?.product ? editingOverride.product.name : undefined;
     const partnerLabel = editingOverride?.partner ? editingOverride.partner.name : undefined;
 
-    // Mode exclusif : prix fixe OU remise % OU remise montant (mutually exclusive).
     const [priceMode, setPriceMode] = useState<PriceMode>(() => initPriceMode(form));
 
     const handleModeChange = (mode: PriceMode) => {
@@ -242,7 +396,10 @@ export const ModalOverride: React.FC<ModalOverrideProps> = ({ editingOverride, f
     const [previewLoading, setPreviewLoading] = useState(false);
 
     useEffect(() => {
-        if (!form.partner_id || !form.product_id) { setPreview(null); return; }
+        if (!form.partner_id || !form.product_id) {
+            setPreview(null);
+            return;
+        }
         let cancelled = false;
         setPreviewLoading(true);
         const timer = setTimeout(async () => {
@@ -255,7 +412,10 @@ export const ModalOverride: React.FC<ModalOverrideProps> = ({ editingOverride, f
                 if (!cancelled) setPreviewLoading(false);
             }
         }, 350);
-        return () => { cancelled = true; clearTimeout(timer); };
+        return () => {
+            cancelled = true;
+            clearTimeout(timer);
+        };
     }, [form.partner_id, form.product_id]);
 
     const resultingPrice = useMemo(() => {
@@ -269,7 +429,7 @@ export const ModalOverride: React.FC<ModalOverrideProps> = ({ editingOverride, f
         return Math.max(price, 0);
     }, [preview, priceMode, form.fixed_price, form.discount_rate, form.discount_amount]);
 
-    const parseNumber = (raw: string): number | undefined => raw === '' ? undefined : Number(raw);
+    const parseNumber = (raw: string): number | undefined => (raw === '' ? undefined : Number(raw));
 
     const rateInvalid = priceMode === 'rate' && form.discount_rate != null && (form.discount_rate < 0 || form.discount_rate > 100);
 
@@ -280,14 +440,14 @@ export const ModalOverride: React.FC<ModalOverrideProps> = ({ editingOverride, f
     ];
 
     return (
-        <ModalWrapper onClose={onClose}>
+        <ModalWrapper onClose={onClose} size="lg">
             <ModalHeader
                 icon={editingOverride ? Edit : Plus}
                 title={editingOverride ? t('pricing.overrides.edit') : t('pricing.overrides.create')}
                 onClose={onClose}
             />
-            <div className="p-4 space-y-4">
-                <div className="grid grid-cols-2 gap-3">
+            <div className="p-5 space-y-4">
+                <div className="grid grid-cols-2 gap-4">
                     <Field label={t('pricing.overrides.partner')} required>
                         <SearchSelect
                             value={form.partner_id || null}
@@ -310,11 +470,9 @@ export const ModalOverride: React.FC<ModalOverrideProps> = ({ editingOverride, f
                     </Field>
                 </div>
 
-                {/* Sélecteur de mode — radio segmenté (Prix fixe / Remise % / Remise montant) */}
-                <div>
-                    <label className="block text-xs text-gray-500 mb-2 font-medium">{t('pricing.overrides.priceMode')}</label>
+                <Field label={t('pricing.overrides.priceMode')}>
                     <div className="flex gap-1 p-1 bg-gray-100 rounded-lg">
-                        {MODES.map(m => (
+                        {MODES.map((m) => (
                             <button
                                 key={m.value}
                                 type="button"
@@ -329,14 +487,16 @@ export const ModalOverride: React.FC<ModalOverrideProps> = ({ editingOverride, f
                             </button>
                         ))}
                     </div>
-                </div>
+                </Field>
 
                 {priceMode === 'fixed_price' && (
                     <Field label={t('pricing.overrides.fixedPrice')}>
                         <input
-                            type="number" step="0.001" min="0"
+                            type="number"
+                            step="0.001"
+                            min="0"
                             value={form.fixed_price ?? ''}
-                            onChange={e => setForm((prev: any) => ({ ...prev, fixed_price: parseNumber(e.target.value) }))}
+                            onChange={(e) => setForm((prev: any) => ({ ...prev, fixed_price: parseNumber(e.target.value) }))}
                             className={inputCls}
                             placeholder="10.500"
                         />
@@ -346,9 +506,12 @@ export const ModalOverride: React.FC<ModalOverrideProps> = ({ editingOverride, f
                 {priceMode === 'rate' && (
                     <Field label={t('pricing.overrides.discountRate')}>
                         <input
-                            type="number" step="0.01" min="0" max="100"
+                            type="number"
+                            step="0.01"
+                            min="0"
+                            max="100"
                             value={form.discount_rate ?? ''}
-                            onChange={e => setForm((prev: any) => ({ ...prev, discount_rate: parseNumber(e.target.value) }))}
+                            onChange={(e) => setForm((prev: any) => ({ ...prev, discount_rate: parseNumber(e.target.value) }))}
                             className={`${inputCls} ${rateInvalid ? 'border-red-400 focus:ring-red-400' : ''}`}
                             placeholder="10"
                         />
@@ -360,28 +523,50 @@ export const ModalOverride: React.FC<ModalOverrideProps> = ({ editingOverride, f
                 {priceMode === 'amount' && (
                     <Field label={t('pricing.overrides.discountAmount')}>
                         <input
-                            type="number" step="0.01" min="0"
+                            type="number"
+                            step="0.01"
+                            min="0"
                             value={form.discount_amount ?? ''}
-                            onChange={e => setForm((prev: any) => ({ ...prev, discount_amount: parseNumber(e.target.value) }))}
+                            onChange={(e) => setForm((prev: any) => ({ ...prev, discount_amount: parseNumber(e.target.value) }))}
                             className={inputCls}
                         />
                     </Field>
                 )}
 
-                <div className="grid grid-cols-2 gap-3">
+                <div className="grid grid-cols-2 gap-4">
                     <Field label={t('pricing.overrides.validFrom')}>
-                        <input type="date" value={form.valid_from || ''} onChange={e => setForm((prev: any) => ({ ...prev, valid_from: e.target.value }))} className={inputCls} />
+                        <input
+                            type="date"
+                            value={form.valid_from || ''}
+                            onChange={(e) => setForm((prev: any) => ({ ...prev, valid_from: e.target.value }))}
+                            className={inputCls}
+                        />
                     </Field>
                     <Field label={t('pricing.overrides.validTo')}>
-                        <input type="date" value={form.valid_to || ''} onChange={e => setForm((prev: any) => ({ ...prev, valid_to: e.target.value }))} className={inputCls} />
+                        <input
+                            type="date"
+                            value={form.valid_to || ''}
+                            onChange={(e) => setForm((prev: any) => ({ ...prev, valid_to: e.target.value }))}
+                            className={inputCls}
+                        />
                     </Field>
                 </div>
-                <div className="grid grid-cols-2 gap-3">
+                <div className="grid grid-cols-2 gap-4">
                     <Field label={t('pricing.overrides.priority')}>
-                        <input type="number" value={form.priority ?? ''} onChange={e => setForm((prev: any) => ({ ...prev, priority: parseInt(e.target.value) || 0 }))} className={inputCls} min="0" />
+                        <input
+                            type="number"
+                            value={form.priority ?? ''}
+                            onChange={(e) => setForm((prev: any) => ({ ...prev, priority: parseInt(e.target.value) || 0 }))}
+                            className={inputCls}
+                            min="0"
+                        />
                     </Field>
                     <Field label={t('common.status')}>
-                        <select value={form.active ? 'active' : 'inactive'} onChange={e => setForm((prev: any) => ({ ...prev, active: e.target.value === 'active' }))} className={selectCls}>
+                        <select
+                            value={form.active ? 'active' : 'inactive'}
+                            onChange={(e) => setForm((prev: any) => ({ ...prev, active: e.target.value === 'active' }))}
+                            className={selectCls}
+                        >
                             <option value="active">{t('common.active')}</option>
                             <option value="inactive">{t('common.inactive')}</option>
                         </select>
@@ -395,31 +580,38 @@ export const ModalOverride: React.FC<ModalOverrideProps> = ({ editingOverride, f
                                 <Loader2 className="w-3.5 h-3.5 animate-spin" />
                                 {t('pricing.preview.calculating')}
                             </div>
-                        ) : preview && (
-                            <>
-                                <div className="flex items-center justify-center gap-3">
-                                    <div className="text-center">
-                                        <div className="text-[10px] text-gray-500 uppercase tracking-wide">{t('pricing.overrides.currentPrice')}</div>
-                                        <div className="text-lg font-bold text-gray-700">{preview.final_price.toFixed(3)}</div>
-                                    </div>
-                                    <ArrowRight className="w-4 h-4 text-sage-400 shrink-0" />
-                                    <div className="text-center">
-                                        <div className="text-[10px] text-sage-600 uppercase tracking-wide">{t('pricing.overrides.resultingPrice')}</div>
-                                        <div className="text-lg font-bold text-sage-800">
-                                            {resultingPrice != null ? resultingPrice.toFixed(3) : '—'}
+                        ) : (
+                            preview && (
+                                <>
+                                    <div className="flex items-center justify-center gap-3">
+                                        <div className="text-center">
+                                            <div className="text-[10px] text-gray-500 uppercase tracking-wide">{t('pricing.overrides.currentPrice')}</div>
+                                            <div className="text-lg font-bold text-gray-700">{preview.final_price.toFixed(3)}</div>
+                                        </div>
+                                        <ArrowRight className="w-4 h-4 text-sage-400 shrink-0" />
+                                        <div className="text-center">
+                                            <div className="text-[10px] text-sage-600 uppercase tracking-wide">{t('pricing.overrides.resultingPrice')}</div>
+                                            <div className="text-lg font-bold text-sage-800">
+                                                {resultingPrice != null ? resultingPrice.toFixed(3) : '—'}
+                                            </div>
                                         </div>
                                     </div>
-                                </div>
-                                <div className="flex items-center justify-center gap-2 mt-1.5">
-                                    <PriceSourceBadge source={preview.source} />
-                                    <span className="text-[10px] text-gray-400">v{preview.algorithm_version}</span>
-                                </div>
-                            </>
+                                    <div className="flex items-center justify-center gap-2 mt-1.5">
+                                        <PriceSourceBadge source={preview.source} />
+                                        <span className="text-[10px] text-gray-400">v{preview.algorithm_version}</span>
+                                    </div>
+                                </>
+                            )
                         )}
                     </div>
                 )}
             </div>
-            <ModalFooter onClose={onClose} onSubmit={onSubmit} loading={loading} label={editingOverride ? t('common.save') : t('common.create')} />
+            <ModalFooter
+                onClose={onClose}
+                onSubmit={onSubmit}
+                loading={loading}
+                label={editingOverride ? t('common.save') : t('common.create')}
+            />
         </ModalWrapper>
     );
 };
@@ -438,44 +630,73 @@ interface ModalImportProps {
     loading: boolean;
 }
 
-export const ModalImport: React.FC<ModalImportProps> = ({ importFile: _unusedImportFile, setImportFile, importParams, setImportParams, onClose, onSubmit, loading }) => (
-    <ModalWrapper onClose={onClose}>
-        <ModalHeader icon={Upload} title="Import CSV" onClose={onClose} />
-        <div className="p-4 space-y-4">
-            <Field label="Fichier CSV" required>
-                <input type="file" accept=".csv" onChange={e => setImportFile(e.target.files?.[0] || null)}
-                    className="w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-medium file:bg-sage-50 file:text-sage-700 hover:file:bg-sage-100" />
-            </Field>
-            <div className="grid grid-cols-3 gap-3">
-                <Field label="Mode">
-                    <select value={importParams.mode} onChange={e => setImportParams({ ...importParams, mode: e.target.value as any })} className={selectCls}>
-                        <option value="merge">Fusionner</option>
-                        <option value="replace">Remplacer</option>
-                    </select>
+export const ModalImport: React.FC<ModalImportProps> = ({
+    importFile: _unusedImportFile,
+    setImportFile,
+    importParams,
+    setImportParams,
+    onClose,
+    onSubmit,
+    loading,
+}) => {
+    const { t } = useTranslation();
+    return (
+        <ModalWrapper onClose={onClose} size="md">
+            <ModalHeader icon={Upload} title={t('pricing.priceLists.line.importCsv')} onClose={onClose} />
+            <div className="p-5 space-y-4">
+                <Field label={t('common.file')} required>
+                    <input
+                        type="file"
+                        accept=".csv"
+                        onChange={(e) => setImportFile(e.target.files?.[0] || null)}
+                        className="w-full text-sm text-gray-600 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-medium file:bg-sage-50 file:text-sage-700 hover:file:bg-sage-100 border border-gray-200 rounded-lg py-2 px-3"
+                    />
                 </Field>
-                <Field label="En-tête">
-                    <select value={importParams.has_header ? 'yes' : 'no'} onChange={e => setImportParams({ ...importParams, has_header: e.target.value === 'yes' })} className={selectCls}>
-                        <option value="yes">Oui</option>
-                        <option value="no">Non</option>
-                    </select>
-                </Field>
-                <Field label="Identifiant">
-                    <select value={importParams.product_identifier} onChange={e => setImportParams({ ...importParams, product_identifier: e.target.value as any })} className={selectCls}>
-                        <option value="code">Code</option>
-                        <option value="id">ID</option>
-                    </select>
-                </Field>
-            </div>
-            {importParams.mode === 'replace' && (
-                <div className="p-3 bg-amber-50 border border-amber-200 rounded-lg flex items-start gap-2">
-                    <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
-                    <p className="text-xs text-amber-700"><strong>Attention:</strong> Le mode « Remplacer » supprimera tous les détails existants de cette ligne avant l'import.</p>
+                <div className="grid grid-cols-3 gap-3">
+                    <Field label={t('common.mode')}>
+                        <select
+                            value={importParams.mode}
+                            onChange={(e) => setImportParams({ ...importParams, mode: e.target.value as any })}
+                            className={selectCls}
+                        >
+                            <option value="merge">{t('common.merge')}</option>
+                            <option value="replace">{t('common.replace')}</option>
+                        </select>
+                    </Field>
+                    <Field label={t('common.header')}>
+                        <select
+                            value={importParams.has_header ? 'yes' : 'no'}
+                            onChange={(e) => setImportParams({ ...importParams, has_header: e.target.value === 'yes' })}
+                            className={selectCls}
+                        >
+                            <option value="yes">{t('common.yes')}</option>
+                            <option value="no">{t('common.no')}</option>
+                        </select>
+                    </Field>
+                    <Field label={t('common.identifier')}>
+                        <select
+                            value={importParams.product_identifier}
+                            onChange={(e) => setImportParams({ ...importParams, product_identifier: e.target.value as any })}
+                            className={selectCls}
+                        >
+                            <option value="code">{t('common.code')}</option>
+                            <option value="id">{t('common.id')}</option>
+                        </select>
+                    </Field>
                 </div>
-            )}
-        </div>
-        <ModalFooter onClose={onClose} onSubmit={onSubmit} loading={loading} label="Importer" />
-    </ModalWrapper>
-);
+                {importParams.mode === 'replace' && (
+                    <div className="p-3 bg-amber-50 border border-amber-200 rounded-lg flex items-start gap-2">
+                        <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+                        <p className="text-xs text-amber-700">
+                            <strong>{t('common.attention')}</strong> {t('pricing.priceLists.import.replaceWarning')}
+                        </p>
+                    </div>
+                )}
+            </div>
+            <ModalFooter onClose={onClose} onSubmit={onSubmit} loading={loading} label={t('common.import')} />
+        </ModalWrapper>
+    );
+};
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // Delete Confirmation
@@ -488,38 +709,42 @@ interface ModalDeleteConfirmProps {
     loading: boolean;
 }
 
-export const ModalDeleteConfirm: React.FC<ModalDeleteConfirmProps> = ({ selected, onClose, onConfirm, loading }) => (
-    <ModalWrapper onClose={onClose}>
-        <div className="p-5 pb-3 flex flex-col items-center text-center">
-            <div className="w-14 h-14 rounded-full bg-gradient-to-br from-red-100 to-red-200 flex items-center justify-center mb-3 shadow-sm">
-                <AlertTriangle className="w-7 h-7 text-red-600" />
-            </div>
-            <h2 className="text-lg font-semibold text-gray-900">Supprimer le tarif</h2>
-            <p className="text-sm text-gray-500 mt-1">Êtes-vous sûr de vouloir supprimer ce tarif ?</p>
-        </div>
-        <div className="mx-5 p-3 bg-slate-50 rounded-lg border border-gray-200">
-            <div className="flex items-center justify-between">
-                <div>
-                    <div className="text-sm font-semibold text-gray-900">{selected.name}</div>
-                    <div className="text-xs text-gray-500 mt-0.5 font-mono">{selected.code}</div>
+export const ModalDeleteConfirm: React.FC<ModalDeleteConfirmProps> = ({ selected, onClose, onConfirm, loading }) => {
+    const { t } = useTranslation();
+    return (
+        <ModalWrapper onClose={onClose} size="sm">
+            <div className="p-5 pb-3 flex flex-col items-center text-center">
+                <div className="w-14 h-14 rounded-full bg-gradient-to-br from-red-100 to-red-200 flex items-center justify-center mb-3 shadow-sm">
+                    <AlertTriangle className="w-7 h-7 text-red-600" />
                 </div>
-                <div className="text-right">
-                    <div className="text-xs text-gray-500">Rang</div>
-                    <div className="text-lg font-bold text-gray-900">{selected.rank}</div>
+                <h2 className="text-lg font-semibold text-gray-900">{t('pricing.priceLists.delete')}</h2>
+                <p className="text-sm text-gray-500 mt-1">{t('pricing.priceLists.deleteConfirmMessage')}</p>
+            </div>
+            <div className="mx-5 p-3 bg-slate-50 rounded-lg border border-gray-200">
+                <div className="flex items-center justify-between">
+                    <div>
+                        <div className="text-sm font-semibold text-gray-900">{selected.name}</div>
+                        <div className="text-xs text-gray-500 mt-0.5 font-mono">{selected.code}</div>
+                    </div>
+                    <div className="text-right">
+                        <div className="text-xs text-gray-500">{t('pricing.priceLists.rank')}</div>
+                        <div className="text-lg font-bold text-gray-900">{selected.rank}</div>
+                    </div>
                 </div>
             </div>
-        </div>
-        <div className="mx-5 mt-3 p-2.5 bg-red-50 border border-red-200 rounded-lg flex items-start gap-2">
-            <AlertTriangle className="w-4 h-4 text-red-600 shrink-0 mt-0.5" />
-            <p className="text-xs text-red-700">Cette action est irréversible. Toutes les lignes et détails associés seront également supprimés.</p>
-        </div>
-        <div className="flex items-center justify-end gap-2 p-5 pt-4">
-            <button onClick={onClose} className="px-4 py-2 text-sm text-gray-600 hover:bg-gray-100 rounded-lg transition-colors font-medium">Annuler</button>
-            <button onClick={onConfirm} disabled={loading}
-                className="px-5 py-2 text-sm bg-red-600 text-white rounded-lg hover:bg-red-700 disabled:opacity-50 transition-colors font-medium flex items-center gap-2 shadow-sm">
-                {loading && <Loader2 className="w-4 h-4 animate-spin" />}
-                Supprimer définitivement
-            </button>
-        </div>
-    </ModalWrapper>
-);
+            <div className="mx-5 mt-3 p-2.5 bg-red-50 border border-red-200 rounded-lg flex items-start gap-2">
+                <AlertTriangle className="w-4 h-4 text-red-600 shrink-0 mt-0.5" />
+                <p className="text-xs text-red-700">{t('common.irreversible')}</p>
+            </div>
+            <div className="flex items-center justify-end gap-2 p-5 pt-4">
+                <Button variant="outline" onClick={onClose} className="text-gray-600 border-gray-200 hover:bg-gray-100">
+                    {t('common.cancel')}
+                </Button>
+                <Button onClick={onConfirm} disabled={loading} className="bg-red-600 hover:bg-red-700 text-white">
+                    {loading && <Loader2 className="w-4 h-4 animate-spin mr-1.5" />}
+                    {t('common.delete')}
+                </Button>
+            </div>
+        </ModalWrapper>
+    );
+};

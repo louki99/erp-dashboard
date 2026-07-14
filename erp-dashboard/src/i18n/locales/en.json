@@ -37,6 +37,13 @@
     "confirm": "Confirm",
     "reset": "Reset",
     "filter": "Filter",
+    "attention": "Attention",
+    "file": "File",
+    "header": "Header",
+    "id": "ID",
+    "identifier": "Identifier",
+    "merge": "Merge",
+    "replace": "Replace",
     "clear": "Clear",
     "all": "All",
     "none": "None",
@@ -640,9 +647,11 @@
       "createdAt": "Created at",
       "updatedAt": "Updated at",
       "create": "New price list",
+      "edit": "Edit price list",
       "createSuccess": "Price list created",
       "updateSuccess": "Price list updated",
       "deleteSuccess": "Price list deleted",
+      "deleteConfirmMessage": "Are you sure you want to delete this price list?",
       "searchPlaceholder": "Search a price list…",
       "sectionGeneralInfo": "General information",
       "tabInfo": "Information",
@@ -663,6 +672,8 @@
         "updateSuccess": "Line updated",
         "duplicate": "Duplicate",
         "duplicateSuccess": "Line duplicated",
+        "sourceLine": "Source line",
+        "targetLine": "Target line",
         "copyOf": "Copy of",
         "importCsv": "CSV import",
         "clearDetails": "Clear details",
@@ -687,7 +698,8 @@
         "saveSuccess": "{{count}} detail(s) saved"
       },
       "import": {
-        "success": "Import completed"
+        "success": "Import completed",
+        "replaceWarning": "Replace mode will delete all existing details of this line before import."
       }
     },
     "overrides": {
