@@ -373,3 +373,235 @@ export interface UpdatePreparationBillPayload {
     items?: { id: number; requested_quantity: number }[];
     add_order_ids?: number[];
 }
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// WMS Tier 2/3  (22-stock-wms.md)
+// ═══════════════════════════════════════════════════════════════════════════════
+
+// ─── Stock Levels ─────────────────────────────────────────────────────────────
+
+export interface StockLevelRow {
+    id: number;
+    product_id: number;
+    quantity: string;
+    reserved_quantity: string;
+    available_quantity: string;
+    minimum_quantity: string;
+    maximum_quantity: string | null;
+    warehouse_code: string;
+    branch_id: number | null;
+    storage_location_id: number | null;
+    product: { id: number; name: string; code: string; barcode: string | null };
+    warehouse: { code: string; name: string; type: 'central' | 'delivery_van' | 'system_virtual'; branch_code: string };
+    storage_location: {
+        id: number;
+        location_code: string;
+        location_name: string;
+        location_type: 'DEPOT' | 'SELLABLE' | 'DAMAGED' | 'EXPIRED' | 'QUARANTINE' | 'SCRAP' | 'RETURN_TO_SUPPLIER' | 'DELIVERY_VAN';
+    } | null;
+}
+
+export interface StockLevelFilters {
+    warehouse_id?: number;
+    storage_location_id?: number;
+    product_id?: number;
+    branch_id?: number;
+    low_stock_only?: boolean;
+    page?: number;
+    per_page?: number;
+}
+
+export interface StockLevelListResponse {
+    success: boolean;
+    data: {
+        current_page: number;
+        data: StockLevelRow[];
+        per_page: number;
+        total: number;
+        last_page: number;
+    };
+}
+
+// ─── Pick Tasks ───────────────────────────────────────────────────────────────
+
+export type PickTaskStatus = 'pending' | 'in_progress' | 'completed' | 'cancelled';
+
+export interface WmsPickTask {
+    id: number;
+    preparation_order_id: number;
+    storage_location_id: number;
+    product_id: number;
+    quantity_to_pick: number;
+    actual_picked_quantity: number | null;
+    sequence_number: number;
+    status: PickTaskStatus;
+    completed_at: string | null;
+    completed_by: number | null;
+    product: { id: number; name: string; code: string };
+    storage_location: { id: number; location_code: string; location_name: string; location_type: string };
+}
+
+export interface WmsPickTaskFilters {
+    preparation_order_id?: number;
+    status?: PickTaskStatus | 'completed';
+    page?: number;
+    per_page?: number;
+}
+
+export interface WmsPickTaskListResponse {
+    success: boolean;
+    data: {
+        data: WmsPickTask[];
+        total: number;
+    };
+}
+
+export interface CompletePickTaskPayload {
+    actual_picked_quantity: number;
+    stock_batch_id?: number;
+    notes?: string;
+}
+
+// ─── Batch Expiry ─────────────────────────────────────────────────────────────
+
+export type BatchAlertStatus = 'OK' | 'WARNING' | 'EXPIRED' | 'QUARANTINE';
+export type StockBatchStatus = 'active' | 'expired' | 'quarantine' | 'depleted';
+
+export interface StockBatchExpiryRow {
+    id: number;
+    product_id: number;
+    branch_code?: string;
+    warehouse_code?: string;
+    batch_number: string;
+    production_date: string | null;
+    expiry_date: string;
+    quantity: string;
+    reserved_quantity?: string;
+    initial_quantity?: string;
+    status: StockBatchStatus;
+    notes: string | null;
+    alert_status: BatchAlertStatus;
+    days_until_expiry: number;
+    product: { id: number; name: string; code: string };
+}
+
+export interface BatchExpiryFilters {
+    warehouse_code?: string;
+    product_id?: number;
+    include_all?: boolean;
+    page?: number;
+    per_page?: number;
+}
+
+export interface BatchExpiryListResponse {
+    success: boolean;
+    data: {
+        data: StockBatchExpiryRow[];
+        total: number;
+    };
+    lot_expiry_alert_days?: number;
+}
+
+export interface BulkBatchActionPayload {
+    stock_batch_ids: number[];
+    reason?: string;
+}
+
+// ─── Goods Receipt — POST /wms/receipts ───────────────────────────────────────
+
+export interface GoodsReceiptItemPayload {
+    product_id: number;
+    quantity: number;
+    storage_location_id: number;
+    batch_number?: string;
+    production_date?: string;
+    expiry_date?: string;
+}
+
+export interface GoodsReceiptPayload {
+    supplier_id?: number;
+    warehouse_id: number;
+    items: GoodsReceiptItemPayload[];
+}
+
+export interface GoodsReceiptResponse {
+    success: boolean;
+    message: string;
+    data: {
+        movements: Array<{
+            id: number;
+            warehouse_code: string;
+            product_id: number;
+            type: 'purchase';
+            quantity: string;
+            balance_after: string;
+            stock_batch_id: number | null;
+        }>;
+        batches: Array<{
+            id: number;
+            product_id: number;
+            batch_number: string;
+            expiry_date: string | null;
+            quantity: string;
+            status: StockBatchStatus;
+        }>;
+    };
+}
+
+// ─── Transfer — POST /wms/transfers ──────────────────────────────────────────
+
+export interface TransferItemPayload {
+    product_id: number;
+    quantity: number;
+    stock_batch_id?: number;
+}
+
+export interface TransferPayload {
+    source_warehouse_id: number;
+    destination_warehouse_id: number;
+    items: TransferItemPayload[];
+}
+
+export interface TransferResponse {
+    success: boolean;
+    message: string;
+    data: {
+        movements: Array<{
+            id: number;
+            warehouse_code: string;
+            type: 'transfer_out' | 'transfer_in';
+            quantity: string;
+            balance_after: string;
+            stock_batch_id: number | null;
+            reference_id: number | null;
+        }>;
+    };
+}
+
+// ─── Adjustment — POST /wms/adjustments ──────────────────────────────────────
+// performed_by_user_id is accepted but IGNORED server-side — do NOT send it.
+
+export interface AdjustmentPayload {
+    warehouse_id: number;
+    storage_location_id: number;
+    product_id: number;
+    quantity: number;       // signed: negative = loss, positive = surplus, cannot be 0
+    reason_code: string;    // required, max 50 chars
+    notes?: string;
+}
+
+export interface AdjustmentResponse {
+    success: boolean;
+    message: string;
+    data: {
+        movement: {
+            id: number;
+            warehouse_code: string;
+            product_id: number;
+            type: 'adjustment';
+            quantity: string;
+            balance_after: string;
+        };
+        stock: StockLevelRow;
+    };
+}

@@ -58,6 +58,12 @@ import { StockManagementPage } from '@/pages/stock/StockManagementPage';
 import { WarehousesPage } from '@/pages/stock/WarehousesPage';
 import { StockConsultationPage } from '@/pages/stock/StockConsultationPage';
 import { PreparationBillsPage } from '@/pages/stock/PreparationBillsPage';
+import { WmsStockMatrixPage } from '@/pages/stock/WmsStockMatrixPage';
+import { WmsPickPackPage } from '@/pages/stock/WmsPickPackPage';
+import { WmsBatchExpiryPage } from '@/pages/stock/WmsBatchExpiryPage';
+import { WmsReceiptPage } from '@/pages/stock/WmsReceiptPage';
+import { WmsTransferPage } from '@/pages/stock/WmsTransferPage';
+import { WmsAdjustmentPage } from '@/pages/stock/WmsAdjustmentPage';
 import { PricingHubPage } from '@/pages/pricing/PricingHubPage';
 import { PriceListsPage } from '@/pages/pricing/PriceListsPage';
 import { OverridesPage } from '@/pages/pricing/OverridesPage';
@@ -435,6 +441,40 @@ function AppRoutes() {
       <Route path="/stock/preparation-bills" element={
         <ProtectedRoute requiredRole={['admin', 'root', 'dispatcher', 'magasinier']}>
           <PreparationBillsPage />
+        </ProtectedRoute>
+      } />
+
+      {/* WMS Tier 2/3 — Matrice stocks, Pick & Pack, Lots & Péremption */}
+      <Route path="/stock/wms-matrix" element={
+        <ProtectedRoute requiredRole={['admin', 'root', 'dispatcher', 'magasinier']}>
+          <WmsStockMatrixPage />
+        </ProtectedRoute>
+      } />
+      <Route path="/stock/wms-pick-pack" element={
+        <ProtectedRoute requiredRole={['admin', 'root', 'dispatcher', 'magasinier']}>
+          <WmsPickPackPage />
+        </ProtectedRoute>
+      } />
+      <Route path="/stock/wms-batches" element={
+        <ProtectedRoute requiredRole={['admin', 'root', 'dispatcher', 'magasinier']}>
+          <WmsBatchExpiryPage />
+        </ProtectedRoute>
+      } />
+
+      {/* WMS Actions — Réception, Transfert, Ajustement */}
+      <Route path="/stock/wms-receipt" element={
+        <ProtectedRoute requiredRole={['admin', 'root', 'dispatcher', 'magasinier']}>
+          <WmsReceiptPage />
+        </ProtectedRoute>
+      } />
+      <Route path="/stock/wms-transfer" element={
+        <ProtectedRoute requiredRole={['admin', 'root', 'dispatcher', 'magasinier']}>
+          <WmsTransferPage />
+        </ProtectedRoute>
+      } />
+      <Route path="/stock/wms-adjustment" element={
+        <ProtectedRoute requiredRole={['admin', 'root', 'dispatcher', 'magasinier']}>
+          <WmsAdjustmentPage />
         </ProtectedRoute>
       } />
 

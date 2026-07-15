@@ -4,6 +4,7 @@ import {
   BarChart3,
   BookOpen,
   ClipboardCheck,
+  ClipboardList,
   Clock,
   Database,
   DollarSign,
@@ -16,6 +17,7 @@ import {
   ListTodo,
   Map,
   Package,
+  PackageCheck,
   Radio,
   Settings,
   Shield,
@@ -419,6 +421,18 @@ export const MENU_MODULES: MenuModule[] = [
         ],
       },
       {
+        id: 'wms',
+        title: 'WMS — Logistique Avancée',
+        items: [
+          { id: 'stock:wms:matrix',      label: 'Matrice des Stocks',  route: '/stock/wms-matrix',      description: 'Vue physique/réservé/disponible par entrepôt, emplacement et produit (Tier 2)' },
+          { id: 'stock:wms:pick-pack',   label: 'Console Pick & Pack', route: '/stock/wms-pick-pack',   description: 'Tâches de collecte du magasinier triées par séquence optimisée' },
+          { id: 'stock:wms:batches',     label: 'Lots & Péremption',   route: '/stock/wms-batches',     description: 'Suivi des dates de péremption et actions de quarantaine en masse' },
+          { id: 'stock:wms:receipt',     label: 'Nouvelle Réception',  route: '/stock/wms-receipt',     description: 'Entrée de marchandises avec saisie obligatoire des emplacements (bins)' },
+          { id: 'stock:wms:transfer',    label: 'Bon de Transfert',    route: '/stock/wms-transfer',    description: 'Transfert inter-entrepôt avec lot source FEFO optionnel' },
+          { id: 'stock:wms:adjustment',  label: 'Ajustement Manuel',   route: '/stock/wms-adjustment',  description: 'Correction de stock signée — casse, perte, vol ou écart inventaire' },
+        ],
+      },
+      {
         id: 'mouvements',
         title: 'Mouvements & Inventaire',
         items: [
@@ -585,6 +599,18 @@ export const MENU_MODULES: MenuModule[] = [
         title: 'Batch Picking',
         items: [
           { id: 'mag:batch', label: 'Préparation groupée', route: '/magasinier/batch-picking', permission: 'admin.warehouse.batch-picking' },
+        ],
+      },
+      {
+        id: 'wms-logistique',
+        title: 'WMS — Logistique Avancée',
+        items: [
+          { id: 'mag:wms:matrix',      label: 'Matrice des Stocks',  route: '/stock/wms-matrix',      icon: Database,       description: 'Stocks physiques par emplacement — Tier 2' },
+          { id: 'mag:wms:pick-pack',   label: 'Console Pick & Pack', route: '/stock/wms-pick-pack',   icon: ClipboardList,  description: 'Tâches de collecte triées par séquence optimisée (PickTaskEngine)' },
+          { id: 'mag:wms:batches',     label: 'Lots & Péremption',   route: '/stock/wms-batches',     icon: Clock,          description: 'Contrôle des DLUO et mise en quarantaine en masse' },
+          { id: 'mag:wms:receipt',     label: 'Nouvelle Réception',  route: '/stock/wms-receipt',     icon: PackageCheck,   description: 'Entrée de marchandises avec saisie obligatoire des emplacements (bins)' },
+          { id: 'mag:wms:transfer',    label: 'Bon de Transfert',    route: '/stock/wms-transfer',    icon: ArrowLeftRight, description: 'Transfert inter-entrepôt avec lot source FEFO optionnel' },
+          { id: 'mag:wms:adjustment',  label: 'Ajustement Manuel',   route: '/stock/wms-adjustment',  icon: ClipboardCheck, description: 'Correction de stock signée — casse, perte, vol ou écart inventaire' },
         ],
       },
     ],
