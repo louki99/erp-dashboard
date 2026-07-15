@@ -69,7 +69,7 @@ export const usePartnersList = (filters: PartnerFilters) => {
         } finally {
             setLoading(false);
         }
-    }, [filters.page, filters.per_page, filters.q, filters.status, filters.partner_type, filters.channel, filters.price_list_id]);
+    }, [filters.page, filters.per_page, filters.q, filters.status, filters.partner_type, filters.channel, filters.channel_id, filters.price_list_id, filters.salesperson_id, filters.sort_by, filters.sort_dir]);
 
     useEffect(() => { fetch(); }, [fetch]);
 

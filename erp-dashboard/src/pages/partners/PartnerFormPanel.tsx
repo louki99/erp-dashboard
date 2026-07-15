@@ -1055,7 +1055,7 @@ export const PartnerFormPanel: React.FC<PartnerFormPanelProps> = ({
 
             <SectionCard icon={UserCheck} title="Organisation & Responsable" color="text-violet-600 bg-violet-50">
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                    <FormField label="Commercial responsable" hint="Vendeur assigné à ce partenaire">
+                    <FormField label="Commercial responsable" hint="Responsable de compte — ne modifie pas l'itinéraire de visite (à gérer depuis l'écran Itinéraires)">
                         <SearchableSelect
                             options={salespersonOptions}
                             value={pForm.salesperson_id}
@@ -1240,7 +1240,7 @@ export const PartnerFormPanel: React.FC<PartnerFormPanelProps> = ({
                     </FormField>
                 </div>
                 <div className="mb-4">
-                    <FormField label="Groupe TVA" hint="Règle de TVA par défaut appliquée aux factures">
+                    <FormField label="Groupe TVA" hint="Enregistré mais non encore branché sur le moteur de facturation — aucun effet sur les factures actuelles">
                         <SearchableSelect
                             options={vatGroupOptions}
                             value={(pForm as any).vat_group_code}
@@ -1257,7 +1257,7 @@ export const PartnerFormPanel: React.FC<PartnerFormPanelProps> = ({
                     </label>
                     <div>
                         <p className="text-sm font-semibold text-gray-700">Exonéré de TVA</p>
-                        <p className="text-[10px] text-gray-400">Aucune taxe appliquée aux factures de ce partenaire</p>
+                        <p className="text-[10px] text-gray-400">Enregistré mais non encore branché facturation — aucun effet réel sur les factures actuelles</p>
                     </div>
                 </div>
             </SectionCard>
