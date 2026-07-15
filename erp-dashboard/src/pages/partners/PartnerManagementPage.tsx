@@ -45,6 +45,7 @@ import {
     useAvailableItineraries,
     useAssignItinerary,
     useRemoveFromItinerary,
+    usePartnerItinerary,
     usePartnerBalances,
     useUpsertBalance,
     useDeleteBalance,
@@ -388,7 +389,7 @@ export const PartnerManagementPage = () => {
     // ── State ─────────────────────────────────────────────────────────────────
     const [selectedPartner, setSelectedPartner] = useState<Partner | null>(null);
     const [showDetailPanel, setShowDetailPanel] = useState(false);
-    const [activeTab, setActiveTab] = useState('info');
+    const [activeTab, setActiveTab] = useState('general');
 
     // Filters
     const [filters, setFilters] = useState<PartnerFilters>({ page: 1, per_page: 20 });
@@ -457,9 +458,6 @@ export const PartnerManagementPage = () => {
         info: true, credit: true, contact: true, payments: true, tournees: true, activite: true, soldes: true,
     });
 
-    const sectionRefs = useRef<Record<string, HTMLDivElement | null>>({});
-    const containerRef = useRef<HTMLDivElement>(null);
-    const isScrollingRef = useRef(false);
     const searchTimeoutRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
 
     // ── Data hooks ────────────────────────────────────────────────────────────
@@ -493,6 +491,7 @@ export const PartnerManagementPage = () => {
     );
 
     const { data: availableItineraries, loading: itinerariesLoading, fetch: fetchItineraries } = useAvailableItineraries();
+    const { data: partnerItinerary, loading: partnerItineraryLoading, fetch: fetchPartnerItinerary, reset: resetPartnerItinerary } = usePartnerItinerary();
 
     const { data: balancesData, loading: balancesLoading, refetch: refetchBalances } = usePartnerBalances(
         showDetailPanel && selectedPartner ? selectedPartner.code : null
@@ -525,6 +524,17 @@ export const PartnerManagementPage = () => {
     const { attachPaymentTerm } = useAttachPaymentTerm();
     const { detachPaymentTerm } = useDetachPaymentTerm();
     const { setDefaultPaymentTerm } = useSetDefaultPaymentTerm();
+
+    // ── Itinerary §11.1 — auto-fetch enriched view when section is open ──────
+    useEffect(() => {
+        if (partnerDetail?.id && activeTab === 'general') {
+            fetchPartnerItinerary(partnerDetail.id);
+        }
+    }, [partnerDetail?.id, activeTab, fetchPartnerItinerary]);
+
+    useEffect(() => {
+        if (!partnerDetail) resetPartnerItinerary();
+    }, [partnerDetail, resetPartnerItinerary]);
 
     // ── Search with debounce ─────────────────────────────────────────────────
     const handleSearch = (value: string) => {
@@ -595,13 +605,10 @@ export const PartnerManagementPage = () => {
 
     // ── Tabs ──────────────────────────────────────────────────────────────────
     const tabs: TabItem[] = useMemo(() => [
-        { id: 'info', label: 'Informations', icon: FileText },
-        { id: 'credit', label: 'Crédit', icon: CreditCard },
-        { id: 'payments', label: 'Paiements & Dérog.', icon: DollarSign },
-        { id: 'activite', label: 'Activité', icon: ShoppingCart },
-        { id: 'soldes', label: 'Soldes', icon: Wallet },
-        { id: 'contact', label: 'Contact', icon: MapPin },
-        { id: 'tournees', label: 'Tournées', icon: Route },
+        { id: 'general', label: 'Général', icon: FileText },
+        { id: 'tarification', label: 'Tarification', icon: DollarSign },
+        { id: 'reglement', label: 'Règlement', icon: Banknote },
+        { id: 'finance', label: 'Finance & Crédit', icon: CreditCard },
     ], []);
 
     // ── Row selection ─────────────────────────────────────────────────────────
@@ -614,7 +621,7 @@ export const PartnerManagementPage = () => {
         setSelectedPartner(row);
         setShowDetailPanel(true);
         setFormMode('view');
-        setActiveTab('info');
+        setActiveTab('general');
 
         setTimeout(() => {
             const el = document.getElementById('loading-cursor-style');
@@ -622,15 +629,9 @@ export const PartnerManagementPage = () => {
         }, 800);
     }, []);
 
-    // ── Tab / Section navigation ──────────────────────────────────────────────
+    // ── Tab navigation ────────────────────────────────────────────────────────
     const handleTabChange = (tabId: string) => {
         setActiveTab(tabId);
-        const section = sectionRefs.current[tabId];
-        if (section && containerRef.current) {
-            isScrollingRef.current = true;
-            section.scrollIntoView({ behavior: 'smooth', block: 'start' });
-            setTimeout(() => { isScrollingRef.current = false; }, 1000);
-        }
     };
 
     const toggleSection = (sectionId: string, isOpen: boolean) => {
@@ -640,27 +641,6 @@ export const PartnerManagementPage = () => {
     const handleExpandAll = () => setOpenSections(Object.keys(openSections).reduce((acc, k) => ({ ...acc, [k]: true }), {}));
     const handleCollapseAll = () => setOpenSections(Object.keys(openSections).reduce((acc, k) => ({ ...acc, [k]: false }), {}));
 
-    // ── Scroll sync ───────────────────────────────────────────────────────────
-    useEffect(() => {
-        const container = containerRef.current;
-        if (!container) return;
-        const handleScroll = () => {
-            if (isScrollingRef.current) return;
-            const containerTop = container.scrollTop;
-            for (const tab of tabs) {
-                const el = sectionRefs.current[tab.id];
-                if (!el || !openSections[tab.id]) continue;
-                const elTop = el.offsetTop;
-                const elBottom = elTop + el.clientHeight;
-                if (elTop <= containerTop + 100 && elBottom > containerTop + 50) {
-                    if (activeTab !== tab.id) setActiveTab(tab.id);
-                    break;
-                }
-            }
-        };
-        container.addEventListener('scroll', handleScroll);
-        return () => container.removeEventListener('scroll', handleScroll);
-    }, [openSections, tabs, activeTab]);
 
     // ── Inline Form Handlers ─────────────────────────────────────────────────
     const handleOpenCreate = async () => {
@@ -761,7 +741,7 @@ export const PartnerManagementPage = () => {
     };
 
     const handleSubmitStatus = async () => {
-        if (!selectedPartner || !statusForm.new_status || !statusForm.status_change_reason) {
+        if (!selectedPartner || !statusForm.status) {
             toast.error('Veuillez remplir tous les champs obligatoires');
             return;
         }
@@ -893,6 +873,7 @@ export const PartnerManagementPage = () => {
             setSelectedItineraryId(null);
             setItineraryForm({});
             refetchDetail();
+            if (partnerDetail) fetchPartnerItinerary(partnerDetail.id);
         } catch { toast.error('Erreur lors de l\'affectation'); }
     };
 
@@ -944,6 +925,7 @@ export const PartnerManagementPage = () => {
             await removeFromItinerary({ itineraryId, itineraryPartnerId });
             toast.success('Partenaire retiré de la tournée');
             refetchDetail();
+            if (partnerDetail) fetchPartnerItinerary(partnerDetail.id);
         } catch { toast.error('Erreur lors de la suppression'); }
     };
 
@@ -1161,42 +1143,38 @@ export const PartnerManagementPage = () => {
                                 )}
                             </div>
 
-                            {/* Status filter pills */}
-                            <div className="flex gap-1 mt-2 flex-wrap">
-                                {[
-                                    { value: '' as const, label: 'Tous', icon: Users },
-                                    { value: 'ACTIVE' as const, label: 'Actifs', icon: CheckCircle2 },
-                                    { value: 'ON_HOLD' as const, label: 'Attente', icon: Clock },
-                                    { value: 'BLOCKED' as const, label: 'Bloqués', icon: Ban },
-                                ].map(pill => (
-                                    <button
-                                        key={pill.value}
-                                        onClick={() => setStatusFilter(pill.value)}
-                                        className={`flex items-center gap-1 px-2 py-1 text-[10px] font-medium rounded-full border transition-colors ${statusFilter === pill.value
-                                            ? 'bg-sage-50 text-sage-700 border-sage-200'
-                                            : 'bg-white text-gray-500 border-gray-200 hover:bg-gray-50'
-                                            }`}
+                            {/* Filters row */}
+                            <div className="flex gap-2 mt-2">
+                                <div className="flex-1 relative">
+                                    <select
+                                        value={statusFilter}
+                                        onChange={e => setStatusFilter(e.target.value as PartnerStatus | '')}
+                                        className="w-full appearance-none text-[11px] text-gray-600 bg-white border border-gray-200 rounded-md pl-2 pr-6 py-1.5 focus:outline-none focus:ring-1 focus:ring-sage-400 focus:border-sage-300 cursor-pointer"
                                     >
-                                        <pill.icon className="w-3 h-3" />
-                                        {pill.label}
-                                    </button>
-                                ))}
-                            </div>
-
-                            {/* Channel filter pills */}
-                            <div className="flex gap-1 mt-1.5 flex-wrap">
-                                {(['', 'GMS', 'GROS', 'DETAIL', 'CHR', 'SOM_GROS', 'OTHER'] as const).map(ch => (
-                                    <button
-                                        key={ch}
-                                        onClick={() => setChannelFilter(ch)}
-                                        className={`px-2 py-0.5 text-[10px] font-medium rounded-full border transition-colors ${channelFilter === ch
-                                            ? 'bg-indigo-50 text-indigo-700 border-indigo-200'
-                                            : 'bg-white text-gray-400 border-gray-200 hover:bg-gray-50'
-                                            }`}
+                                        <option value="">Tous statuts</option>
+                                        <option value="ACTIVE">Actifs</option>
+                                        <option value="ON_HOLD">En attente</option>
+                                        <option value="BLOCKED">Bloqués</option>
+                                        <option value="CLOSED">Fermés</option>
+                                    </select>
+                                    <span className="pointer-events-none absolute right-1.5 top-1/2 -translate-y-1/2 text-gray-400 text-[10px]">▾</span>
+                                </div>
+                                <div className="flex-1 relative">
+                                    <select
+                                        value={channelFilter}
+                                        onChange={e => setChannelFilter(e.target.value)}
+                                        className="w-full appearance-none text-[11px] text-gray-600 bg-white border border-gray-200 rounded-md pl-2 pr-6 py-1.5 focus:outline-none focus:ring-1 focus:ring-indigo-400 focus:border-indigo-300 cursor-pointer"
                                     >
-                                        {ch === '' ? 'Canal ×' : CHANNEL_LABELS[ch] ?? ch}
-                                    </button>
-                                ))}
+                                        <option value="">Tous canaux</option>
+                                        <option value="GMS">GMS</option>
+                                        <option value="GROS">Gros</option>
+                                        <option value="DETAIL">Détail</option>
+                                        <option value="CHR">CHR</option>
+                                        <option value="SOM_GROS">Semi-Gros</option>
+                                        <option value="OTHER">Autre</option>
+                                    </select>
+                                    <span className="pointer-events-none absolute right-1.5 top-1/2 -translate-y-1/2 text-gray-400 text-[10px]">▾</span>
+                                </div>
                             </div>
                         </div>
 
@@ -1349,172 +1327,235 @@ export const PartnerManagementPage = () => {
                                     />
                                 </div>
 
-                                {/* ── Scrollable Sections ────────────── */}
-                                <div ref={containerRef} className="flex-1 overflow-y-auto p-3 sm:p-4 space-y-3 scroll-smooth bg-slate-50">
-                                    {/* ── Info Section ───────────────── */}
-                                    <div ref={el => { sectionRefs.current['info'] = el; }}>
-                                        <SageCollapsible title="Informations générales" isOpen={openSections['info']} onOpenChange={open => toggleSection('info', open)}>
-                                            {/* KPI Cards */}
-                                            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-5">
+                                {/* ── Tab panels (étanches) ──────────── */}
+                                <div className="flex-1 overflow-y-auto p-3 sm:p-4 space-y-3 bg-slate-50">
+                                    {/* ── Général ─────────────────────── */}
+                                    {activeTab === 'general' && (
+                                    <div className="space-y-3">
+
+                                        {/* Activity band */}
+                                        {(toNum(partnerDetail.total_orders_count) > 0 || partnerDetail.last_order_date) && (
+                                            <div className="grid grid-cols-2 sm:grid-cols-4 divide-x divide-gray-100 bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
                                                 {[
-                                                    { label: 'Limite de crédit', value: fmtNumber(partnerDetail.credit_limit), color: 'text-gray-900', border: 'border-gray-100', bg: 'bg-white', icon: CreditCard, iconColor: 'text-gray-400' },
-                                                    { label: 'Crédit utilisé', value: fmtNumber(partnerDetail.credit_used), color: 'text-amber-600', border: 'border-amber-100', bg: 'bg-amber-50/40', icon: CreditCard, iconColor: 'text-amber-400' },
-                                                    { label: 'Crédit disponible', value: fmtNumber(partnerDetail.credit_available), color: toNum(partnerDetail.credit_available) <= 0 ? 'text-red-600' : 'text-emerald-600', border: toNum(partnerDetail.credit_available) <= 0 ? 'border-red-100' : 'border-emerald-100', bg: toNum(partnerDetail.credit_available) <= 0 ? 'bg-red-50/40' : 'bg-emerald-50/40', icon: CreditCard, iconColor: toNum(partnerDetail.credit_available) <= 0 ? 'text-red-400' : 'text-emerald-400' },
-                                                    { label: 'Remise défaut', value: `${toNum(partnerDetail.default_discount_rate)}%`, color: 'text-sage-700', border: 'border-sage-100', bg: 'bg-sage-50/40', icon: DollarSign, iconColor: 'text-sage-400' },
+                                                    { icon: ShoppingCart, label: 'Commandes', value: String(toNum(partnerDetail.total_orders_count)), cls: 'text-indigo-700', ic: 'text-indigo-400' },
+                                                    { icon: TrendingUp, label: 'Val. totale', value: fmtNumber(partnerDetail.total_orders_value), cls: 'text-sage-700', ic: 'text-sage-400' },
+                                                    { icon: Activity, label: 'Panier moyen', value: fmtNumber(partnerDetail.average_order_value), cls: 'text-amber-700', ic: 'text-amber-400' },
+                                                    { icon: Clock, label: 'Dern. commande', value: fmtDate(partnerDetail.last_order_date), cls: 'text-gray-700', ic: 'text-gray-400' },
                                                 ].map(kpi => (
-                                                    <div key={kpi.label} className={`p-3 rounded-xl border ${kpi.border} ${kpi.bg} shadow-sm`}>
-                                                        <div className="flex items-center justify-between mb-1.5">
-                                                            <span className="text-[11px] text-gray-500 font-medium">{kpi.label}</span>
-                                                            <kpi.icon className={`w-3.5 h-3.5 ${kpi.iconColor}`} />
+                                                    <div key={kpi.label} className="p-3 text-center">
+                                                        <div className="flex items-center justify-center gap-1 mb-1">
+                                                            <kpi.icon className={`w-3 h-3 ${kpi.ic}`} />
+                                                            <span className="text-[10px] text-gray-400">{kpi.label}</span>
                                                         </div>
-                                                        <div className={`text-lg font-bold ${kpi.color}`}>{kpi.value}</div>
+                                                        <div className={`text-sm font-bold ${kpi.cls}`}>{kpi.value}</div>
                                                     </div>
                                                 ))}
                                             </div>
+                                        )}
 
-                                            {/* Activity stats strip */}
-                                            {(toNum(partnerDetail.total_orders_count) > 0 || partnerDetail.last_order_date) && (
-                                                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mb-5 p-3 bg-gradient-to-r from-slate-50 to-gray-50 rounded-xl border border-gray-100">
-                                                    <div className="text-center">
-                                                        <div className="flex items-center justify-center gap-1 mb-1">
-                                                            <ShoppingCart className="w-3 h-3 text-indigo-400" />
-                                                            <span className="text-[10px] text-gray-400">Nb commandes</span>
-                                                        </div>
-                                                        <div className="text-sm font-bold text-indigo-700">{toNum(partnerDetail.total_orders_count)}</div>
-                                                    </div>
-                                                    <div className="text-center">
-                                                        <div className="flex items-center justify-center gap-1 mb-1">
-                                                            <TrendingUp className="w-3 h-3 text-sage-400" />
-                                                            <span className="text-[10px] text-gray-400">Val. totale</span>
-                                                        </div>
-                                                        <div className="text-sm font-bold text-sage-700">{fmtNumber(partnerDetail.total_orders_value)}</div>
-                                                    </div>
-                                                    <div className="text-center">
-                                                        <div className="flex items-center justify-center gap-1 mb-1">
-                                                            <Activity className="w-3 h-3 text-amber-400" />
-                                                            <span className="text-[10px] text-gray-400">Panier moyen</span>
-                                                        </div>
-                                                        <div className="text-sm font-bold text-amber-700">{fmtNumber(partnerDetail.average_order_value)}</div>
-                                                    </div>
-                                                    <div className="text-center">
-                                                        <div className="flex items-center justify-center gap-1 mb-1">
-                                                            <Clock className="w-3 h-3 text-gray-400" />
-                                                            <span className="text-[10px] text-gray-400">Dern. commande</span>
-                                                        </div>
-                                                        <div className="text-sm font-bold text-gray-700">{fmtDate(partnerDetail.last_order_date)}</div>
-                                                    </div>
+                                        {/* Blocking alert */}
+                                        {partnerDetail.status === 'BLOCKED' && (
+                                            <div className="p-3 bg-red-50 rounded-xl border border-red-200 flex items-start gap-3">
+                                                <div className="w-8 h-8 rounded-lg bg-red-100 flex items-center justify-center shrink-0">
+                                                    <Ban className="w-4 h-4 text-red-600" />
                                                 </div>
-                                            )}
-
-                                            {/* Blocking alert */}
-                                            {partnerDetail.status === 'BLOCKED' && (
-                                                <div className="mb-5 p-3 bg-red-50 rounded-xl border border-red-200 flex items-start gap-3">
-                                                    <div className="w-8 h-8 rounded-lg bg-red-100 flex items-center justify-center shrink-0">
-                                                        <Ban className="w-4 h-4 text-red-600" />
-                                                    </div>
-                                                    <div>
-                                                        <div className="text-sm font-semibold text-red-800">Partenaire bloqué</div>
-                                                        {partnerDetail.blocked_until && <div className="text-xs text-red-600 mt-0.5">Jusqu'au {fmtDate(partnerDetail.blocked_until)}</div>}
-                                                        {partnerDetail.block_reason && <div className="text-xs text-red-600 mt-0.5">{partnerDetail.block_reason}</div>}
-                                                    </div>
+                                                <div>
+                                                    <div className="text-sm font-semibold text-red-800">Partenaire bloqué</div>
+                                                    {partnerDetail.blocked_until && <div className="text-xs text-red-600 mt-0.5">Jusqu'au {fmtDate(partnerDetail.blocked_until)}</div>}
+                                                    {partnerDetail.block_reason && <div className="text-xs text-red-600 mt-0.5">{partnerDetail.block_reason}</div>}
                                                 </div>
-                                            )}
+                                            </div>
+                                        )}
 
-                                            {/* Detail Cards Row */}
-                                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-5">
-                                                {/* Identity Card */}
-                                                <div className="rounded-xl border border-gray-200 bg-white overflow-hidden">
-                                                    <div className="px-4 py-2.5 bg-gray-50 border-b border-gray-100">
-                                                        <span className="text-xs font-semibold text-gray-600 uppercase tracking-wider">Identité</span>
+                                        {/* 3-col grid: Identité | Contact | Adresse */}
+                                        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+
+                                            {/* Identité */}
+                                            <div className="rounded-xl border border-gray-200 bg-white overflow-hidden">
+                                                <div className="px-4 py-2.5 bg-gray-50 border-b border-gray-100">
+                                                    <span className="text-xs font-semibold text-gray-600 uppercase tracking-wider">Identité</span>
+                                                </div>
+                                                <div className="p-4 space-y-2.5">
+                                                    <div className="flex items-center justify-between">
+                                                        <span className="text-gray-400 text-xs">Code</span>
+                                                        <span className="font-mono text-xs font-semibold bg-gray-100 px-2 py-0.5 rounded text-gray-800">{partnerDetail.code}</span>
                                                     </div>
-                                                    <div className="p-4 space-y-2.5">
-                                                        {[
-                                                            { label: 'Code', value: partnerDetail.code, mono: true },
-                                                            { label: 'Nom', value: partnerDetail.name },
-                                                            { label: 'Type', value: partnerDetail.partner_type },
-                                                            { label: 'Canal', value: partnerDetail.channel },
-                                                        ].map(row => (
-                                                            <div key={row.label} className="flex items-center justify-between text-sm">
-                                                                <span className="text-gray-500 text-xs">{row.label}</span>
-                                                                <span className={`font-medium text-gray-900 text-right ${row.mono ? 'font-mono text-xs bg-gray-50 px-2 py-0.5 rounded' : ''}`}>{row.value || '—'}</span>
+                                                    <div className="flex items-center justify-between">
+                                                        <span className="text-gray-400 text-xs">Nom</span>
+                                                        <span className="text-xs font-semibold text-gray-900 text-right max-w-[60%] truncate" title={partnerDetail.name}>{partnerDetail.name || '—'}</span>
+                                                    </div>
+                                                    {partnerDetail.partner_type && (
+                                                        <div className="flex items-center justify-between">
+                                                            <span className="text-gray-400 text-xs">Type</span>
+                                                            <span className="text-xs font-medium text-gray-700 bg-gray-100 px-2 py-0.5 rounded">{partnerDetail.partner_type}</span>
+                                                        </div>
+                                                    )}
+                                                    {partnerDetail.channel && (
+                                                        <div className="flex items-center justify-between">
+                                                            <span className="text-gray-400 text-xs">Canal</span>
+                                                            <span className="text-xs font-semibold text-indigo-700 bg-indigo-50 px-2 py-0.5 rounded">{partnerDetail.channel}</span>
+                                                        </div>
+                                                    )}
+                                                    <div className="pt-2 mt-1 border-t border-gray-100 space-y-1.5">
+                                                        {partnerDetail.tax_number_ice && (
+                                                            <div className="flex items-center justify-between">
+                                                                <span className="text-gray-400 text-[11px]">ICE</span>
+                                                                <span className="font-mono text-[11px] text-gray-700">{partnerDetail.tax_number_ice}</span>
                                                             </div>
-                                                        ))}
+                                                        )}
+                                                        {partnerDetail.tax_number_if && (
+                                                            <div className="flex items-center justify-between">
+                                                                <span className="text-gray-400 text-[11px]">IF</span>
+                                                                <span className="font-mono text-[11px] text-gray-700">{partnerDetail.tax_number_if}</span>
+                                                            </div>
+                                                        )}
+                                                        <div className="flex items-center justify-between">
+                                                            <span className="text-gray-400 text-[11px]">Exonéré TVA</span>
+                                                            <span className={`text-[11px] font-medium px-1.5 py-0.5 rounded ${partnerDetail.tax_exempt ? 'bg-green-50 text-green-700' : 'text-gray-400'}`}>
+                                                                {partnerDetail.tax_exempt ? 'Oui' : 'Non'}
+                                                            </span>
+                                                        </div>
                                                     </div>
-                                                </div>
-
-                                                {/* Commercial Card */}
-                                                <div className="rounded-xl border border-gray-200 bg-white overflow-hidden">
-                                                    <div className="px-4 py-2.5 bg-gray-50 border-b border-gray-100">
-                                                        <span className="text-xs font-semibold text-gray-600 uppercase tracking-wider">Commercial</span>
-                                                    </div>
-                                                    <div className="p-4 space-y-2.5">
-                                                        <div className="flex items-center justify-between text-sm">
-                                                            <span className="text-gray-500 text-xs">Liste de prix</span>
-                                                            {partnerDetail.price_list ? (
-                                                                <span className="font-medium text-gray-900 text-xs bg-sage-50 text-sage-700 px-2 py-0.5 rounded">{partnerDetail.price_list.name}</span>
-                                                            ) : <span className="text-gray-400 text-xs">—</span>}
-                                                        </div>
-                                                        <div className="flex items-center justify-between text-sm">
-                                                            <span className="text-gray-500 text-xs">Cond. paiement</span>
-                                                            {partnerDetail.payment_term ? (
-                                                                <span className="font-medium text-xs bg-sage-50 text-sage-700 px-2 py-0.5 rounded">{partnerDetail.payment_term.name}</span>
-                                                            ) : <span className="text-gray-400 text-xs">—</span>}
-                                                        </div>
-                                                        <div className="flex items-center justify-between text-sm">
-                                                            <span className="text-gray-500 text-xs">Créé le</span>
-                                                            <span className="text-xs text-gray-700">{fmtDate(partnerDetail.created_at)}</span>
-                                                        </div>
-                                                        <div className="flex items-center justify-between text-sm">
-                                                            <span className="text-gray-500 text-xs">Mis à jour le</span>
-                                                            <span className="text-xs text-gray-700">{fmtDate(partnerDetail.updated_at)}</span>
-                                                        </div>
+                                                    <div className="text-[10px] text-gray-300 pt-1 border-t border-gray-100">
+                                                        Créé {fmtDate(partnerDetail.created_at)} · MàJ {fmtDate(partnerDetail.updated_at)}
                                                     </div>
                                                 </div>
                                             </div>
 
-                                            {/* Customer account card */}
-                                            {partnerDetail.customer?.user && (
-                                                <div className="rounded-xl border border-gray-200 bg-white overflow-hidden mb-5">
-                                                    <div className="px-4 py-2.5 bg-gray-50 border-b border-gray-100">
-                                                        <span className="text-xs font-semibold text-gray-600 uppercase tracking-wider">Compte client associé</span>
-                                                    </div>
-                                                    <div className="p-4 flex items-center gap-3">
-                                                        <div className="w-9 h-9 rounded-full bg-gradient-to-br from-violet-500 to-purple-600 flex items-center justify-center text-white font-bold text-xs shrink-0">
-                                                            {partnerDetail.customer.user.name?.charAt(0)?.toUpperCase() || 'U'}
-                                                        </div>
-                                                        <div className="min-w-0">
-                                                            <div className="text-sm font-semibold text-gray-900">{partnerDetail.customer.user.name}</div>
-                                                            <div className="text-xs text-gray-500">{partnerDetail.customer.user.email}</div>
-                                                        </div>
-                                                    </div>
+                                            {/* Contact */}
+                                            <div className="rounded-xl border border-gray-200 bg-white overflow-hidden">
+                                                <div className="px-4 py-2.5 bg-gray-50 border-b border-gray-100">
+                                                    <span className="text-xs font-semibold text-gray-600 uppercase tracking-wider">Contact</span>
                                                 </div>
-                                            )}
-
-                                            {/* Custom fields card */}
-                                            {detailData?.customFields && Object.keys(detailData.customFields).length > 0 && (
-                                                <div className="rounded-xl border border-gray-200 bg-white overflow-hidden">
-                                                    <div className="px-4 py-2.5 bg-gray-50 border-b border-gray-100">
-                                                        <span className="text-xs font-semibold text-gray-600 uppercase tracking-wider">Champs personnalisés</span>
-                                                    </div>
-                                                    <div className="p-4 space-y-2.5">
-                                                        {Object.entries(detailData.customFields).map(([key, cf]) => (
-                                                            <div key={key} className="flex items-center justify-between text-sm">
-                                                                <div className="flex items-center gap-2">
-                                                                    <span className="w-1.5 h-1.5 rounded-full bg-violet-400 shrink-0" />
-                                                                    <span className="text-gray-600 text-xs">{cf.label}</span>
-                                                                </div>
-                                                                <span className="font-medium text-gray-900 text-xs">{cf.formatted_value || cf.value || <span className="text-gray-300 italic">Non renseigné</span>}</span>
+                                                <div className="p-4 space-y-3">
+                                                    {[
+                                                        { icon: Mail, label: 'Email', value: partnerDetail.email, href: partnerDetail.email ? `mailto:${partnerDetail.email}` : undefined },
+                                                        { icon: Phone, label: 'Téléphone', value: partnerDetail.phone, href: partnerDetail.phone ? `tel:${partnerDetail.phone}` : undefined },
+                                                        { icon: Phone, label: 'WhatsApp', value: partnerDetail.whatsapp },
+                                                        { icon: Building2, label: 'Site web', value: partnerDetail.website },
+                                                    ].map(item => (
+                                                        <div key={item.label} className="flex items-center gap-2.5">
+                                                            <div className="w-7 h-7 rounded-lg bg-gray-50 border border-gray-100 flex items-center justify-center shrink-0">
+                                                                <item.icon className="w-3 h-3 text-gray-500" />
                                                             </div>
-                                                        ))}
-                                                    </div>
+                                                            <div className="min-w-0 flex-1">
+                                                                <div className="text-[9px] text-gray-400 font-semibold uppercase tracking-wider">{item.label}</div>
+                                                                {item.value ? (
+                                                                    item.href ? (
+                                                                        <a href={item.href} className="text-xs font-medium text-blue-700 hover:underline truncate block">{item.value}</a>
+                                                                    ) : (
+                                                                        <div className="text-xs font-medium text-gray-900 truncate">{item.value}</div>
+                                                                    )
+                                                                ) : (
+                                                                    <div className="text-xs text-gray-300">—</div>
+                                                                )}
+                                                            </div>
+                                                        </div>
+                                                    ))}
+                                                    {partnerDetail.customer?.user && (
+                                                        <div className="pt-2 border-t border-gray-100 flex items-center gap-2">
+                                                            <div className="w-6 h-6 rounded-full bg-gradient-to-br from-violet-500 to-purple-600 flex items-center justify-center text-white font-bold text-[9px] shrink-0">
+                                                                {partnerDetail.customer.user.name?.charAt(0)?.toUpperCase() || 'U'}
+                                                            </div>
+                                                            <div className="min-w-0">
+                                                                <div className="text-[11px] font-semibold text-gray-900 truncate">{partnerDetail.customer.user.name}</div>
+                                                                <div className="text-[10px] text-gray-400 truncate">{partnerDetail.customer.user.email}</div>
+                                                            </div>
+                                                        </div>
+                                                    )}
+                                                    {partnerDetail.last_payment_date && (
+                                                        <div className="pt-2 border-t border-gray-100 flex items-center justify-between text-xs">
+                                                            <span className="text-gray-400">Dern. paiement</span>
+                                                            <span className="font-medium text-emerald-700">{fmtDate(partnerDetail.last_payment_date)}</span>
+                                                        </div>
+                                                    )}
                                                 </div>
-                                            )}
-                                        </SageCollapsible>
-                                    </div>
+                                            </div>
 
-                                    {/* ── Credit Section ─────────────── */}
-                                    <div ref={el => { sectionRefs.current['credit'] = el; }}>
-                                        <SageCollapsible title="Crédit & Exposition financière" isOpen={openSections['credit']} onOpenChange={open => toggleSection('credit', open)}>
+                                            {/* Adresse */}
+                                            <div className="rounded-xl border border-gray-200 bg-white overflow-hidden">
+                                                <div className="px-4 py-2.5 bg-gray-50 border-b border-gray-100">
+                                                    <span className="text-xs font-semibold text-gray-600 uppercase tracking-wider">Adresse & Livraison</span>
+                                                </div>
+                                                <div className="p-4 space-y-2.5">
+                                                    {partnerDetail.address_line1 ? (
+                                                        <div className="flex items-start gap-2">
+                                                            <MapPin className="w-3.5 h-3.5 text-sage-500 mt-0.5 shrink-0" />
+                                                            <div className="text-xs space-y-0.5">
+                                                                <div className="font-semibold text-gray-900">{partnerDetail.address_line1}</div>
+                                                                {partnerDetail.address_line2 && <div className="text-gray-500">{partnerDetail.address_line2}</div>}
+                                                                <div className="text-gray-500">
+                                                                    {[partnerDetail.city, partnerDetail.region, partnerDetail.postal_code].filter(Boolean).join(', ')}
+                                                                </div>
+                                                                {partnerDetail.country && <div className="text-gray-500">{partnerDetail.country}</div>}
+                                                            </div>
+                                                        </div>
+                                                    ) : (
+                                                        <div className="flex items-center gap-2">
+                                                            <MapPin className="w-3.5 h-3.5 text-gray-300 shrink-0" />
+                                                            <span className="text-xs text-gray-300 italic">Adresse non renseignée</span>
+                                                        </div>
+                                                    )}
+                                                    {(toNum(partnerDetail.min_order_amount) > 0 || partnerDetail.delivery_zone || partnerDetail.delivery_instructions) && (
+                                                        <div className="pt-2 border-t border-gray-100 space-y-1.5">
+                                                            {toNum(partnerDetail.min_order_amount) > 0 && (
+                                                                <div className="flex items-center justify-between text-xs">
+                                                                    <span className="text-gray-400">Commande min.</span>
+                                                                    <span className="font-medium text-gray-700">{fmtNumber(partnerDetail.min_order_amount)}</span>
+                                                                </div>
+                                                            )}
+                                                            {partnerDetail.delivery_zone && (
+                                                                <div className="flex items-center justify-between text-xs">
+                                                                    <span className="text-gray-400">Zone livraison</span>
+                                                                    <span className="font-medium text-gray-700 truncate max-w-[60%] text-right">{partnerDetail.delivery_zone}</span>
+                                                                </div>
+                                                            )}
+                                                            {partnerDetail.delivery_instructions && (
+                                                                <div className="text-[11px] text-gray-500 bg-gray-50 rounded-lg px-2 py-1.5 leading-relaxed">
+                                                                    {partnerDetail.delivery_instructions}
+                                                                </div>
+                                                            )}
+                                                        </div>
+                                                    )}
+                                                    {partnerDetail.geo_lat && partnerDetail.geo_lng && (
+                                                        <div className="flex items-center gap-1 text-[10px] text-gray-400 pt-1 border-t border-gray-100">
+                                                            <Locate className="w-3 h-3" />
+                                                            <span>{partnerDetail.geo_lat}, {partnerDetail.geo_lng}</span>
+                                                        </div>
+                                                    )}
+                                                </div>
+                                            </div>
+                                        </div>
+
+                                    </div>
+                                    )}
+
+                                    {/* ── Finance & Crédit ─────────────── */}
+                                    {activeTab === 'finance' && (
+                                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                                        {[
+                                            { label: 'Limite de crédit', value: fmtNumber(partnerDetail.credit_limit), color: 'text-gray-900', border: 'border-gray-100', bg: 'bg-white', icon: CreditCard, iconColor: 'text-gray-400' },
+                                            { label: 'Crédit utilisé', value: fmtNumber(partnerDetail.credit_used), color: 'text-amber-600', border: 'border-amber-100', bg: 'bg-amber-50/40', icon: CreditCard, iconColor: 'text-amber-400' },
+                                            { label: 'Crédit disponible', value: fmtNumber(partnerDetail.credit_available), color: toNum(partnerDetail.credit_available) <= 0 ? 'text-red-600' : 'text-emerald-600', border: toNum(partnerDetail.credit_available) <= 0 ? 'border-red-100' : 'border-emerald-100', bg: toNum(partnerDetail.credit_available) <= 0 ? 'bg-red-50/40' : 'bg-emerald-50/40', icon: CreditCard, iconColor: toNum(partnerDetail.credit_available) <= 0 ? 'text-red-400' : 'text-emerald-400' },
+                                            { label: 'Remise défaut', value: `${toNum(partnerDetail.default_discount_rate)}%`, color: 'text-sage-700', border: 'border-sage-100', bg: 'bg-sage-50/40', icon: DollarSign, iconColor: 'text-sage-400' },
+                                        ].map(kpi => (
+                                            <div key={kpi.label} className={`p-3 rounded-xl border ${kpi.border} ${kpi.bg} shadow-sm`}>
+                                                <div className="flex items-center justify-between mb-1.5">
+                                                    <span className="text-[11px] text-gray-500 font-medium">{kpi.label}</span>
+                                                    <kpi.icon className={`w-3.5 h-3.5 ${kpi.iconColor}`} />
+                                                </div>
+                                                <div className={`text-lg font-bold ${kpi.color}`}>{kpi.value}</div>
+                                            </div>
+                                        ))}
+                                    </div>
+                                    )}
+                                    {activeTab === 'finance' && (
+                                    <div className="rounded-xl border border-gray-200 bg-white overflow-hidden">
+                                        <div className="px-4 py-2.5 bg-gray-50 border-b border-gray-100 flex items-center gap-2">
+                                            <CreditCard className="w-3.5 h-3.5 text-indigo-500" />
+                                            <span className="text-xs font-semibold text-gray-700 uppercase tracking-wider">Crédit & Exposition financière</span>
+                                        </div>
+                                        <div className="p-3 space-y-4">
                                             <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
                                                 <div className="flex gap-2 flex-wrap">
                                                     <button onClick={() => { setCreditForm({ credit_limit: toNum(partnerDetail.credit_limit) }); setShowCreditModal(true); }}
@@ -1721,8 +1762,10 @@ export const PartnerManagementPage = () => {
                                             {/* Credit Events Audit Trail */}
                                             {creditEventsLoading ? null : creditEventsData.length > 0 && (
                                                 <div className="mt-4">
-                                                    <div className="text-xs font-semibold text-gray-500 mb-2 flex items-center gap-1">
-                                                        <Activity className="w-3 h-3" /> Événements crédit
+                                                    <div className="text-xs font-semibold text-gray-600 mb-2 flex items-center gap-2 pt-1 border-t border-gray-100">
+                                                        <Activity className="w-3 h-3 text-indigo-400" />
+                                                        <span>Audit Trail</span>
+                                                        <span className="text-gray-400 font-normal">— Événements crédit</span>
                                                     </div>
                                                     <div className="relative border-l-2 border-gray-100 ml-3 space-y-1">
                                                         {creditEventsData.slice(0, 15).map(ev => {
@@ -1751,95 +1794,75 @@ export const PartnerManagementPage = () => {
                                                     </div>
                                                 </div>
                                             )}
-                                        </SageCollapsible>
+                                        </div>
                                     </div>
+                                    )}
 
-                                    {/* ── Paiements & Dérogations ──────────── */}
-                                    <div ref={el => { sectionRefs.current['payments'] = el; }}>
-                                        <SageCollapsible title="Paiements & Dérogations" isOpen={openSections['payments']} onOpenChange={open => toggleSection('payments', open)}>
-                                            <div className="space-y-5">
+                                    {/* ── Règlement ────────────────────── */}
+                                    {activeTab === 'reglement' && (
+                                    <div className="space-y-3">
 
-                                                {/* ── §6 Conditions de paiement ─────── */}
-                                                <div className="rounded-xl border border-gray-200 bg-white overflow-hidden">
-                                                    <div className="px-4 py-2.5 bg-gray-50 border-b border-gray-100 flex items-center gap-2">
-                                                        <DollarSign className="w-3.5 h-3.5 text-sage-500" />
-                                                        <span className="text-xs font-semibold text-gray-700">Conditions de paiement</span>
+                                        {/* §6 Conditions de paiement */}
+                                        <div className="rounded-xl border border-gray-200 bg-white overflow-hidden">
+                                            <div className="px-4 py-2.5 bg-gray-50 border-b border-gray-100 flex items-center gap-2">
+                                                <DollarSign className="w-3.5 h-3.5 text-sage-500" />
+                                                <span className="text-xs font-semibold text-gray-700 uppercase tracking-wider">Conditions de paiement</span>
+                                            </div>
+                                            <div className="p-3">
+                                                {paymentTermsLoading ? (
+                                                    <div className="flex items-center justify-center py-6 text-gray-400 text-xs">
+                                                        <Loader2 className="w-4 h-4 animate-spin mr-2" /> Chargement...
                                                     </div>
-                                                    <div className="p-3">
-                                                        {paymentTermsLoading ? (
-                                                            <div className="flex items-center justify-center py-6 text-gray-400 text-xs">
-                                                                <Loader2 className="w-4 h-4 animate-spin mr-2" /> Chargement...
-                                                            </div>
-                                                        ) : paymentTermsData ? (
-                                                            <PaymentTermsContent
-                                                                paymentTermsData={paymentTermsData}
-                                                                onSetDefault={handleSetDefaultTerm}
-                                                                onDetach={handleDetachTerm}
-                                                                onAttach={handleAttachTerm}
-                                                            />
-                                                        ) : null}
-                                                    </div>
+                                                ) : paymentTermsData ? (
+                                                    <PaymentTermsContent
+                                                        paymentTermsData={paymentTermsData}
+                                                        onSetDefault={handleSetDefaultTerm}
+                                                        onDetach={handleDetachTerm}
+                                                        onAttach={handleAttachTerm}
+                                                    />
+                                                ) : null}
+                                            </div>
+                                        </div>
+
+                                        {/* §7 Modes de règlement — checkbox style */}
+                                        <div className="rounded-xl border border-gray-200 bg-white overflow-hidden">
+                                            <div className="px-4 py-2.5 bg-gray-50 border-b border-gray-100 flex items-center justify-between">
+                                                <div className="flex items-center gap-2">
+                                                    <Banknote className="w-3.5 h-3.5 text-gray-500" />
+                                                    <span className="text-xs font-semibold text-gray-700 uppercase tracking-wider">Modes de règlement</span>
                                                 </div>
+                                                <span className="text-[10px] text-gray-400 italic">Référentiel global</span>
+                                            </div>
+                                            <div className="p-3">
+                                                {paymentMethodsLoading ? (
+                                                    <div className="flex items-center gap-2 text-xs text-gray-400 py-3 justify-center">
+                                                        <Loader2 className="w-3.5 h-3.5 animate-spin" /> Chargement...
+                                                    </div>
+                                                ) : (
+                                                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                                                        {paymentMethods.map(pm => (
+                                                            <div key={pm.id} className={`flex items-center gap-3 p-3 rounded-lg border transition-colors ${pm.is_active ? 'border-gray-200 bg-white' : 'border-dashed border-gray-200 bg-gray-50 opacity-50'}`}>
+                                                                <div className={`w-4 h-4 rounded border-2 flex items-center justify-center shrink-0 ${pm.is_active ? 'bg-sage-500 border-sage-500' : 'border-gray-300 bg-white'}`}>
+                                                                    {pm.is_active && <CheckCircle className="w-2.5 h-2.5 text-white" />}
+                                                                </div>
+                                                                <div className="min-w-0">
+                                                                    <div className="text-xs font-semibold text-gray-800">{pm.code}</div>
+                                                                    <div className="text-[10px] text-gray-400 truncate">{pm.name}</div>
+                                                                </div>
+                                                            </div>
+                                                        ))}
+                                                    </div>
+                                                )}
+                                            </div>
+                                        </div>
 
-                                                {/* ── §7 Modes de règlement ─────────── */}
-                                                <div className="rounded-xl border border-gray-200 bg-white overflow-hidden">
-                                                    <div className="px-4 py-2.5 bg-gray-50 border-b border-gray-100 flex items-center justify-between">
-                                                        <div className="flex items-center gap-2">
-                                                            <Banknote className="w-3.5 h-3.5 text-indigo-500" />
-                                                            <span className="text-xs font-semibold text-gray-700">Modes de règlement</span>
-                                                        </div>
-                                                        <span className="text-[10px] text-gray-400 italic">Référentiel global — non stocké sur le partenaire</span>
-                                                    </div>
-                                                    <div className="p-3">
-                                                        {paymentMethodsLoading ? (
-                                                            <div className="flex items-center gap-2 text-xs text-gray-400 py-3 justify-center">
-                                                                <Loader2 className="w-3.5 h-3.5 animate-spin" /> Chargement...
-                                                            </div>
-                                                        ) : (
-                                                            <div className="flex flex-wrap gap-2">
-                                                                {paymentMethods.map(pm => {
-                                                                    const accent: Record<string, { dot: string; bg: string; text: string; border: string }> = {
-                                                                        CASH:     { dot: 'bg-emerald-500', bg: 'bg-emerald-50',  text: 'text-emerald-800', border: 'border-emerald-200' },
-                                                                        CHEQUE:   { dot: 'bg-amber-500',   bg: 'bg-amber-50',    text: 'text-amber-800',   border: 'border-amber-200'   },
-                                                                        EFFET:    { dot: 'bg-orange-500',  bg: 'bg-orange-50',   text: 'text-orange-800',  border: 'border-orange-200'  },
-                                                                        VIREMENT: { dot: 'bg-sky-500',     bg: 'bg-sky-50',      text: 'text-sky-800',     border: 'border-sky-200'     },
-                                                                        CARD:     { dot: 'bg-violet-500',  bg: 'bg-violet-50',   text: 'text-violet-800',  border: 'border-violet-200'  },
-                                                                        MOBILE:   { dot: 'bg-rose-500',    bg: 'bg-rose-50',     text: 'text-rose-800',    border: 'border-rose-200'    },
-                                                                    };
-                                                                    const c = accent[pm.code] ?? accent.CASH;
-                                                                    return (
-                                                                        <div key={pm.id} className={`flex items-center gap-2 pl-2.5 pr-3 py-1.5 rounded-full border ${c.bg} ${c.border} ${!pm.is_active ? 'opacity-40' : ''}`}>
-                                                                            <span className={`w-2 h-2 rounded-full shrink-0 ${c.dot}`} />
-                                                                            <div className="flex items-center gap-1.5">
-                                                                                <span className={`text-xs font-bold ${c.text}`}>{pm.code}</span>
-                                                                                <span className="text-[10px] text-gray-500">{pm.name}</span>
-                                                                            </div>
-                                                                            {(pm.requires_reference || pm.requires_bank) && (
-                                                                                <div className="flex gap-1 ml-1">
-                                                                                    {pm.requires_reference && (
-                                                                                        <span className="text-[9px] px-1 py-0.5 bg-white/80 rounded border border-white text-gray-500">#réf</span>
-                                                                                    )}
-                                                                                    {pm.requires_bank && (
-                                                                                        <span className="text-[9px] px-1 py-0.5 bg-white/80 rounded border border-white text-gray-500">banque</span>
-                                                                                    )}
-                                                                                </div>
-                                                                            )}
-                                                                        </div>
-                                                                    );
-                                                                })}
-                                                            </div>
-                                                        )}
-                                                    </div>
+                                        {/* §9 Dérogations de paiement */}
+                                        <div className="rounded-xl border border-gray-200 bg-white overflow-hidden">
+                                            <div className="px-4 py-2.5 bg-gray-50 border-b border-gray-100 flex items-center justify-between">
+                                                <div className="flex items-center gap-2">
+                                                    <FileCheck2 className="w-3.5 h-3.5 text-violet-500" />
+                                                    <span className="text-xs font-semibold text-gray-700 uppercase tracking-wider">Dérogations de paiement</span>
                                                 </div>
-
-                                                {/* ── §9 Dérogations de paiement ───── */}
-                                                <div className="rounded-xl border border-gray-200 bg-white overflow-hidden">
-                                                    {/* Header */}
-                                                    <div className="px-4 py-2.5 bg-gray-50 border-b border-gray-100 flex items-center justify-between">
-                                                        <div className="flex items-center gap-2">
-                                                            <FileCheck2 className="w-3.5 h-3.5 text-violet-500" />
-                                                            <span className="text-xs font-semibold text-gray-700">Dérogations de paiement</span>
-                                                        </div>
                                                         <div className="flex items-center gap-1.5">
                                                             {pendingOverrides.length > 0 && (
                                                                 <span className="flex items-center gap-1 px-2 py-0.5 text-[10px] font-bold bg-amber-100 text-amber-700 rounded-full border border-amber-200">
@@ -2105,11 +2128,11 @@ export const PartnerManagementPage = () => {
                                                 </div>
 
                                             </div>
-                                        </SageCollapsible>
-                                    </div>
+                                    )}
 
-                                    {/* ── Contact & Address Section ──── */}
-                                    <div ref={el => { sectionRefs.current['contact'] = el; }}>
+                                    {/* contact section absorbed into general 3-col grid above */}
+                                    {false && (
+                                    <div>
                                         <SageCollapsible title="Adresse & Contact" isOpen={openSections['contact']} onOpenChange={open => toggleSection('contact', open)}>
                                             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                                                 {/* Contact Card */}
@@ -2248,10 +2271,14 @@ export const PartnerManagementPage = () => {
                                             </div>
                                         </SageCollapsible>
                                     </div>
-
-                                    {/* ── Activité Section (§10) ────────── */}
-                                    <div ref={el => { sectionRefs.current['activite'] = el; }}>
-                                        <SageCollapsible title="Activité commerciale" isOpen={openSections['activite']} onOpenChange={open => toggleSection('activite', open)}>
+                                    )}
+                                    {activeTab === 'finance' && (
+                                    <div className="rounded-xl border border-gray-200 bg-white overflow-hidden">
+                                        <div className="px-4 py-2.5 bg-gray-50 border-b border-gray-100 flex items-center gap-2">
+                                            <Activity className="w-3.5 h-3.5 text-sage-500" />
+                                            <span className="text-xs font-semibold text-gray-700 uppercase tracking-wider">Activité commerciale récente</span>
+                                        </div>
+                                        <div className="p-3">
                                             {(() => {
                                                 const orders = (partnerDetail as any).orders as any[] | undefined;
                                                 const bls = (partnerDetail as any).delivery_notes as any[] | undefined;
@@ -2335,12 +2362,18 @@ export const PartnerManagementPage = () => {
                                                     </div>
                                                 );
                                             })()}
-                                        </SageCollapsible>
+                                        </div>
                                     </div>
+                                    )}
 
-                                    {/* ── Soldes Section (§11) ────────────── */}
-                                    <div ref={el => { sectionRefs.current['soldes'] = el; }}>
-                                        <SageCollapsible title="Soldes (Points / Budget / Avoir)" isOpen={openSections['soldes']} onOpenChange={open => toggleSection('soldes', open)}>
+                                    {/* ── Soldes (Finance) ─────────────── */}
+                                    {activeTab === 'finance' && (
+                                    <div className="rounded-xl border border-gray-200 bg-white overflow-hidden">
+                                        <div className="px-4 py-2.5 bg-gray-50 border-b border-gray-100 flex items-center gap-2">
+                                            <Wallet className="w-3.5 h-3.5 text-indigo-500" />
+                                            <span className="text-xs font-semibold text-gray-700 uppercase tracking-wider">Soldes (Points / Budget / Avoir)</span>
+                                        </div>
+                                        <div className="p-3">
                                             <div className="space-y-3">
                                                 {balancesLoading ? (
                                                     <div className="flex items-center justify-center py-6 text-gray-400 text-xs">
@@ -2424,11 +2457,12 @@ export const PartnerManagementPage = () => {
                                                     </div>
                                                 )}
                                             </div>
-                                        </SageCollapsible>
+                                        </div>
                                     </div>
+                                    )}
 
-                                    {/* ── Nearby Panel ─────────────────────── */}
-                                    {showNearby && (
+                                    {/* ── Nearby Panel (Général) ───────────── */}
+                                    {activeTab === 'general' && showNearby && (
                                         <div className="rounded-xl border border-amber-200 bg-amber-50/40">
                                             <div className="px-4 py-2.5 bg-amber-50 border-b border-amber-100 flex items-center justify-between">
                                                 <div className="flex items-center gap-2">
@@ -2461,46 +2495,83 @@ export const PartnerManagementPage = () => {
                                         </div>
                                     )}
 
-                                    {/* ── Tournées Section ─────────────── */}
-                                    <div ref={el => { sectionRefs.current['tournees'] = el; }}>
-                                        <SageCollapsible title="Tournées de livraison" isOpen={openSections['tournees']} onOpenChange={open => toggleSection('tournees', open)}>
-                                            {/* Current itineraries */}
-                                            {(() => {
-                                                const itins = (partnerDetail as any).itinerary_partners as any[] | undefined;
+                                    {/* ── Tournées (Général) ───────────── */}
+                                    {activeTab === 'general' && (
+                                    <div className="rounded-xl border border-gray-200 bg-white overflow-hidden">
+                                        <div className="px-4 py-2.5 bg-gray-50 border-b border-gray-100 flex items-center gap-2">
+                                            <Route className="w-3.5 h-3.5 text-indigo-500" />
+                                            <span className="text-xs font-semibold text-gray-700 uppercase tracking-wider">Tournées de livraison</span>
+                                        </div>
+                                        <div className="p-3">
+                                        {(() => {
+                                                // §11.1 enriched data — falls back to flat itinerary_partners while loading
+                                                const enrichedItins = partnerItinerary?.itineraries ?? [];
+                                                const flatItins = (partnerDetail as any).itinerary_partners as any[] | undefined ?? [];
+                                                const alloc = partnerItinerary?.allocation;
+
+                                                // Resolve pivot id for DELETE (§11.4) by cross-referencing itinerary_id
+                                                const pivotId = (itineraryId: number): number | undefined =>
+                                                    flatItins.find((ip: any) => ip.itinerary_id === itineraryId)?.id;
+
+                                                const hasItins = enrichedItins.length > 0 || (partnerItineraryLoading && flatItins.length > 0);
+
                                                 return (
                                                     <div className="space-y-3">
-                                                        {itins && itins.length > 0 ? (
+                                                        {/* Allocation info pill */}
+                                                        {alloc && (
+                                                            <div className="flex items-center gap-2 px-3 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-[10px] text-slate-600">
+                                                                <Zap className="w-3 h-3 text-slate-400 shrink-0" />
+                                                                <span>Priorité alloc: <strong className="text-slate-800 capitalize">{alloc.allocation_priority}</strong></span>
+                                                                {alloc.min_allocation_pct > 0 && <span>· Min {alloc.min_allocation_pct}%</span>}
+                                                            </div>
+                                                        )}
+
+                                                        {partnerItineraryLoading ? (
                                                             <div className="space-y-2">
-                                                                {itins.map((ip: any) => (
-                                                                    <div key={ip.id} className="flex items-center justify-between p-3 rounded-xl border border-indigo-100 bg-indigo-50/30">
-                                                                        <div className="flex items-center gap-3 min-w-0">
-                                                                            <div className="w-8 h-8 rounded-lg bg-indigo-100 flex items-center justify-center shrink-0">
-                                                                                <Route className="w-4 h-4 text-indigo-600" />
-                                                                            </div>
-                                                                            <div className="min-w-0">
-                                                                                <div className="text-sm font-semibold text-gray-900 truncate">
-                                                                                    {ip.itinerary?.name ?? `Tournée #${ip.itinerary_id}`}
+                                                                {[1, 2].map(i => <div key={i} className="h-14 bg-gray-100 rounded-xl animate-pulse" />)}
+                                                            </div>
+                                                        ) : hasItins ? (
+                                                            <div className="space-y-2">
+                                                                {enrichedItins.map((it) => {
+                                                                    const pid = pivotId(it.itinerary_id);
+                                                                    const nextVisit = it.visit_date
+                                                                        ? new Date(it.visit_date).toLocaleDateString('fr-FR', { day: '2-digit', month: 'short' })
+                                                                        : null;
+                                                                    return (
+                                                                        <div key={it.itinerary_id} className="flex items-start justify-between p-3 rounded-xl border border-indigo-100 bg-indigo-50/30 gap-3">
+                                                                            <div className="flex items-start gap-3 min-w-0">
+                                                                                <div className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 ${it.is_active ? 'bg-indigo-100' : 'bg-gray-100'}`}>
+                                                                                    <Route className={`w-4 h-4 ${it.is_active ? 'text-indigo-600' : 'text-gray-400'}`} />
                                                                                 </div>
-                                                                                <div className="flex items-center gap-2 text-[10px] text-gray-500 flex-wrap mt-0.5">
-                                                                                    {ip.itinerary?.code && <span className="font-mono bg-white px-1.5 py-0.5 rounded border border-gray-200">{ip.itinerary.code}</span>}
-                                                                                    {ip.visit_frequency_days > 0 && <span>Fréquence: {ip.visit_frequency_days}j</span>}
-                                                                                    {ip.start_time && ip.end_time && <span>{ip.start_time} – {ip.end_time}</span>}
-                                                                                    {ip.rank > 0 && <span>Rang: {ip.rank}</span>}
-                                                                                    {ip.is_stop_point && <span className="px-1.5 py-0.5 bg-indigo-100 text-indigo-700 rounded">Arrêt officiel</span>}
+                                                                                <div className="min-w-0">
+                                                                                    <div className="flex items-center gap-1.5 flex-wrap">
+                                                                                        <span className="text-sm font-semibold text-gray-900 truncate">{it.itinerary_name}</span>
+                                                                                        {!it.is_active && <span className="text-[9px] px-1.5 py-0.5 bg-gray-200 text-gray-500 rounded-full font-medium">Inactif</span>}
+                                                                                    </div>
+                                                                                    <div className="flex items-center gap-2 text-[10px] text-gray-500 flex-wrap mt-0.5">
+                                                                                        <span className="font-mono bg-white px-1.5 py-0.5 rounded border border-gray-200">{it.itinerary_code}</span>
+                                                                                        <span className="px-1.5 py-0.5 bg-indigo-50 text-indigo-600 rounded border border-indigo-100">{it.itinerary_type}</span>
+                                                                                        {it.rank > 0 && <span className="flex items-center gap-0.5"><ArrowUpDown className="w-2.5 h-2.5" />Rang {it.rank}</span>}
+                                                                                        {it.visit_frequency_days > 0 && <span>/{it.visit_frequency_days}j</span>}
+                                                                                        {it.start_time && it.end_time && <span><Clock className="inline w-2.5 h-2.5 mr-0.5" />{it.start_time}–{it.end_time}</span>}
+                                                                                        {it.is_stop_point && <span className="px-1.5 py-0.5 bg-indigo-100 text-indigo-700 rounded font-medium">Arrêt officiel</span>}
+                                                                                        {nextVisit && <span className="text-emerald-600 font-medium">Prochain: {nextVisit}</span>}
+                                                                                    </div>
                                                                                 </div>
-                                                                                {ip.notes && <div className="text-[10px] text-gray-400 mt-0.5 truncate max-w-xs">{ip.notes}</div>}
                                                                             </div>
+                                                                            {pid !== undefined && (
+                                                                                <button
+                                                                                    onClick={() => handleRemoveFromItinerary(it.itinerary_id, pid)}
+                                                                                    disabled={removingItinerary}
+                                                                                    className="p-1.5 rounded-lg text-gray-400 hover:text-red-600 hover:bg-red-50 transition-colors shrink-0 mt-0.5"
+                                                                                    title="Retirer de cette tournée"
+                                                                                >
+                                                                                    <Unlink className="w-3.5 h-3.5" />
+                                                                                </button>
+                                                                            )}
                                                                         </div>
-                                                                        <button
-                                                                            onClick={() => handleRemoveFromItinerary(ip.itinerary_id, ip.id)}
-                                                                            disabled={removingItinerary}
-                                                                            className="ml-2 p-1.5 rounded-lg text-gray-400 hover:text-red-600 hover:bg-red-50 transition-colors shrink-0"
-                                                                            title="Retirer de cette tournée"
-                                                                        >
-                                                                            <Unlink className="w-3.5 h-3.5" />
-                                                                        </button>
-                                                                    </div>
-                                                                ))}
+                                                                    );
+                                                                })}
                                                             </div>
                                                         ) : (
                                                             <div className="text-center py-6 text-xs text-gray-400 border border-dashed border-gray-200 rounded-xl bg-gray-50">
@@ -2592,8 +2663,140 @@ export const PartnerManagementPage = () => {
                                                     </div>
                                                 );
                                             })()}
-                                        </SageCollapsible>
+                                        </div>
                                     </div>
+                                    )}
+
+                                    {/* ── Tarification ─────────────────── */}
+                                    {activeTab === 'tarification' && (
+                                    <>
+                                        {/* Canal & Segmentation */}
+                                        <div className="rounded-xl border border-gray-200 bg-white overflow-hidden">
+                                            <div className="px-4 py-2.5 bg-gray-50 border-b border-gray-100">
+                                                <span className="text-xs font-semibold text-gray-600 uppercase tracking-wider">Canal & Segmentation</span>
+                                            </div>
+                                            <div className="p-4 space-y-2.5">
+                                                <div className="flex items-center justify-between text-sm">
+                                                    <span className="text-gray-500 text-xs">Canal</span>
+                                                    <span className="text-xs font-medium text-gray-900">{partnerDetail.channel || '—'}</span>
+                                                </div>
+                                                {partnerDetail.channel_ref && (
+                                                    <>
+                                                        <div className="flex items-center justify-between text-sm">
+                                                            <span className="text-gray-500 text-xs">Code canal</span>
+                                                            <span className="font-mono text-xs text-gray-900 bg-gray-50 px-2 py-0.5 rounded">{partnerDetail.channel_ref.code}</span>
+                                                        </div>
+                                                        <div className="flex items-center justify-between text-sm">
+                                                            <span className="text-gray-500 text-xs">Libellé canal</span>
+                                                            <span className="text-xs font-medium text-gray-900">{partnerDetail.channel_ref.name}</span>
+                                                        </div>
+                                                        {partnerDetail.channel_ref.price_list_id && (
+                                                            <div className="flex items-center justify-between text-sm">
+                                                                <span className="text-gray-500 text-xs">Liste de prix (canal)</span>
+                                                                <span className="text-xs font-medium text-sage-700 bg-sage-50 px-2 py-0.5 rounded">#{partnerDetail.channel_ref.price_list_id}</span>
+                                                            </div>
+                                                        )}
+                                                    </>
+                                                )}
+                                                {partnerDetail.partner_type && (
+                                                    <div className="flex items-center justify-between text-sm">
+                                                        <span className="text-gray-500 text-xs">Type partenaire</span>
+                                                        <span className="text-xs font-medium text-gray-900 bg-gray-100 px-2 py-0.5 rounded">{partnerDetail.partner_type}</span>
+                                                    </div>
+                                                )}
+                                            </div>
+                                        </div>
+
+                                        {/* Tarif & Remises */}
+                                        <div className="rounded-xl border border-gray-200 bg-white overflow-hidden">
+                                            <div className="px-4 py-2.5 bg-gray-50 border-b border-gray-100">
+                                                <span className="text-xs font-semibold text-gray-600 uppercase tracking-wider">Tarif & Remises</span>
+                                            </div>
+                                            <div className="p-4 space-y-2.5">
+                                                <div className="flex items-center justify-between text-sm">
+                                                    <span className="text-gray-500 text-xs">Liste de prix</span>
+                                                    {partnerDetail.price_list ? (
+                                                        <span className="font-medium text-gray-900 text-xs bg-sage-50 text-sage-700 px-2 py-0.5 rounded">{partnerDetail.price_list.name}</span>
+                                                    ) : <span className="text-gray-400 text-xs">—</span>}
+                                                </div>
+                                                <div className="flex items-center justify-between text-sm">
+                                                    <span className="text-gray-500 text-xs">Remise défaut</span>
+                                                    <span className="text-xs font-semibold text-sage-700 bg-sage-50 px-2 py-0.5 rounded">{toNum(partnerDetail.default_discount_rate)}%</span>
+                                                </div>
+                                                {toNum(partnerDetail.default_discount_amount) > 0 && (
+                                                    <div className="flex items-center justify-between text-sm">
+                                                        <span className="text-gray-500 text-xs">Remise montant fixe</span>
+                                                        <span className="text-xs font-semibold text-gray-800">{fmtNumber(partnerDetail.default_discount_amount)}</span>
+                                                    </div>
+                                                )}
+                                                {toNum((partnerDetail as any).max_discount_rate) > 0 && (
+                                                    <div className="flex items-center justify-between text-sm">
+                                                        <span className="text-gray-500 text-xs">Remise max autorisée</span>
+                                                        <span className="text-xs font-medium text-amber-700 bg-amber-50 px-2 py-0.5 rounded">{toNum((partnerDetail as any).max_discount_rate)}%</span>
+                                                    </div>
+                                                )}
+                                                <div className="flex items-center justify-between text-sm">
+                                                    <span className="text-gray-500 text-xs">Créé le</span>
+                                                    <span className="text-xs text-gray-700">{fmtDate(partnerDetail.created_at)}</span>
+                                                </div>
+                                                <div className="flex items-center justify-between text-sm">
+                                                    <span className="text-gray-500 text-xs">Mis à jour le</span>
+                                                    <span className="text-xs text-gray-700">{fmtDate(partnerDetail.updated_at)}</span>
+                                                </div>
+                                            </div>
+                                        </div>
+
+                                        {/* Business Chronologies */}
+                                        {Array.isArray(partnerDetail.business_chronologies) && partnerDetail.business_chronologies.length > 0 && (
+                                            <div className="rounded-xl border border-gray-200 bg-white overflow-hidden">
+                                                <div className="px-4 py-2.5 bg-gray-50 border-b border-gray-100">
+                                                    <span className="text-xs font-semibold text-gray-600 uppercase tracking-wider">Chronologies business</span>
+                                                </div>
+                                                <div className="divide-y divide-gray-50">
+                                                    {partnerDetail.business_chronologies.map((ch: any, i: number) => (
+                                                        <div key={ch.id ?? i} className="px-4 py-2.5 text-xs flex items-center justify-between">
+                                                            <span className="font-medium text-gray-800">{ch.name || ch.code || `Chronologie ${i + 1}`}</span>
+                                                            {ch.is_active !== undefined && (
+                                                                <span className={`px-2 py-0.5 rounded-full text-[10px] font-medium ${ch.is_active ? 'bg-emerald-50 text-emerald-700' : 'bg-gray-100 text-gray-500'}`}>
+                                                                    {ch.is_active ? 'Active' : 'Inactive'}
+                                                                </span>
+                                                            )}
+                                                        </div>
+                                                    ))}
+                                                </div>
+                                            </div>
+                                        )}
+
+                                        {/* Custom Fields */}
+                                        {detailData?.customFields && Object.keys(detailData.customFields).length > 0 && (
+                                            <div className="rounded-xl border border-gray-200 bg-white overflow-hidden">
+                                                <div className="px-4 py-2.5 bg-gray-50 border-b border-gray-100">
+                                                    <span className="text-xs font-semibold text-gray-600 uppercase tracking-wider">Champs personnalisés</span>
+                                                </div>
+                                                <div className="p-4 space-y-2.5">
+                                                    {Object.entries(detailData.customFields).map(([key, cf]) => (
+                                                        <div key={key} className="flex items-center justify-between text-sm">
+                                                            <div className="flex items-center gap-2">
+                                                                <span className="w-1.5 h-1.5 rounded-full bg-violet-400 shrink-0" />
+                                                                <span className="text-gray-600 text-xs">{cf.label}</span>
+                                                            </div>
+                                                            <span className="font-medium text-gray-900 text-xs">{cf.formatted_value || cf.value || <span className="text-gray-300 italic">Non renseigné</span>}</span>
+                                                        </div>
+                                                    ))}
+                                                </div>
+                                            </div>
+                                        )}
+
+                                        {/* Empty state */}
+                                        {!partnerDetail.channel && !partnerDetail.price_list && !(Array.isArray(partnerDetail.business_chronologies) && partnerDetail.business_chronologies.length > 0) && !detailData?.customFields && (
+                                            <div className="text-center py-16 text-xs text-gray-400">
+                                                <DollarSign className="w-10 h-10 mx-auto mb-2 text-gray-200" />
+                                                <p className="font-medium">Aucune donnée tarifaire</p>
+                                                <p className="text-[10px] mt-0.5 text-gray-300">Canal, liste de prix et remises non renseignés</p>
+                                            </div>
+                                        )}
+                                    </>
+                                    )}
                                 </div>
                             </div>
                         ) : (

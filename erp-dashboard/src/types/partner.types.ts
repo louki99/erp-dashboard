@@ -64,17 +64,31 @@ export interface Partner {
     last_payment_date?: string | null;
     // Relations
     price_list?: { id: number; code: string; name: string } | null;
+    channel_ref?: { id: number; code: string; name: string; price_list_id: number } | null;
     customer?: { id: number; user?: { id: number; name: string; email: string } } | null;
     parent?: Partner | null;
     children?: Partner[];
     salesperson?: { id: number; name: string } | null;
     payment_term?: { id: number; name: string; description?: string } | null;
     geo_area?: { id: number; code: string; name: string } | null;
+    business_chronologies?: any[];
+    financial_profile?: Record<string, unknown> | null;
+    credit_state?: PartnerCreditState | null;
     custom_field_values?: any[];
     itinerary_partners?: ItineraryPartner[];
     // Timestamps
     created_at?: string;
     updated_at?: string;
+}
+
+// ─── Partner Credit State (materialized from partner_credit_states) ────────────
+
+export interface PartnerCreditState {
+    partner_id: number;
+    total_exposure: number;
+    available_credit: number;
+    status: 'ALLOWED' | 'WARNING' | 'SOFT_BLOCK' | 'HARD_BLOCK';
+    last_recalculated_at?: string | null;
 }
 
 // ─── Itinerary ────────────────────────────────────────────────────────────────
@@ -221,7 +235,11 @@ export interface PartnerFilters {
     status?: PartnerStatus | '';
     partner_type?: string;
     channel?: string;
+    channel_id?: number;
+    salesperson_id?: number;
     price_list_id?: number;
+    sort_by?: 'name' | 'code' | 'created_at' | 'last_order_date' | 'total_orders_count' | 'total_orders_value' | 'average_order_value';
+    sort_dir?: 'asc' | 'desc';
     per_page?: number;
     page?: number;
 }
@@ -278,14 +296,13 @@ export interface CreatePartnerRequest {
 }
 
 export interface UpdateStatusRequest {
-    new_status: PartnerStatus;
-    status_change_reason: string;
-    notify_partner?: boolean;
+    status: PartnerStatus;
+    reason?: string;
 }
 
 export interface BlockPartnerRequest {
+    reason: string;
     blocked_until?: string;
-    block_reason?: string;
 }
 
 export interface UpdateCreditRequest {
@@ -526,4 +543,28 @@ export interface CreatePaymentOverrideRequest {
     payment_term_id?: number | null;
     payment_method_id?: number | null;
     reason: string;
+}
+
+// ─── Itinerary endpoint (§11.1) ───────────────────────────────────────────────
+
+export interface PartnerItineraryEntry {
+    itinerary_id: number;
+    itinerary_code: string;
+    itinerary_name: string;
+    itinerary_type: string;
+    is_active: boolean;
+    line_number: number;
+    rank: number;
+    is_stop_point: boolean;
+    visit_date?: string | null;
+    start_time?: string | null;
+    end_time?: string | null;
+    visit_frequency_days: number;
+}
+
+export interface PartnerItineraryResponse {
+    success: boolean;
+    partner: { id: number; code: string; name: string };
+    allocation: { allocation_priority: string; min_allocation_pct: number };
+    itineraries: PartnerItineraryEntry[];
 }

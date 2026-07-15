@@ -22,6 +22,7 @@ import type {
     PaymentMethodRecord,
     PaymentOverride,
     CreatePaymentOverrideRequest,
+    PartnerItineraryResponse,
 } from '../../types/partner.types';
 
 // ─── Generic mutation helper ────────────────────────────────────────────────
@@ -368,6 +369,27 @@ export const useRemoveFromItinerary = () => {
         async ({ itineraryId, itineraryPartnerId }) => partnerApi.removeFromItinerary(itineraryId, itineraryPartnerId)
     );
     return { removeFromItinerary: execute, loading, error };
+};
+
+export const usePartnerItinerary = () => {
+    const [data, setData] = useState<PartnerItineraryResponse | null>(null);
+    const [loading, setLoading] = useState(false);
+
+    const fetch = useCallback(async (id: number) => {
+        setLoading(true);
+        try {
+            const result = await partnerApi.getPartnerItinerary(id);
+            setData(result);
+        } catch {
+            setData(null);
+        } finally {
+            setLoading(false);
+        }
+    }, []);
+
+    const reset = useCallback(() => setData(null), []);
+
+    return { data, loading, fetch, reset };
 };
 
 // ─── Partner Balances (§11) ──────────────────────────────────────────────────

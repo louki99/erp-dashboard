@@ -23,6 +23,7 @@ import type {
     PaymentMethodRecord,
     PaymentOverride,
     CreatePaymentOverrideRequest,
+    PartnerItineraryResponse,
 } from '../../types/partner.types';
 
 const BASE_PATH = '/api/backend/partners';
@@ -189,6 +190,11 @@ export const evaluateCreditOrder = async (id: number, orderAmount: number): Prom
 };
 
 // ─── Itineraries ────────────────────────────────────────────────────────────
+
+export const getPartnerItinerary = async (id: number): Promise<PartnerItineraryResponse> => {
+    const response = await apiClient.get<PartnerItineraryResponse>(`${BASE_PATH}/${id}/itinerary`);
+    return response.data;
+};
 
 export const getItineraries = async (): Promise<{ id: number; code: string; name: string; branch_code: string; geo_area_code?: string }[]> => {
     const response = await apiClient.get(`${ITINERARIES_PATH}`);

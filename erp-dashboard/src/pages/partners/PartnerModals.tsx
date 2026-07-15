@@ -252,22 +252,17 @@ export const ModalStatus: React.FC<ModalStatusProps> = ({ partner, form, setForm
                 <span className="ml-2 text-xs">(actuel: {partner.status})</span>
             </div>
             <Field label="Nouveau statut" required>
-                <select value={form.new_status || ''} onChange={e => setForm((p: any) => ({ ...p, new_status: e.target.value }))} className={selectCls}>
+                <select value={form.status || ''} onChange={e => setForm((p: any) => ({ ...p, status: e.target.value }))} className={selectCls}>
                     <option value="">-- Sélectionner --</option>
                     {STATUS_OPTIONS.filter(o => o.value !== partner.status).map(o => (
                         <option key={o.value} value={o.value}>{o.label}</option>
                     ))}
                 </select>
             </Field>
-            <Field label="Raison" required>
-                <textarea value={form.status_change_reason || ''} onChange={e => setForm((p: any) => ({ ...p, status_change_reason: e.target.value }))}
+            <Field label="Raison">
+                <textarea value={form.reason || ''} onChange={e => setForm((p: any) => ({ ...p, reason: e.target.value }))}
                     className={`${inputCls} min-h-[80px]`} placeholder="Raison du changement..." maxLength={500} />
             </Field>
-            <label className="flex items-center gap-2 text-sm text-gray-600">
-                <input type="checkbox" checked={form.notify_partner || false} onChange={e => setForm((p: any) => ({ ...p, notify_partner: e.target.checked }))}
-                    className="rounded border-gray-300 text-sage-600 focus:ring-sage-500" />
-                Notifier le partenaire
-            </label>
         </div>
         <ModalFooter onClose={onClose} onSubmit={onSubmit} loading={loading} label="Confirmer" />
     </ModalWrapper>
@@ -297,8 +292,8 @@ export const ModalBlock: React.FC<ModalBlockProps> = ({ partner, form, setForm, 
                 <input type="date" value={form.blocked_until || ''} onChange={e => setForm((p: any) => ({ ...p, blocked_until: e.target.value }))}
                     className={inputCls} min={new Date().toISOString().split('T')[0]} />
             </Field>
-            <Field label="Raison du blocage">
-                <textarea value={form.block_reason || ''} onChange={e => setForm((p: any) => ({ ...p, block_reason: e.target.value }))}
+            <Field label="Raison du blocage" required>
+                <textarea value={form.reason || ''} onChange={e => setForm((p: any) => ({ ...p, reason: e.target.value }))}
                     className={`${inputCls} min-h-[80px]`} placeholder="Raison du blocage..." maxLength={500} />
             </Field>
         </div>
