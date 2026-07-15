@@ -4,9 +4,10 @@ import { cn } from '@/lib/utils';
 import { Search, Star, ChevronDown, ChevronLeft, ChevronRight, Maximize2, Minimize2, Bell, Moon, Sun, LayoutGrid } from 'lucide-react';
 import { MegaMenu } from './MegaMenu';
 import { CommandMenu } from './CommandMenu';
+import { AppLauncher } from './AppLauncher';
 import { ConfirmationModal } from '@/components/common/ConfirmationModal';
 
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '@/context/AuthContext';
 import { LanguageSwitcher } from '@/components/common/LanguageSwitcher';
 import { useFilteredMenu } from '@/lib/menu/menuUtils';
@@ -29,6 +30,7 @@ export const MasterLayout: React.FC<MasterLayoutProps> = ({
     className,
 }) => {
     const navigate = useNavigate();
+    const location = useLocation();
     const { user, logout } = useAuth();
 
     // Responsive State
@@ -36,6 +38,7 @@ export const MasterLayout: React.FC<MasterLayoutProps> = ({
 
     const [mode, setMode] = useState<LayoutMode>('split');
     const [isMegaMenuOpen, setIsMegaMenuOpen] = useState(false);
+    const [isLauncherOpen, setIsLauncherOpen] = useState(false);
     const [isCommandMenuOpen, setIsCommandMenuOpen] = useState(false);
     const [showUserMenu, setShowUserMenu] = useState(false);
     const [showFavoritesMenu, setShowFavoritesMenu] = useState(false);
@@ -94,6 +97,11 @@ export const MasterLayout: React.FC<MasterLayoutProps> = ({
     }, [isDark]);
 
     const toggleTheme = () => setIsDark(!isDark);
+
+    // Close launcher automatically on navigation
+    useEffect(() => {
+        setIsLauncherOpen(false);
+    }, [location.pathname]);
 
     const handleHeaderSearch = (e: React.KeyboardEvent<HTMLInputElement>) => {
         if (e.key === 'Enter') {
@@ -156,14 +164,25 @@ export const MasterLayout: React.FC<MasterLayoutProps> = ({
 
             {/* Top Bar - Professional ERP Header */}
             <header className="h-14 bg-[#1a1a1a] dark:bg-black text-white flex items-center px-4 justify-between shrink-0 shadow-lg z-20 relative animate-in slide-in-from-top duration-300">
-                {/* Left: Branding & Mega Menu Trigger */}
-                <div className="flex items-center gap-6">
+                {/* Left: Launcher + Branding */}
+                <div className="flex items-center gap-4">
+                    {/* App Launcher button */}
                     <button
-                        onClick={() => setIsMegaMenuOpen(!isMegaMenuOpen)}
-                        className="p-2 -ml-2 rounded-lg hover:bg-white/10 text-gray-300 hover:text-white transition-colors group"
+                        onClick={() => setIsLauncherOpen(o => !o)}
+                        aria-label="Application Launcher"
+                        aria-expanded={isLauncherOpen}
+                        className={cn(
+                            'w-9 h-9 rounded-xl flex items-center justify-center transition-all duration-150',
+                            isLauncherOpen
+                                ? 'bg-sage-600 text-white shadow-lg shadow-sage-500/30'
+                                : 'text-gray-400 hover:text-white hover:bg-white/10',
+                        )}
                     >
-                        <LayoutGrid className="w-6 h-6 group-hover:text-sage-500 transition-colors" />
+                        <LayoutGrid className="w-5 h-5" />
                     </button>
+
+                    <div className="h-5 w-px bg-white/10" />
+
                     {/* Logo section */}
                     <div
                         onClick={() => navigate('/dashboard')}
@@ -350,7 +369,13 @@ export const MasterLayout: React.FC<MasterLayoutProps> = ({
                 </div>
             </header>
 
-            {/* Main Split Content */}
+            {/* App Launcher Overlay */}
+            <AppLauncher
+                isOpen={isLauncherOpen}
+                onClose={() => setIsLauncherOpen(false)}
+            />
+
+            {/* Main Content Area — full width, no permanent sidebar */}
             <div className="flex-1 overflow-hidden relative flex flex-row group/layout">
 
                 {/* MODE: SPLIT VIEW (Default - Desktop Only) */}

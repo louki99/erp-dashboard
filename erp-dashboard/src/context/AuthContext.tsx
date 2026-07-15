@@ -2,7 +2,7 @@ import React, { createContext, useContext, useState, useEffect } from 'react';
 import apiClient from '@/services/api/client';
 import type { RoleDetails, UserPermissions, UserCapabilities, UserPreferences } from '@/types/rbac.types';
 
-interface User {
+export interface User {
     id: number;
     name: string;
     email: string;
