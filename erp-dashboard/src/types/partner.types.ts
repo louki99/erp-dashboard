@@ -250,6 +250,7 @@ export interface CreatePartnerRequest {
     code?: string;
     partner_type?: string;
     channel?: string;
+    channel_id?: number;
     status?: PartnerStatus;
     risk_score?: number;
     parent_partner_id?: number | null;

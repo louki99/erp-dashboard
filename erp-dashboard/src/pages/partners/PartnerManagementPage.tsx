@@ -6,17 +6,16 @@ import {
     Ban, Unlock, FileText,
     CheckCircle2, XCircle, AlertTriangle, Clock, DollarSign,
     Star, ArrowUpDown, BookOpen, ChevronRight,
-    TrendingUp, ShoppingCart, Route, Link2, Unlink,
-    Activity, Zap, Wallet, Package, Truck,
+    Route, Link2, Unlink,
+    Activity, Zap,
     Upload, Locate, Calculator, CheckCircle, XCircle as XCircleIcon,
-    Banknote, FileCheck2, ThumbsUp, ThumbsDown, MessageSquare,
+    Banknote,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 
 import { MasterLayout } from '@/components/layout/MasterLayout';
 import { DataGrid } from '@/components/common/DataGrid';
 import { SageTabs, type TabItem } from '@/components/common/SageTabs';
-import { SageCollapsible } from '@/components/common/SageCollapsible';
 import { ActionPanel } from '@/components/layout/ActionPanel';
 
 import {
@@ -46,17 +45,11 @@ import {
     useAssignItinerary,
     useRemoveFromItinerary,
     usePartnerItinerary,
-    usePartnerBalances,
-    useUpsertBalance,
-    useDeleteBalance,
-    useNearbyPartners,
     useUploadPartnerImage,
     usePaymentMethods,
-    usePendingOverrides,
-    useCreatePaymentOverride,
-    useApproveOverride,
-    useRejectOverride,
 } from '@/hooks/partners/usePartners';
+
+import { useChannels } from '@/hooks/pricing/usePricing';
 
 import type {
     Partner,
@@ -67,9 +60,6 @@ import type {
     UpdateCreditRequest,
     PartnerSavePayload,
     CreditExposureStatus,
-    BalanceType,
-    BalanceOperation,
-    CreatePaymentOverrideRequest,
 } from '@/types/partner.types';
 
 import {
@@ -80,6 +70,7 @@ import {
 } from './PartnerModals';
 
 import { PartnerFormPanel } from './PartnerFormPanel';
+import { PartnerChronologyChips } from '@/components/partners/PartnerChronologyChips';
 import { usePartnerDraft, draftRelativeTime, type PartnerDraft } from '@/hooks/usePartnerDraft';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -406,27 +397,9 @@ export const PartnerManagementPage = () => {
         is_stop_point?: boolean; notes?: string;
     }>({});
 
-    // Balance form
-    const [showBalanceForm, setShowBalanceForm] = useState(false);
-    const [balanceForm, setBalanceForm] = useState<{ balance_type: BalanceType; balance: string; operation: BalanceOperation }>({ balance_type: 'POINTS', balance: '', operation: 'add' });
-
     // Credit evaluate
     const [evaluateAmount, setEvaluateAmount] = useState('');
     const [showEvaluateForm, setShowEvaluateForm] = useState(false);
-
-    // Nearby partners
-    const [showNearby, setShowNearby] = useState(false);
-
-    // Payment override form
-    const [showOverrideForm, setShowOverrideForm] = useState(false);
-    const [overrideForm, setOverrideForm] = useState<{
-        document_type: 'order' | 'invoice';
-        document_id: string;
-        payment_term_id: string;
-        payment_method_id: string;
-        reason: string;
-    }>({ document_type: 'order', document_id: '', payment_term_id: '', payment_method_id: '', reason: '' });
-    const [showPendingOverrides, setShowPendingOverrides] = useState(false);
 
     // Image upload ref
     const imageInputRef = React.useRef<HTMLInputElement>(null);
@@ -453,12 +426,10 @@ export const PartnerManagementPage = () => {
     const [blockForm, setBlockForm] = useState<Partial<BlockPartnerRequest>>({});
     const [creditForm, setCreditForm] = useState<Partial<UpdateCreditRequest>>({});
 
-    // Sections
-    const [openSections, setOpenSections] = useState<Record<string, boolean>>({
-        info: true, credit: true, contact: true, payments: true, tournees: true, activite: true, soldes: true,
-    });
-
     const searchTimeoutRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+    // Tracks the "wait cursor" style tag + its pending removal timeout, so rapid
+    // row clicks don't leave a stray <style> tag or race against each other.
+    const cursorStyleTimeoutRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
 
     // ── Data hooks ────────────────────────────────────────────────────────────
     const { data: partnersData, loading: partnersLoading, error: partnersError, refetch: refetchPartners } = usePartnersList(filters);
@@ -493,18 +464,10 @@ export const PartnerManagementPage = () => {
     const { data: availableItineraries, loading: itinerariesLoading, fetch: fetchItineraries } = useAvailableItineraries();
     const { data: partnerItinerary, loading: partnerItineraryLoading, fetch: fetchPartnerItinerary, reset: resetPartnerItinerary } = usePartnerItinerary();
 
-    const { data: balancesData, loading: balancesLoading, refetch: refetchBalances } = usePartnerBalances(
-        showDetailPanel && selectedPartner ? selectedPartner.code : null
-    );
-
     const { evaluate: evaluateCreditFn, data: evaluateResult, loading: evaluateLoading, reset: resetEvaluate } = useEvaluateCreditOrder();
-    const { data: nearbyPartners, loading: nearbyLoading, findNearby, reset: resetNearby } = useNearbyPartners();
     const { execute: uploadImageFn } = useUploadPartnerImage();
     const { data: paymentMethods, loading: paymentMethodsLoading } = usePaymentMethods();
-    const { data: pendingOverrides, loading: pendingOverridesLoading, refetch: refetchPendingOverrides } = usePendingOverrides();
-    const { createOverride, loading: creatingOverride } = useCreatePaymentOverride();
-    const { approveOverride: approveOverrideFn, loading: approvingOverride } = useApproveOverride();
-    const { rejectOverride: rejectOverrideFn, loading: rejectingOverride } = useRejectOverride();
+    const { data: channelsData, loading: channelsLoading } = useChannels();
 
     // Mutations
     const { execute: createPartner, loading: creating } = useCreatePartner();
@@ -519,8 +482,6 @@ export const PartnerManagementPage = () => {
     const { execute: recalcCreditExposureFn } = useRecalcCreditExposure();
     const { assignItinerary, loading: assigningItinerary } = useAssignItinerary();
     const { removeFromItinerary, loading: removingItinerary } = useRemoveFromItinerary();
-    const { upsertBalance, loading: upsertingBalance } = useUpsertBalance();
-    const { execute: deleteBalanceFn, loading: deletingBalance } = useDeleteBalance();
     const { attachPaymentTerm } = useAttachPaymentTerm();
     const { detachPaymentTerm } = useDetachPaymentTerm();
     const { setDefaultPaymentTerm } = useSetDefaultPaymentTerm();
@@ -536,6 +497,14 @@ export const PartnerManagementPage = () => {
         if (!partnerDetail) resetPartnerItinerary();
     }, [partnerDetail, resetPartnerItinerary]);
 
+    // ── Cleanup any pending "wait cursor" style tag / timeout on unmount ─────
+    useEffect(() => {
+        return () => {
+            if (cursorStyleTimeoutRef.current) clearTimeout(cursorStyleTimeoutRef.current);
+            document.getElementById('loading-cursor-style')?.remove();
+        };
+    }, []);
+
     // ── Search with debounce ─────────────────────────────────────────────────
     const handleSearch = (value: string) => {
         setSearchInput(value);
@@ -546,13 +515,23 @@ export const PartnerManagementPage = () => {
     };
 
     // ── Status / channel filters ─────────────────────────────────────────────
+    // Combined into a single effect (was two separate effects) so that
+    // changing status + channel together only triggers one filters update,
+    // and a ref guard skips the redundant fetch that would otherwise fire
+    // on mount (both filters start empty, same as initial `filters` state).
+    const filtersMountedRef = useRef(false);
     useEffect(() => {
-        setFilters(prev => ({ ...prev, status: statusFilter || undefined, page: 1 }));
-    }, [statusFilter]);
-
-    useEffect(() => {
-        setFilters(prev => ({ ...prev, channel: channelFilter || undefined, page: 1 }));
-    }, [channelFilter]);
+        if (!filtersMountedRef.current) {
+            filtersMountedRef.current = true;
+            return;
+        }
+        setFilters(prev => ({
+            ...prev,
+            status: statusFilter || undefined,
+            channel: channelFilter || undefined,
+            page: 1,
+        }));
+    }, [statusFilter, channelFilter]);
 
     // ── Column defs ───────────────────────────────────────────────────────────
     const columnDefs = useMemo<ColDef[]>(() => [
@@ -613,19 +592,24 @@ export const PartnerManagementPage = () => {
 
     // ── Row selection ─────────────────────────────────────────────────────────
     const handleSelectPartner = useCallback((row: Partner) => {
-        const style = document.createElement('style');
-        style.id = 'loading-cursor-style';
-        style.innerHTML = '* { cursor: wait !important; }';
-        document.head.appendChild(style);
+        // Clear any pending removal from a previous rapid click, and avoid
+        // stacking duplicate <style> tags if one is already present.
+        if (cursorStyleTimeoutRef.current) clearTimeout(cursorStyleTimeoutRef.current);
+        if (!document.getElementById('loading-cursor-style')) {
+            const style = document.createElement('style');
+            style.id = 'loading-cursor-style';
+            style.innerHTML = '* { cursor: wait !important; }';
+            document.head.appendChild(style);
+        }
 
         setSelectedPartner(row);
         setShowDetailPanel(true);
         setFormMode('view');
         setActiveTab('general');
 
-        setTimeout(() => {
-            const el = document.getElementById('loading-cursor-style');
-            if (el) el.remove();
+        cursorStyleTimeoutRef.current = setTimeout(() => {
+            document.getElementById('loading-cursor-style')?.remove();
+            cursorStyleTimeoutRef.current = undefined;
         }, 800);
     }, []);
 
@@ -633,14 +617,6 @@ export const PartnerManagementPage = () => {
     const handleTabChange = (tabId: string) => {
         setActiveTab(tabId);
     };
-
-    const toggleSection = (sectionId: string, isOpen: boolean) => {
-        setOpenSections(prev => ({ ...prev, [sectionId]: isOpen }));
-    };
-
-    const handleExpandAll = () => setOpenSections(Object.keys(openSections).reduce((acc, k) => ({ ...acc, [k]: true }), {}));
-    const handleCollapseAll = () => setOpenSections(Object.keys(openSections).reduce((acc, k) => ({ ...acc, [k]: false }), {}));
-
 
     // ── Inline Form Handlers ─────────────────────────────────────────────────
     const handleOpenCreate = async () => {
@@ -815,13 +791,48 @@ export const PartnerManagementPage = () => {
         const toastId = toast.loading('Recalcul...');
         try {
             await recalcCreditFn(selectedPartner.id);
-            await recalcCreditExposureFn(selectedPartner.id).catch(() => {});
+            await recalcCreditExposureFn(selectedPartner.id).catch(() => { });
             toast.dismiss(toastId);
             toast.success('Crédit recalculé');
             refetchDetail();
             refetchCreditHistory();
             refetchCreditExposure();
             refetchCreditEvents();
+        } catch (e: any) {
+            toast.dismiss(toastId);
+            toast.error(e?.response?.data?.message || 'Erreur');
+        }
+    };
+
+    // ── Inline channel / price list updates ──────────────────────────────────
+    const handleUpdateChannel = async (channelId: number | string) => {
+        if (!selectedPartner) return;
+        const numericId = typeof channelId === 'string' ? parseInt(channelId, 10) : channelId;
+        if (Number.isNaN(numericId)) return;
+        const toastId = toast.loading('Mise à jour du canal...');
+        try {
+            await updatePartner({ id: selectedPartner.id, data: { channel_id: numericId } });
+            toast.dismiss(toastId);
+            toast.success('Canal mis à jour');
+            refetchDetail();
+            refetchPartners();
+        } catch (e: any) {
+            toast.dismiss(toastId);
+            toast.error(e?.response?.data?.message || 'Erreur');
+        }
+    };
+
+    const handleUpdatePriceList = async (priceListId: number | string) => {
+        if (!selectedPartner) return;
+        const numericId = typeof priceListId === 'string' ? parseInt(priceListId, 10) : priceListId;
+        if (Number.isNaN(numericId)) return;
+        const toastId = toast.loading('Mise à jour de la liste de prix...');
+        try {
+            await updatePartner({ id: selectedPartner.id, data: { price_list_id: numericId } });
+            toast.dismiss(toastId);
+            toast.success('Liste de prix mise à jour');
+            refetchDetail();
+            refetchPartners();
         } catch (e: any) {
             toast.dismiss(toastId);
             toast.error(e?.response?.data?.message || 'Erreur');
@@ -877,30 +888,6 @@ export const PartnerManagementPage = () => {
         } catch { toast.error('Erreur lors de l\'affectation'); }
     };
 
-    const handleUpsertBalance = async () => {
-        if (!partnerDetail || !balanceForm.balance_type || !balanceForm.balance) return;
-        try {
-            await upsertBalance({
-                partner_code: partnerDetail.code,
-                balance_type: balanceForm.balance_type,
-                balance: parseFloat(balanceForm.balance),
-                operation: balanceForm.operation,
-            });
-            toast.success('Solde mis à jour');
-            setShowBalanceForm(false);
-            setBalanceForm({ balance_type: 'POINTS', balance: '', operation: 'add' });
-            refetchBalances();
-        } catch { toast.error('Erreur mise à jour solde'); }
-    };
-
-    const handleDeleteBalance = async (id: number) => {
-        try {
-            await deleteBalanceFn(id);
-            toast.success('Solde supprimé');
-            refetchBalances();
-        } catch { toast.error('Erreur suppression solde'); }
-    };
-
     const handleEvaluateCredit = async () => {
         if (!selectedPartner || !evaluateAmount) return;
         await evaluateCreditFn(selectedPartner.id, parseFloat(evaluateAmount));
@@ -927,63 +914,6 @@ export const PartnerManagementPage = () => {
             refetchDetail();
             if (partnerDetail) fetchPartnerItinerary(partnerDetail.id);
         } catch { toast.error('Erreur lors de la suppression'); }
-    };
-
-    const handleCreateOverride = async () => {
-        if (!overrideForm.document_id || !overrideForm.reason) {
-            toast.error('Veuillez renseigner le document et la raison');
-            return;
-        }
-        if (!overrideForm.payment_term_id && !overrideForm.payment_method_id) {
-            toast.error('Sélectionnez au moins un mode ou une condition de paiement');
-            return;
-        }
-        const toastId = toast.loading('Création de la dérogation...');
-        try {
-            await createOverride({
-                document_type: overrideForm.document_type,
-                document_id: parseInt(overrideForm.document_id, 10),
-                payment_term_id: overrideForm.payment_term_id ? parseInt(overrideForm.payment_term_id, 10) : null,
-                payment_method_id: overrideForm.payment_method_id ? parseInt(overrideForm.payment_method_id, 10) : null,
-                reason: overrideForm.reason,
-            });
-            toast.dismiss(toastId);
-            toast.success('Dérogation créée avec succès');
-            setShowOverrideForm(false);
-            setOverrideForm({ document_type: 'order', document_id: '', payment_term_id: '', payment_method_id: '', reason: '' });
-            refetchPendingOverrides();
-        } catch (e: any) {
-            toast.dismiss(toastId);
-            toast.error(e?.response?.data?.message || 'Erreur lors de la création');
-        }
-    };
-
-    const handleApproveOverride = async (id: number) => {
-        const toastId = toast.loading('Approbation...');
-        try {
-            await approveOverrideFn({ id });
-            toast.dismiss(toastId);
-            toast.success('Dérogation approuvée');
-            refetchPendingOverrides();
-        } catch (e: any) {
-            toast.dismiss(toastId);
-            toast.error(e?.response?.data?.message || 'Erreur');
-        }
-    };
-
-    const handleRejectOverride = async (id: number) => {
-        const reason = window.prompt('Raison du rejet :');
-        if (!reason) return;
-        const toastId = toast.loading('Rejet...');
-        try {
-            await rejectOverrideFn({ id, reason });
-            toast.dismiss(toastId);
-            toast.success('Dérogation rejetée');
-            refetchPendingOverrides();
-        } catch (e: any) {
-            toast.dismiss(toastId);
-            toast.error(e?.response?.data?.message || 'Erreur');
-        }
     };
 
     // Refresh all
@@ -1242,7 +1172,7 @@ export const PartnerManagementPage = () => {
                                 onCancel={handleCancelForm}
                                 saving={creating || updating}
                                 initialDraft={activeDraft}
-                                onAfterSave={id => deleteDraft(id).catch(() => {})}
+                                onAfterSave={id => deleteDraft(id).catch(() => { })}
                             />
                         ) : showDetailPanel && partnerDetail ? (
                             <div className="flex-1 flex flex-col bg-white min-w-0 overflow-hidden">
@@ -1293,18 +1223,6 @@ export const PartnerManagementPage = () => {
                                                 >
                                                     <Upload className="w-3 h-3" />
                                                 </button>
-                                                {/* Nearby */}
-                                                <button
-                                                    onClick={() => {
-                                                        if (!partnerDetail.geo_lat || !partnerDetail.geo_lng) { toast.error('Coordonnées GPS non renseignées pour ce partenaire'); return; }
-                                                        setShowNearby(true);
-                                                        findNearby(partnerDetail.geo_lat, partnerDetail.geo_lng, 2);
-                                                    }}
-                                                    className="flex items-center gap-1 px-2 py-1 text-[10px] bg-gray-100 text-gray-600 rounded-md hover:bg-gray-200 transition-colors"
-                                                    title="Partenaires proches (2km)"
-                                                >
-                                                    <Locate className="w-3 h-3" />
-                                                </button>
                                             </div>
                                             {detailLoading && (
                                                 <div className="text-xs text-gray-500 flex items-center gap-1">
@@ -1321,8 +1239,6 @@ export const PartnerManagementPage = () => {
                                         tabs={tabs}
                                         activeTabId={activeTab}
                                         onTabChange={handleTabChange}
-                                        onExpandAll={handleExpandAll}
-                                        onCollapseAll={handleCollapseAll}
                                         className="shadow-none"
                                     />
                                 </div>
@@ -1331,811 +1247,78 @@ export const PartnerManagementPage = () => {
                                 <div className="flex-1 overflow-y-auto p-3 sm:p-4 space-y-3 bg-slate-50">
                                     {/* ── Général ─────────────────────── */}
                                     {activeTab === 'general' && (
-                                    <div className="space-y-3">
+                                        <div className="space-y-3">
 
-                                        {/* Activity band */}
-                                        {(toNum(partnerDetail.total_orders_count) > 0 || partnerDetail.last_order_date) && (
-                                            <div className="grid grid-cols-2 sm:grid-cols-4 divide-x divide-gray-100 bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
-                                                {[
-                                                    { icon: ShoppingCart, label: 'Commandes', value: String(toNum(partnerDetail.total_orders_count)), cls: 'text-indigo-700', ic: 'text-indigo-400' },
-                                                    { icon: TrendingUp, label: 'Val. totale', value: fmtNumber(partnerDetail.total_orders_value), cls: 'text-sage-700', ic: 'text-sage-400' },
-                                                    { icon: Activity, label: 'Panier moyen', value: fmtNumber(partnerDetail.average_order_value), cls: 'text-amber-700', ic: 'text-amber-400' },
-                                                    { icon: Clock, label: 'Dern. commande', value: fmtDate(partnerDetail.last_order_date), cls: 'text-gray-700', ic: 'text-gray-400' },
-                                                ].map(kpi => (
-                                                    <div key={kpi.label} className="p-3 text-center">
-                                                        <div className="flex items-center justify-center gap-1 mb-1">
-                                                            <kpi.icon className={`w-3 h-3 ${kpi.ic}`} />
-                                                            <span className="text-[10px] text-gray-400">{kpi.label}</span>
-                                                        </div>
-                                                        <div className={`text-sm font-bold ${kpi.cls}`}>{kpi.value}</div>
+                                            {/* Blocking alert */}
+                                            {partnerDetail.status === 'BLOCKED' && (
+                                                <div className="p-3 bg-red-50 rounded-xl border border-red-200 flex items-start gap-3">
+                                                    <div className="w-8 h-8 rounded-lg bg-red-100 flex items-center justify-center shrink-0">
+                                                        <Ban className="w-4 h-4 text-red-600" />
                                                     </div>
-                                                ))}
-                                            </div>
-                                        )}
-
-                                        {/* Blocking alert */}
-                                        {partnerDetail.status === 'BLOCKED' && (
-                                            <div className="p-3 bg-red-50 rounded-xl border border-red-200 flex items-start gap-3">
-                                                <div className="w-8 h-8 rounded-lg bg-red-100 flex items-center justify-center shrink-0">
-                                                    <Ban className="w-4 h-4 text-red-600" />
-                                                </div>
-                                                <div>
-                                                    <div className="text-sm font-semibold text-red-800">Partenaire bloqué</div>
-                                                    {partnerDetail.blocked_until && <div className="text-xs text-red-600 mt-0.5">Jusqu'au {fmtDate(partnerDetail.blocked_until)}</div>}
-                                                    {partnerDetail.block_reason && <div className="text-xs text-red-600 mt-0.5">{partnerDetail.block_reason}</div>}
-                                                </div>
-                                            </div>
-                                        )}
-
-                                        {/* 3-col grid: Identité | Contact | Adresse */}
-                                        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-
-                                            {/* Identité */}
-                                            <div className="rounded-xl border border-gray-200 bg-white overflow-hidden">
-                                                <div className="px-4 py-2.5 bg-gray-50 border-b border-gray-100">
-                                                    <span className="text-xs font-semibold text-gray-600 uppercase tracking-wider">Identité</span>
-                                                </div>
-                                                <div className="p-4 space-y-2.5">
-                                                    <div className="flex items-center justify-between">
-                                                        <span className="text-gray-400 text-xs">Code</span>
-                                                        <span className="font-mono text-xs font-semibold bg-gray-100 px-2 py-0.5 rounded text-gray-800">{partnerDetail.code}</span>
+                                                    <div>
+                                                        <div className="text-sm font-semibold text-red-800">Partenaire bloqué</div>
+                                                        {partnerDetail.blocked_until && <div className="text-xs text-red-600 mt-0.5">Jusqu'au {fmtDate(partnerDetail.blocked_until)}</div>}
+                                                        {partnerDetail.block_reason && <div className="text-xs text-red-600 mt-0.5">{partnerDetail.block_reason}</div>}
                                                     </div>
-                                                    <div className="flex items-center justify-between">
-                                                        <span className="text-gray-400 text-xs">Nom</span>
-                                                        <span className="text-xs font-semibold text-gray-900 text-right max-w-[60%] truncate" title={partnerDetail.name}>{partnerDetail.name || '—'}</span>
+                                                </div>
+                                            )}
+
+                                            {/* 3-col grid: Identité | Contact | Adresse */}
+                                            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+
+                                                {/* Identité */}
+                                                <div className="rounded-xl border border-gray-200 bg-white overflow-hidden">
+                                                    <div className="px-4 py-2.5 bg-gray-50 border-b border-gray-100">
+                                                        <span className="text-xs font-semibold text-gray-600 uppercase tracking-wider">Identité</span>
                                                     </div>
-                                                    {partnerDetail.partner_type && (
+                                                    <div className="p-4 space-y-2.5">
                                                         <div className="flex items-center justify-between">
-                                                            <span className="text-gray-400 text-xs">Type</span>
-                                                            <span className="text-xs font-medium text-gray-700 bg-gray-100 px-2 py-0.5 rounded">{partnerDetail.partner_type}</span>
+                                                            <span className="text-gray-400 text-xs">Code</span>
+                                                            <span className="font-mono text-xs font-semibold bg-gray-100 px-2 py-0.5 rounded text-gray-800">{partnerDetail.code}</span>
                                                         </div>
-                                                    )}
-                                                    {partnerDetail.channel && (
                                                         <div className="flex items-center justify-between">
-                                                            <span className="text-gray-400 text-xs">Canal</span>
-                                                            <span className="text-xs font-semibold text-indigo-700 bg-indigo-50 px-2 py-0.5 rounded">{partnerDetail.channel}</span>
+                                                            <span className="text-gray-400 text-xs">Nom</span>
+                                                            <span className="text-xs font-semibold text-gray-900 text-right max-w-[60%] truncate" title={partnerDetail.name}>{partnerDetail.name || '—'}</span>
                                                         </div>
-                                                    )}
-                                                    <div className="pt-2 mt-1 border-t border-gray-100 space-y-1.5">
-                                                        {partnerDetail.tax_number_ice && (
+                                                        {partnerDetail.partner_type && (
                                                             <div className="flex items-center justify-between">
-                                                                <span className="text-gray-400 text-[11px]">ICE</span>
-                                                                <span className="font-mono text-[11px] text-gray-700">{partnerDetail.tax_number_ice}</span>
+                                                                <span className="text-gray-400 text-xs">Type</span>
+                                                                <span className="text-xs font-medium text-gray-700 bg-gray-100 px-2 py-0.5 rounded">{partnerDetail.partner_type}</span>
                                                             </div>
                                                         )}
-                                                        {partnerDetail.tax_number_if && (
+                                                        {partnerDetail.channel && (
                                                             <div className="flex items-center justify-between">
-                                                                <span className="text-gray-400 text-[11px]">IF</span>
-                                                                <span className="font-mono text-[11px] text-gray-700">{partnerDetail.tax_number_if}</span>
+                                                                <span className="text-gray-400 text-xs">Canal</span>
+                                                                <span className="text-xs font-semibold text-indigo-700 bg-indigo-50 px-2 py-0.5 rounded">{partnerDetail.channel}</span>
                                                             </div>
                                                         )}
-                                                        <div className="flex items-center justify-between">
-                                                            <span className="text-gray-400 text-[11px]">Exonéré TVA</span>
-                                                            <span className={`text-[11px] font-medium px-1.5 py-0.5 rounded ${partnerDetail.tax_exempt ? 'bg-green-50 text-green-700' : 'text-gray-400'}`}>
-                                                                {partnerDetail.tax_exempt ? 'Oui' : 'Non'}
-                                                            </span>
-                                                        </div>
-                                                    </div>
-                                                    <div className="text-[10px] text-gray-300 pt-1 border-t border-gray-100">
-                                                        Créé {fmtDate(partnerDetail.created_at)} · MàJ {fmtDate(partnerDetail.updated_at)}
-                                                    </div>
-                                                </div>
-                                            </div>
-
-                                            {/* Contact */}
-                                            <div className="rounded-xl border border-gray-200 bg-white overflow-hidden">
-                                                <div className="px-4 py-2.5 bg-gray-50 border-b border-gray-100">
-                                                    <span className="text-xs font-semibold text-gray-600 uppercase tracking-wider">Contact</span>
-                                                </div>
-                                                <div className="p-4 space-y-3">
-                                                    {[
-                                                        { icon: Mail, label: 'Email', value: partnerDetail.email, href: partnerDetail.email ? `mailto:${partnerDetail.email}` : undefined },
-                                                        { icon: Phone, label: 'Téléphone', value: partnerDetail.phone, href: partnerDetail.phone ? `tel:${partnerDetail.phone}` : undefined },
-                                                        { icon: Phone, label: 'WhatsApp', value: partnerDetail.whatsapp },
-                                                        { icon: Building2, label: 'Site web', value: partnerDetail.website },
-                                                    ].map(item => (
-                                                        <div key={item.label} className="flex items-center gap-2.5">
-                                                            <div className="w-7 h-7 rounded-lg bg-gray-50 border border-gray-100 flex items-center justify-center shrink-0">
-                                                                <item.icon className="w-3 h-3 text-gray-500" />
-                                                            </div>
-                                                            <div className="min-w-0 flex-1">
-                                                                <div className="text-[9px] text-gray-400 font-semibold uppercase tracking-wider">{item.label}</div>
-                                                                {item.value ? (
-                                                                    item.href ? (
-                                                                        <a href={item.href} className="text-xs font-medium text-blue-700 hover:underline truncate block">{item.value}</a>
-                                                                    ) : (
-                                                                        <div className="text-xs font-medium text-gray-900 truncate">{item.value}</div>
-                                                                    )
-                                                                ) : (
-                                                                    <div className="text-xs text-gray-300">—</div>
-                                                                )}
-                                                            </div>
-                                                        </div>
-                                                    ))}
-                                                    {partnerDetail.customer?.user && (
-                                                        <div className="pt-2 border-t border-gray-100 flex items-center gap-2">
-                                                            <div className="w-6 h-6 rounded-full bg-gradient-to-br from-violet-500 to-purple-600 flex items-center justify-center text-white font-bold text-[9px] shrink-0">
-                                                                {partnerDetail.customer.user.name?.charAt(0)?.toUpperCase() || 'U'}
-                                                            </div>
-                                                            <div className="min-w-0">
-                                                                <div className="text-[11px] font-semibold text-gray-900 truncate">{partnerDetail.customer.user.name}</div>
-                                                                <div className="text-[10px] text-gray-400 truncate">{partnerDetail.customer.user.email}</div>
-                                                            </div>
-                                                        </div>
-                                                    )}
-                                                    {partnerDetail.last_payment_date && (
-                                                        <div className="pt-2 border-t border-gray-100 flex items-center justify-between text-xs">
-                                                            <span className="text-gray-400">Dern. paiement</span>
-                                                            <span className="font-medium text-emerald-700">{fmtDate(partnerDetail.last_payment_date)}</span>
-                                                        </div>
-                                                    )}
-                                                </div>
-                                            </div>
-
-                                            {/* Adresse */}
-                                            <div className="rounded-xl border border-gray-200 bg-white overflow-hidden">
-                                                <div className="px-4 py-2.5 bg-gray-50 border-b border-gray-100">
-                                                    <span className="text-xs font-semibold text-gray-600 uppercase tracking-wider">Adresse & Livraison</span>
-                                                </div>
-                                                <div className="p-4 space-y-2.5">
-                                                    {partnerDetail.address_line1 ? (
-                                                        <div className="flex items-start gap-2">
-                                                            <MapPin className="w-3.5 h-3.5 text-sage-500 mt-0.5 shrink-0" />
-                                                            <div className="text-xs space-y-0.5">
-                                                                <div className="font-semibold text-gray-900">{partnerDetail.address_line1}</div>
-                                                                {partnerDetail.address_line2 && <div className="text-gray-500">{partnerDetail.address_line2}</div>}
-                                                                <div className="text-gray-500">
-                                                                    {[partnerDetail.city, partnerDetail.region, partnerDetail.postal_code].filter(Boolean).join(', ')}
-                                                                </div>
-                                                                {partnerDetail.country && <div className="text-gray-500">{partnerDetail.country}</div>}
-                                                            </div>
-                                                        </div>
-                                                    ) : (
-                                                        <div className="flex items-center gap-2">
-                                                            <MapPin className="w-3.5 h-3.5 text-gray-300 shrink-0" />
-                                                            <span className="text-xs text-gray-300 italic">Adresse non renseignée</span>
-                                                        </div>
-                                                    )}
-                                                    {(toNum(partnerDetail.min_order_amount) > 0 || partnerDetail.delivery_zone || partnerDetail.delivery_instructions) && (
-                                                        <div className="pt-2 border-t border-gray-100 space-y-1.5">
-                                                            {toNum(partnerDetail.min_order_amount) > 0 && (
-                                                                <div className="flex items-center justify-between text-xs">
-                                                                    <span className="text-gray-400">Commande min.</span>
-                                                                    <span className="font-medium text-gray-700">{fmtNumber(partnerDetail.min_order_amount)}</span>
+                                                        <div className="pt-2 mt-1 border-t border-gray-100 space-y-1.5">
+                                                            {partnerDetail.tax_number_ice && (
+                                                                <div className="flex items-center justify-between">
+                                                                    <span className="text-gray-400 text-[11px]">ICE</span>
+                                                                    <span className="font-mono text-[11px] text-gray-700">{partnerDetail.tax_number_ice}</span>
                                                                 </div>
                                                             )}
-                                                            {partnerDetail.delivery_zone && (
-                                                                <div className="flex items-center justify-between text-xs">
-                                                                    <span className="text-gray-400">Zone livraison</span>
-                                                                    <span className="font-medium text-gray-700 truncate max-w-[60%] text-right">{partnerDetail.delivery_zone}</span>
+                                                            {partnerDetail.tax_number_if && (
+                                                                <div className="flex items-center justify-between">
+                                                                    <span className="text-gray-400 text-[11px]">IF</span>
+                                                                    <span className="font-mono text-[11px] text-gray-700">{partnerDetail.tax_number_if}</span>
                                                                 </div>
                                                             )}
-                                                            {partnerDetail.delivery_instructions && (
-                                                                <div className="text-[11px] text-gray-500 bg-gray-50 rounded-lg px-2 py-1.5 leading-relaxed">
-                                                                    {partnerDetail.delivery_instructions}
-                                                                </div>
-                                                            )}
-                                                        </div>
-                                                    )}
-                                                    {partnerDetail.geo_lat && partnerDetail.geo_lng && (
-                                                        <div className="flex items-center gap-1 text-[10px] text-gray-400 pt-1 border-t border-gray-100">
-                                                            <Locate className="w-3 h-3" />
-                                                            <span>{partnerDetail.geo_lat}, {partnerDetail.geo_lng}</span>
-                                                        </div>
-                                                    )}
-                                                </div>
-                                            </div>
-                                        </div>
-
-                                    </div>
-                                    )}
-
-                                    {/* ── Finance & Crédit ─────────────── */}
-                                    {activeTab === 'finance' && (
-                                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                                        {[
-                                            { label: 'Limite de crédit', value: fmtNumber(partnerDetail.credit_limit), color: 'text-gray-900', border: 'border-gray-100', bg: 'bg-white', icon: CreditCard, iconColor: 'text-gray-400' },
-                                            { label: 'Crédit utilisé', value: fmtNumber(partnerDetail.credit_used), color: 'text-amber-600', border: 'border-amber-100', bg: 'bg-amber-50/40', icon: CreditCard, iconColor: 'text-amber-400' },
-                                            { label: 'Crédit disponible', value: fmtNumber(partnerDetail.credit_available), color: toNum(partnerDetail.credit_available) <= 0 ? 'text-red-600' : 'text-emerald-600', border: toNum(partnerDetail.credit_available) <= 0 ? 'border-red-100' : 'border-emerald-100', bg: toNum(partnerDetail.credit_available) <= 0 ? 'bg-red-50/40' : 'bg-emerald-50/40', icon: CreditCard, iconColor: toNum(partnerDetail.credit_available) <= 0 ? 'text-red-400' : 'text-emerald-400' },
-                                            { label: 'Remise défaut', value: `${toNum(partnerDetail.default_discount_rate)}%`, color: 'text-sage-700', border: 'border-sage-100', bg: 'bg-sage-50/40', icon: DollarSign, iconColor: 'text-sage-400' },
-                                        ].map(kpi => (
-                                            <div key={kpi.label} className={`p-3 rounded-xl border ${kpi.border} ${kpi.bg} shadow-sm`}>
-                                                <div className="flex items-center justify-between mb-1.5">
-                                                    <span className="text-[11px] text-gray-500 font-medium">{kpi.label}</span>
-                                                    <kpi.icon className={`w-3.5 h-3.5 ${kpi.iconColor}`} />
-                                                </div>
-                                                <div className={`text-lg font-bold ${kpi.color}`}>{kpi.value}</div>
-                                            </div>
-                                        ))}
-                                    </div>
-                                    )}
-                                    {activeTab === 'finance' && (
-                                    <div className="rounded-xl border border-gray-200 bg-white overflow-hidden">
-                                        <div className="px-4 py-2.5 bg-gray-50 border-b border-gray-100 flex items-center gap-2">
-                                            <CreditCard className="w-3.5 h-3.5 text-indigo-500" />
-                                            <span className="text-xs font-semibold text-gray-700 uppercase tracking-wider">Crédit & Exposition financière</span>
-                                        </div>
-                                        <div className="p-3 space-y-4">
-                                            <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
-                                                <div className="flex gap-2 flex-wrap">
-                                                    <button onClick={() => { setCreditForm({ credit_limit: toNum(partnerDetail.credit_limit) }); setShowCreditModal(true); }}
-                                                        className="flex items-center gap-1 px-2.5 py-1.5 text-xs bg-sage-50 text-sage-700 rounded-md hover:bg-sage-100 transition-colors">
-                                                        <Edit2 className="w-3 h-3" /> Modifier limite
-                                                    </button>
-                                                    <button onClick={handleRecalcCredit}
-                                                        className="flex items-center gap-1 px-2.5 py-1.5 text-xs bg-gray-50 text-gray-700 rounded-md hover:bg-gray-100 transition-colors">
-                                                        <RefreshCw className="w-3 h-3" /> Recalculer
-                                                    </button>
-                                                    <button onClick={() => { setShowEvaluateForm(v => !v); resetEvaluate(); setEvaluateAmount(''); }}
-                                                        className="flex items-center gap-1 px-2.5 py-1.5 text-xs bg-indigo-50 text-indigo-700 rounded-md hover:bg-indigo-100 transition-colors">
-                                                        <Calculator className="w-3 h-3" /> Simuler commande
-                                                    </button>
-                                                </div>
-                                            </div>
-
-                                            {/* Credit evaluate dry-run (§6.5) */}
-                                            {showEvaluateForm && (
-                                                <div className="mb-4 p-3 rounded-xl border border-indigo-200 bg-indigo-50/30 space-y-2">
-                                                    <div className="text-xs font-semibold text-indigo-800">Simuler l'éligibilité d'une commande</div>
-                                                    <div className="flex gap-2">
-                                                        <input
-                                                            type="number"
-                                                            value={evaluateAmount}
-                                                            onChange={e => setEvaluateAmount(e.target.value)}
-                                                            placeholder="Montant (ex: 15000)"
-                                                            className="flex-1 text-xs border border-indigo-200 rounded-md px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-white"
-                                                        />
-                                                        <button
-                                                            onClick={handleEvaluateCredit}
-                                                            disabled={!evaluateAmount || evaluateLoading}
-                                                            className="flex items-center gap-1 px-3 py-1.5 text-xs bg-indigo-600 text-white rounded-md hover:bg-indigo-700 disabled:opacity-40 transition-colors"
-                                                        >
-                                                            {evaluateLoading ? <Loader2 className="w-3 h-3 animate-spin" /> : <Calculator className="w-3 h-3" />}
-                                                            Simuler
-                                                        </button>
-                                                    </div>
-                                                    {evaluateResult && (
-                                                        <div className={`flex items-center gap-2 px-3 py-2 rounded-lg text-xs font-medium border ${evaluateResult.eligible ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-red-50 text-red-700 border-red-200'}`}>
-                                                            {evaluateResult.eligible
-                                                                ? <><CheckCircle className="w-3.5 h-3.5 shrink-0" /> Commande autorisée — crédit restant après: {fmtNumber(evaluateResult.available_after)}</>
-                                                                : <><XCircleIcon className="w-3.5 h-3.5 shrink-0" /> Commande refusée ({evaluateResult.status}) — manque: {fmtNumber(evaluateResult.shortfall)}{evaluateResult.requires_approval ? ' — dérogation requise' : ''}</>
-                                                            }
-                                                        </div>
-                                                    )}
-                                                </div>
-                                            )}
-
-                                            {/* Credit Exposure V2 Panel */}
-                                            {creditExposureLoading ? (
-                                                <div className="flex items-center justify-center py-4 text-gray-400 text-xs">
-                                                    <Loader2 className="w-4 h-4 animate-spin mr-2" /> Chargement exposition...
-                                                </div>
-                                            ) : creditExposureData ? (() => {
-                                                const exp = creditExposureData;
-                                                const colors = CREDIT_EXPOSURE_COLORS[exp.status] ?? CREDIT_EXPOSURE_COLORS.ALLOWED;
-                                                const pct = exp.credit_limit > 0 ? Math.min(100, (exp.total_exposure / exp.credit_limit) * 100) : 0;
-                                                return (
-                                                    <div className={`rounded-xl border ${colors.border} ${colors.bg} p-4 mb-4`}>
-                                                        {/* Status header */}
-                                                        <div className="flex items-center justify-between mb-3">
-                                                            <div className="flex items-center gap-2">
-                                                                <Zap className={`w-4 h-4 ${colors.text}`} />
-                                                                <span className={`text-sm font-bold ${colors.text}`}>Exposition temps réel</span>
-                                                            </div>
-                                                            <span className={`px-2.5 py-1 rounded-full text-[11px] font-bold border ${colors.border} ${colors.bg} ${colors.text}`}>
-                                                                {colors.label}
-                                                            </span>
-                                                        </div>
-
-                                                        {/* Utilization bar */}
-                                                        <div className="mb-3">
-                                                            <div className="flex justify-between text-[10px] text-gray-500 mb-1">
-                                                                <span>Exposition totale: <strong>{fmtNumber(exp.total_exposure)}</strong></span>
-                                                                <span>Limite: <strong>{fmtNumber(exp.credit_limit)}</strong></span>
-                                                            </div>
-                                                            <div className="h-2 bg-white rounded-full overflow-hidden border border-gray-200">
-                                                                <div className={`h-full rounded-full transition-all ${colors.bar}`} style={{ width: `${pct}%` }} />
-                                                            </div>
-                                                            <div className="flex justify-between text-[10px] mt-0.5">
-                                                                <span className={`font-semibold ${colors.text}`}>{pct.toFixed(1)}% utilisé</span>
-                                                                <span className="text-gray-500">Dispo: {fmtNumber(exp.available_credit)}</span>
-                                                            </div>
-                                                        </div>
-
-                                                        {/* Breakdown grid */}
-                                                        <div className="grid grid-cols-2 gap-2">
-                                                            {[
-                                                                { label: 'Factures ouvertes', value: exp.open_invoices_amount, show: exp.open_invoices_amount > 0 },
-                                                                { label: 'Chèques en attente', value: exp.pending_cheques_amount, show: exp.pending_cheques_amount > 0 },
-                                                                { label: 'Effets en attente', value: exp.pending_effets_amount, show: exp.pending_effets_amount > 0 },
-                                                                { label: 'Commandes confirmées', value: exp.confirmed_orders_amount, show: exp.confirmed_orders_amount > 0 },
-                                                                { label: 'Livré non facturé', value: exp.delivered_not_invoiced_amount, show: exp.delivered_not_invoiced_amount > 0 },
-                                                                { label: 'Avoirs', value: -exp.credit_notes_amount, show: exp.credit_notes_amount > 0 },
-                                                            ].filter(r => r.show).map(row => (
-                                                                <div key={row.label} className="flex justify-between bg-white/60 rounded-lg px-2.5 py-1.5 border border-white/80 text-xs">
-                                                                    <span className="text-gray-500 truncate mr-1">{row.label}</span>
-                                                                    <span className={`font-semibold shrink-0 ${row.value < 0 ? 'text-emerald-600' : 'text-gray-800'}`}>
-                                                                        {row.value < 0 ? '−' : ''}{fmtNumber(Math.abs(row.value))}
-                                                                    </span>
-                                                                </div>
-                                                            ))}
-                                                        </div>
-
-                                                        {/* Footer */}
-                                                        <div className="flex items-center justify-between mt-2 pt-2 border-t border-white/60">
-                                                            {exp.overdue_invoice_count > 0 && (
-                                                                <span className="text-[10px] text-red-600 font-medium flex items-center gap-1">
-                                                                    <AlertTriangle className="w-3 h-3" />
-                                                                    {exp.overdue_invoice_count} facture(s) en retard — {exp.oldest_overdue_days}j max
+                                                            <div className="flex items-center justify-between">
+                                                                <span className="text-gray-400 text-[11px]">Exonéré TVA</span>
+                                                                <span className={`text-[11px] font-medium px-1.5 py-0.5 rounded ${partnerDetail.tax_exempt ? 'bg-green-50 text-green-700' : 'text-gray-400'}`}>
+                                                                    {partnerDetail.tax_exempt ? 'Oui' : 'Non'}
                                                                 </span>
-                                                            )}
-                                                            <span className="text-[10px] text-gray-400 ml-auto">
-                                                                Recalculé {fmtDate(exp.last_recalculated_at)}
-                                                            </span>
-                                                        </div>
-                                                    </div>
-                                                );
-                                            })() : (
-                                                <div className="grid grid-cols-3 gap-3 mb-4">
-                                                    <div className="p-3 rounded-lg border border-gray-100 bg-white shadow-sm text-center">
-                                                        <div className="text-xs text-gray-500 mb-1">Limite</div>
-                                                        <div className="text-lg font-bold text-gray-900">{fmtNumber(partnerDetail.credit_limit)}</div>
-                                                    </div>
-                                                    <div className="p-3 rounded-lg border border-gray-100 bg-white shadow-sm text-center">
-                                                        <div className="text-xs text-gray-500 mb-1">Utilisé</div>
-                                                        <div className="text-lg font-bold text-amber-600">{fmtNumber(partnerDetail.credit_used)}</div>
-                                                    </div>
-                                                    <div className="p-3 rounded-lg border border-gray-100 bg-white shadow-sm text-center">
-                                                        <div className="text-xs text-gray-500 mb-1">Disponible</div>
-                                                        <div className={`text-lg font-bold ${toNum(partnerDetail.credit_available) <= 0 ? 'text-red-600' : 'text-emerald-600'}`}>
-                                                            {fmtNumber(partnerDetail.credit_available)}
-                                                        </div>
-                                                    </div>
-                                                </div>
-                                            )}
-
-                                            {/* Credit history */}
-                                            {creditHistLoading ? (
-                                                <div className="flex items-center justify-center py-6 text-gray-400">
-                                                    <Loader2 className="w-5 h-5 animate-spin mr-2" /> Chargement...
-                                                </div>
-                                            ) : creditHistoryData?.data ? (
-                                                <div className="space-y-3">
-                                                    {/* Orders */}
-                                                    {creditHistoryData.data.orders.length > 0 && (
-                                                        <div>
-                                                            <div className="text-xs font-semibold text-gray-500 mb-2">Bons de commande</div>
-                                                            <div className="space-y-1">
-                                                                {creditHistoryData.data.orders.slice(0, 10).map(o => (
-                                                                    <div key={o.id} className="flex items-center justify-between py-1.5 px-2 bg-white rounded border border-gray-100 text-xs">
-                                                                        <div className="flex items-center gap-2">
-                                                                            <span className="font-mono font-medium text-sage-700">{o.order_code}</span>
-                                                                            <span className={`px-1.5 py-0.5 rounded text-[10px] font-medium ${
-                                                                                o.order_status === 'Delivered' || o.order_status === 'DELIVERED' ? 'bg-emerald-50 text-emerald-700' :
-                                                                                o.order_status === 'Confirm' || o.order_status === 'CONFIRMED' ? 'bg-sage-50 text-sage-700' :
-                                                                                'bg-gray-100 text-gray-600'
-                                                                            }`}>
-                                                                                {o.order_status}
-                                                                            </span>
-                                                                        </div>
-                                                                        <div className="flex items-center gap-2">
-                                                                            <span className="text-gray-400">{fmtDate(o.created_at)}</span>
-                                                                            <span className="font-semibold">{fmtNumber(o.total_amount)}</span>
-                                                                        </div>
-                                                                    </div>
-                                                                ))}
                                                             </div>
                                                         </div>
-                                                    )}
-
-                                                    {/* Deliveries */}
-                                                    {creditHistoryData.data.deliveries.length > 0 && (
-                                                        <div>
-                                                            <div className="text-xs font-semibold text-gray-500 mb-2">Bons de livraison</div>
-                                                            <div className="space-y-1">
-                                                                {creditHistoryData.data.deliveries.slice(0, 10).map(d => (
-                                                                    <div key={d.id} className="flex items-center justify-between py-1.5 px-2 bg-white rounded border border-gray-100 text-xs">
-                                                                        <div className="flex items-center gap-2">
-                                                                            <span className="font-mono font-medium text-sage-700">{d.delivery_code || d.code}</span>
-                                                                            <span className={`px-1.5 py-0.5 rounded text-[10px] font-medium ${
-                                                                                (d.delivery_status || d.status) === 'DELIVERED' ? 'bg-emerald-50 text-emerald-700' : 'bg-gray-100 text-gray-600'
-                                                                            }`}>
-                                                                                {d.delivery_status || d.status}
-                                                                            </span>
-                                                                        </div>
-                                                                        <div className="flex items-center gap-2">
-                                                                            <span className="text-gray-400">{fmtDate(d.created_at)}</span>
-                                                                            <span className="font-semibold">{fmtNumber(d.total_amount)}</span>
-                                                                        </div>
-                                                                    </div>
-                                                                ))}
-                                                            </div>
-                                                        </div>
-                                                    )}
-
-                                                    {creditHistoryData.data.orders.length === 0 && creditHistoryData.data.deliveries.length === 0 && (
-                                                        <div className="text-center py-6 text-xs text-gray-400">Aucun historique de crédit</div>
-                                                    )}
-                                                </div>
-                                            ) : null}
-
-                                            {/* Credit Events Audit Trail */}
-                                            {creditEventsLoading ? null : creditEventsData.length > 0 && (
-                                                <div className="mt-4">
-                                                    <div className="text-xs font-semibold text-gray-600 mb-2 flex items-center gap-2 pt-1 border-t border-gray-100">
-                                                        <Activity className="w-3 h-3 text-indigo-400" />
-                                                        <span>Audit Trail</span>
-                                                        <span className="text-gray-400 font-normal">— Événements crédit</span>
-                                                    </div>
-                                                    <div className="relative border-l-2 border-gray-100 ml-3 space-y-1">
-                                                        {creditEventsData.slice(0, 15).map(ev => {
-                                                            const meta = CREDIT_EVENT_ICONS[ev.event_type] ?? { icon: '•', color: 'text-gray-500' };
-                                                            return (
-                                                                <div key={ev.id} className="relative pl-4 -ml-px">
-                                                                    <span className="absolute -left-[7px] top-1.5 w-3 h-3 rounded-full bg-white border-2 border-gray-300 flex items-center justify-center text-[8px]" />
-                                                                    <div className="bg-white rounded-lg border border-gray-100 px-3 py-2 text-xs flex items-center justify-between">
-                                                                        <div className="flex items-center gap-2 min-w-0">
-                                                                            <span>{meta.icon}</span>
-                                                                            <span className="text-gray-600 truncate">{ev.event_type.replace(/_/g, ' ')}</span>
-                                                                            {ev.reference_type && ev.reference_id && (
-                                                                                <span className="text-gray-300 text-[10px] shrink-0">#{ev.reference_id}</span>
-                                                                            )}
-                                                                        </div>
-                                                                        <div className="flex items-center gap-3 shrink-0 ml-2">
-                                                                            <span className={`font-semibold ${ev.amount >= 0 ? 'text-red-600' : 'text-emerald-600'}`}>
-                                                                                {ev.amount >= 0 ? '+' : ''}{fmtNumber(ev.amount)}
-                                                                            </span>
-                                                                            <span className="text-gray-400 text-[10px]">{fmtDate(ev.created_at)}</span>
-                                                                        </div>
-                                                                    </div>
-                                                                </div>
-                                                            );
-                                                        })}
-                                                    </div>
-                                                </div>
-                                            )}
-                                        </div>
-                                    </div>
-                                    )}
-
-                                    {/* ── Règlement ────────────────────── */}
-                                    {activeTab === 'reglement' && (
-                                    <div className="space-y-3">
-
-                                        {/* §6 Conditions de paiement */}
-                                        <div className="rounded-xl border border-gray-200 bg-white overflow-hidden">
-                                            <div className="px-4 py-2.5 bg-gray-50 border-b border-gray-100 flex items-center gap-2">
-                                                <DollarSign className="w-3.5 h-3.5 text-sage-500" />
-                                                <span className="text-xs font-semibold text-gray-700 uppercase tracking-wider">Conditions de paiement</span>
-                                            </div>
-                                            <div className="p-3">
-                                                {paymentTermsLoading ? (
-                                                    <div className="flex items-center justify-center py-6 text-gray-400 text-xs">
-                                                        <Loader2 className="w-4 h-4 animate-spin mr-2" /> Chargement...
-                                                    </div>
-                                                ) : paymentTermsData ? (
-                                                    <PaymentTermsContent
-                                                        paymentTermsData={paymentTermsData}
-                                                        onSetDefault={handleSetDefaultTerm}
-                                                        onDetach={handleDetachTerm}
-                                                        onAttach={handleAttachTerm}
-                                                    />
-                                                ) : null}
-                                            </div>
-                                        </div>
-
-                                        {/* §7 Modes de règlement — checkbox style */}
-                                        <div className="rounded-xl border border-gray-200 bg-white overflow-hidden">
-                                            <div className="px-4 py-2.5 bg-gray-50 border-b border-gray-100 flex items-center justify-between">
-                                                <div className="flex items-center gap-2">
-                                                    <Banknote className="w-3.5 h-3.5 text-gray-500" />
-                                                    <span className="text-xs font-semibold text-gray-700 uppercase tracking-wider">Modes de règlement</span>
-                                                </div>
-                                                <span className="text-[10px] text-gray-400 italic">Référentiel global</span>
-                                            </div>
-                                            <div className="p-3">
-                                                {paymentMethodsLoading ? (
-                                                    <div className="flex items-center gap-2 text-xs text-gray-400 py-3 justify-center">
-                                                        <Loader2 className="w-3.5 h-3.5 animate-spin" /> Chargement...
-                                                    </div>
-                                                ) : (
-                                                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
-                                                        {paymentMethods.map(pm => (
-                                                            <div key={pm.id} className={`flex items-center gap-3 p-3 rounded-lg border transition-colors ${pm.is_active ? 'border-gray-200 bg-white' : 'border-dashed border-gray-200 bg-gray-50 opacity-50'}`}>
-                                                                <div className={`w-4 h-4 rounded border-2 flex items-center justify-center shrink-0 ${pm.is_active ? 'bg-sage-500 border-sage-500' : 'border-gray-300 bg-white'}`}>
-                                                                    {pm.is_active && <CheckCircle className="w-2.5 h-2.5 text-white" />}
-                                                                </div>
-                                                                <div className="min-w-0">
-                                                                    <div className="text-xs font-semibold text-gray-800">{pm.code}</div>
-                                                                    <div className="text-[10px] text-gray-400 truncate">{pm.name}</div>
-                                                                </div>
-                                                            </div>
-                                                        ))}
-                                                    </div>
-                                                )}
-                                            </div>
-                                        </div>
-
-                                        {/* §9 Dérogations de paiement */}
-                                        <div className="rounded-xl border border-gray-200 bg-white overflow-hidden">
-                                            <div className="px-4 py-2.5 bg-gray-50 border-b border-gray-100 flex items-center justify-between">
-                                                <div className="flex items-center gap-2">
-                                                    <FileCheck2 className="w-3.5 h-3.5 text-violet-500" />
-                                                    <span className="text-xs font-semibold text-gray-700 uppercase tracking-wider">Dérogations de paiement</span>
-                                                </div>
-                                                        <div className="flex items-center gap-1.5">
-                                                            {pendingOverrides.length > 0 && (
-                                                                <span className="flex items-center gap-1 px-2 py-0.5 text-[10px] font-bold bg-amber-100 text-amber-700 rounded-full border border-amber-200">
-                                                                    <span className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse" />
-                                                                    {pendingOverrides.length} en attente
-                                                                </span>
-                                                            )}
-                                                            <button
-                                                                onClick={() => setShowPendingOverrides(v => !v)}
-                                                                className={`flex items-center gap-1 px-2.5 py-1 text-[10px] rounded-md border transition-colors ${showPendingOverrides ? 'bg-gray-100 text-gray-700 border-gray-200' : 'bg-white text-gray-500 border-gray-200 hover:bg-gray-50'}`}
-                                                            >
-                                                                <Clock className="w-3 h-3" />
-                                                                Historique
-                                                            </button>
-                                                            <button
-                                                                onClick={() => setShowOverrideForm(v => !v)}
-                                                                className={`flex items-center gap-1 px-2.5 py-1 text-[10px] rounded-md border transition-colors ${showOverrideForm ? 'bg-violet-100 text-violet-700 border-violet-200' : 'bg-violet-50 text-violet-700 border-violet-200 hover:bg-violet-100'}`}
-                                                            >
-                                                                <Plus className="w-3 h-3" />
-                                                                Demander
-                                                            </button>
+                                                        <div className="text-[10px] text-gray-300 pt-1 border-t border-gray-100">
+                                                            Créé {fmtDate(partnerDetail.created_at)} · MàJ {fmtDate(partnerDetail.updated_at)}
                                                         </div>
                                                     </div>
-
-                                                    {/* Override request form */}
-                                                    {showOverrideForm && (
-                                                        <div className="border-b border-gray-100 bg-violet-50/30">
-                                                            <div className="px-4 pt-4 pb-1">
-                                                                <div className="flex items-center gap-2 mb-4">
-                                                                    <div className="w-6 h-6 rounded-full bg-violet-600 flex items-center justify-center shrink-0">
-                                                                        <FileCheck2 className="w-3 h-3 text-white" />
-                                                                    </div>
-                                                                    <div>
-                                                                        <div className="text-xs font-semibold text-gray-900">Nouvelle demande de dérogation</div>
-                                                                        <div className="text-[10px] text-gray-400">Au moins une condition ou un mode doit être spécifié</div>
-                                                                    </div>
-                                                                </div>
-                                                            </div>
-
-                                                            <div className="px-4 pb-4 space-y-3">
-                                                                {/* Document row */}
-                                                                <div className="grid grid-cols-2 gap-3">
-                                                                    <div>
-                                                                        <label className="block text-[10px] font-semibold text-gray-500 mb-1.5 uppercase tracking-wider">Type de document</label>
-                                                                        <div className="flex gap-1.5">
-                                                                            {(['order', 'invoice'] as const).map(dt => (
-                                                                                <button
-                                                                                    key={dt}
-                                                                                    onClick={() => setOverrideForm(f => ({ ...f, document_type: dt }))}
-                                                                                    className={`flex-1 py-1.5 text-[11px] font-medium rounded-lg border transition-all ${overrideForm.document_type === dt ? 'bg-violet-600 text-white border-violet-600' : 'bg-white text-gray-600 border-gray-200 hover:border-violet-300'}`}
-                                                                                >
-                                                                                    {dt === 'order' ? 'Commande' : 'Facture'}
-                                                                                </button>
-                                                                            ))}
-                                                                        </div>
-                                                                    </div>
-                                                                    <div>
-                                                                        <label className="block text-[10px] font-semibold text-gray-500 mb-1.5 uppercase tracking-wider">N° du document</label>
-                                                                        <input
-                                                                            type="number"
-                                                                            value={overrideForm.document_id}
-                                                                            onChange={e => setOverrideForm(f => ({ ...f, document_id: e.target.value }))}
-                                                                            placeholder="ID interne (ex: 1042)"
-                                                                            className="w-full text-xs border border-gray-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-violet-500 bg-white"
-                                                                        />
-                                                                    </div>
-                                                                </div>
-
-                                                                {/* Payment selects */}
-                                                                <div className="grid grid-cols-2 gap-3">
-                                                                    <div>
-                                                                        <label className="block text-[10px] font-semibold text-gray-500 mb-1.5 uppercase tracking-wider">
-                                                                            Condition de paiement
-                                                                            <span className="normal-case font-normal text-gray-400 ml-1">(optionnel)</span>
-                                                                        </label>
-                                                                        <select
-                                                                            value={overrideForm.payment_term_id}
-                                                                            onChange={e => setOverrideForm(f => ({ ...f, payment_term_id: e.target.value }))}
-                                                                            className="w-full text-xs border border-gray-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-violet-500 bg-white"
-                                                                        >
-                                                                            <option value="">— Inchangée —</option>
-                                                                            {[...getAttachedTerms(paymentTermsData), ...getAvailableTerms(paymentTermsData).filter(
-                                                                                (a: any) => !getAttachedTerms(paymentTermsData).find((t: any) => t.id === a.id)
-                                                                            )].map((t: any) => (
-                                                                                <option key={t.id} value={t.id}>{t.name}</option>
-                                                                            ))}
-                                                                        </select>
-                                                                    </div>
-                                                                    <div>
-                                                                        <label className="block text-[10px] font-semibold text-gray-500 mb-1.5 uppercase tracking-wider">
-                                                                            Mode de règlement
-                                                                            <span className="normal-case font-normal text-gray-400 ml-1">(optionnel)</span>
-                                                                        </label>
-                                                                        <select
-                                                                            value={overrideForm.payment_method_id}
-                                                                            onChange={e => setOverrideForm(f => ({ ...f, payment_method_id: e.target.value }))}
-                                                                            className="w-full text-xs border border-gray-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-violet-500 bg-white"
-                                                                        >
-                                                                            <option value="">— Inchangé —</option>
-                                                                            {paymentMethods.filter(p => p.is_active).map(pm => (
-                                                                                <option key={pm.id} value={pm.id}>{pm.code} — {pm.name}</option>
-                                                                            ))}
-                                                                        </select>
-                                                                    </div>
-                                                                </div>
-
-                                                                {/* Reason */}
-                                                                <div>
-                                                                    <label className="block text-[10px] font-semibold text-gray-500 mb-1.5 uppercase tracking-wider">Justification</label>
-                                                                    <textarea
-                                                                        value={overrideForm.reason}
-                                                                        onChange={e => setOverrideForm(f => ({ ...f, reason: e.target.value }))}
-                                                                        rows={3}
-                                                                        placeholder="Décrivez la situation exceptionnelle qui justifie cette dérogation…"
-                                                                        className="w-full text-xs border border-gray-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-violet-500 bg-white resize-none leading-relaxed"
-                                                                    />
-                                                                </div>
-
-                                                                {/* Info note + actions */}
-                                                                <div className="flex items-center gap-3 pt-1">
-                                                                    <div className="flex-1 text-[10px] text-gray-400 bg-gray-50 rounded-lg px-3 py-2 border border-gray-100">
-                                                                        Les rôles <strong className="text-gray-600">root</strong> et <strong className="text-gray-600">admin</strong> bénéficient d'une approbation automatique.
-                                                                    </div>
-                                                                    <button
-                                                                        onClick={() => { setShowOverrideForm(false); setOverrideForm({ document_type: 'order', document_id: '', payment_term_id: '', payment_method_id: '', reason: '' }); }}
-                                                                        className="px-3 py-2 text-xs text-gray-500 bg-white border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors shrink-0"
-                                                                    >
-                                                                        Annuler
-                                                                    </button>
-                                                                    <button
-                                                                        onClick={handleCreateOverride}
-                                                                        disabled={creatingOverride}
-                                                                        className="flex items-center gap-1.5 px-4 py-2 text-xs font-medium bg-violet-600 text-white rounded-lg hover:bg-violet-700 disabled:opacity-40 transition-colors shrink-0"
-                                                                    >
-                                                                        {creatingOverride ? <Loader2 className="w-3 h-3 animate-spin" /> : <FileCheck2 className="w-3 h-3" />}
-                                                                        Soumettre
-                                                                    </button>
-                                                                </div>
-                                                            </div>
-                                                        </div>
-                                                    )}
-
-                                                    {/* Override list */}
-                                                    {showPendingOverrides && (
-                                                        <div className="divide-y divide-gray-50">
-                                                            {pendingOverridesLoading ? (
-                                                                <div className="flex items-center justify-center py-8 text-gray-400 text-xs gap-2">
-                                                                    <Loader2 className="w-4 h-4 animate-spin" /> Chargement...
-                                                                </div>
-                                                            ) : pendingOverrides.length > 0 ? (
-                                                                pendingOverrides.map(ov => {
-                                                                    const statusCfg = {
-                                                                        pending:  { bar: 'bg-amber-400',   badge: 'bg-amber-100 text-amber-700 border-amber-200',   label: 'En attente' },
-                                                                        approved: { bar: 'bg-emerald-400', badge: 'bg-emerald-100 text-emerald-700 border-emerald-200', label: 'Approuvé'   },
-                                                                        rejected: { bar: 'bg-red-400',     badge: 'bg-red-100 text-red-700 border-red-200',           label: 'Rejeté'     },
-                                                                    }[ov.approval_status];
-                                                                    return (
-                                                                        <div key={ov.id} className="flex gap-0 group">
-                                                                            {/* Status bar */}
-                                                                            <div className={`w-1 shrink-0 rounded-tl-none rounded-bl-none ${statusCfg.bar} first:rounded-tl-xl last:rounded-bl-xl`} />
-                                                                            <div className="flex-1 px-4 py-3">
-                                                                                {/* Top row */}
-                                                                                <div className="flex items-center justify-between mb-2">
-                                                                                    <div className="flex items-center gap-2">
-                                                                                        <span className="font-mono text-[10px] text-gray-400">#{ov.id}</span>
-                                                                                        <span className={`px-2 py-0.5 rounded-full text-[10px] font-semibold border ${statusCfg.badge}`}>
-                                                                                            {statusCfg.label}
-                                                                                        </span>
-                                                                                        <span className="text-[10px] text-gray-500">
-                                                                                            {ov.document_type === 'order' ? 'Commande' : 'Facture'} <strong>#{ov.document_id}</strong>
-                                                                                        </span>
-                                                                                    </div>
-                                                                                    <span className="text-[10px] text-gray-400">{fmtDate(ov.created_at)}</span>
-                                                                                </div>
-
-                                                                                {/* Changes row */}
-                                                                                {(ov.payment_term || ov.payment_method) && (
-                                                                                    <div className="flex flex-wrap gap-2 mb-2">
-                                                                                        {ov.payment_term && (
-                                                                                            <div className="flex items-center gap-1.5 px-2.5 py-1 bg-sage-50 rounded-lg border border-sage-100 text-[10px]">
-                                                                                                <DollarSign className="w-3 h-3 text-sage-500 shrink-0" />
-                                                                                                <span className="text-gray-500">Condition:</span>
-                                                                                                <span className="font-semibold text-sage-700">{ov.payment_term.name}</span>
-                                                                                            </div>
-                                                                                        )}
-                                                                                        {ov.payment_method && (
-                                                                                            <div className="flex items-center gap-1.5 px-2.5 py-1 bg-indigo-50 rounded-lg border border-indigo-100 text-[10px]">
-                                                                                                <Banknote className="w-3 h-3 text-indigo-500 shrink-0" />
-                                                                                                <span className="text-gray-500">Mode:</span>
-                                                                                                <span className="font-semibold text-indigo-700">{ov.payment_method.code}</span>
-                                                                                                <span className="text-gray-400">— {ov.payment_method.name}</span>
-                                                                                            </div>
-                                                                                        )}
-                                                                                    </div>
-                                                                                )}
-
-                                                                                {/* Reason */}
-                                                                                <p className="text-[11px] text-gray-600 italic leading-relaxed mb-2 border-l-2 border-gray-200 pl-2">
-                                                                                    {ov.reason}
-                                                                                </p>
-
-                                                                                {/* Comment (if approved/rejected) */}
-                                                                                {ov.comment && (
-                                                                                    <div className="flex items-start gap-1.5 text-[10px] text-gray-500 mb-2">
-                                                                                        <MessageSquare className="w-3 h-3 text-gray-300 mt-0.5 shrink-0" />
-                                                                                        <span>{ov.comment}</span>
-                                                                                    </div>
-                                                                                )}
-
-                                                                                {/* Actions */}
-                                                                                {ov.approval_status === 'pending' && (
-                                                                                    <div className="flex gap-2 mt-1">
-                                                                                        <button
-                                                                                            onClick={() => handleApproveOverride(ov.id)}
-                                                                                            disabled={approvingOverride}
-                                                                                            className="flex items-center gap-1.5 px-3 py-1.5 text-[11px] font-medium bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 disabled:opacity-40 transition-colors"
-                                                                                        >
-                                                                                            {approvingOverride ? <Loader2 className="w-3 h-3 animate-spin" /> : <ThumbsUp className="w-3 h-3" />}
-                                                                                            Approuver
-                                                                                        </button>
-                                                                                        <button
-                                                                                            onClick={() => handleRejectOverride(ov.id)}
-                                                                                            disabled={rejectingOverride}
-                                                                                            className="flex items-center gap-1.5 px-3 py-1.5 text-[11px] font-medium bg-white text-red-600 border border-red-200 rounded-lg hover:bg-red-50 disabled:opacity-40 transition-colors"
-                                                                                        >
-                                                                                            {rejectingOverride ? <Loader2 className="w-3 h-3 animate-spin" /> : <ThumbsDown className="w-3 h-3" />}
-                                                                                            Rejeter
-                                                                                        </button>
-                                                                                    </div>
-                                                                                )}
-                                                                            </div>
-                                                                        </div>
-                                                                    );
-                                                                })
-                                                            ) : (
-                                                                <div className="py-10 text-center">
-                                                                    <div className="w-10 h-10 rounded-full bg-gray-50 border border-gray-100 flex items-center justify-center mx-auto mb-3">
-                                                                        <FileCheck2 className="w-5 h-5 text-gray-300" />
-                                                                    </div>
-                                                                    <p className="text-xs text-gray-400 font-medium">Aucune dérogation</p>
-                                                                    <p className="text-[10px] text-gray-300 mt-0.5">L'historique est vide pour l'instant</p>
-                                                                </div>
-                                                            )}
-                                                        </div>
-                                                    )}
-
-                                                    {/* Empty state when both panels closed */}
-                                                    {!showOverrideForm && !showPendingOverrides && (
-                                                        <div className="px-4 py-4 flex items-center justify-between text-xs text-gray-400">
-                                                            <span>
-                                                                {pendingOverrides.length > 0
-                                                                    ? `${pendingOverrides.length} dérogation(s) en attente d'approbation`
-                                                                    : 'Aucune dérogation en attente'}
-                                                            </span>
-                                                            <button
-                                                                onClick={() => setShowPendingOverrides(true)}
-                                                                className="text-[10px] text-violet-500 hover:text-violet-700 underline"
-                                                            >
-                                                                Voir l'historique
-                                                            </button>
-                                                        </div>
-                                                    )}
                                                 </div>
 
-                                            </div>
-                                    )}
-
-                                    {/* contact section absorbed into general 3-col grid above */}
-                                    {false && (
-                                    <div>
-                                        <SageCollapsible title="Adresse & Contact" isOpen={openSections['contact']} onOpenChange={open => toggleSection('contact', open)}>
-                                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                                                {/* Contact Card */}
+                                                {/* Contact */}
                                                 <div className="rounded-xl border border-gray-200 bg-white overflow-hidden">
                                                     <div className="px-4 py-2.5 bg-gray-50 border-b border-gray-100">
                                                         <span className="text-xs font-semibold text-gray-600 uppercase tracking-wider">Contact</span>
@@ -2147,655 +1330,668 @@ export const PartnerManagementPage = () => {
                                                             { icon: Phone, label: 'WhatsApp', value: partnerDetail.whatsapp },
                                                             { icon: Building2, label: 'Site web', value: partnerDetail.website },
                                                         ].map(item => (
-                                                            <div key={item.label} className="flex items-center gap-3">
-                                                                <div className="w-8 h-8 rounded-lg bg-gray-50 border border-gray-100 flex items-center justify-center shrink-0">
-                                                                    <item.icon className="w-3.5 h-3.5 text-gray-500" />
+                                                            <div key={item.label} className="flex items-center gap-2.5">
+                                                                <div className="w-7 h-7 rounded-lg bg-gray-50 border border-gray-100 flex items-center justify-center shrink-0">
+                                                                    <item.icon className="w-3 h-3 text-gray-500" />
                                                                 </div>
                                                                 <div className="min-w-0 flex-1">
-                                                                    <div className="text-[10px] text-gray-400 font-medium uppercase tracking-wider">{item.label}</div>
+                                                                    <div className="text-[9px] text-gray-400 font-semibold uppercase tracking-wider">{item.label}</div>
                                                                     {item.value ? (
                                                                         item.href ? (
-                                                                            <a href={item.href} className="text-sm font-medium text-blue-700 hover:underline truncate block">{item.value}</a>
+                                                                            <a href={item.href} className="text-xs font-medium text-blue-700 hover:underline truncate block">{item.value}</a>
                                                                         ) : (
-                                                                            <div className="text-sm font-medium text-gray-900 truncate">{item.value}</div>
+                                                                            <div className="text-xs font-medium text-gray-900 truncate">{item.value}</div>
                                                                         )
                                                                     ) : (
-                                                                        <div className="text-sm text-gray-300 italic">Non renseigné</div>
+                                                                        <div className="text-xs text-gray-300">—</div>
                                                                     )}
                                                                 </div>
                                                             </div>
                                                         ))}
+                                                        {partnerDetail.customer?.user && (
+                                                            <div className="pt-2 border-t border-gray-100 flex items-center gap-2">
+                                                                <div className="w-6 h-6 rounded-full bg-gradient-to-br from-violet-500 to-purple-600 flex items-center justify-center text-white font-bold text-[9px] shrink-0">
+                                                                    {partnerDetail.customer.user.name?.charAt(0)?.toUpperCase() || 'U'}
+                                                                </div>
+                                                                <div className="min-w-0">
+                                                                    <div className="text-[11px] font-semibold text-gray-900 truncate">{partnerDetail.customer.user.name}</div>
+                                                                    <div className="text-[10px] text-gray-400 truncate">{partnerDetail.customer.user.email}</div>
+                                                                </div>
+                                                            </div>
+                                                        )}
+                                                        {partnerDetail.last_payment_date && (
+                                                            <div className="pt-2 border-t border-gray-100 flex items-center justify-between text-xs">
+                                                                <span className="text-gray-400">Dern. paiement</span>
+                                                                <span className="font-medium text-emerald-700">{fmtDate(partnerDetail.last_payment_date)}</span>
+                                                            </div>
+                                                        )}
                                                     </div>
                                                 </div>
 
-                                                {/* Address Card */}
+                                                {/* Adresse */}
                                                 <div className="rounded-xl border border-gray-200 bg-white overflow-hidden">
                                                     <div className="px-4 py-2.5 bg-gray-50 border-b border-gray-100">
-                                                        <span className="text-xs font-semibold text-gray-600 uppercase tracking-wider">Adresse</span>
+                                                        <span className="text-xs font-semibold text-gray-600 uppercase tracking-wider">Adresse & Livraison</span>
                                                     </div>
-                                                    <div className="p-4">
+                                                    <div className="p-4 space-y-2.5">
                                                         {partnerDetail.address_line1 ? (
-                                                            <div className="flex items-start gap-3 mb-3">
-                                                                <div className="w-8 h-8 rounded-lg bg-sage-50 border border-sage-100 flex items-center justify-center shrink-0">
-                                                                    <MapPin className="w-3.5 h-3.5 text-sage-500" />
-                                                                </div>
-                                                                <div className="text-sm">
-                                                                    <div className="font-medium text-gray-900">{partnerDetail.address_line1}</div>
-                                                                    {partnerDetail.address_line2 && <div className="text-gray-500 mt-0.5">{partnerDetail.address_line2}</div>}
-                                                                    <div className="text-gray-500 mt-0.5">
+                                                            <div className="flex items-start gap-2">
+                                                                <MapPin className="w-3.5 h-3.5 text-sage-500 mt-0.5 shrink-0" />
+                                                                <div className="text-xs space-y-0.5">
+                                                                    <div className="font-semibold text-gray-900">{partnerDetail.address_line1}</div>
+                                                                    {partnerDetail.address_line2 && <div className="text-gray-500">{partnerDetail.address_line2}</div>}
+                                                                    <div className="text-gray-500">
                                                                         {[partnerDetail.city, partnerDetail.region, partnerDetail.postal_code].filter(Boolean).join(', ')}
                                                                     </div>
                                                                     {partnerDetail.country && <div className="text-gray-500">{partnerDetail.country}</div>}
                                                                 </div>
                                                             </div>
                                                         ) : (
-                                                            <div className="flex items-center gap-3 mb-3 py-2">
-                                                                <div className="w-8 h-8 rounded-lg bg-gray-50 border border-gray-100 flex items-center justify-center shrink-0">
-                                                                    <MapPin className="w-3.5 h-3.5 text-gray-400" />
-                                                                </div>
-                                                                <span className="text-sm text-gray-300 italic">Aucune adresse renseignée</span>
+                                                            <div className="flex items-center gap-2">
+                                                                <MapPin className="w-3.5 h-3.5 text-gray-300 shrink-0" />
+                                                                <span className="text-xs text-gray-300 italic">Adresse non renseignée</span>
+                                                            </div>
+                                                        )}
+                                                        {(toNum(partnerDetail.min_order_amount) > 0 || partnerDetail.delivery_zone || partnerDetail.delivery_instructions) && (
+                                                            <div className="pt-2 border-t border-gray-100 space-y-1.5">
+                                                                {toNum(partnerDetail.min_order_amount) > 0 && (
+                                                                    <div className="flex items-center justify-between text-xs">
+                                                                        <span className="text-gray-400">Commande min.</span>
+                                                                        <span className="font-medium text-gray-700">{fmtNumber(partnerDetail.min_order_amount)}</span>
+                                                                    </div>
+                                                                )}
+                                                                {partnerDetail.delivery_zone && (
+                                                                    <div className="flex items-center justify-between text-xs">
+                                                                        <span className="text-gray-400">Zone livraison</span>
+                                                                        <span className="font-medium text-gray-700 truncate max-w-[60%] text-right">{partnerDetail.delivery_zone}</span>
+                                                                    </div>
+                                                                )}
+                                                                {partnerDetail.delivery_instructions && (
+                                                                    <div className="text-[11px] text-gray-500 bg-gray-50 rounded-lg px-2 py-1.5 leading-relaxed">
+                                                                        {partnerDetail.delivery_instructions}
+                                                                    </div>
+                                                                )}
+                                                            </div>
+                                                        )}
+                                                        {partnerDetail.geo_lat && partnerDetail.geo_lng && (
+                                                            <div className="flex items-center gap-1 text-[10px] text-gray-400 pt-1 border-t border-gray-100">
+                                                                <Locate className="w-3 h-3" />
+                                                                <span>{partnerDetail.geo_lat}, {partnerDetail.geo_lng}</span>
                                                             </div>
                                                         )}
                                                     </div>
                                                 </div>
+                                            </div>
 
-                                                {/* Tax Card */}
-                                                <div className="rounded-xl border border-gray-200 bg-white overflow-hidden">
-                                                    <div className="px-4 py-2.5 bg-gray-50 border-b border-gray-100">
-                                                        <span className="text-xs font-semibold text-gray-600 uppercase tracking-wider">Fiscalité</span>
+                                        </div>
+                                    )}
+
+                                    {/* ── Finance & Crédit ─────────────── */}
+                                    {activeTab === 'finance' && (
+                                        <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                                            {[
+                                                { label: 'Limite de crédit', value: fmtNumber(partnerDetail.credit_limit), color: 'text-gray-900', border: 'border-gray-100', bg: 'bg-white', icon: CreditCard, iconColor: 'text-gray-400' },
+                                                { label: 'Crédit utilisé', value: fmtNumber(partnerDetail.credit_used), color: 'text-amber-600', border: 'border-amber-100', bg: 'bg-amber-50/40', icon: CreditCard, iconColor: 'text-amber-400' },
+                                                { label: 'Crédit disponible', value: fmtNumber(partnerDetail.credit_available), color: toNum(partnerDetail.credit_available) <= 0 ? 'text-red-600' : 'text-emerald-600', border: toNum(partnerDetail.credit_available) <= 0 ? 'border-red-100' : 'border-emerald-100', bg: toNum(partnerDetail.credit_available) <= 0 ? 'bg-red-50/40' : 'bg-emerald-50/40', icon: CreditCard, iconColor: toNum(partnerDetail.credit_available) <= 0 ? 'text-red-400' : 'text-emerald-400' },
+                                            ].map(kpi => (
+                                                <div key={kpi.label} className={`p-3 rounded-xl border ${kpi.border} ${kpi.bg} shadow-sm`}>
+                                                    <div className="flex items-center justify-between mb-1.5">
+                                                        <span className="text-[11px] text-gray-500 font-medium">{kpi.label}</span>
+                                                        <kpi.icon className={`w-3.5 h-3.5 ${kpi.iconColor}`} />
                                                     </div>
-                                                    <div className="p-4 space-y-2.5">
-                                                        {[
-                                                            { label: 'ICE', value: partnerDetail.tax_number_ice },
-                                                            { label: 'IF', value: partnerDetail.tax_number_if },
-                                                        ].map(item => (
-                                                            <div key={item.label} className="flex items-center justify-between text-sm">
-                                                                <span className="text-gray-500 text-xs">{item.label}</span>
-                                                                {item.value ? (
-                                                                    <span className="font-mono text-xs font-medium text-gray-900 bg-gray-50 px-2 py-0.5 rounded">{item.value}</span>
-                                                                ) : (
-                                                                    <span className="text-xs text-gray-300 italic">Non renseigné</span>
-                                                                )}
-                                                            </div>
-                                                        ))}
-                                                        <div className="flex items-center justify-between text-sm">
-                                                            <span className="text-gray-500 text-xs">Exonéré TVA</span>
-                                                            <span className={`text-xs font-medium px-2 py-0.5 rounded ${partnerDetail.tax_exempt ? 'bg-green-50 text-green-700' : 'bg-gray-100 text-gray-600'}`}>
-                                                                {partnerDetail.tax_exempt ? 'Oui' : 'Non'}
-                                                            </span>
-                                                        </div>
+                                                    <div className={`text-lg font-bold ${kpi.color}`}>{kpi.value}</div>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    )}
+                                    {activeTab === 'finance' && (
+                                        <div className="rounded-xl border border-gray-200 bg-white overflow-hidden">
+                                            <div className="px-4 py-2.5 bg-gray-50 border-b border-gray-100 flex items-center gap-2">
+                                                <CreditCard className="w-3.5 h-3.5 text-indigo-500" />
+                                                <span className="text-xs font-semibold text-gray-700 uppercase tracking-wider">Crédit & Exposition financière</span>
+                                            </div>
+                                            <div className="p-3 space-y-4">
+                                                <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
+                                                    <div className="flex gap-2 flex-wrap">
+                                                        <button onClick={() => { setCreditForm({ credit_limit: toNum(partnerDetail.credit_limit) }); setShowCreditModal(true); }}
+                                                            className="flex items-center gap-1 px-2.5 py-1.5 text-xs bg-sage-50 text-sage-700 rounded-md hover:bg-sage-100 transition-colors">
+                                                            <Edit2 className="w-3 h-3" /> Modifier limite
+                                                        </button>
+                                                        <button onClick={handleRecalcCredit}
+                                                            className="flex items-center gap-1 px-2.5 py-1.5 text-xs bg-gray-50 text-gray-700 rounded-md hover:bg-gray-100 transition-colors">
+                                                            <RefreshCw className="w-3 h-3" /> Recalculer
+                                                        </button>
+                                                        <button onClick={() => { setShowEvaluateForm(v => !v); resetEvaluate(); setEvaluateAmount(''); }}
+                                                            className="flex items-center gap-1 px-2.5 py-1.5 text-xs bg-indigo-50 text-indigo-700 rounded-md hover:bg-indigo-100 transition-colors">
+                                                            <Calculator className="w-3 h-3" /> Simuler commande
+                                                        </button>
                                                     </div>
                                                 </div>
 
-                                                {/* Operations Card - only show if meaningful data */}
-                                                {(() => {
-                                                    const hasHours = partnerDetail.opening_hours && partnerDetail.opening_hours !== '{}' && partnerDetail.opening_hours !== 'null';
-                                                    const hasInstructions = !!partnerDetail.delivery_instructions;
-                                                    const hasMinOrder = toNum(partnerDetail.min_order_amount) > 0;
-                                                    const hasDeliveryZone = !!partnerDetail.delivery_zone;
-                                                    if (!hasHours && !hasInstructions && !hasMinOrder && !hasDeliveryZone) return null;
-                                                    return (
-                                                        <div className="rounded-xl border border-gray-200 bg-white overflow-hidden">
-                                                            <div className="px-4 py-2.5 bg-gray-50 border-b border-gray-100">
-                                                                <span className="text-xs font-semibold text-gray-600 uppercase tracking-wider">Opérations</span>
+                                                {/* Credit evaluate dry-run (§6.5) */}
+                                                {showEvaluateForm && (
+                                                    <div className="mb-4 p-3 rounded-xl border border-indigo-200 bg-indigo-50/30 space-y-2">
+                                                        <div className="text-xs font-semibold text-indigo-800">Simuler l'éligibilité d'une commande</div>
+                                                        <div className="flex gap-2">
+                                                            <input
+                                                                type="number"
+                                                                value={evaluateAmount}
+                                                                onChange={e => setEvaluateAmount(e.target.value)}
+                                                                placeholder="Montant (ex: 15000)"
+                                                                className="flex-1 text-xs border border-indigo-200 rounded-md px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-white"
+                                                            />
+                                                            <button
+                                                                onClick={handleEvaluateCredit}
+                                                                disabled={!evaluateAmount || evaluateLoading}
+                                                                className="flex items-center gap-1 px-3 py-1.5 text-xs bg-indigo-600 text-white rounded-md hover:bg-indigo-700 disabled:opacity-40 transition-colors"
+                                                            >
+                                                                {evaluateLoading ? <Loader2 className="w-3 h-3 animate-spin" /> : <Calculator className="w-3 h-3" />}
+                                                                Simuler
+                                                            </button>
+                                                        </div>
+                                                        {evaluateResult && (
+                                                            <div className={`flex items-center gap-2 px-3 py-2 rounded-lg text-xs font-medium border ${evaluateResult.eligible ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-red-50 text-red-700 border-red-200'}`}>
+                                                                {evaluateResult.eligible
+                                                                    ? <><CheckCircle className="w-3.5 h-3.5 shrink-0" /> Commande autorisée — crédit restant après: {fmtNumber(evaluateResult.available_after)}</>
+                                                                    : <><XCircleIcon className="w-3.5 h-3.5 shrink-0" /> Commande refusée ({evaluateResult.status}) — manque: {fmtNumber(evaluateResult.shortfall)}{evaluateResult.requires_approval ? ' — dérogation requise' : ''}</>
+                                                                }
                                                             </div>
-                                                            <div className="p-4 space-y-2.5">
-                                                                {hasHours && (
-                                                                    <div className="flex items-center justify-between text-sm">
-                                                                        <span className="text-gray-500 text-xs">Horaires d'ouverture</span>
-                                                                        <span className="text-xs font-medium text-gray-900">{partnerDetail.opening_hours}</span>
+                                                        )}
+                                                    </div>
+                                                )}
+
+                                                {/* Credit Exposure V2 Panel */}
+                                                {creditExposureLoading ? (
+                                                    <div className="flex items-center justify-center py-4 text-gray-400 text-xs">
+                                                        <Loader2 className="w-4 h-4 animate-spin mr-2" /> Chargement exposition...
+                                                    </div>
+                                                ) : creditExposureData ? (() => {
+                                                    const exp = creditExposureData;
+                                                    const colors = CREDIT_EXPOSURE_COLORS[exp.status] ?? CREDIT_EXPOSURE_COLORS.ALLOWED;
+                                                    const pct = exp.credit_limit > 0 ? Math.min(100, (exp.total_exposure / exp.credit_limit) * 100) : 0;
+                                                    return (
+                                                        <div className={`rounded-xl border ${colors.border} ${colors.bg} p-4 mb-4`}>
+                                                            {/* Status header */}
+                                                            <div className="flex items-center justify-between mb-3">
+                                                                <div className="flex items-center gap-2">
+                                                                    <Zap className={`w-4 h-4 ${colors.text}`} />
+                                                                    <span className={`text-sm font-bold ${colors.text}`}>Exposition temps réel</span>
+                                                                </div>
+                                                                <span className={`px-2.5 py-1 rounded-full text-[11px] font-bold border ${colors.border} ${colors.bg} ${colors.text}`}>
+                                                                    {colors.label}
+                                                                </span>
+                                                            </div>
+
+                                                            {/* Utilization bar */}
+                                                            <div className="mb-3">
+                                                                <div className="flex justify-between text-[10px] text-gray-500 mb-1">
+                                                                    <span>Exposition totale: <strong>{fmtNumber(exp.total_exposure)}</strong></span>
+                                                                    <span>Limite: <strong>{fmtNumber(exp.credit_limit)}</strong></span>
+                                                                </div>
+                                                                <div className="h-2 bg-white rounded-full overflow-hidden border border-gray-200">
+                                                                    <div className={`h-full rounded-full transition-all ${colors.bar}`} style={{ width: `${pct}%` }} />
+                                                                </div>
+                                                                <div className="flex justify-between text-[10px] mt-0.5">
+                                                                    <span className={`font-semibold ${colors.text}`}>{pct.toFixed(1)}% utilisé</span>
+                                                                    <span className="text-gray-500">Dispo: {fmtNumber(exp.available_credit)}</span>
+                                                                </div>
+                                                            </div>
+
+                                                            {/* Breakdown grid */}
+                                                            <div className="grid grid-cols-2 gap-2">
+                                                                {[
+                                                                    { label: 'Factures ouvertes', value: exp.open_invoices_amount, show: exp.open_invoices_amount > 0 },
+                                                                    { label: 'Chèques en attente', value: exp.pending_cheques_amount, show: exp.pending_cheques_amount > 0 },
+                                                                    { label: 'Effets en attente', value: exp.pending_effets_amount, show: exp.pending_effets_amount > 0 },
+                                                                    { label: 'Commandes confirmées', value: exp.confirmed_orders_amount, show: exp.confirmed_orders_amount > 0 },
+                                                                    { label: 'Livré non facturé', value: exp.delivered_not_invoiced_amount, show: exp.delivered_not_invoiced_amount > 0 },
+                                                                    { label: 'Avoirs', value: -exp.credit_notes_amount, show: exp.credit_notes_amount > 0 },
+                                                                ].filter(r => r.show).map(row => (
+                                                                    <div key={row.label} className="flex justify-between bg-white/60 rounded-lg px-2.5 py-1.5 border border-white/80 text-xs">
+                                                                        <span className="text-gray-500 truncate mr-1">{row.label}</span>
+                                                                        <span className={`font-semibold shrink-0 ${row.value < 0 ? 'text-emerald-600' : 'text-gray-800'}`}>
+                                                                            {row.value < 0 ? '−' : ''}{fmtNumber(Math.abs(row.value))}
+                                                                        </span>
                                                                     </div>
+                                                                ))}
+                                                            </div>
+
+                                                            {/* Footer */}
+                                                            <div className="flex items-center justify-between mt-2 pt-2 border-t border-white/60">
+                                                                {exp.overdue_invoice_count > 0 && (
+                                                                    <span className="text-[10px] text-red-600 font-medium flex items-center gap-1">
+                                                                        <AlertTriangle className="w-3 h-3" />
+                                                                        {exp.overdue_invoice_count} facture(s) en retard — {exp.oldest_overdue_days}j max
+                                                                    </span>
                                                                 )}
-                                                                {hasInstructions && (
-                                                                    <div className="flex items-center justify-between text-sm">
-                                                                        <span className="text-gray-500 text-xs">Instructions livraison</span>
-                                                                        <span className="text-xs font-medium text-gray-900 max-w-[200px] truncate">{partnerDetail.delivery_instructions}</span>
-                                                                    </div>
-                                                                )}
-                                                                {hasMinOrder && (
-                                                                    <div className="flex items-center justify-between text-sm">
-                                                                        <span className="text-gray-500 text-xs">Commande min.</span>
-                                                                        <span className="text-xs font-medium text-gray-900">{fmtNumber(partnerDetail.min_order_amount)}</span>
-                                                                    </div>
-                                                                )}
-                                                                {hasDeliveryZone && (
-                                                                    <div className="flex items-center justify-between text-sm">
-                                                                        <span className="text-gray-500 text-xs">Zone de livraison</span>
-                                                                        <span className="text-xs font-medium text-gray-900">{partnerDetail.delivery_zone}</span>
-                                                                    </div>
-                                                                )}
+                                                                <span className="text-[10px] text-gray-400 ml-auto">
+                                                                    Recalculé {fmtDate(exp.last_recalculated_at)}
+                                                                </span>
                                                             </div>
                                                         </div>
                                                     );
-                                                })()}
-                                            </div>
-                                        </SageCollapsible>
-                                    </div>
-                                    )}
-                                    {activeTab === 'finance' && (
-                                    <div className="rounded-xl border border-gray-200 bg-white overflow-hidden">
-                                        <div className="px-4 py-2.5 bg-gray-50 border-b border-gray-100 flex items-center gap-2">
-                                            <Activity className="w-3.5 h-3.5 text-sage-500" />
-                                            <span className="text-xs font-semibold text-gray-700 uppercase tracking-wider">Activité commerciale récente</span>
-                                        </div>
-                                        <div className="p-3">
-                                            {(() => {
-                                                const orders = (partnerDetail as any).orders as any[] | undefined;
-                                                const bls = (partnerDetail as any).delivery_notes as any[] | undefined;
-                                                return (
-                                                    <div className="space-y-4">
-                                                        {/* Commandes */}
-                                                        <div>
-                                                            <div className="flex items-center gap-2 mb-2">
-                                                                <Package className="w-3.5 h-3.5 text-sage-500" />
-                                                                <span className="text-xs font-semibold text-gray-600">Bons de commande récents</span>
+                                                })() : (
+                                                    <div className="grid grid-cols-3 gap-3 mb-4">
+                                                        <div className="p-3 rounded-lg border border-gray-100 bg-white shadow-sm text-center">
+                                                            <div className="text-xs text-gray-500 mb-1">Limite</div>
+                                                            <div className="text-lg font-bold text-gray-900">{fmtNumber(partnerDetail.credit_limit)}</div>
+                                                        </div>
+                                                        <div className="p-3 rounded-lg border border-gray-100 bg-white shadow-sm text-center">
+                                                            <div className="text-xs text-gray-500 mb-1">Utilisé</div>
+                                                            <div className="text-lg font-bold text-amber-600">{fmtNumber(partnerDetail.credit_used)}</div>
+                                                        </div>
+                                                        <div className="p-3 rounded-lg border border-gray-100 bg-white shadow-sm text-center">
+                                                            <div className="text-xs text-gray-500 mb-1">Disponible</div>
+                                                            <div className={`text-lg font-bold ${toNum(partnerDetail.credit_available) <= 0 ? 'text-red-600' : 'text-emerald-600'}`}>
+                                                                {fmtNumber(partnerDetail.credit_available)}
                                                             </div>
-                                                            {orders && orders.length > 0 ? (
+                                                        </div>
+                                                    </div>
+                                                )}
+
+                                                {/* Credit history */}
+                                                {creditHistLoading ? (
+                                                    <div className="flex items-center justify-center py-6 text-gray-400">
+                                                        <Loader2 className="w-5 h-5 animate-spin mr-2" /> Chargement...
+                                                    </div>
+                                                ) : creditHistoryData?.data ? (
+                                                    <div className="space-y-3">
+                                                        {/* Orders */}
+                                                        {creditHistoryData.data.orders.length > 0 && (
+                                                            <div>
+                                                                <div className="text-xs font-semibold text-gray-500 mb-2">Bons de commande</div>
                                                                 <div className="space-y-1">
-                                                                    {orders.slice(0, 10).map((o: any, i: number) => (
-                                                                        <div key={o.id ?? i} className="flex items-center justify-between py-1.5 px-2.5 bg-white rounded-lg border border-gray-100 text-xs">
-                                                                            <div className="flex items-center gap-2 min-w-0">
-                                                                                <span className="font-mono font-medium text-sage-700 shrink-0">{o.order_code ?? o.code ?? `#${o.id}`}</span>
-                                                                                {(o.status ?? o.order_status) && (
-                                                                                    <span className={`px-1.5 py-0.5 rounded text-[10px] font-medium shrink-0 ${
-                                                                                        (o.status || o.order_status)?.toLowerCase().includes('deliv') || (o.status || o.order_status)?.toLowerCase() === 'confirmed' ? 'bg-emerald-50 text-emerald-700' :
-                                                                                        (o.status || o.order_status)?.toLowerCase().includes('cancel') ? 'bg-red-50 text-red-600' :
+                                                                    {creditHistoryData.data.orders.slice(0, 10).map(o => (
+                                                                        <div key={o.id} className="flex items-center justify-between py-1.5 px-2 bg-white rounded border border-gray-100 text-xs">
+                                                                            <div className="flex items-center gap-2">
+                                                                                <span className="font-mono font-medium text-sage-700">{o.order_code}</span>
+                                                                                <span className={`px-1.5 py-0.5 rounded text-[10px] font-medium ${o.order_status === 'Delivered' || o.order_status === 'DELIVERED' ? 'bg-emerald-50 text-emerald-700' :
+                                                                                    o.order_status === 'Confirm' || o.order_status === 'CONFIRMED' ? 'bg-sage-50 text-sage-700' :
                                                                                         'bg-gray-100 text-gray-600'
-                                                                                    }`}>{o.status ?? o.order_status}</span>
-                                                                                )}
+                                                                                    }`}>
+                                                                                    {o.order_status}
+                                                                                </span>
                                                                             </div>
-                                                                            <div className="flex items-center gap-2 shrink-0">
-                                                                                <span className="text-gray-400 text-[10px]">{fmtDate(o.created_at ?? o.order_date)}</span>
-                                                                                <span className="font-semibold text-gray-800">{fmtNumber(o.total_amount)}</span>
-                                                                            </div>
-                                                                        </div>
-                                                                    ))}
-                                                                </div>
-                                                            ) : (
-                                                                <div className="text-center py-4 text-xs text-gray-400 bg-gray-50 rounded-lg border border-dashed border-gray-200">
-                                                                    <Package className="w-6 h-6 mx-auto mb-1 text-gray-300" />
-                                                                    Aucune commande récente
-                                                                </div>
-                                                            )}
-                                                        </div>
-
-                                                        {/* Bons de livraison */}
-                                                        <div>
-                                                            <div className="flex items-center gap-2 mb-2">
-                                                                <Truck className="w-3.5 h-3.5 text-indigo-500" />
-                                                                <span className="text-xs font-semibold text-gray-600">Bons de livraison récents</span>
-                                                            </div>
-                                                            {bls && bls.length > 0 ? (
-                                                                <div className="space-y-1">
-                                                                    {bls.slice(0, 10).map((bl: any, i: number) => (
-                                                                        <div key={bl.id ?? i} className="flex items-center justify-between py-1.5 px-2.5 bg-white rounded-lg border border-gray-100 text-xs">
-                                                                            <div className="flex items-center gap-2 min-w-0">
-                                                                                <span className="font-mono font-medium text-indigo-700 shrink-0">{bl.delivery_number ?? bl.code ?? `#${bl.id}`}</span>
-                                                                                {(bl.status ?? bl.delivery_status) && (
-                                                                                    <span className={`px-1.5 py-0.5 rounded text-[10px] font-medium shrink-0 ${
-                                                                                        (bl.status || bl.delivery_status)?.toUpperCase() === 'DELIVERED' ? 'bg-emerald-50 text-emerald-700' : 'bg-gray-100 text-gray-600'
-                                                                                    }`}>{bl.status ?? bl.delivery_status}</span>
-                                                                                )}
-                                                                            </div>
-                                                                            <div className="flex items-center gap-2 shrink-0">
-                                                                                <span className="text-gray-400 text-[10px]">{fmtDate(bl.created_at)}</span>
-                                                                                <span className="font-semibold text-gray-800">{fmtNumber(bl.total_amount)}</span>
+                                                                            <div className="flex items-center gap-2">
+                                                                                <span className="text-gray-400">{fmtDate(o.created_at)}</span>
+                                                                                <span className="font-semibold">{fmtNumber(o.total_amount)}</span>
                                                                             </div>
                                                                         </div>
                                                                     ))}
                                                                 </div>
-                                                            ) : (
-                                                                <div className="text-center py-4 text-xs text-gray-400 bg-gray-50 rounded-lg border border-dashed border-gray-200">
-                                                                    <Truck className="w-6 h-6 mx-auto mb-1 text-gray-300" />
-                                                                    Aucun bon de livraison récent
-                                                                </div>
-                                                            )}
-                                                        </div>
-
-                                                        {/* Last payment */}
-                                                        {partnerDetail.last_payment_date && (
-                                                            <div className="flex items-center justify-between text-xs px-3 py-2 bg-emerald-50 rounded-lg border border-emerald-100">
-                                                                <span className="text-emerald-700 font-medium">Dernier paiement reçu</span>
-                                                                <span className="font-semibold text-emerald-800">{fmtDate(partnerDetail.last_payment_date)}</span>
                                                             </div>
                                                         )}
-                                                    </div>
-                                                );
-                                            })()}
-                                        </div>
-                                    </div>
-                                    )}
 
-                                    {/* ── Soldes (Finance) ─────────────── */}
-                                    {activeTab === 'finance' && (
-                                    <div className="rounded-xl border border-gray-200 bg-white overflow-hidden">
-                                        <div className="px-4 py-2.5 bg-gray-50 border-b border-gray-100 flex items-center gap-2">
-                                            <Wallet className="w-3.5 h-3.5 text-indigo-500" />
-                                            <span className="text-xs font-semibold text-gray-700 uppercase tracking-wider">Soldes (Points / Budget / Avoir)</span>
-                                        </div>
-                                        <div className="p-3">
-                                            <div className="space-y-3">
-                                                {balancesLoading ? (
-                                                    <div className="flex items-center justify-center py-6 text-gray-400 text-xs">
-                                                        <Loader2 className="w-4 h-4 animate-spin mr-2" /> Chargement soldes...
-                                                    </div>
-                                                ) : balancesData.length > 0 ? (
-                                                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
-                                                        {balancesData.map(bal => (
-                                                            <div key={bal.id} className="relative p-3 rounded-xl border border-gray-100 bg-white shadow-sm">
-                                                                <button
-                                                                    onClick={() => handleDeleteBalance(bal.id)}
-                                                                    disabled={deletingBalance}
-                                                                    className="absolute top-2 right-2 p-0.5 text-gray-300 hover:text-red-500 transition-colors"
-                                                                    title="Supprimer"
-                                                                >
-                                                                    <X className="w-3 h-3" />
-                                                                </button>
-                                                                <div className="flex items-center gap-2 mb-2">
-                                                                    <Wallet className="w-3.5 h-3.5 text-indigo-400" />
-                                                                    <span className="text-[10px] font-semibold text-gray-500 uppercase tracking-wider">{bal.balance_type}</span>
+                                                        {/* Deliveries */}
+                                                        {creditHistoryData.data.deliveries.length > 0 && (
+                                                            <div>
+                                                                <div className="text-xs font-semibold text-gray-500 mb-2">Bons de livraison</div>
+                                                                <div className="space-y-1">
+                                                                    {creditHistoryData.data.deliveries.slice(0, 10).map(d => (
+                                                                        <div key={d.id} className="flex items-center justify-between py-1.5 px-2 bg-white rounded border border-gray-100 text-xs">
+                                                                            <div className="flex items-center gap-2">
+                                                                                <span className="font-mono font-medium text-sage-700">{d.delivery_code || d.code}</span>
+                                                                                <span className={`px-1.5 py-0.5 rounded text-[10px] font-medium ${(d.delivery_status || d.status) === 'DELIVERED' ? 'bg-emerald-50 text-emerald-700' : 'bg-gray-100 text-gray-600'
+                                                                                    }`}>
+                                                                                    {d.delivery_status || d.status}
+                                                                                </span>
+                                                                            </div>
+                                                                            <div className="flex items-center gap-2">
+                                                                                <span className="text-gray-400">{fmtDate(d.created_at)}</span>
+                                                                                <span className="font-semibold">{fmtNumber(d.total_amount)}</span>
+                                                                            </div>
+                                                                        </div>
+                                                                    ))}
                                                                 </div>
-                                                                <div className="text-xl font-bold text-gray-900">{bal.balance.toLocaleString('fr-FR', { minimumFractionDigits: 2 })}</div>
                                                             </div>
-                                                        ))}
-                                                    </div>
-                                                ) : (
-                                                    <div className="text-center py-6 text-xs text-gray-400 border border-dashed border-gray-200 rounded-xl bg-gray-50">
-                                                        <Wallet className="w-8 h-8 mx-auto mb-2 text-gray-300" />
-                                                        <p>Aucun solde enregistré</p>
-                                                    </div>
-                                                )}
+                                                        )}
 
-                                                {/* Add / update balance */}
-                                                {!showBalanceForm ? (
-                                                    <button
-                                                        onClick={() => setShowBalanceForm(true)}
-                                                        className="flex items-center gap-2 w-full px-3 py-2.5 text-xs font-medium text-indigo-700 bg-indigo-50 hover:bg-indigo-100 rounded-xl border border-indigo-200 transition-colors"
-                                                    >
-                                                        <Plus className="w-3.5 h-3.5" />
-                                                        Ajouter / Modifier un solde
-                                                    </button>
-                                                ) : (
-                                                    <div className="p-3 rounded-xl border border-indigo-200 bg-white space-y-3">
-                                                        <div className="text-xs font-semibold text-gray-700">Modifier un solde</div>
-                                                        <div className="grid grid-cols-2 gap-2">
-                                                            <div>
-                                                                <label className="block text-[10px] text-gray-500 mb-1">Type de solde</label>
-                                                                <select value={balanceForm.balance_type} onChange={e => setBalanceForm(f => ({ ...f, balance_type: e.target.value as BalanceType }))}
-                                                                    className="w-full text-xs border border-gray-200 rounded-md px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-gray-50">
-                                                                    <option value="POINTS">Points</option>
-                                                                    <option value="BUDGET_PROMO">Budget Promo</option>
-                                                                    <option value="AVOIR">Avoir</option>
-                                                                </select>
-                                                            </div>
-                                                            <div>
-                                                                <label className="block text-[10px] text-gray-500 mb-1">Opération</label>
-                                                                <select value={balanceForm.operation} onChange={e => setBalanceForm(f => ({ ...f, operation: e.target.value as BalanceOperation }))}
-                                                                    className="w-full text-xs border border-gray-200 rounded-md px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-gray-50">
-                                                                    <option value="add">Ajouter (+)</option>
-                                                                    <option value="subtract">Soustraire (−)</option>
-                                                                    <option value="set">Définir (=)</option>
-                                                                </select>
-                                                            </div>
+                                                        {creditHistoryData.data.orders.length === 0 && creditHistoryData.data.deliveries.length === 0 && (
+                                                            <div className="text-center py-6 text-xs text-gray-400">Aucun historique de crédit</div>
+                                                        )}
+                                                    </div>
+                                                ) : null}
+
+                                                {/* Credit Events Audit Trail */}
+                                                {creditEventsLoading ? null : (creditEventsData?.length ?? 0) > 0 && (
+                                                    <div className="mt-4">
+                                                        <div className="text-xs font-semibold text-gray-600 mb-2 flex items-center gap-2 pt-1 border-t border-gray-100">
+                                                            <Activity className="w-3 h-3 text-indigo-400" />
+                                                            <span>Audit Trail</span>
+                                                            <span className="text-gray-400 font-normal">— Événements crédit</span>
                                                         </div>
-                                                        <div>
-                                                            <label className="block text-[10px] text-gray-500 mb-1">Montant / Points</label>
-                                                            <input type="number" min="0" step="0.01" value={balanceForm.balance} onChange={e => setBalanceForm(f => ({ ...f, balance: e.target.value }))}
-                                                                placeholder="0.00" className="w-full text-xs border border-gray-200 rounded-md px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-gray-50" />
-                                                        </div>
-                                                        <div className="flex gap-2">
-                                                            <button onClick={handleUpsertBalance} disabled={!balanceForm.balance || upsertingBalance}
-                                                                className="flex-1 flex items-center justify-center gap-1 px-3 py-1.5 text-xs bg-indigo-600 text-white rounded-md hover:bg-indigo-700 disabled:opacity-40 transition-colors">
-                                                                {upsertingBalance ? <Loader2 className="w-3 h-3 animate-spin" /> : <CheckCircle className="w-3 h-3" />}
-                                                                Valider
-                                                            </button>
-                                                            <button onClick={() => setShowBalanceForm(false)}
-                                                                className="px-3 py-1.5 text-xs bg-gray-100 text-gray-600 rounded-md hover:bg-gray-200 transition-colors">
-                                                                Annuler
-                                                            </button>
+                                                        <div className="relative border-l-2 border-gray-100 ml-3 space-y-1">
+                                                            {(creditEventsData ?? []).slice(0, 15).map(ev => {
+                                                                const meta = CREDIT_EVENT_ICONS[ev.event_type] ?? { icon: '•', color: 'text-gray-500' };
+                                                                return (
+                                                                    <div key={ev.id} className="relative pl-4 -ml-px">
+                                                                        <span className="absolute -left-[7px] top-1.5 w-3 h-3 rounded-full bg-white border-2 border-gray-300 flex items-center justify-center text-[8px]" />
+                                                                        <div className="bg-white rounded-lg border border-gray-100 px-3 py-2 text-xs flex items-center justify-between">
+                                                                            <div className="flex items-center gap-2 min-w-0">
+                                                                                <span>{meta.icon}</span>
+                                                                                <span className="text-gray-600 truncate">{ev.event_type.replace(/_/g, ' ')}</span>
+                                                                                {ev.reference_type && ev.reference_id && (
+                                                                                    <span className="text-gray-300 text-[10px] shrink-0">#{ev.reference_id}</span>
+                                                                                )}
+                                                                            </div>
+                                                                            <div className="flex items-center gap-3 shrink-0 ml-2">
+                                                                                <span className={`font-semibold ${ev.amount >= 0 ? 'text-red-600' : 'text-emerald-600'}`}>
+                                                                                    {ev.amount >= 0 ? '+' : ''}{fmtNumber(ev.amount)}
+                                                                                </span>
+                                                                                <span className="text-gray-400 text-[10px]">{fmtDate(ev.created_at)}</span>
+                                                                            </div>
+                                                                        </div>
+                                                                    </div>
+                                                                );
+                                                            })}
                                                         </div>
                                                     </div>
                                                 )}
                                             </div>
                                         </div>
-                                    </div>
                                     )}
 
-                                    {/* ── Nearby Panel (Général) ───────────── */}
-                                    {activeTab === 'general' && showNearby && (
-                                        <div className="rounded-xl border border-amber-200 bg-amber-50/40">
-                                            <div className="px-4 py-2.5 bg-amber-50 border-b border-amber-100 flex items-center justify-between">
-                                                <div className="flex items-center gap-2">
-                                                    <Locate className="w-3.5 h-3.5 text-amber-600" />
-                                                    <span className="text-xs font-semibold text-amber-800">Partenaires proches (2 km)</span>
+                                    {/* ── Règlement ────────────────────── */}
+                                    {activeTab === 'reglement' && (
+                                        <div className="space-y-3">
+
+                                            {/* §6 Conditions de paiement */}
+                                            <div className="rounded-xl border border-gray-200 bg-white overflow-hidden">
+                                                <div className="px-4 py-2.5 bg-gray-50 border-b border-gray-100 flex items-center gap-2">
+                                                    <DollarSign className="w-3.5 h-3.5 text-sage-500" />
+                                                    <span className="text-xs font-semibold text-gray-700 uppercase tracking-wider">Conditions de paiement</span>
                                                 </div>
-                                                <button onClick={() => { setShowNearby(false); resetNearby(); }} className="p-0.5 text-amber-400 hover:text-amber-700 rounded transition-colors">
-                                                    <X className="w-3.5 h-3.5" />
-                                                </button>
+                                                <div className="p-3">
+                                                    {paymentTermsLoading ? (
+                                                        <div className="flex items-center justify-center py-6 text-gray-400 text-xs">
+                                                            <Loader2 className="w-4 h-4 animate-spin mr-2" /> Chargement...
+                                                        </div>
+                                                    ) : paymentTermsData ? (
+                                                        <PaymentTermsContent
+                                                            paymentTermsData={paymentTermsData}
+                                                            onSetDefault={handleSetDefaultTerm}
+                                                            onDetach={handleDetachTerm}
+                                                            onAttach={handleAttachTerm}
+                                                        />
+                                                    ) : null}
+                                                </div>
                                             </div>
-                                            <div className="p-3">
-                                                {nearbyLoading ? (
-                                                    <div className="flex items-center justify-center py-4 text-xs text-gray-400"><Loader2 className="w-4 h-4 animate-spin mr-2" /> Recherche...</div>
-                                                ) : nearbyPartners.length > 0 ? (
-                                                    <div className="space-y-1">
-                                                        {nearbyPartners.map((p: any) => (
-                                                            <div key={p.id} className="flex items-center justify-between text-xs py-1.5 px-2 bg-white rounded border border-amber-100">
-                                                                <div className="flex items-center gap-2">
-                                                                    <span className="font-mono text-[10px] text-gray-500">{p.code}</span>
-                                                                    <span className="font-medium text-gray-800">{p.name}</span>
-                                                                </div>
-                                                                <span className="text-gray-400 shrink-0">{p.distance_km ? `${Number(p.distance_km).toFixed(2)} km` : ''}</span>
-                                                            </div>
-                                                        ))}
+
+                                            {/* §7 Modes de règlement — checkbox style */}
+                                            <div className="rounded-xl border border-gray-200 bg-white overflow-hidden">
+                                                <div className="px-4 py-2.5 bg-gray-50 border-b border-gray-100 flex items-center justify-between">
+                                                    <div className="flex items-center gap-2">
+                                                        <Banknote className="w-3.5 h-3.5 text-gray-500" />
+                                                        <span className="text-xs font-semibold text-gray-700 uppercase tracking-wider">Modes de règlement</span>
                                                     </div>
-                                                ) : (
-                                                    <div className="text-center py-4 text-xs text-gray-400">Aucun partenaire dans un rayon de 2 km</div>
-                                                )}
+                                                    <span className="text-[10px] text-gray-400 italic">Référentiel global</span>
+                                                </div>
+                                                <div className="p-3">
+                                                    {paymentMethodsLoading ? (
+                                                        <div className="flex items-center gap-2 text-xs text-gray-400 py-3 justify-center">
+                                                            <Loader2 className="w-3.5 h-3.5 animate-spin" /> Chargement...
+                                                        </div>
+                                                    ) : (
+                                                        <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                                                            {(paymentMethods ?? []).map(pm => (
+                                                                <div key={pm.id} className={`flex items-center gap-3 p-3 rounded-lg border transition-colors ${pm.is_active ? 'border-gray-200 bg-white' : 'border-dashed border-gray-200 bg-gray-50 opacity-50'}`}>
+                                                                    <div className={`w-4 h-4 rounded border-2 flex items-center justify-center shrink-0 ${pm.is_active ? 'bg-sage-500 border-sage-500' : 'border-gray-300 bg-white'}`}>
+                                                                        {pm.is_active && <CheckCircle className="w-2.5 h-2.5 text-white" />}
+                                                                    </div>
+                                                                    <div className="min-w-0">
+                                                                        <div className="text-xs font-semibold text-gray-800">{pm.code}</div>
+                                                                        <div className="text-[10px] text-gray-400 truncate">{pm.name}</div>
+                                                                    </div>
+                                                                </div>
+                                                            ))}
+                                                            {(paymentMethods ?? []).length === 0 && (
+                                                                <div className="col-span-full text-center py-4 text-xs text-gray-400">
+                                                                    Aucun mode de règlement configuré
+                                                                </div>
+                                                            )}
+                                                        </div>
+                                                    )}
+                                                </div>
                                             </div>
                                         </div>
+
                                     )}
 
                                     {/* ── Tournées (Général) ───────────── */}
                                     {activeTab === 'general' && (
-                                    <div className="rounded-xl border border-gray-200 bg-white overflow-hidden">
-                                        <div className="px-4 py-2.5 bg-gray-50 border-b border-gray-100 flex items-center gap-2">
-                                            <Route className="w-3.5 h-3.5 text-indigo-500" />
-                                            <span className="text-xs font-semibold text-gray-700 uppercase tracking-wider">Tournées de livraison</span>
-                                        </div>
-                                        <div className="p-3">
-                                        {(() => {
-                                                // §11.1 enriched data — falls back to flat itinerary_partners while loading
-                                                const enrichedItins = partnerItinerary?.itineraries ?? [];
-                                                const flatItins = (partnerDetail as any).itinerary_partners as any[] | undefined ?? [];
-                                                const alloc = partnerItinerary?.allocation;
+                                        <div className="rounded-xl border border-gray-200 bg-white overflow-hidden">
+                                            <div className="px-4 py-2.5 bg-gray-50 border-b border-gray-100 flex items-center gap-2">
+                                                <Route className="w-3.5 h-3.5 text-indigo-500" />
+                                                <span className="text-xs font-semibold text-gray-700 uppercase tracking-wider">Tournées de livraison</span>
+                                            </div>
+                                            <div className="p-3">
+                                                {(() => {
+                                                    // §11.1 enriched data — falls back to flat itinerary_partners while loading
+                                                    const enrichedItins = partnerItinerary?.itineraries ?? [];
+                                                    const flatItins = (partnerDetail as any).itinerary_partners as any[] | undefined ?? [];
+                                                    const alloc = partnerItinerary?.allocation;
 
-                                                // Resolve pivot id for DELETE (§11.4) by cross-referencing itinerary_id
-                                                const pivotId = (itineraryId: number): number | undefined =>
-                                                    flatItins.find((ip: any) => ip.itinerary_id === itineraryId)?.id;
+                                                    // Resolve pivot id for DELETE (§11.4) by cross-referencing itinerary_id
+                                                    const pivotId = (itineraryId: number): number | undefined =>
+                                                        flatItins.find((ip: any) => ip.itinerary_id === itineraryId)?.id;
 
-                                                const hasItins = enrichedItins.length > 0 || (partnerItineraryLoading && flatItins.length > 0);
+                                                    const hasItins = enrichedItins.length > 0 || (partnerItineraryLoading && flatItins.length > 0);
 
-                                                return (
-                                                    <div className="space-y-3">
-                                                        {/* Allocation info pill */}
-                                                        {alloc && (
-                                                            <div className="flex items-center gap-2 px-3 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-[10px] text-slate-600">
-                                                                <Zap className="w-3 h-3 text-slate-400 shrink-0" />
-                                                                <span>Priorité alloc: <strong className="text-slate-800 capitalize">{alloc.allocation_priority}</strong></span>
-                                                                {alloc.min_allocation_pct > 0 && <span>· Min {alloc.min_allocation_pct}%</span>}
-                                                            </div>
-                                                        )}
+                                                    return (
+                                                        <div className="space-y-3">
+                                                            {/* Allocation info pill */}
+                                                            {alloc && (
+                                                                <div className="flex items-center gap-2 px-3 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-[10px] text-slate-600">
+                                                                    <Zap className="w-3 h-3 text-slate-400 shrink-0" />
+                                                                    <span>Priorité alloc: <strong className="text-slate-800 capitalize">{alloc.allocation_priority}</strong></span>
+                                                                    {alloc.min_allocation_pct > 0 && <span>· Min {alloc.min_allocation_pct}%</span>}
+                                                                </div>
+                                                            )}
 
-                                                        {partnerItineraryLoading ? (
-                                                            <div className="space-y-2">
-                                                                {[1, 2].map(i => <div key={i} className="h-14 bg-gray-100 rounded-xl animate-pulse" />)}
-                                                            </div>
-                                                        ) : hasItins ? (
-                                                            <div className="space-y-2">
-                                                                {enrichedItins.map((it) => {
-                                                                    const pid = pivotId(it.itinerary_id);
-                                                                    const nextVisit = it.visit_date
-                                                                        ? new Date(it.visit_date).toLocaleDateString('fr-FR', { day: '2-digit', month: 'short' })
-                                                                        : null;
-                                                                    return (
-                                                                        <div key={it.itinerary_id} className="flex items-start justify-between p-3 rounded-xl border border-indigo-100 bg-indigo-50/30 gap-3">
-                                                                            <div className="flex items-start gap-3 min-w-0">
-                                                                                <div className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 ${it.is_active ? 'bg-indigo-100' : 'bg-gray-100'}`}>
-                                                                                    <Route className={`w-4 h-4 ${it.is_active ? 'text-indigo-600' : 'text-gray-400'}`} />
-                                                                                </div>
-                                                                                <div className="min-w-0">
-                                                                                    <div className="flex items-center gap-1.5 flex-wrap">
-                                                                                        <span className="text-sm font-semibold text-gray-900 truncate">{it.itinerary_name}</span>
-                                                                                        {!it.is_active && <span className="text-[9px] px-1.5 py-0.5 bg-gray-200 text-gray-500 rounded-full font-medium">Inactif</span>}
+                                                            {partnerItineraryLoading ? (
+                                                                <div className="space-y-2">
+                                                                    {[1, 2].map(i => <div key={i} className="h-14 bg-gray-100 rounded-xl animate-pulse" />)}
+                                                                </div>
+                                                            ) : hasItins ? (
+                                                                <div className="space-y-2">
+                                                                    {enrichedItins.map((it) => {
+                                                                        const pid = pivotId(it.itinerary_id);
+                                                                        const nextVisit = it.visit_date
+                                                                            ? new Date(it.visit_date).toLocaleDateString('fr-FR', { day: '2-digit', month: 'short' })
+                                                                            : null;
+                                                                        return (
+                                                                            <div key={it.itinerary_id} className="flex items-start justify-between p-3 rounded-xl border border-indigo-100 bg-indigo-50/30 gap-3">
+                                                                                <div className="flex items-start gap-3 min-w-0">
+                                                                                    <div className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 ${it.is_active ? 'bg-indigo-100' : 'bg-gray-100'}`}>
+                                                                                        <Route className={`w-4 h-4 ${it.is_active ? 'text-indigo-600' : 'text-gray-400'}`} />
                                                                                     </div>
-                                                                                    <div className="flex items-center gap-2 text-[10px] text-gray-500 flex-wrap mt-0.5">
-                                                                                        <span className="font-mono bg-white px-1.5 py-0.5 rounded border border-gray-200">{it.itinerary_code}</span>
-                                                                                        <span className="px-1.5 py-0.5 bg-indigo-50 text-indigo-600 rounded border border-indigo-100">{it.itinerary_type}</span>
-                                                                                        {it.rank > 0 && <span className="flex items-center gap-0.5"><ArrowUpDown className="w-2.5 h-2.5" />Rang {it.rank}</span>}
-                                                                                        {it.visit_frequency_days > 0 && <span>/{it.visit_frequency_days}j</span>}
-                                                                                        {it.start_time && it.end_time && <span><Clock className="inline w-2.5 h-2.5 mr-0.5" />{it.start_time}–{it.end_time}</span>}
-                                                                                        {it.is_stop_point && <span className="px-1.5 py-0.5 bg-indigo-100 text-indigo-700 rounded font-medium">Arrêt officiel</span>}
-                                                                                        {nextVisit && <span className="text-emerald-600 font-medium">Prochain: {nextVisit}</span>}
+                                                                                    <div className="min-w-0">
+                                                                                        <div className="flex items-center gap-1.5 flex-wrap">
+                                                                                            <span className="text-sm font-semibold text-gray-900 truncate">{it.itinerary_name}</span>
+                                                                                            {!it.is_active && <span className="text-[9px] px-1.5 py-0.5 bg-gray-200 text-gray-500 rounded-full font-medium">Inactif</span>}
+                                                                                        </div>
+                                                                                        <div className="flex items-center gap-2 text-[10px] text-gray-500 flex-wrap mt-0.5">
+                                                                                            <span className="font-mono bg-white px-1.5 py-0.5 rounded border border-gray-200">{it.itinerary_code}</span>
+                                                                                            <span className="px-1.5 py-0.5 bg-indigo-50 text-indigo-600 rounded border border-indigo-100">{it.itinerary_type}</span>
+                                                                                            {it.rank > 0 && <span className="flex items-center gap-0.5"><ArrowUpDown className="w-2.5 h-2.5" />Rang {it.rank}</span>}
+                                                                                            {it.visit_frequency_days > 0 && <span>/{it.visit_frequency_days}j</span>}
+                                                                                            {it.start_time && it.end_time && <span><Clock className="inline w-2.5 h-2.5 mr-0.5" />{it.start_time}–{it.end_time}</span>}
+                                                                                            {it.is_stop_point && <span className="px-1.5 py-0.5 bg-indigo-100 text-indigo-700 rounded font-medium">Arrêt officiel</span>}
+                                                                                            {nextVisit && <span className="text-emerald-600 font-medium">Prochain: {nextVisit}</span>}
+                                                                                        </div>
                                                                                     </div>
                                                                                 </div>
+                                                                                {pid !== undefined && (
+                                                                                    <button
+                                                                                        onClick={() => handleRemoveFromItinerary(it.itinerary_id, pid)}
+                                                                                        disabled={removingItinerary}
+                                                                                        className="p-1.5 rounded-lg text-gray-400 hover:text-red-600 hover:bg-red-50 transition-colors shrink-0 mt-0.5"
+                                                                                        title="Retirer de cette tournée"
+                                                                                    >
+                                                                                        <Unlink className="w-3.5 h-3.5" />
+                                                                                    </button>
+                                                                                )}
                                                                             </div>
-                                                                            {pid !== undefined && (
-                                                                                <button
-                                                                                    onClick={() => handleRemoveFromItinerary(it.itinerary_id, pid)}
-                                                                                    disabled={removingItinerary}
-                                                                                    className="p-1.5 rounded-lg text-gray-400 hover:text-red-600 hover:bg-red-50 transition-colors shrink-0 mt-0.5"
-                                                                                    title="Retirer de cette tournée"
-                                                                                >
-                                                                                    <Unlink className="w-3.5 h-3.5" />
-                                                                                </button>
-                                                                            )}
-                                                                        </div>
-                                                                    );
-                                                                })}
-                                                            </div>
-                                                        ) : (
-                                                            <div className="text-center py-6 text-xs text-gray-400 border border-dashed border-gray-200 rounded-xl bg-gray-50">
-                                                                <Route className="w-8 h-8 mx-auto mb-2 text-gray-300" />
-                                                                <p>Aucune tournée assignée</p>
-                                                            </div>
-                                                        )}
+                                                                        );
+                                                                    })}
+                                                                </div>
+                                                            ) : (
+                                                                <div className="text-center py-6 text-xs text-gray-400 border border-dashed border-gray-200 rounded-xl bg-gray-50">
+                                                                    <Route className="w-8 h-8 mx-auto mb-2 text-gray-300" />
+                                                                    <p>Aucune tournée assignée</p>
+                                                                </div>
+                                                            )}
 
-                                                        {/* Add to itinerary */}
-                                                        {!showItineraryPanel ? (
-                                                            <button
-                                                                onClick={() => { setShowItineraryPanel(true); fetchItineraries(); }}
-                                                                className="flex items-center gap-2 w-full px-3 py-2.5 text-xs font-medium text-indigo-700 bg-indigo-50 hover:bg-indigo-100 rounded-xl border border-indigo-200 transition-colors"
-                                                            >
-                                                                <Link2 className="w-3.5 h-3.5" />
-                                                                Affecter à une tournée
-                                                            </button>
-                                                        ) : (
-                                                            <div className="p-3 rounded-xl border border-indigo-200 bg-white space-y-3">
-                                                                <div className="text-xs font-semibold text-gray-700">Affecter à une tournée</div>
-                                                                {itinerariesLoading ? (
-                                                                    <div className="flex items-center gap-2 text-xs text-gray-400 py-2">
-                                                                        <Loader2 className="w-3 h-3 animate-spin" /> Chargement...
+                                                            {/* Add to itinerary */}
+                                                            {!showItineraryPanel ? (
+                                                                <button
+                                                                    onClick={() => { setShowItineraryPanel(true); fetchItineraries(); }}
+                                                                    className="flex items-center gap-2 w-full px-3 py-2.5 text-xs font-medium text-indigo-700 bg-indigo-50 hover:bg-indigo-100 rounded-xl border border-indigo-200 transition-colors"
+                                                                >
+                                                                    <Link2 className="w-3.5 h-3.5" />
+                                                                    Affecter à une tournée
+                                                                </button>
+                                                            ) : (
+                                                                <div className="p-3 rounded-xl border border-indigo-200 bg-white space-y-3">
+                                                                    <div className="text-xs font-semibold text-gray-700">Affecter à une tournée</div>
+                                                                    {itinerariesLoading ? (
+                                                                        <div className="flex items-center gap-2 text-xs text-gray-400 py-2">
+                                                                            <Loader2 className="w-3 h-3 animate-spin" /> Chargement...
+                                                                        </div>
+                                                                    ) : (
+                                                                        <select
+                                                                            value={selectedItineraryId ?? ''}
+                                                                            onChange={e => setSelectedItineraryId(e.target.value ? Number(e.target.value) : null)}
+                                                                            className="w-full text-xs border border-gray-200 rounded-md px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-gray-50"
+                                                                        >
+                                                                            <option value="">Sélectionner une tournée…</option>
+                                                                            {(availableItineraries ?? []).map(it => (
+                                                                                <option key={it.id} value={it.id}>{it.name} ({it.code})</option>
+                                                                            ))}
+                                                                        </select>
+                                                                    )}
+                                                                    {/* Optional fields */}
+                                                                    <div className="grid grid-cols-2 gap-2">
+                                                                        <div>
+                                                                            <label className="block text-[10px] text-gray-500 mb-1">Rang dans tournée</label>
+                                                                            <input type="number" min="0" value={itineraryForm.rank ?? ''} onChange={e => setItineraryForm(f => ({ ...f, rank: e.target.value ? Number(e.target.value) : undefined }))}
+                                                                                placeholder="0" className="w-full text-xs border border-gray-200 rounded px-2 py-1 focus:outline-none focus:ring-1 focus:ring-indigo-400 bg-gray-50" />
+                                                                        </div>
+                                                                        <div>
+                                                                            <label className="block text-[10px] text-gray-500 mb-1">Fréquence (jours)</label>
+                                                                            <input type="number" min="1" value={itineraryForm.visit_frequency_days ?? ''} onChange={e => setItineraryForm(f => ({ ...f, visit_frequency_days: e.target.value ? Number(e.target.value) : undefined }))}
+                                                                                placeholder="7" className="w-full text-xs border border-gray-200 rounded px-2 py-1 focus:outline-none focus:ring-1 focus:ring-indigo-400 bg-gray-50" />
+                                                                        </div>
+                                                                        <div>
+                                                                            <label className="block text-[10px] text-gray-500 mb-1">Heure début</label>
+                                                                            <input type="time" value={itineraryForm.start_time ?? ''} onChange={e => setItineraryForm(f => ({ ...f, start_time: e.target.value || undefined }))}
+                                                                                className="w-full text-xs border border-gray-200 rounded px-2 py-1 focus:outline-none focus:ring-1 focus:ring-indigo-400 bg-gray-50" />
+                                                                        </div>
+                                                                        <div>
+                                                                            <label className="block text-[10px] text-gray-500 mb-1">Heure fin</label>
+                                                                            <input type="time" value={itineraryForm.end_time ?? ''} onChange={e => setItineraryForm(f => ({ ...f, end_time: e.target.value || undefined }))}
+                                                                                className="w-full text-xs border border-gray-200 rounded px-2 py-1 focus:outline-none focus:ring-1 focus:ring-indigo-400 bg-gray-50" />
+                                                                        </div>
                                                                     </div>
-                                                                ) : (
-                                                                    <select
-                                                                        value={selectedItineraryId ?? ''}
-                                                                        onChange={e => setSelectedItineraryId(e.target.value ? Number(e.target.value) : null)}
-                                                                        className="w-full text-xs border border-gray-200 rounded-md px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-gray-50"
-                                                                    >
-                                                                        <option value="">Sélectionner une tournée…</option>
-                                                                        {availableItineraries.map(it => (
-                                                                            <option key={it.id} value={it.id}>{it.name} ({it.code})</option>
-                                                                        ))}
-                                                                    </select>
-                                                                )}
-                                                                {/* Optional fields */}
-                                                                <div className="grid grid-cols-2 gap-2">
                                                                     <div>
-                                                                        <label className="block text-[10px] text-gray-500 mb-1">Rang dans tournée</label>
-                                                                        <input type="number" min="0" value={itineraryForm.rank ?? ''} onChange={e => setItineraryForm(f => ({ ...f, rank: e.target.value ? Number(e.target.value) : undefined }))}
-                                                                            placeholder="0" className="w-full text-xs border border-gray-200 rounded px-2 py-1 focus:outline-none focus:ring-1 focus:ring-indigo-400 bg-gray-50" />
-                                                                    </div>
-                                                                    <div>
-                                                                        <label className="block text-[10px] text-gray-500 mb-1">Fréquence (jours)</label>
-                                                                        <input type="number" min="1" value={itineraryForm.visit_frequency_days ?? ''} onChange={e => setItineraryForm(f => ({ ...f, visit_frequency_days: e.target.value ? Number(e.target.value) : undefined }))}
-                                                                            placeholder="7" className="w-full text-xs border border-gray-200 rounded px-2 py-1 focus:outline-none focus:ring-1 focus:ring-indigo-400 bg-gray-50" />
-                                                                    </div>
-                                                                    <div>
-                                                                        <label className="block text-[10px] text-gray-500 mb-1">Heure début</label>
-                                                                        <input type="time" value={itineraryForm.start_time ?? ''} onChange={e => setItineraryForm(f => ({ ...f, start_time: e.target.value || undefined }))}
+                                                                        <label className="block text-[10px] text-gray-500 mb-1">Notes livreur</label>
+                                                                        <input type="text" value={itineraryForm.notes ?? ''} onChange={e => setItineraryForm(f => ({ ...f, notes: e.target.value || undefined }))}
+                                                                            placeholder="Ex: Livraison avant ouverture magasin"
                                                                             className="w-full text-xs border border-gray-200 rounded px-2 py-1 focus:outline-none focus:ring-1 focus:ring-indigo-400 bg-gray-50" />
                                                                     </div>
-                                                                    <div>
-                                                                        <label className="block text-[10px] text-gray-500 mb-1">Heure fin</label>
-                                                                        <input type="time" value={itineraryForm.end_time ?? ''} onChange={e => setItineraryForm(f => ({ ...f, end_time: e.target.value || undefined }))}
-                                                                            className="w-full text-xs border border-gray-200 rounded px-2 py-1 focus:outline-none focus:ring-1 focus:ring-indigo-400 bg-gray-50" />
+                                                                    <label className="flex items-center gap-2 text-xs text-gray-600 cursor-pointer">
+                                                                        <input type="checkbox" checked={itineraryForm.is_stop_point ?? false} onChange={e => setItineraryForm(f => ({ ...f, is_stop_point: e.target.checked }))}
+                                                                            className="w-3.5 h-3.5 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500" />
+                                                                        Point d'arrêt officiel
+                                                                    </label>
+                                                                    <div className="flex gap-2">
+                                                                        <button
+                                                                            onClick={handleAssignItinerary}
+                                                                            disabled={!selectedItineraryId || assigningItinerary}
+                                                                            className="flex-1 flex items-center justify-center gap-1 px-3 py-1.5 text-xs bg-indigo-600 text-white rounded-md hover:bg-indigo-700 disabled:opacity-40 transition-colors"
+                                                                        >
+                                                                            {assigningItinerary ? <Loader2 className="w-3 h-3 animate-spin" /> : <Link2 className="w-3 h-3" />}
+                                                                            Affecter
+                                                                        </button>
+                                                                        <button
+                                                                            onClick={() => { setShowItineraryPanel(false); setSelectedItineraryId(null); setItineraryForm({}); }}
+                                                                            className="px-3 py-1.5 text-xs bg-gray-100 text-gray-600 rounded-md hover:bg-gray-200 transition-colors"
+                                                                        >
+                                                                            Annuler
+                                                                        </button>
                                                                     </div>
                                                                 </div>
-                                                                <div>
-                                                                    <label className="block text-[10px] text-gray-500 mb-1">Notes livreur</label>
-                                                                    <input type="text" value={itineraryForm.notes ?? ''} onChange={e => setItineraryForm(f => ({ ...f, notes: e.target.value || undefined }))}
-                                                                        placeholder="Ex: Livraison avant ouverture magasin"
-                                                                        className="w-full text-xs border border-gray-200 rounded px-2 py-1 focus:outline-none focus:ring-1 focus:ring-indigo-400 bg-gray-50" />
-                                                                </div>
-                                                                <label className="flex items-center gap-2 text-xs text-gray-600 cursor-pointer">
-                                                                    <input type="checkbox" checked={itineraryForm.is_stop_point ?? false} onChange={e => setItineraryForm(f => ({ ...f, is_stop_point: e.target.checked }))}
-                                                                        className="w-3.5 h-3.5 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500" />
-                                                                    Point d'arrêt officiel
-                                                                </label>
-                                                                <div className="flex gap-2">
-                                                                    <button
-                                                                        onClick={handleAssignItinerary}
-                                                                        disabled={!selectedItineraryId || assigningItinerary}
-                                                                        className="flex-1 flex items-center justify-center gap-1 px-3 py-1.5 text-xs bg-indigo-600 text-white rounded-md hover:bg-indigo-700 disabled:opacity-40 transition-colors"
-                                                                    >
-                                                                        {assigningItinerary ? <Loader2 className="w-3 h-3 animate-spin" /> : <Link2 className="w-3 h-3" />}
-                                                                        Affecter
-                                                                    </button>
-                                                                    <button
-                                                                        onClick={() => { setShowItineraryPanel(false); setSelectedItineraryId(null); setItineraryForm({}); }}
-                                                                        className="px-3 py-1.5 text-xs bg-gray-100 text-gray-600 rounded-md hover:bg-gray-200 transition-colors"
-                                                                    >
-                                                                        Annuler
-                                                                    </button>
-                                                                </div>
-                                                            </div>
-                                                        )}
-                                                    </div>
-                                                );
-                                            })()}
+                                                            )}
+                                                        </div>
+                                                    );
+                                                })()}
+                                            </div>
                                         </div>
-                                    </div>
                                     )}
 
                                     {/* ── Tarification ─────────────────── */}
                                     {activeTab === 'tarification' && (
-                                    <>
-                                        {/* Canal & Segmentation */}
-                                        <div className="rounded-xl border border-gray-200 bg-white overflow-hidden">
-                                            <div className="px-4 py-2.5 bg-gray-50 border-b border-gray-100">
-                                                <span className="text-xs font-semibold text-gray-600 uppercase tracking-wider">Canal & Segmentation</span>
-                                            </div>
-                                            <div className="p-4 space-y-2.5">
-                                                <div className="flex items-center justify-between text-sm">
-                                                    <span className="text-gray-500 text-xs">Canal</span>
-                                                    <span className="text-xs font-medium text-gray-900">{partnerDetail.channel || '—'}</span>
+                                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                            {/* Canal */}
+                                            <div className="rounded-xl border border-gray-200 bg-white overflow-hidden">
+                                                <div className="px-4 py-2.5 bg-gray-50 border-b border-gray-100">
+                                                    <span className="text-xs font-semibold text-gray-600 uppercase tracking-wider">Canal</span>
                                                 </div>
-                                                {partnerDetail.channel_ref && (
-                                                    <>
-                                                        <div className="flex items-center justify-between text-sm">
-                                                            <span className="text-gray-500 text-xs">Code canal</span>
-                                                            <span className="font-mono text-xs text-gray-900 bg-gray-50 px-2 py-0.5 rounded">{partnerDetail.channel_ref.code}</span>
+                                                <div className="p-4">
+                                                    {channelsLoading ? (
+                                                        <div className="flex items-center gap-2 text-xs text-gray-400">
+                                                            <Loader2 className="w-3.5 h-3.5 animate-spin" /> Chargement...
                                                         </div>
-                                                        <div className="flex items-center justify-between text-sm">
-                                                            <span className="text-gray-500 text-xs">Libellé canal</span>
-                                                            <span className="text-xs font-medium text-gray-900">{partnerDetail.channel_ref.name}</span>
-                                                        </div>
-                                                        {partnerDetail.channel_ref.price_list_id && (
-                                                            <div className="flex items-center justify-between text-sm">
-                                                                <span className="text-gray-500 text-xs">Liste de prix (canal)</span>
-                                                                <span className="text-xs font-medium text-sage-700 bg-sage-50 px-2 py-0.5 rounded">#{partnerDetail.channel_ref.price_list_id}</span>
-                                                            </div>
-                                                        )}
-                                                    </>
-                                                )}
-                                                {partnerDetail.partner_type && (
-                                                    <div className="flex items-center justify-between text-sm">
-                                                        <span className="text-gray-500 text-xs">Type partenaire</span>
-                                                        <span className="text-xs font-medium text-gray-900 bg-gray-100 px-2 py-0.5 rounded">{partnerDetail.partner_type}</span>
-                                                    </div>
-                                                )}
+                                                    ) : (
+                                                        <select
+                                                            value={partnerDetail.channel_id ?? ''}
+                                                            onChange={e => handleUpdateChannel(e.target.value)}
+                                                            className="w-full text-xs border border-gray-200 rounded-md px-2.5 py-2 focus:outline-none focus:ring-2 focus:ring-sage-500 bg-white"
+                                                        >
+                                                            <option value="">— Sélectionner —</option>
+                                                            {(channelsData ?? []).map(ch => (
+                                                                <option key={ch.id} value={ch.id}>{ch.code} — {ch.name}</option>
+                                                            ))}
+                                                        </select>
+                                                    )}
+                                                </div>
                                             </div>
-                                        </div>
 
-                                        {/* Tarif & Remises */}
-                                        <div className="rounded-xl border border-gray-200 bg-white overflow-hidden">
-                                            <div className="px-4 py-2.5 bg-gray-50 border-b border-gray-100">
-                                                <span className="text-xs font-semibold text-gray-600 uppercase tracking-wider">Tarif & Remises</span>
+                                            {/* Liste de prix */}
+                                            <div className="rounded-xl border border-gray-200 bg-white overflow-hidden">
+                                                <div className="px-4 py-2.5 bg-gray-50 border-b border-gray-100">
+                                                    <span className="text-xs font-semibold text-gray-600 uppercase tracking-wider">Liste de prix</span>
+                                                </div>
+                                                <div className="p-4">
+                                                    {masterDataLoading ? (
+                                                        <div className="flex items-center gap-2 text-xs text-gray-400">
+                                                            <Loader2 className="w-3.5 h-3.5 animate-spin" /> Chargement...
+                                                        </div>
+                                                    ) : (
+                                                        <select
+                                                            value={partnerDetail.price_list_id ?? ''}
+                                                            onChange={e => handleUpdatePriceList(e.target.value)}
+                                                            className="w-full text-xs border border-gray-200 rounded-md px-2.5 py-2 focus:outline-none focus:ring-2 focus:ring-sage-500 bg-white"
+                                                        >
+                                                            <option value="">— Sélectionner —</option>
+                                                            {(masterData?.price_lists ?? []).map(pl => (
+                                                                <option key={pl.id} value={pl.id}>{pl.code} — {pl.name}</option>
+                                                            ))}
+                                                        </select>
+                                                    )}
+                                                </div>
                                             </div>
-                                            <div className="p-4 space-y-2.5">
-                                                <div className="flex items-center justify-between text-sm">
-                                                    <span className="text-gray-500 text-xs">Liste de prix</span>
-                                                    {partnerDetail.price_list ? (
-                                                        <span className="font-medium text-gray-900 text-xs bg-sage-50 text-sage-700 px-2 py-0.5 rounded">{partnerDetail.price_list.name}</span>
-                                                    ) : <span className="text-gray-400 text-xs">—</span>}
+
+                                            {/* Chronologies commerciales */}
+                                            <div className="sm:col-span-2 rounded-xl border border-gray-200 bg-white overflow-hidden">
+                                                <div className="px-4 py-2.5 bg-gray-50 border-b border-gray-100">
+                                                    <span className="text-xs font-semibold text-gray-600 uppercase tracking-wider">Chronologies commerciales</span>
                                                 </div>
-                                                <div className="flex items-center justify-between text-sm">
-                                                    <span className="text-gray-500 text-xs">Remise défaut</span>
-                                                    <span className="text-xs font-semibold text-sage-700 bg-sage-50 px-2 py-0.5 rounded">{toNum(partnerDetail.default_discount_rate)}%</span>
-                                                </div>
-                                                {toNum(partnerDetail.default_discount_amount) > 0 && (
-                                                    <div className="flex items-center justify-between text-sm">
-                                                        <span className="text-gray-500 text-xs">Remise montant fixe</span>
-                                                        <span className="text-xs font-semibold text-gray-800">{fmtNumber(partnerDetail.default_discount_amount)}</span>
-                                                    </div>
-                                                )}
-                                                {toNum((partnerDetail as any).max_discount_rate) > 0 && (
-                                                    <div className="flex items-center justify-between text-sm">
-                                                        <span className="text-gray-500 text-xs">Remise max autorisée</span>
-                                                        <span className="text-xs font-medium text-amber-700 bg-amber-50 px-2 py-0.5 rounded">{toNum((partnerDetail as any).max_discount_rate)}%</span>
-                                                    </div>
-                                                )}
-                                                <div className="flex items-center justify-between text-sm">
-                                                    <span className="text-gray-500 text-xs">Créé le</span>
-                                                    <span className="text-xs text-gray-700">{fmtDate(partnerDetail.created_at)}</span>
-                                                </div>
-                                                <div className="flex items-center justify-between text-sm">
-                                                    <span className="text-gray-500 text-xs">Mis à jour le</span>
-                                                    <span className="text-xs text-gray-700">{fmtDate(partnerDetail.updated_at)}</span>
+                                                <div className="p-4">
+                                                    {partnerDetail.id && <PartnerChronologyChips partnerId={partnerDetail.id} />}
                                                 </div>
                                             </div>
                                         </div>
-
-                                        {/* Business Chronologies */}
-                                        {Array.isArray(partnerDetail.business_chronologies) && partnerDetail.business_chronologies.length > 0 && (
-                                            <div className="rounded-xl border border-gray-200 bg-white overflow-hidden">
-                                                <div className="px-4 py-2.5 bg-gray-50 border-b border-gray-100">
-                                                    <span className="text-xs font-semibold text-gray-600 uppercase tracking-wider">Chronologies business</span>
-                                                </div>
-                                                <div className="divide-y divide-gray-50">
-                                                    {partnerDetail.business_chronologies.map((ch: any, i: number) => (
-                                                        <div key={ch.id ?? i} className="px-4 py-2.5 text-xs flex items-center justify-between">
-                                                            <span className="font-medium text-gray-800">{ch.name || ch.code || `Chronologie ${i + 1}`}</span>
-                                                            {ch.is_active !== undefined && (
-                                                                <span className={`px-2 py-0.5 rounded-full text-[10px] font-medium ${ch.is_active ? 'bg-emerald-50 text-emerald-700' : 'bg-gray-100 text-gray-500'}`}>
-                                                                    {ch.is_active ? 'Active' : 'Inactive'}
-                                                                </span>
-                                                            )}
-                                                        </div>
-                                                    ))}
-                                                </div>
-                                            </div>
-                                        )}
-
-                                        {/* Custom Fields */}
-                                        {detailData?.customFields && Object.keys(detailData.customFields).length > 0 && (
-                                            <div className="rounded-xl border border-gray-200 bg-white overflow-hidden">
-                                                <div className="px-4 py-2.5 bg-gray-50 border-b border-gray-100">
-                                                    <span className="text-xs font-semibold text-gray-600 uppercase tracking-wider">Champs personnalisés</span>
-                                                </div>
-                                                <div className="p-4 space-y-2.5">
-                                                    {Object.entries(detailData.customFields).map(([key, cf]) => (
-                                                        <div key={key} className="flex items-center justify-between text-sm">
-                                                            <div className="flex items-center gap-2">
-                                                                <span className="w-1.5 h-1.5 rounded-full bg-violet-400 shrink-0" />
-                                                                <span className="text-gray-600 text-xs">{cf.label}</span>
-                                                            </div>
-                                                            <span className="font-medium text-gray-900 text-xs">{cf.formatted_value || cf.value || <span className="text-gray-300 italic">Non renseigné</span>}</span>
-                                                        </div>
-                                                    ))}
-                                                </div>
-                                            </div>
-                                        )}
-
-                                        {/* Empty state */}
-                                        {!partnerDetail.channel && !partnerDetail.price_list && !(Array.isArray(partnerDetail.business_chronologies) && partnerDetail.business_chronologies.length > 0) && !detailData?.customFields && (
-                                            <div className="text-center py-16 text-xs text-gray-400">
-                                                <DollarSign className="w-10 h-10 mx-auto mb-2 text-gray-200" />
-                                                <p className="font-medium">Aucune donnée tarifaire</p>
-                                                <p className="text-[10px] mt-0.5 text-gray-300">Canal, liste de prix et remises non renseignés</p>
-                                            </div>
-                                        )}
-                                    </>
                                     )}
                                 </div>
                             </div>
@@ -2808,54 +2004,62 @@ export const PartnerManagementPage = () => {
                                 </div>
                             </div>
                         )}
-                    </div>
+                    </div >
                 }
 
-                rightContent={<ActionPanel groups={actionGroups} />}
+                rightContent={< ActionPanel groups={actionGroups} />}
             />
 
             {/* ── Modals ──────────────────────────────────────────────────────── */}
-            {showDeleteModal && selectedPartner && (
-                <ModalDelete
-                    partner={selectedPartner}
-                    onClose={() => setShowDeleteModal(false)}
-                    onConfirm={handleConfirmDelete}
-                    loading={deleting}
-                />
-            )}
+            {
+                showDeleteModal && selectedPartner && (
+                    <ModalDelete
+                        partner={selectedPartner}
+                        onClose={() => setShowDeleteModal(false)}
+                        onConfirm={handleConfirmDelete}
+                        loading={deleting}
+                    />
+                )
+            }
 
-            {showStatusModal && selectedPartner && (
-                <ModalStatus
-                    partner={selectedPartner}
-                    form={statusForm}
-                    setForm={setStatusForm}
-                    onClose={() => setShowStatusModal(false)}
-                    onSubmit={handleSubmitStatus}
-                    loading={updatingStatus}
-                />
-            )}
+            {
+                showStatusModal && selectedPartner && (
+                    <ModalStatus
+                        partner={selectedPartner}
+                        form={statusForm}
+                        setForm={setStatusForm}
+                        onClose={() => setShowStatusModal(false)}
+                        onSubmit={handleSubmitStatus}
+                        loading={updatingStatus}
+                    />
+                )
+            }
 
-            {showBlockModal && selectedPartner && (
-                <ModalBlock
-                    partner={selectedPartner}
-                    form={blockForm}
-                    setForm={setBlockForm}
-                    onClose={() => setShowBlockModal(false)}
-                    onSubmit={handleSubmitBlock}
-                    loading={blocking}
-                />
-            )}
+            {
+                showBlockModal && selectedPartner && (
+                    <ModalBlock
+                        partner={selectedPartner}
+                        form={blockForm}
+                        setForm={setBlockForm}
+                        onClose={() => setShowBlockModal(false)}
+                        onSubmit={handleSubmitBlock}
+                        loading={blocking}
+                    />
+                )
+            }
 
-            {showCreditModal && selectedPartner && (
-                <ModalCredit
-                    partner={selectedPartner}
-                    form={creditForm}
-                    setForm={setCreditForm}
-                    onClose={() => setShowCreditModal(false)}
-                    onSubmit={handleSubmitCredit}
-                    loading={updatingCredit}
-                />
-            )}
+            {
+                showCreditModal && selectedPartner && (
+                    <ModalCredit
+                        partner={selectedPartner}
+                        form={creditForm}
+                        setForm={setCreditForm}
+                        onClose={() => setShowCreditModal(false)}
+                        onSubmit={handleSubmitCredit}
+                        loading={updatingCredit}
+                    />
+                )
+            }
         </>
     );
 };

@@ -115,9 +115,9 @@
   --ag-selected-row-background-color: #dcfce7;
 
   /* Sage Accents */
-  --ag-range-selection-border-color: #00b06b;
-  --ag-input-focus-border-color: #00b06b;
-  --ag-checkbox-checked-color: #00b06b;
+  --ag-range-selection-border-color: #008146;
+  --ag-input-focus-border-color: #008146;
+  --ag-checkbox-checked-color: #008146;
   --ag-range-selection-background-color: rgba(0, 176, 107, 0.1);
 
   /* Spacing */
@@ -189,11 +189,11 @@
 }
 
 .ag-theme-sage .ag-header-cell:hover .ag-icon {
-  color: #00b06b;
+  color: #008146;
 }
 
 .dark .ag-theme-sage .ag-header-cell:hover .ag-icon {
-  color: #22c55e;
+  color: #008146;
 }
 
 /* ============================================
@@ -221,13 +221,13 @@
 
 .ag-theme-sage .ag-row-selected {
   background-color: #dcfce7 !important;
-  border-left: 3px solid #00b06b !important;
+  border-left: 1px solid #008146 !important;
   font-weight: 500;
 }
 
 .dark .ag-theme-sage .ag-row-selected {
   background-color: rgba(20, 83, 45, 0.5) !important;
-  border-left: 3px solid #22c55e !important;
+  border-left: 2px solid #008146 !important;
 }
 
 .ag-theme-sage .ag-row-selected:hover {
@@ -251,7 +251,7 @@
 
 .ag-theme-sage .ag-cell-focus,
 .ag-theme-sage .ag-cell:focus-within {
-  border: 2px solid #00b06b !important;
+  border: 1px solid #008146 !important;
   outline: none;
 }
 
@@ -271,13 +271,13 @@
 }
 
 .ag-theme-sage .ag-checkbox-input-wrapper.ag-checked {
-  background-color: #00b06b;
-  border-color: #00b06b;
+  background-color: #008146;
+  border-color: #008146;
 }
 
 .dark .ag-theme-sage .ag-checkbox-input-wrapper.ag-checked {
-  background-color: #22c55e;
-  border-color: #22c55e;
+  background-color: #008146;
+  border-color: #008146;
 }
 
 .ag-theme-sage .ag-checkbox-input-wrapper.ag-checked::after {
@@ -290,12 +290,12 @@
 
 .ag-theme-sage .ag-header-cell-sorted-asc .ag-icon,
 .ag-theme-sage .ag-header-cell-sorted-desc .ag-icon {
-  color: #00b06b;
+  color: #008146;
 }
 
 .dark .ag-theme-sage .ag-header-cell-sorted-asc .ag-icon,
 .dark .ag-theme-sage .ag-header-cell-sorted-desc .ag-icon {
-  color: #22c55e;
+  color: #008146;
 }
 
 .ag-theme-sage .ag-header-cell-menu-button,
@@ -324,7 +324,7 @@
 }
 
 .ag-theme-sage .ag-header-cell-resize:hover {
-  background-color: #00b06b;
+  background-color: #008146;
   width: 3px;
 }
 
@@ -354,12 +354,12 @@
 
 .ag-theme-sage .ag-paging-button:hover:not([disabled]) {
   background-color: #e5e7eb;
-  color: #00b06b;
+  color: #008146;
 }
 
 .dark .ag-theme-sage .ag-paging-button:hover:not([disabled]) {
   background-color: #374151;
-  color: #22c55e;
+  color: #008146;
 }
 
 /* ============================================

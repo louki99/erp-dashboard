@@ -240,9 +240,9 @@ export function WorkflowEngineVisualization({
                     <MiniMap
                         nodeColor={(node) => {
                             const data = node.data as any;
-                            if (data.isCurrent) return '#00b06b';
+                            if (data.isCurrent) return '#008146';
                             if (data.is_initial) return '#3b82f6';
-                            if (data.is_final) return '#10b981';
+                            if (data.is_final) return '#06663bff';
                             return '#e5e7eb';
                         }}
                         maskColor="rgba(0, 0, 0, 0.1)"
