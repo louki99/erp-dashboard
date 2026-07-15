@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { AnimatePresence, motion } from 'framer-motion';
-import { X, ChevronRight, Clock, Search } from 'lucide-react';
+import { X, ChevronRight, Clock, Search, ArrowRight } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { DOMAIN_COLOR_MAP, type BusinessDomain } from '@/lib/hub/hubData';
 import { getVisibleDomains, filterDomainContent } from '@/lib/hub/hubUtils';
@@ -20,15 +20,16 @@ interface DomainCardProps {
 const DomainCard = ({ domain, onClick }: DomainCardProps) => {
     const Icon = domain.icon;
     const colors = DOMAIN_COLOR_MAP[domain.color];
-    // domain.processes is already permission-filtered → count is accurate
     const visibleCount = domain.processes.length;
+    // First 3 process labels shown as pills
+    const pills = domain.processes.slice(0, 3).map(p => p.label);
 
     return (
         <button
             onClick={onClick}
             disabled={visibleCount === 0}
             className={cn(
-                'flex flex-col items-center gap-3.5 p-5 rounded-2xl text-center',
+                'flex items-center gap-5 p-5 rounded-2xl text-left w-full',
                 'bg-white dark:bg-gray-800/50',
                 'border-2 border-transparent',
                 'shadow-sm hover:shadow-xl',
@@ -39,28 +40,54 @@ const DomainCard = ({ domain, onClick }: DomainCardProps) => {
                 visibleCount === 0 && 'opacity-40 cursor-not-allowed hover:shadow-sm hover:translate-y-0',
             )}
         >
+            {/* Icon */}
             <div className={cn(
-                'w-14 h-14 rounded-2xl flex items-center justify-center',
-                'group-hover:scale-110 transition-transform duration-200',
+                'w-16 h-16 rounded-2xl flex items-center justify-center shrink-0',
+                'group-hover:scale-105 transition-transform duration-200',
                 colors.iconBg,
             )}>
-                <Icon className={cn('w-7 h-7', colors.text)} />
+                <Icon className={cn('w-8 h-8', colors.text)} />
             </div>
 
-            <div className="w-full">
-                <p className="text-sm font-bold text-gray-900 dark:text-white leading-tight">
+            {/* Text + pills */}
+            <div className="flex-1 min-w-0">
+                <p className="text-base font-black text-gray-900 dark:text-white leading-tight">
                     {domain.label}
                 </p>
-                <div className={cn(
-                    'flex items-center justify-center gap-0.5 mt-1.5 text-[10px] font-semibold',
-                    visibleCount === 0 ? 'text-gray-400' : colors.text,
-                )}>
-                    {visibleCount === 0
-                        ? <span>Accès non autorisé</span>
-                        : <><span>{visibleCount} processus</span><ChevronRight className="w-3 h-3" /></>
-                    }
-                </div>
+                <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5 line-clamp-1">
+                    {domain.description}
+                </p>
+                {visibleCount === 0 ? (
+                    <span className="text-[10px] font-semibold text-gray-400 mt-2 block">
+                        Accès non autorisé
+                    </span>
+                ) : (
+                    <div className="flex flex-wrap gap-1.5 mt-2.5">
+                        {pills.map(label => (
+                            <span
+                                key={label}
+                                className={cn(
+                                    'inline-block px-2 py-0.5 rounded-full text-[10px] font-semibold',
+                                    colors.iconBg, colors.text,
+                                )}
+                            >
+                                {label}
+                            </span>
+                        ))}
+                        {visibleCount > 3 && (
+                            <span className="inline-block px-2 py-0.5 rounded-full text-[10px] font-semibold bg-gray-100 dark:bg-gray-700 text-gray-500 dark:text-gray-400">
+                                +{visibleCount - 3}
+                            </span>
+                        )}
+                    </div>
+                )}
             </div>
+
+            {/* Arrow */}
+            <ArrowRight className={cn(
+                'w-5 h-5 shrink-0 transition-all duration-200',
+                visibleCount === 0 ? 'text-gray-300' : cn(colors.text, 'opacity-60 group-hover:opacity-100 group-hover:translate-x-0.5'),
+            )} />
         </button>
     );
 };
@@ -106,7 +133,7 @@ const DomainGridView = ({ domains, onSelectDomain, onClose, onOpenSearch }: Doma
 
             {/* Domain cards grid — scrollable if domains overflow */}
             <div className="flex-1 overflow-y-auto px-7 pb-4">
-                <div className="grid grid-cols-4 gap-3">
+                <div className="grid grid-cols-2 gap-3">
                     {domains.map((domain, i) => (
                         <motion.div
                             key={domain.id}

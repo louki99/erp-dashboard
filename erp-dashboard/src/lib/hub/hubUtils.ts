@@ -115,28 +115,32 @@ export function getRoleLabel(role: HubRole): string {
 
 export function getActiveDomainFromPath(pathname: string): string | null {
     const map: Record<string, string> = {
-        '/partners': 'commerce',
-        '/orders': 'commerce',
-        '/promotions': 'commerce',
-        '/pricing': 'commerce',
-        '/adv': 'crm',
-        '/finance': 'finance',
-        '/stock': 'supply-chain',
-        '/import-export': 'supply-chain',
-        '/magasinier': 'entrepot',
-        '/dispatcher': 'routing',
-        '/routing': 'routing',
-        '/reporting': 'analytics',
-        '/products': 'analytics',
-        '/document-studio': 'analytics',
-        '/rbac': 'administration',
-        '/settings': 'administration',
-        '/custom-fields': 'administration',
-        '/workflows': 'administration',
-        '/data-rules': 'administration',
-        '/token-series': 'administration',
-        '/device-keys': 'administration',
-        '/translations': 'administration',
+        // DISPATCHER workspace
+        '/dispatcher':               'dispatcher',
+        '/routing':                  'dispatcher',
+        // ADV workspace
+        '/partners':                 'adv',
+        '/orders':                   'adv',
+        '/promotions':               'adv',
+        '/pricing':                  'adv',
+        '/adv':                      'adv',
+        '/finance':                  'adv',
+        '/reporting':                'adv',
+        '/document-studio':          'adv',
+        '/products':                 'adv',
+        // MAGASINIER workspace
+        '/magasinier':               'magasinier',
+        '/stock':                    'magasinier',
+        '/import-export':            'magasinier',
+        // ADMINISTRATION workspace
+        '/rbac':                     'administration',
+        '/settings':                 'administration',
+        '/custom-fields':            'administration',
+        '/workflows':                'administration',
+        '/data-rules':               'administration',
+        '/token-series':             'administration',
+        '/device-keys':              'administration',
+        '/translations':             'administration',
     };
 
     for (const [prefix, domain] of Object.entries(map)) {

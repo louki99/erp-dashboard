@@ -140,13 +140,9 @@ const ProcessCard = ({ process, colors, onNavigate }: ProcessCardProps) => {
 // ─── AI Suggestion Strip ───────────────────────────────────────────────────────
 
 const AI_SUGGESTIONS: Record<string, string[]> = {
-    'commerce':       ['Nouvelle commande client', 'Clients avec solde débiteur', 'Promotions actives'],
-    'supply-chain':   ['Stock en rupture', 'Bons de réception du jour', 'Créer un transfert'],
-    'finance':        ['BCs en attente de validation', 'Factures échues', 'Position de trésorerie'],
-    'entrepot':       ['Mes préparations du jour', 'Picking en retard', 'Mouvements de stock'],
-    'crm':            ['Dérogations en attente', 'Clients à valider', 'Limites crédit dépassées'],
-    'analytics':      ['Rapport des ventes du mois', 'Performance par canal', 'Export comptable'],
-    'routing':        ['Tournées du jour', 'Livreurs disponibles', 'Optimiser itinéraires'],
+    'dispatcher':     ['Bons de livraison du jour', 'Livreurs disponibles', 'Pénuries en cours'],
+    'adv':            ['BCs en attente de validation', 'Clients avec dérogation', 'Limite crédit dépassée'],
+    'magasinier':     ['Mes préparations du jour', 'Picking en retard', 'Transfert inter-dépôt'],
     'administration': ['Utilisateurs actifs', 'Audit des accès', 'Configuration système'],
 };
 
