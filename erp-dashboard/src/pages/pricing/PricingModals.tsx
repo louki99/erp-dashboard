@@ -93,9 +93,78 @@ const Field: React.FC<{ label: string; required?: boolean; children: React.React
     </div>
 );
 
+// ─── Unified design tokens ────────────────────────────────────────────────────
+// All form controls share the same height, border radius, border color and
+// focus ring so they look identical side-by-side.
 const inputCls =
-    'w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-sage-500/20 focus:border-sage-500 text-sm transition-all';
-const selectCls = `${inputCls} bg-white`;
+    'w-full h-10 px-3.5 border border-gray-200 rounded-xl bg-white text-sm text-gray-900 ' +
+    'placeholder:text-gray-300 focus:outline-none focus:ring-2 focus:ring-sage-400/25 ' +
+    'focus:border-sage-400 transition-all';
+
+// Styled select wrapper — hides browser chrome, adds custom chevron
+const SelectField: React.FC<{
+    value: string;
+    onChange: (v: string) => void;
+    children: React.ReactNode;
+    className?: string;
+}> = ({ value, onChange, children, className = '' }) => (
+    <div className="relative w-full">
+        <select
+            value={value}
+            onChange={e => onChange(e.target.value)}
+            className={
+                'w-full h-10 pl-3.5 pr-9 border border-gray-200 rounded-xl bg-white text-sm text-gray-900 ' +
+                'appearance-none focus:outline-none focus:ring-2 focus:ring-sage-400/25 focus:border-sage-400 ' +
+                'transition-all cursor-pointer ' + className
+            }
+        >
+            {children}
+        </select>
+        <svg
+            className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400"
+            viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"
+        >
+            <polyline points="6 9 12 15 18 9" />
+        </svg>
+    </div>
+);
+
+// Status toggle chips — replaces native select for Open/Closed
+const StatusToggle: React.FC<{
+    value: boolean; // true = closed
+    onChange: (closed: boolean) => void;
+}> = ({ value: closed, onChange }) => (
+    <div className="flex gap-1.5 h-10">
+        <button
+            type="button"
+            onClick={() => onChange(false)}
+            className={`flex-1 flex items-center justify-center gap-1.5 rounded-xl border text-xs font-medium transition-all ${
+                !closed
+                    ? 'bg-emerald-50 border-emerald-300 text-emerald-700 shadow-sm'
+                    : 'bg-white border-gray-200 text-gray-400 hover:border-gray-300 hover:text-gray-600'
+            }`}
+        >
+            <svg className="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                <polyline points="20 6 9 17 4 12" />
+            </svg>
+            Ouverte
+        </button>
+        <button
+            type="button"
+            onClick={() => onChange(true)}
+            className={`flex-1 flex items-center justify-center gap-1.5 rounded-xl border text-xs font-medium transition-all ${
+                closed
+                    ? 'bg-red-50 border-red-300 text-red-700 shadow-sm'
+                    : 'bg-white border-gray-200 text-gray-400 hover:border-gray-300 hover:text-gray-600'
+            }`}
+        >
+            <svg className="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
+            </svg>
+            Fermée
+        </button>
+    </div>
+);
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // Create / Edit Price List
@@ -183,24 +252,21 @@ export const ModalCreateLine: React.FC<ModalCreateLineProps> = ({ lineForm, setL
             />
             <div className="p-5 space-y-4">
                 <div className="grid grid-cols-2 gap-4">
-                    <Field label={t('pricing.priceLists.line.number')} required>
+                    <Field label={t('pricing.priceLists.line.number')} required hint="Numéro d'ordre de la période">
                         <input
                             type="number"
                             value={lineForm.line_number || ''}
                             onChange={(e) => setLineForm((prev: any) => ({ ...prev, line_number: parseInt(e.target.value) || 0 }))}
                             className={inputCls}
+                            placeholder="1"
                             min="1"
                         />
                     </Field>
-                    <Field label={t('common.status')}>
-                        <select
-                            value={lineForm.closed ? 'closed' : 'open'}
-                            onChange={(e) => setLineForm((prev: any) => ({ ...prev, closed: e.target.value === 'closed' }))}
-                            className={selectCls}
-                        >
-                            <option value="open">{t('pricing.priceLists.line.open')}</option>
-                            <option value="closed">{t('pricing.priceLists.line.closed')}</option>
-                        </select>
+                    <Field label={t('common.status')} hint="Détermine si la période est active">
+                        <StatusToggle
+                            value={lineForm.closed ?? false}
+                            onChange={(closed) => setLineForm((prev: any) => ({ ...prev, closed }))}
+                        />
                     </Field>
                 </div>
                 <Field label={t('pricing.priceLists.line.name')} required>
@@ -212,7 +278,7 @@ export const ModalCreateLine: React.FC<ModalCreateLineProps> = ({ lineForm, setL
                         placeholder={t('pricing.priceLists.line.defaultName')}
                     />
                 </Field>
-                <div className="grid grid-cols-2 gap-4">
+                <div className="grid grid-cols-2 gap-4 pt-1">
                     <Field label={t('pricing.priceLists.line.startDate')} required>
                         <input
                             type="date"
@@ -562,14 +628,13 @@ export const ModalOverride: React.FC<ModalOverrideProps> = ({ editingOverride, f
                         />
                     </Field>
                     <Field label={t('common.status')}>
-                        <select
+                        <SelectField
                             value={form.active ? 'active' : 'inactive'}
-                            onChange={(e) => setForm((prev: any) => ({ ...prev, active: e.target.value === 'active' }))}
-                            className={selectCls}
+                            onChange={(v) => setForm((prev: any) => ({ ...prev, active: v === 'active' }))}
                         >
                             <option value="active">{t('common.active')}</option>
                             <option value="inactive">{t('common.inactive')}</option>
-                        </select>
+                        </SelectField>
                     </Field>
                 </div>
 
@@ -654,34 +719,31 @@ export const ModalImport: React.FC<ModalImportProps> = ({
                 </Field>
                 <div className="grid grid-cols-3 gap-3">
                     <Field label={t('common.mode')}>
-                        <select
+                        <SelectField
                             value={importParams.mode}
-                            onChange={(e) => setImportParams({ ...importParams, mode: e.target.value as any })}
-                            className={selectCls}
+                            onChange={(v) => setImportParams({ ...importParams, mode: v as any })}
                         >
                             <option value="merge">{t('common.merge')}</option>
                             <option value="replace">{t('common.replace')}</option>
-                        </select>
+                        </SelectField>
                     </Field>
                     <Field label={t('common.header')}>
-                        <select
+                        <SelectField
                             value={importParams.has_header ? 'yes' : 'no'}
-                            onChange={(e) => setImportParams({ ...importParams, has_header: e.target.value === 'yes' })}
-                            className={selectCls}
+                            onChange={(v) => setImportParams({ ...importParams, has_header: v === 'yes' })}
                         >
                             <option value="yes">{t('common.yes')}</option>
                             <option value="no">{t('common.no')}</option>
-                        </select>
+                        </SelectField>
                     </Field>
                     <Field label={t('common.identifier')}>
-                        <select
+                        <SelectField
                             value={importParams.product_identifier}
-                            onChange={(e) => setImportParams({ ...importParams, product_identifier: e.target.value as any })}
-                            className={selectCls}
+                            onChange={(v) => setImportParams({ ...importParams, product_identifier: v as any })}
                         >
                             <option value="code">{t('common.code')}</option>
                             <option value="id">{t('common.id')}</option>
-                        </select>
+                        </SelectField>
                     </Field>
                 </div>
                 {importParams.mode === 'replace' && (

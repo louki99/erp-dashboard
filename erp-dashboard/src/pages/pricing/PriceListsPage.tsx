@@ -384,22 +384,25 @@ export function PriceListsPage() {
         }, 500);
     };
 
-    const handleSelectPriceList = (row: PriceList) => {
-        const style = document.createElement('style');
-        style.id = 'loading-cursor-style';
-        style.innerHTML = '* { cursor: wait !important; }';
-        document.head.appendChild(style);
-
-        setSelectedPriceList(row);
-        setShowDetailPanel(true);
-        setActiveTab('info');
-        setSelectedDetailsLine(null);
-        setEditedDetails(new Map());
-
-        setTimeout(() => {
+    // Remove loading cursor as soon as detail finishes loading
+    useEffect(() => {
+        if (!detailLoading) {
             const el = document.getElementById('loading-cursor-style');
             if (el) el.remove();
-        }, 800);
+        }
+    }, [detailLoading]);
+
+    const handleSelectPriceList = (row: PriceList) => {
+        if (!document.getElementById('loading-cursor-style')) {
+            const style = document.createElement('style');
+            style.id = 'loading-cursor-style';
+            style.innerHTML = '* { cursor: wait !important; }';
+            document.head.appendChild(style);
+        }
+        setSelectedPriceList(row);
+        setShowDetailPanel(true);
+        setSelectedDetailsLine(null);
+        setEditedDetails(new Map());
     };
 
     // ── Columns ───────────────────────────────────────────────────────────────
@@ -542,10 +545,22 @@ export function PriceListsPage() {
     );
 
     const detailsColumns = useMemo<ColDef[]>(() => {
+        // Editable column header: shows name + pencil icon so admins know it's inline-editable
+        const EditableHeader = (props: any) => (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                <span>{props.displayName}</span>
+                <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#9ca3af" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
+                    <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
+                    <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
+                </svg>
+            </div>
+        );
+
         const numCol = (field: string, headerName: string, color?: string): ColDef => ({
             field,
             headerName,
-            width: 110,
+            headerComponent: EditableHeader,
+            width: 115,
             editable: true,
             type: 'numericColumn',
             valueParser: (p: any) => {
@@ -553,38 +568,46 @@ export function PriceListsPage() {
                 return Number.isNaN(n) ? p.oldValue : n;
             },
             valueFormatter: (p: any) => (p.value != null ? Number(p.value).toFixed(2) : '0.00'),
-            cellStyle: () => ({ textAlign: 'right', ...(color ? { color } : {}) }) as any,
+            cellStyle: () => ({ textAlign: 'right', cursor: 'text', ...(color ? { color } : {}) }) as any,
         });
 
         return [
+            // ── Code produit (narrow, monospace, pinned) ──
             {
-                field: 'product_id',
-                headerName: t('pricing.priceLists.details.product'),
-                width: 280,
-                minWidth: 200,
-                flex: 1,
+                colId: 'product_code',
+                headerName: 'Code',
+                width: 130,
                 pinned: 'left',
-                cellRenderer: (p: any) => {
-                    const product = p.data?.product;
-                    return (
-                        <div className="flex flex-col justify-center min-w-0 py-1">
-                            <span className="font-medium text-gray-900 truncate text-[13px]">
-                                {product?.name || `#${p.value}`}
-                            </span>
-                            {product?.code && (
-                                <span className="text-[11px] text-gray-500 font-mono truncate">
-                                    {product.code}
-                                </span>
-                            )}
-                        </div>
-                    );
-                },
+                sortable: true,
+                filter: true,
+                resizable: true,
+                valueGetter: (p: any) => p.data?.product?.code ?? `#${p.data?.product_id ?? ''}`,
+                cellStyle: {
+                    fontFamily: 'monospace',
+                    fontSize: '12px',
+                    color: '#374151',
+                    fontWeight: '600',
+                } as any,
             },
-            numCol('sales_price', t('pricing.priceLists.details.salesPrice'), '#059669'),
-            numCol('return_price', t('pricing.priceLists.details.returnPrice')),
+            // ── Nom produit (flexible, pinned) ──
+            {
+                colId: 'product_name',
+                headerName: t('pricing.priceLists.details.product'),
+                flex: 1,
+                minWidth: 180,
+                pinned: 'left',
+                sortable: true,
+                filter: true,
+                resizable: true,
+                valueGetter: (p: any) => p.data?.product?.name ?? '—',
+                cellStyle: { fontWeight: '500', color: '#111827' } as any,
+            },
+            // ── Editable numeric columns ──
+            numCol('sales_price',     t('pricing.priceLists.details.salesPrice'),    '#059669'),
+            numCol('return_price',    t('pricing.priceLists.details.returnPrice')),
             numCol('min_sales_price', t('pricing.priceLists.details.minPrice')),
             numCol('max_sales_price', t('pricing.priceLists.details.maxPrice')),
-            numCol('discount_rate', t('pricing.priceLists.details.discountRate'), '#d97706'),
+            numCol('discount_rate',   t('pricing.priceLists.details.discountRate'),   '#d97706'),
             numCol('discount_amount', t('pricing.priceLists.details.discountAmount'), '#d97706'),
         ];
     }, [t]);

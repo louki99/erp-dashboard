@@ -98,6 +98,7 @@ export const getPriceList = async (id: number): Promise<PriceList> => {
                 price_list_id: d.price_list_id,
                 line_number: d.line_number,
                 product_id: d.product_id,
+                product: d.product ?? undefined,
                 sales_price: normalizeNumber(d.sales_price),
                 return_price: normalizeNumber(d.return_price),
                 min_sales_price: normalizeNumber(d.min_sales_price),
