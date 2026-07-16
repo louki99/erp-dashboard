@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import toast from 'react-hot-toast';
 import { isAxiosError } from 'axios';
@@ -9,8 +9,8 @@ import {
 
 import { MasterLayout } from '@/components/layout/MasterLayout';
 import { ActionPanel, type ActionItemProps } from '@/components/layout/ActionPanel';
+import { PricingPageShell } from '@/components/pricing/PricingPageShell';
 import { Button } from '@/components/ui/button';
-import { Badge } from '@/components/ui/badge';
 import {
     Dialog, DialogContent, DialogDescription, DialogFooter,
     DialogHeader, DialogTitle,
@@ -44,17 +44,30 @@ export function BusinessChronologiesPage() {
     const { updateBusinessChronology, loading: updating } = useUpdateBusinessChronology();
     const { deleteBusinessChronology, loading: deleting } = useDeleteBusinessChronology();
 
-    const [selected, setSelected] = useState<BusinessChronology | null>(null);
-    const [isFormOpen, setIsFormOpen] = useState(false);
+    // Detail view selection (separate from modal target)
+    const [viewSelected, setViewSelected] = useState<BusinessChronology | null>(null);
+    // Modal context
+    const [selected, setSelected]   = useState<BusinessChronology | null>(null);
+    const [isFormOpen, setIsFormOpen]   = useState(false);
     const [isDeleteOpen, setIsDeleteOpen] = useState(false);
+
     const [filterTab, setFilterTab] = useState<FilterTab>('all');
-    const [search, setSearch] = useState('');
-    const [tagInput, setTagInput] = useState('');
+    const [search, setSearch]       = useState('');
+    const [tagInput, setTagInput]   = useState('');
 
     const [form, setForm] = useState<{
         code: string; name: string; description: string;
         tags: string[]; is_active: boolean; sort_order: string;
     }>({ code: '', name: '', description: '', tags: [], is_active: true, sort_order: '0' });
+
+    // Keep viewSelected in sync with fresh data after every refetch
+    useEffect(() => {
+        setViewSelected(prev => {
+            if (!prev) return prev;
+            const fresh = (chronologies ?? []).find(c => c.id === prev.id);
+            return fresh ?? null;
+        });
+    }, [chronologies]);
 
     const resetForm = () => {
         setForm({ code: '', name: '', description: '', tags: [], is_active: true, sort_order: '0' });
@@ -86,7 +99,7 @@ export function BusinessChronologiesPage() {
     };
 
     const removeTag = (tag: string) => {
-        setForm((prev) => ({ ...prev, tags: prev.tags.filter((t) => t !== tag) }));
+        setForm((prev) => ({ ...prev, tags: prev.tags.filter((tg) => tg !== tag) }));
     };
 
     const handleSubmit = async () => {
@@ -124,20 +137,20 @@ export function BusinessChronologiesPage() {
             toast.success(t('pricing.chronologies.deleteSuccess'));
             setIsDeleteOpen(false);
             setSelected(null);
-            refetch();
+            refetch(); // useEffect above auto-clears viewSelected if deleted
         } catch (err) {
             toast.error(getErrorMessage(err));
         }
     };
 
-    const allChronologies = chronologies ?? [];
-    const activeCount = allChronologies.filter((c) => c.is_active).length;
-    const totalPartners = allChronologies.reduce((s, c) => s + (c.partners_count ?? 0), 0);
-    const totalPromotions = allChronologies.reduce((s, c) => s + (c.promotions_count ?? 0), 0);
+    const allChronologies  = chronologies ?? [];
+    const activeCount      = allChronologies.filter((c) => c.is_active).length;
+    const totalPartners    = allChronologies.reduce((s, c) => s + (c.partners_count   ?? 0), 0);
+    const totalPromotions  = allChronologies.reduce((s, c) => s + (c.promotions_count ?? 0), 0);
 
     const filtered = useMemo(() => {
         let list = allChronologies;
-        if (filterTab === 'active') list = list.filter((c) => c.is_active);
+        if (filterTab === 'active')   list = list.filter((c) => c.is_active);
         if (filterTab === 'inactive') list = list.filter((c) => !c.is_active);
         if (search.trim()) {
             const q = search.toLowerCase();
@@ -151,61 +164,67 @@ export function BusinessChronologiesPage() {
     }, [allChronologies, filterTab, search]);
 
     const TAB_ITEMS: { key: FilterTab; label: string; count: number }[] = [
-        { key: 'all', label: t('pricing.chronologies.filterAll'), count: allChronologies.length },
-        { key: 'active', label: t('common.active'), count: activeCount },
-        { key: 'inactive', label: t('common.inactive'), count: allChronologies.length - activeCount },
+        { key: 'all',      label: t('pricing.chronologies.filterAll'), count: allChronologies.length },
+        { key: 'active',   label: t('common.active'),                   count: activeCount },
+        { key: 'inactive', label: t('common.inactive'),                 count: allChronologies.length - activeCount },
     ];
 
-    const actions: ActionItemProps[] = [
-        { icon: Plus, label: t('common.create'), variant: 'sage', onClick: openCreate },
-        { icon: RefreshCw, label: t('common.refresh'), onClick: refetch, disabled: loading },
-    ];
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    const actionGroups = useMemo((): { items: ActionItemProps[] }[] => {
+        const base: ActionItemProps[] = [
+            { icon: Plus,      label: t('pricing.chronologies.create'), variant: 'sage',    onClick: openCreate },
+            { icon: RefreshCw, label: t('common.refresh'),               variant: 'default', onClick: refetch, disabled: loading },
+        ];
+        if (viewSelected) {
+            return [
+                { items: base },
+                { items: [
+                    { icon: Edit2,  label: t('common.edit'),   variant: 'default', onClick: () => openEdit(viewSelected) },
+                    { icon: Trash2, label: t('common.delete'), variant: 'danger',  onClick: () => confirmDelete(viewSelected) },
+                ]},
+            ];
+        }
+        return [{ items: base }];
+    }, [viewSelected, loading, t]);
 
     return (
         <>
             <MasterLayout
-                mainContent={
-                    <div className="h-full flex flex-col bg-slate-50/60">
-                        {/* Page Header */}
-                        <div className="bg-white border-b border-gray-200 px-6 py-4 shrink-0">
-                            <div className="flex items-center justify-between gap-4">
-                                <div className="flex items-center gap-3">
-                                    <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-indigo-100 text-indigo-700 shadow-sm">
-                                        <Clock className="h-5 w-5" />
-                                    </div>
-                                    <div>
-                                        <h1 className="text-lg font-bold text-gray-900">{t('pricing.chronologies.title')}</h1>
-                                        <p className="text-xs text-gray-500">{t('pricing.chronologies.subtitle')}</p>
-                                    </div>
+                leftContent={
+                    <div className="h-full bg-white border-r border-gray-200 flex flex-col">
+                        {/* Header */}
+                        <div className="px-4 pt-4 pb-3 border-b border-gray-100 shrink-0">
+                            <div className="flex items-center justify-between mb-3">
+                                <div className="flex items-center gap-2">
+                                    <Clock className="w-4 h-4 text-indigo-600" />
+                                    <h2 className="text-sm font-bold text-gray-900">{t('pricing.chronologies.title')}</h2>
+                                    <span className="px-2 py-0.5 text-[10px] font-semibold rounded-full bg-indigo-50 text-indigo-600 border border-indigo-100">
+                                        {allChronologies.length}
+                                    </span>
                                 </div>
-                                {!loading && allChronologies.length > 0 && (
-                                    <div className="hidden sm:flex items-center gap-2">
-                                        <span className="text-xs font-medium text-emerald-700 bg-emerald-50 border border-emerald-100 px-2.5 py-1 rounded-full">
-                                            {activeCount} {t('common.active').toLowerCase()}
-                                        </span>
+                                {!loading && (totalPartners > 0 || totalPromotions > 0) && (
+                                    <div className="flex items-center gap-1">
                                         {totalPartners > 0 && (
-                                            <span className="text-xs font-medium text-gray-500 bg-gray-100 px-2.5 py-1 rounded-full">
-                                                {totalPartners} partenaires
+                                            <span className="text-[10px] text-gray-400 flex items-center gap-0.5">
+                                                <Users className="w-3 h-3" /> {totalPartners}
                                             </span>
                                         )}
                                         {totalPromotions > 0 && (
-                                            <span className="text-xs font-medium text-purple-600 bg-purple-50 border border-purple-100 px-2.5 py-1 rounded-full">
-                                                {totalPromotions} promotions
+                                            <span className="text-[10px] text-purple-500 flex items-center gap-0.5">
+                                                <Megaphone className="w-3 h-3" /> {totalPromotions}
                                             </span>
                                         )}
                                     </div>
                                 )}
                             </div>
-                        </div>
 
-                        {/* Filters bar */}
-                        <div className="bg-white border-b border-gray-100 px-6 py-3 flex items-center gap-3 shrink-0">
-                            <div className="flex items-center gap-1 bg-gray-100 rounded-lg p-1">
+                            {/* Filter tabs */}
+                            <div className="flex items-center gap-0.5 bg-gray-100 rounded-lg p-1 mb-2">
                                 {TAB_ITEMS.map((tab) => (
                                     <button
                                         key={tab.key}
                                         onClick={() => setFilterTab(tab.key)}
-                                        className={`flex items-center gap-1.5 px-3 py-1 text-xs font-medium rounded-md transition-all ${
+                                        className={`flex-1 flex items-center justify-center gap-1 py-1 text-[11px] font-medium rounded-md transition-all ${
                                             filterTab === tab.key
                                                 ? 'bg-white text-gray-900 shadow-sm'
                                                 : 'text-gray-500 hover:text-gray-700'
@@ -218,79 +237,249 @@ export function BusinessChronologiesPage() {
                                     </button>
                                 ))}
                             </div>
-                            <div className="relative flex-1 max-w-xs">
-                                <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400" />
+
+                            {/* Search */}
+                            <div className="relative">
+                                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400" />
                                 <input
                                     type="text"
                                     value={search}
                                     onChange={(e) => setSearch(e.target.value)}
                                     placeholder={t('pricing.chronologies.searchPlaceholder')}
-                                    className="w-full pl-8 pr-3 py-1.5 text-xs border border-gray-200 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-400"
+                                    className="w-full pl-9 pr-8 py-2 text-xs border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 bg-gray-50/70 transition-all"
                                 />
                                 {search && (
-                                    <button onClick={() => setSearch('')} className="absolute right-2 top-1/2 -translate-y-1/2">
+                                    <button onClick={() => setSearch('')} className="absolute right-2.5 top-1/2 -translate-y-1/2">
                                         <X className="w-3 h-3 text-gray-400" />
                                     </button>
                                 )}
                             </div>
                         </div>
 
-                        {/* Content */}
-                        <div className="flex-1 overflow-y-auto p-5">
-                            {error ? (
-                                <div className="h-full flex flex-col items-center justify-center text-red-600 gap-2">
-                                    <p className="text-sm">{error}</p>
-                                    <Button variant="outline" size="sm" onClick={refetch}>
-                                        <RefreshCw className="w-4 h-4 mr-1.5" /> {t('common.retry')}
-                                    </Button>
-                                </div>
-                            ) : loading ? (
-                                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                        {/* Chronology list */}
+                        <div className="flex-1 min-h-0 overflow-y-auto">
+                            {loading ? (
+                                <div className="p-3 space-y-2">
                                     {Array.from({ length: 6 }).map((_, i) => (
-                                        <div key={i} className="bg-white rounded-xl border border-gray-200 p-5 animate-pulse">
-                                            <div className="h-5 w-20 bg-gray-200 rounded mb-3" />
-                                            <div className="h-4 w-3/4 bg-gray-200 rounded mb-2" />
-                                            <div className="flex gap-1">
-                                                <div className="h-5 w-14 bg-gray-100 rounded-full" />
-                                                <div className="h-5 w-14 bg-gray-100 rounded-full" />
-                                            </div>
-                                        </div>
+                                        <div key={i} className="h-16 bg-gray-100 rounded-lg animate-pulse" />
                                     ))}
                                 </div>
                             ) : filtered.length === 0 ? (
-                                <div className="h-full flex flex-col items-center justify-center text-center text-gray-400 gap-3 py-20">
-                                    <div className="w-14 h-14 rounded-full bg-gray-100 flex items-center justify-center">
-                                        <Clock className="w-7 h-7 text-gray-300" />
-                                    </div>
-                                    <div>
-                                        <p className="text-sm font-medium text-gray-600">
-                                            {search ? t('common.noResults') : t('pricing.chronologies.noChronologies')}
-                                        </p>
-                                        <p className="text-xs mt-1 text-gray-400">{t('pricing.chronologies.noChronologiesHint')}</p>
-                                    </div>
-                                    {!search && (
-                                        <Button size="sm" onClick={openCreate} className="bg-indigo-600 hover:bg-indigo-700 mt-2">
-                                            <Plus className="w-3.5 h-3.5 mr-1.5" /> {t('pricing.chronologies.create')}
-                                        </Button>
-                                    )}
+                                <div className="flex flex-col items-center justify-center h-40 text-gray-400 gap-2 p-4">
+                                    <Clock className="w-8 h-8 opacity-30" />
+                                    <p className="text-xs text-center">
+                                        {search ? t('common.noResults') : t('pricing.chronologies.noChronologies')}
+                                    </p>
                                 </div>
                             ) : (
-                                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-                                    {filtered.map((chrono) => (
-                                        <ChronologyCard
-                                            key={chrono.id}
-                                            chrono={chrono}
-                                            onEdit={openEdit}
-                                            onDelete={confirmDelete}
-                                            t={t}
-                                        />
-                                    ))}
+                                <div className="p-2 space-y-1">
+                                    {filtered.map((chrono) => {
+                                        const isActive = viewSelected?.id === chrono.id;
+                                        const tags = chrono.available_sub_types ?? [];
+                                        return (
+                                            <button
+                                                key={chrono.id}
+                                                onClick={() => setViewSelected(chrono)}
+                                                className={`w-full text-left px-3 py-2.5 rounded-lg transition-all border ${
+                                                    isActive
+                                                        ? 'bg-indigo-600 text-white border-indigo-600 shadow-sm'
+                                                        : 'bg-white hover:bg-gray-50 border-gray-100 hover:border-indigo-200'
+                                                }`}
+                                            >
+                                                <div className="flex items-center justify-between gap-2 mb-1">
+                                                    <span className={`font-mono text-[11px] font-bold px-1.5 py-0.5 rounded ${
+                                                        isActive ? 'bg-white/20 text-white' : 'bg-indigo-50 text-indigo-700'
+                                                    }`}>
+                                                        {chrono.code}
+                                                    </span>
+                                                    <span className={`w-2 h-2 rounded-full shrink-0 ${
+                                                        chrono.is_active
+                                                            ? (isActive ? 'bg-emerald-300' : 'bg-emerald-400')
+                                                            : (isActive ? 'bg-white/30'   : 'bg-gray-300')
+                                                    }`} />
+                                                </div>
+                                                <p className={`text-xs font-medium truncate ${isActive ? 'text-white' : 'text-gray-800'}`}>
+                                                    {chrono.name}
+                                                </p>
+                                                {tags.length > 0 && (
+                                                    <p className={`text-[10px] mt-0.5 truncate ${isActive ? 'text-indigo-200' : 'text-gray-400'}`}>
+                                                        <Tag className="w-2.5 h-2.5 inline mr-0.5" />
+                                                        {tags.slice(0, 3).join(', ')}{tags.length > 3 ? ` +${tags.length - 3}` : ''}
+                                                    </p>
+                                                )}
+                                                {((chrono.partners_count ?? 0) > 0 || (chrono.promotions_count ?? 0) > 0) && (
+                                                    <div className={`flex items-center gap-2 mt-0.5 text-[10px] ${isActive ? 'text-indigo-200' : 'text-gray-400'}`}>
+                                                        {(chrono.partners_count ?? 0) > 0 && (
+                                                            <span className="flex items-center gap-0.5">
+                                                                <Users className="w-2.5 h-2.5" /> {chrono.partners_count}
+                                                            </span>
+                                                        )}
+                                                        {(chrono.promotions_count ?? 0) > 0 && (
+                                                            <span className={`flex items-center gap-0.5 ${isActive ? 'text-indigo-200' : 'text-purple-500'}`}>
+                                                                <Megaphone className="w-2.5 h-2.5" /> {chrono.promotions_count}
+                                                            </span>
+                                                        )}
+                                                    </div>
+                                                )}
+                                            </button>
+                                        );
+                                    })}
                                 </div>
                             )}
                         </div>
                     </div>
                 }
-                rightContent={<ActionPanel groups={[{ items: actions }]} />}
+                mainContent={
+                    <PricingPageShell
+                        title={t('pricing.chronologies.title')}
+                        subtitle={t('pricing.chronologies.subtitle')}
+                        badge={
+                            !loading && activeCount > 0 ? (
+                                <span className="text-xs font-medium text-emerald-700 bg-emerald-50 border border-emerald-100 px-2 py-0.5 rounded-full">
+                                    {activeCount} {t('common.active').toLowerCase()}
+                                </span>
+                            ) : undefined
+                        }
+                    >
+                        {error ? (
+                            <div className="h-full flex flex-col items-center justify-center text-red-600 gap-2">
+                                <p className="text-sm">{error}</p>
+                                <Button variant="outline" size="sm" onClick={refetch}>
+                                    <RefreshCw className="w-4 h-4 mr-1.5" /> {t('common.retry')}
+                                </Button>
+                            </div>
+                        ) : viewSelected ? (
+                            <div className="h-full flex flex-col overflow-hidden">
+                                {/* Detail header */}
+                                <div className="px-6 py-5 border-b border-gray-200 bg-white shrink-0">
+                                    <div className="flex items-center gap-4">
+                                        <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-indigo-500 to-indigo-600 flex items-center justify-center text-white text-lg font-bold shadow-sm shrink-0">
+                                            {viewSelected.code.slice(0, 2)}
+                                        </div>
+                                        <div>
+                                            <div className="flex items-center gap-2.5">
+                                                <h1 className="text-lg font-bold text-gray-900">{viewSelected.name}</h1>
+                                                <span className={`px-2 py-0.5 text-[10px] font-semibold rounded-full border ${
+                                                    viewSelected.is_active
+                                                        ? 'bg-emerald-50 text-emerald-700 border-emerald-100'
+                                                        : 'bg-gray-100 text-gray-500 border-gray-200'
+                                                }`}>
+                                                    {viewSelected.is_active ? t('common.active') : t('common.inactive')}
+                                                </span>
+                                            </div>
+                                            <div className="flex items-center gap-2 mt-0.5 text-xs text-gray-400">
+                                                <span className="font-mono font-semibold text-indigo-600">{viewSelected.code}</span>
+                                                <span className="text-gray-200">·</span>
+                                                <span>{t('pricing.chronologies.sortOrder')}: {viewSelected.sort_order ?? 0}</span>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                {/* Detail content */}
+                                <div className="flex-1 overflow-y-auto p-6">
+                                    <div className="max-w-2xl space-y-4">
+                                        {viewSelected.description && (
+                                            <div className="bg-white rounded-xl border border-gray-200 p-5">
+                                                <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider mb-2">
+                                                    {t('common.description')}
+                                                </p>
+                                                <p className="text-sm text-gray-700">{viewSelected.description}</p>
+                                            </div>
+                                        )}
+
+                                        {/* Sub-types / tags */}
+                                        <div className="bg-white rounded-xl border border-gray-200 p-5">
+                                            <div className="flex items-center gap-1.5 mb-3">
+                                                <Tag className="w-3.5 h-3.5 text-indigo-500" />
+                                                <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider">
+                                                    {t('pricing.chronologies.tags')}
+                                                </p>
+                                                <span className="text-[10px] font-bold text-indigo-600 bg-indigo-50 px-1.5 py-0.5 rounded-full ml-auto">
+                                                    {(viewSelected.available_sub_types ?? []).length}
+                                                </span>
+                                            </div>
+                                            {(viewSelected.available_sub_types ?? []).length > 0 ? (
+                                                <div className="flex flex-wrap gap-1.5">
+                                                    {(viewSelected.available_sub_types ?? []).map((tag) => (
+                                                        <span
+                                                            key={tag}
+                                                            className="text-[11px] font-medium bg-indigo-50 text-indigo-700 border border-indigo-100 px-2 py-0.5 rounded-full"
+                                                        >
+                                                            {tag}
+                                                        </span>
+                                                    ))}
+                                                </div>
+                                            ) : (
+                                                <p className="text-xs text-gray-400 italic">{t('pricing.chronologies.noTags')}</p>
+                                            )}
+                                        </div>
+
+                                        {/* Stats */}
+                                        <div className="grid grid-cols-2 gap-4">
+                                            <div className="bg-white rounded-xl border border-gray-200 p-5 text-center">
+                                                <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider mb-2">
+                                                    {t('pricing.channels.partnersCount')}
+                                                </p>
+                                                <div className="flex items-center justify-center gap-2">
+                                                    <Users className="w-4 h-4 text-sage-500" />
+                                                    <span className="text-2xl font-bold text-gray-900">
+                                                        {viewSelected.partners_count ?? 0}
+                                                    </span>
+                                                </div>
+                                            </div>
+                                            <div className="bg-white rounded-xl border border-gray-200 p-5 text-center">
+                                                <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider mb-2">
+                                                    Promotions
+                                                </p>
+                                                <div className="flex items-center justify-center gap-2">
+                                                    <Megaphone className="w-4 h-4 text-purple-500" />
+                                                    <span className="text-2xl font-bold text-gray-900">
+                                                        {viewSelected.promotions_count ?? 0}
+                                                    </span>
+                                                </div>
+                                            </div>
+                                        </div>
+
+                                        {/* Partners warning */}
+                                        {(viewSelected.partners_count ?? 0) > 0 && (
+                                            <div className="flex items-start gap-2 px-4 py-3 bg-amber-50 border border-amber-200 rounded-xl">
+                                                <AlertTriangle className="w-4 h-4 text-amber-600 mt-0.5 shrink-0" />
+                                                <p className="text-xs text-amber-700">
+                                                    {t('pricing.chronologies.tagsEditWarning', { count: viewSelected.partners_count })}
+                                                </p>
+                                            </div>
+                                        )}
+                                    </div>
+                                </div>
+                            </div>
+                        ) : (
+                            <div className="h-full flex flex-col items-center justify-center text-gray-400 gap-4">
+                                <div className="w-20 h-20 rounded-2xl bg-white flex items-center justify-center shadow-md border border-gray-100">
+                                    <Clock className="w-10 h-10 text-gray-200" />
+                                </div>
+                                <div className="text-center">
+                                    <h3 className="text-base font-semibold text-gray-800">
+                                        {allChronologies.length === 0
+                                            ? t('pricing.chronologies.noChronologies')
+                                            : 'Sélectionner une chronologie'}
+                                    </h3>
+                                    <p className="text-sm text-gray-400 mt-1 max-w-xs">
+                                        {allChronologies.length === 0
+                                            ? t('pricing.chronologies.noChronologiesHint')
+                                            : 'Cliquez sur une chronologie dans la liste pour voir ses détails.'}
+                                    </p>
+                                </div>
+                                {allChronologies.length === 0 && (
+                                    <Button size="sm" onClick={openCreate} className="bg-indigo-600 hover:bg-indigo-700">
+                                        <Plus className="w-3.5 h-3.5 mr-1.5" /> {t('pricing.chronologies.create')}
+                                    </Button>
+                                )}
+                            </div>
+                        )}
+                    </PricingPageShell>
+                }
+                rightContent={<ActionPanel groups={actionGroups} />}
             />
 
             {/* Form Dialog */}
@@ -335,7 +524,7 @@ export function BusinessChronologiesPage() {
                             />
                         </div>
 
-                        {/* Interactive tag pills */}
+                        {/* Tag pills */}
                         <div className="space-y-2">
                             <Label className="text-xs font-medium flex items-center gap-1.5">
                                 <Tag className="w-3.5 h-3.5" />
@@ -457,96 +646,5 @@ export function BusinessChronologiesPage() {
                 </DialogContent>
             </Dialog>
         </>
-    );
-}
-
-// ─── Chronology Card ──────────────────────────────────────────────────────────
-
-interface ChronologyCardProps {
-    chrono: BusinessChronology;
-    onEdit: (c: BusinessChronology) => void;
-    onDelete: (c: BusinessChronology) => void;
-    t: (key: string, opts?: any) => string;
-}
-
-function ChronologyCard({ chrono, onEdit, onDelete, t }: ChronologyCardProps) {
-    const tags = chrono.available_sub_types ?? [];
-    const visibleTags = tags.slice(0, 5);
-    const overflow = tags.length - visibleTags.length;
-
-    return (
-        <div className="group bg-white rounded-xl border border-gray-200 shadow-sm hover:shadow-md hover:border-indigo-200 transition-all flex flex-col">
-            <div className="p-4 flex-1">
-                {/* Header */}
-                <div className="flex items-start justify-between mb-3">
-                    <span className="font-mono text-xs font-bold bg-indigo-50 text-indigo-700 border border-indigo-200 px-2 py-0.5 rounded">
-                        {chrono.code}
-                    </span>
-                    <span className={`w-2.5 h-2.5 rounded-full mt-1 shrink-0 ${chrono.is_active ? 'bg-emerald-400 shadow-[0_0_4px_rgba(52,211,153,0.5)]' : 'bg-gray-300'}`} />
-                </div>
-
-                {/* Name */}
-                <h3 className="text-sm font-semibold text-gray-900 mb-1 leading-tight">{chrono.name}</h3>
-                {chrono.description && (
-                    <p className="text-xs text-gray-400 mb-2 line-clamp-1">{chrono.description}</p>
-                )}
-
-                {/* Tag pills */}
-                {tags.length > 0 ? (
-                    <div className="flex flex-wrap gap-1 mt-2">
-                        {visibleTags.map((tag) => (
-                            <span key={tag} className="text-[10px] bg-indigo-50 text-indigo-600 border border-indigo-100 px-1.5 py-0.5 rounded-full font-medium">
-                                {tag}
-                            </span>
-                        ))}
-                        {overflow > 0 && (
-                            <span className="text-[10px] bg-gray-100 text-gray-500 px-1.5 py-0.5 rounded-full font-medium">+{overflow}</span>
-                        )}
-                    </div>
-                ) : (
-                    <p className="text-[11px] text-gray-400 italic mt-2">{t('pricing.chronologies.noTags')}</p>
-                )}
-
-                {/* Counts */}
-                <div className="flex items-center gap-2 mt-3">
-                    {(chrono.partners_count ?? 0) > 0 && (
-                        <span className="flex items-center gap-1 text-[10px] text-gray-500">
-                            <Users className="w-3 h-3" /> {chrono.partners_count}
-                        </span>
-                    )}
-                    {(chrono.promotions_count ?? 0) > 0 && (
-                        <span className="flex items-center gap-1 text-[10px] text-purple-600">
-                            <Megaphone className="w-3 h-3" /> {chrono.promotions_count}
-                        </span>
-                    )}
-                    <Badge variant={chrono.is_active ? 'success' : 'secondary'} className="text-[10px] ml-auto">
-                        {chrono.is_active ? t('common.active') : t('common.inactive')}
-                    </Badge>
-                </div>
-            </div>
-
-            {/* Footer actions */}
-            <div className="px-4 py-2.5 border-t border-gray-100 flex items-center justify-between bg-gray-50/50 rounded-b-xl">
-                <span className="text-[10px] text-gray-400">
-                    {tags.length} {t('pricing.chronologies.tags').toLowerCase()}
-                </span>
-                <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
-                    <button
-                        onClick={() => onEdit(chrono)}
-                        className="p-1.5 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
-                        title={t('common.edit')}
-                    >
-                        <Edit2 className="w-3.5 h-3.5" />
-                    </button>
-                    <button
-                        onClick={() => onDelete(chrono)}
-                        className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
-                        title={t('common.delete')}
-                    >
-                        <Trash2 className="w-3.5 h-3.5" />
-                    </button>
-                </div>
-            </div>
-        </div>
     );
 }

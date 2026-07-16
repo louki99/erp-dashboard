@@ -17,7 +17,6 @@ import {
     RefreshCw,
     DollarSign,
     Calendar,
-    Settings2,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { isAxiosError } from 'axios';
@@ -440,109 +439,6 @@ export function PriceListsPage() {
         [t]
     );
 
-    const linesColumns = useMemo<ColDef[]>(
-        () => [
-            {
-                field: 'line_number',
-                headerName: t('pricing.priceLists.line.number'),
-                width: 70,
-                cellStyle: { textAlign: 'center', color: '#6b7280' } as any,
-            },
-            {
-                field: 'name',
-                headerName: t('pricing.priceLists.line.name'),
-                flex: 1,
-                minWidth: 150,
-                cellStyle: { fontWeight: '500' } as any,
-            },
-            {
-                field: 'start_date',
-                headerName: t('pricing.priceLists.line.startDate'),
-                width: 110,
-                valueFormatter: (p: any) => (p.value ? new Date(p.value).toLocaleDateString() : '-'),
-            },
-            {
-                field: 'end_date',
-                headerName: t('pricing.priceLists.line.endDate'),
-                width: 110,
-                valueFormatter: (p: any) => (p.value ? new Date(p.value).toLocaleDateString() : '-'),
-            },
-            {
-                field: 'closed',
-                headerName: t('common.status'),
-                width: 110,
-                cellRenderer: (p: any) => (
-                    <span
-                        className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] font-semibold ${
-                            p.value
-                                ? 'bg-gray-100 text-gray-600'
-                                : 'bg-emerald-50 text-emerald-700 border border-emerald-100'
-                        }`}
-                    >
-                        {p.value ? <X className="w-3 h-3" /> : <CheckCircle2 className="w-3 h-3" />}
-                        {p.value ? t('pricing.priceLists.line.closed') : t('pricing.priceLists.line.open')}
-                    </span>
-                ),
-            },
-            {
-                headerName: t('pricing.priceLists.products'),
-                width: 90,
-                valueGetter: (p: any) => p.data?.details?.length ?? 0,
-                cellStyle: { textAlign: 'center' } as any,
-                cellRenderer: (p: any) => (
-                    <span className="inline-flex items-center justify-center px-2 py-0.5 rounded-full bg-slate-100 text-slate-700 text-[11px] font-semibold min-w-[24px]">
-                        {p.value}
-                    </span>
-                ),
-            },
-            {
-                headerName: t('common.actions'),
-                width: 150,
-                cellRenderer: (params: any) => (
-                    <div className="flex items-center justify-end gap-0.5">
-                        <button
-                            onClick={() => handleViewLineDetails(params.data)}
-                            className="p-1.5 hover:bg-sage-50 rounded-md text-gray-400 hover:text-sage-600 transition-colors"
-                            title={t('pricing.priceLists.line.viewDetails')}
-                        >
-                            <Eye className="w-3.5 h-3.5" />
-                        </button>
-                        <button
-                            onClick={() => handleEditLine(params.data)}
-                            className="p-1.5 hover:bg-gray-100 rounded-md text-gray-400 hover:text-gray-700 transition-colors"
-                            title={t('common.edit')}
-                        >
-                            <Edit2 className="w-3.5 h-3.5" />
-                        </button>
-                        <button
-                            onClick={() => handleDuplicateLine(params.data)}
-                            className="p-1.5 hover:bg-gray-100 rounded-md text-gray-400 hover:text-gray-700 transition-colors"
-                            title={t('pricing.priceLists.line.duplicate')}
-                        >
-                            <Copy className="w-3.5 h-3.5" />
-                        </button>
-                        <button
-                            onClick={() => handleImportCsv(params.data)}
-                            className="p-1.5 hover:bg-gray-100 rounded-md text-gray-400 hover:text-gray-700 transition-colors"
-                            title={t('pricing.priceLists.line.importCsv')}
-                        >
-                            <Upload className="w-3.5 h-3.5" />
-                        </button>
-                        <button
-                            onClick={() => handleClearLineDetailsClick(params.data)}
-                            className="p-1.5 hover:bg-red-50 rounded-md text-gray-400 hover:text-red-600 transition-colors"
-                            title={t('pricing.priceLists.line.clearDetails')}
-                        >
-                            <Trash2 className="w-3.5 h-3.5" />
-                        </button>
-                    </div>
-                ),
-                sortable: false,
-                filter: false,
-            },
-        ],
-        [t]
-    );
 
     const detailsColumns = useMemo<ColDef[]>(() => {
         // Editable column header: shows name + pencil icon so admins know it's inline-editable
@@ -612,40 +508,34 @@ export function PriceListsPage() {
         ];
     }, [t]);
 
-    // ── Actions ───────────────────────────────────────────────────────────────
-    const actionItems: ActionItemProps[] = [
-        {
-            icon: RefreshCw,
-            label: t('common.refresh'),
-            onClick: () => {
-                refetchPriceLists();
-                if (selectedPriceList) refetchDetail();
-            },
-            disabled: priceListsLoading,
-        },
-        {
-            icon: Plus,
-            label: t('pricing.priceLists.create'),
-            variant: 'sage',
-            onClick: handleCreatePL,
-        },
-    ];
-
-    if (selectedPriceList) {
-        actionItems.push(
+    // ── Action groups ─────────────────────────────────────────────────────────
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    const actionGroups = useMemo((): { items: ActionItemProps[] }[] => {
+        const groups: { items: ActionItemProps[] }[] = [
             {
-                icon: Edit2,
-                label: t('common.edit'),
-                onClick: () => handleEditPL(selectedPriceList),
+                items: [
+                    { icon: Plus,       label: t('pricing.priceLists.create'), variant: 'sage',    onClick: handleCreatePL },
+                    { icon: RefreshCw,  label: t('common.refresh'),             variant: 'default', onClick: () => { refetchPriceLists(); if (selectedPriceList) refetchDetail(); }, disabled: priceListsLoading },
+                ],
             },
-            {
-                icon: Trash2,
-                label: t('common.delete'),
-                variant: 'danger',
-                onClick: handleDeletePLRequest,
-            }
-        );
-    }
+        ];
+        if (selectedPriceList) {
+            groups.push({ items: [
+                { icon: Plus,   label: t('pricing.priceLists.line.create'), variant: 'primary', onClick: handleCreateLine },
+                { icon: Edit2,  label: t('common.edit'),                     variant: 'default', onClick: () => handleEditPL(selectedPriceList) },
+                { icon: Trash2, label: t('common.delete'),                   variant: 'danger',  onClick: handleDeletePLRequest },
+            ]});
+        }
+        if (selectedDetailsLine) {
+            groups.push({ items: [
+                { icon: Edit2,  label: t('pricing.priceLists.line.edit'),          variant: 'default', onClick: () => handleEditLine(selectedDetailsLine) },
+                { icon: Copy,   label: t('pricing.priceLists.line.duplicate'),      variant: 'default', onClick: () => handleDuplicateLine(selectedDetailsLine) },
+                { icon: Upload, label: t('pricing.priceLists.line.importCsv'),      variant: 'default', onClick: () => handleImportCsv(selectedDetailsLine) },
+                { icon: Trash2, label: t('pricing.priceLists.line.clearDetails'),   variant: 'danger',  onClick: () => handleClearLineDetailsClick(selectedDetailsLine) },
+            ]});
+        }
+        return groups;
+    }, [selectedPriceList, selectedDetailsLine, priceListsLoading, t]);
 
     const fmtDate = (d: string) =>
         new Date(d).toLocaleDateString('fr-FR', { day: '2-digit', month: 'short', year: '2-digit' });
@@ -780,53 +670,21 @@ export function PriceListsPage() {
                                                 <button
                                                     key={line.id}
                                                     onClick={() => handleViewLineDetails(line)}
-                                                    className={`group flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-medium whitespace-nowrap transition-all border ${
+                                                    className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium whitespace-nowrap transition-all border ${
                                                         isActive
                                                             ? 'bg-sage-600 text-white border-sage-600 shadow-sm'
                                                             : 'bg-white text-gray-600 border-gray-200 hover:border-sage-300 hover:text-sage-700 hover:bg-sage-50'
                                                     }`}
                                                 >
-                                                    <Calendar className={`w-3 h-3 shrink-0 ${isActive ? 'text-sage-200' : 'text-gray-400'}`} />
+                                                    <span className={`text-[10px] font-bold ${isActive ? 'text-sage-200' : 'text-gray-400'}`}>
+                                                        L{line.line_number}
+                                                    </span>
                                                     <span>{line.name || `L${line.line_number}`}</span>
-                                                    <span className={`text-[10px] ${isActive ? 'text-sage-200' : 'text-gray-400'}`}>
-                                                        {fmtDate(line.start_date)} → {fmtDate(line.end_date)}
-                                                    </span>
                                                     {line.closed ? (
-                                                        <span className={`text-[9px] font-semibold px-1 py-0.5 rounded ${isActive ? 'bg-white/20 text-white' : 'bg-gray-100 text-gray-500'}`}>
-                                                            {t('pricing.priceLists.line.closed')}
-                                                        </span>
+                                                        <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${isActive ? 'bg-white/40' : 'bg-gray-300'}`} />
                                                     ) : (
-                                                        <CheckCircle2 className={`w-3 h-3 ${isActive ? 'text-sage-200' : 'text-emerald-500'}`} />
+                                                        <CheckCircle2 className={`w-3 h-3 shrink-0 ${isActive ? 'text-sage-200' : 'text-emerald-500'}`} />
                                                     )}
-                                                    <span className={`inline-flex items-center justify-center min-w-[18px] h-[18px] px-1 rounded-full text-[10px] font-bold ${
-                                                        isActive ? 'bg-white/20 text-white' : 'bg-gray-100 text-gray-600'
-                                                    }`}>
-                                                        {(line.details ?? []).length}
-                                                    </span>
-                                                    {/* Inline period actions */}
-                                                    <span className="flex items-center gap-0.5 ml-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
-                                                        <span
-                                                            onClick={e => { e.stopPropagation(); handleEditLine(line); }}
-                                                            className={`p-0.5 rounded hover:bg-black/10 cursor-pointer ${isActive ? 'text-white' : 'text-gray-400'}`}
-                                                            title={t('common.edit')}
-                                                        >
-                                                            <Settings2 className="w-3 h-3" />
-                                                        </span>
-                                                        <span
-                                                            onClick={e => { e.stopPropagation(); handleDuplicateLine(line); }}
-                                                            className={`p-0.5 rounded hover:bg-black/10 cursor-pointer ${isActive ? 'text-white' : 'text-gray-400'}`}
-                                                            title={t('pricing.priceLists.line.duplicate')}
-                                                        >
-                                                            <Copy className="w-3 h-3" />
-                                                        </span>
-                                                        <span
-                                                            onClick={e => { e.stopPropagation(); handleImportCsv(line); }}
-                                                            className={`p-0.5 rounded hover:bg-black/10 cursor-pointer ${isActive ? 'text-white' : 'text-gray-400'}`}
-                                                            title={t('pricing.priceLists.line.importCsv')}
-                                                        >
-                                                            <Upload className="w-3 h-3" />
-                                                        </span>
-                                                    </span>
                                                 </button>
                                             );
                                         })}
@@ -837,48 +695,6 @@ export function PriceListsPage() {
                                             <Plus className="w-3.5 h-3.5" /> {t('pricing.priceLists.line.create')}
                                         </button>
                                     </div>
-
-                                    {/* ── Active period info strip ──────────── */}
-                                    {selectedDetailsLine && (
-                                        <div className="flex items-center justify-between px-5 py-2 border-b border-gray-100 bg-white shrink-0">
-                                            <div className="flex items-center gap-3 text-[11px] text-gray-500 min-w-0">
-                                                <div className={`w-7 h-7 rounded-md flex items-center justify-center text-[10px] font-bold shrink-0 ${
-                                                    selectedDetailsLine.closed ? 'bg-red-100 text-red-700' : 'bg-emerald-100 text-emerald-700'
-                                                }`}>
-                                                    L{selectedDetailsLine.line_number}
-                                                </div>
-                                                <span className="font-semibold text-gray-800 truncate">{selectedDetailsLine.name}</span>
-                                                <span className="text-gray-300 shrink-0">·</span>
-                                                <span className="shrink-0">
-                                                    {fmtDate(selectedDetailsLine.start_date)} → {fmtDate(selectedDetailsLine.end_date)}
-                                                </span>
-                                                <span className="text-gray-300 shrink-0">·</span>
-                                                <span className={`font-semibold shrink-0 ${selectedDetailsLine.closed ? 'text-red-600' : 'text-emerald-600'}`}>
-                                                    {selectedDetailsLine.closed ? t('pricing.priceLists.line.closed') : t('pricing.priceLists.line.open')}
-                                                </span>
-                                                <span className="text-gray-300 shrink-0">·</span>
-                                                <span className="shrink-0">
-                                                    <strong className="text-gray-700">{(selectedDetailsLine.details ?? []).length}</strong> {t('pricing.priceLists.products')}
-                                                </span>
-                                            </div>
-                                            <div className="flex items-center gap-1 shrink-0">
-                                                <button
-                                                    onClick={() => handleImportCsv(selectedDetailsLine)}
-                                                    className="flex items-center gap-1 px-2 py-1 text-[11px] text-gray-500 border border-gray-200 rounded-md hover:bg-gray-50 transition-colors"
-                                                    title={t('pricing.priceLists.line.importCsv')}
-                                                >
-                                                    <Upload className="w-3 h-3" /> CSV
-                                                </button>
-                                                <button
-                                                    onClick={() => handleClearLineDetailsClick(selectedDetailsLine)}
-                                                    className="flex items-center gap-1 px-2 py-1 text-[11px] text-red-500 border border-red-100 rounded-md hover:bg-red-50 transition-colors"
-                                                    title={t('pricing.priceLists.line.clearDetails')}
-                                                >
-                                                    <Trash2 className="w-3 h-3" /> {t('pricing.priceLists.line.clearDetails')}
-                                                </button>
-                                            </div>
-                                        </div>
-                                    )}
 
                                     {/* ── Full-height product prices DataGrid ── */}
                                     <div className="flex-1 min-h-0">
@@ -968,7 +784,7 @@ export function PriceListsPage() {
                         </div>
                     </PricingPageShell>
                 }
-                rightContent={<ActionPanel groups={[{ items: actionItems }]} />}
+                rightContent={<ActionPanel groups={actionGroups} />}
             />
 
             {/* Modals */}

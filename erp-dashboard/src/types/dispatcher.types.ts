@@ -316,6 +316,12 @@ export interface DispatcherOrder {
 
   financial_metadata?: DispatcherOrderFinancialMetadata | null;
 
+  // Pre-computed totals written by CalculateDocumentPhysicalMetrics queued job (§20.2).
+  // Null = job hasn't run yet for this order — treat as data_incomplete in capacity checks.
+  total_weight_kg?: string | number | null;
+  total_volume_m3?: string | number | null;
+  physical_metrics_calculated_at?: string | null;
+
   order_products?: Array<{
     id: number;
     order_id?: number;

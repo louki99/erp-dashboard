@@ -2,10 +2,11 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import toast from 'react-hot-toast';
 import { isAxiosError } from 'axios';
-import { Package, RefreshCw, Search, Star } from 'lucide-react';
+import { Package, RefreshCw, Search, Star, X } from 'lucide-react';
 
 import { MasterLayout } from '@/components/layout/MasterLayout';
 import { PricingPageShell } from '@/components/pricing/PricingPageShell';
+import { ActionPanel, type ActionItemProps } from '@/components/layout/ActionPanel';
 import { PriceSourceBadge } from '@/components/pricing/PriceSourceBadge';
 import { DataGrid } from '@/components/common/DataGrid';
 import SearchableSelect from '@/components/common/SearchableSelect';
@@ -23,9 +24,6 @@ function getErrorMessage(error: unknown): string {
 type CellParams = { value: unknown; data?: ProductPackaging };
 type ResolutionMode = 'none' | 'price_list' | 'partner';
 
-// Grille de consultation des colisages avec prix résolus par le moteur v5 (§6.1c).
-// Sans contexte → structure seule (price: null) ; avec price_list_id ou partner_id
-// → prix résolus (liste effective du client + overrides N1 pour partner_id).
 export function PackagingPricesPage() {
     const { t } = useTranslation();
     const [productId, setProductId] = useState<number | null>(null);
@@ -50,7 +48,7 @@ export function PackagingPricesPage() {
 
     const resolutionParams = useMemo<PackagingResolutionParams | undefined>(() => {
         if (mode === 'price_list' && priceListId) return { price_list_id: priceListId };
-        if (mode === 'partner' && partnerId) return { partner_id: partnerId };
+        if (mode === 'partner' && partnerId)      return { partner_id: partnerId };
         return undefined;
     }, [mode, priceListId, partnerId]);
 
@@ -81,7 +79,33 @@ export function PackagingPricesPage() {
         return results.map((r) => ({ id: r.id, label: r.name, sublabel: r.code, raw: r }));
     }, []);
 
+    const handleClear = useCallback(() => {
+        setProductId(null);
+        setProductLabel('');
+        setPackagings([]);
+    }, []);
+
     const hasResolution = resolutionParams !== undefined;
+
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    const actionGroups = useMemo((): { items: ActionItemProps[] }[] => {
+        const groups: { items: ActionItemProps[] }[] = [
+            { items: [
+                {
+                    icon: RefreshCw,
+                    label: t('common.refresh'),
+                    onClick: () => { if (productId) loadPackagings(productId, resolutionParams); },
+                    disabled: loading || !productId,
+                },
+            ]},
+        ];
+        if (productId) {
+            groups.push({ items: [
+                { icon: X, label: 'Effacer la sélection', variant: 'warning', onClick: handleClear },
+            ]});
+        }
+        return groups;
+    }, [productId, loading, t, handleClear]);
 
     const columnDefs = useMemo(() => [
         {
@@ -130,9 +154,7 @@ export function PackagingPricesPage() {
             cellRenderer: (params: CellParams) => {
                 const p = params.data as ProductPackaging;
                 if (!p.price) return <span className="text-xs text-gray-400">—</span>;
-                if (!p.price.sellable) {
-                    return <span className="text-xs font-semibold text-red-600">{t('pricing.packagingPrices.notSellable')}</span>;
-                }
+                if (!p.price.sellable) return <span className="text-xs font-semibold text-red-600">{t('pricing.packagingPrices.notSellable')}</span>;
                 return <span className="text-sm font-semibold text-emerald-700">{Number(p.price.unit_price).toFixed(2)}</span>;
             },
         },
@@ -171,14 +193,21 @@ export function PackagingPricesPage() {
 
     return (
         <MasterLayout
-            mainContent={
-                <PricingPageShell
-                    title={t('pricing.packagingPrices.title')}
-                    subtitle={t('pricing.packagingPrices.subtitle')}
-                >
-                    <div className="h-full flex flex-col">
-                        <div className="px-4 pt-4 flex flex-wrap items-center gap-2">
-                            <div className="w-80 max-w-full">
+            leftContent={
+                <div className="h-full bg-white border-r border-gray-200 flex flex-col">
+                    {/* Header */}
+                    <div className="px-4 pt-4 pb-3 border-b border-gray-100 shrink-0">
+                        <div className="flex items-center gap-2 mb-4">
+                            <Package className="w-4 h-4 text-sage-600" />
+                            <h2 className="text-sm font-bold text-gray-900">{t('pricing.packagingPrices.title')}</h2>
+                        </div>
+
+                        <div className="space-y-3">
+                            {/* Product search */}
+                            <div>
+                                <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider mb-1.5">
+                                    Produit
+                                </p>
                                 <SearchSelect
                                     value={productId}
                                     valueLabel={productLabel || undefined}
@@ -192,19 +221,27 @@ export function PackagingPricesPage() {
                                 />
                             </div>
 
-                            {/* Contexte de résolution des prix */}
-                            <select
-                                value={mode}
-                                onChange={(e) => setMode(e.target.value as ResolutionMode)}
-                                className="px-3 py-2 text-sm border border-gray-200 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-sage-500/20"
-                            >
-                                <option value="none">{t('pricing.packagingPrices.modeNone')}</option>
-                                <option value="price_list">{t('pricing.packagingPrices.modePriceList')}</option>
-                                <option value="partner">{t('pricing.packagingPrices.modePartner')}</option>
-                            </select>
+                            {/* Resolution mode */}
+                            <div>
+                                <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider mb-1.5">
+                                    Contexte de résolution
+                                </p>
+                                <select
+                                    value={mode}
+                                    onChange={(e) => setMode(e.target.value as ResolutionMode)}
+                                    className="w-full px-3 py-2 text-xs border border-gray-200 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-sage-500/20 focus:border-sage-400"
+                                >
+                                    <option value="none">{t('pricing.packagingPrices.modeNone')}</option>
+                                    <option value="price_list">{t('pricing.packagingPrices.modePriceList')}</option>
+                                    <option value="partner">{t('pricing.packagingPrices.modePartner')}</option>
+                                </select>
+                            </div>
 
                             {mode === 'price_list' && (
-                                <div className="w-64">
+                                <div>
+                                    <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider mb-1.5">
+                                        {t('pricing.channels.priceList')}
+                                    </p>
                                     <SearchableSelect
                                         options={priceListOptions}
                                         value={priceListId}
@@ -214,8 +251,12 @@ export function PackagingPricesPage() {
                                     />
                                 </div>
                             )}
+
                             {mode === 'partner' && (
-                                <div className="w-64">
+                                <div>
+                                    <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider mb-1.5">
+                                        {t('pricing.overrides.partner')}
+                                    </p>
                                     <SearchSelect
                                         value={partnerId}
                                         onChange={(id) => setPartnerId(id)}
@@ -225,33 +266,50 @@ export function PackagingPricesPage() {
                                     />
                                 </div>
                             )}
+                        </div>
+                    </div>
 
-                            {productId && (
-                                <button
-                                    type="button"
-                                    onClick={() => loadPackagings(productId, resolutionParams)}
-                                    disabled={loading}
-                                    className="p-2 text-gray-500 hover:text-sage-600 hover:bg-sage-50 rounded-lg transition-colors disabled:opacity-50"
-                                    title={t('common.refresh')}
-                                >
-                                    <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
-                                </button>
+                    {/* Resolution hint */}
+                    <div className="px-4 py-3 text-[11px] text-gray-400 leading-relaxed border-b border-gray-100 shrink-0">
+                        {hasResolution
+                            ? (mode === 'partner'
+                                ? t('pricing.packagingPrices.partnerHint')
+                                : t('pricing.packagingPrices.priceListHint'))
+                            : t('pricing.packagingPrices.derivedHint')}
+                    </div>
+
+                    {/* Selected product summary */}
+                    {productId && productLabel && (
+                        <div className="mx-3 mt-3 px-3 py-2.5 bg-sage-50 rounded-lg border border-sage-100">
+                            <p className="text-[10px] text-sage-500 font-semibold uppercase tracking-wider mb-0.5">
+                                Sélectionné
+                            </p>
+                            <p className="text-xs font-medium text-sage-800 truncate">{productLabel}</p>
+                            {packagings.length > 0 && (
+                                <p className="text-[10px] text-sage-500 mt-0.5">
+                                    {packagings.length} colisage{packagings.length > 1 ? 's' : ''}
+                                </p>
                             )}
                         </div>
-                        <p className="px-4 pt-2 text-xs text-gray-400">
-                            {hasResolution
-                                ? (mode === 'partner'
-                                    ? t('pricing.packagingPrices.partnerHint')
-                                    : t('pricing.packagingPrices.priceListHint'))
-                                : t('pricing.packagingPrices.derivedHint')}
-                        </p>
-
-                        <div className="flex-1 p-4 overflow-hidden">
+                    )}
+                </div>
+            }
+            mainContent={
+                <PricingPageShell
+                    title={t('pricing.packagingPrices.title')}
+                    subtitle={t('pricing.packagingPrices.subtitle')}
+                >
+                    <div className="h-full flex flex-col">
+                        <div className="flex-1 overflow-hidden p-4">
                             {!productId ? (
-                                <div className="h-full flex flex-col items-center justify-center text-gray-400 gap-2">
-                                    <Search className="w-10 h-10 opacity-30" />
-                                    <p className="text-sm font-medium text-gray-500">{t('pricing.packagingPrices.emptyTitle')}</p>
-                                    <p className="text-xs">{t('pricing.packagingPrices.emptySubtitle')}</p>
+                                <div className="h-full flex flex-col items-center justify-center text-gray-400 gap-3">
+                                    <div className="w-20 h-20 rounded-2xl bg-white flex items-center justify-center shadow-md border border-gray-100">
+                                        <Search className="w-10 h-10 text-gray-200" />
+                                    </div>
+                                    <div className="text-center">
+                                        <p className="text-sm font-semibold text-gray-700">{t('pricing.packagingPrices.emptyTitle')}</p>
+                                        <p className="text-xs text-gray-400 mt-1">{t('pricing.packagingPrices.emptySubtitle')}</p>
+                                    </div>
                                 </div>
                             ) : packagings.length === 0 && !loading ? (
                                 <div className="h-full flex flex-col items-center justify-center text-gray-400 gap-2">
@@ -272,6 +330,7 @@ export function PackagingPricesPage() {
                     </div>
                 </PricingPageShell>
             }
+            rightContent={<ActionPanel groups={actionGroups} />}
         />
     );
 }

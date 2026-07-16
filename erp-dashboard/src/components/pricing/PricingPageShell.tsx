@@ -73,8 +73,8 @@ export function PricingPageShell({ title, subtitle, children, badge }: PricingPa
                         </nav>
                     </div>
 
-                    {/* Module sub-navigation - wraps on small screens */}
-                    <nav className="flex flex-wrap items-center gap-1">
+                    {/* Module sub-navigation - horizontal scroll on overflow */}
+                    <nav className="flex items-center gap-1 overflow-x-auto pb-1 [&::-webkit-scrollbar]:h-[3px] [&::-webkit-scrollbar-track]:bg-gray-100 [&::-webkit-scrollbar-track]:rounded-full [&::-webkit-scrollbar-thumb]:bg-gray-300 [&::-webkit-scrollbar-thumb]:rounded-full hover:[&::-webkit-scrollbar-thumb]:bg-sage-400 [scrollbar-width:thin] [scrollbar-color:#d1d5db_#f3f4f6]">
                         {NAV_ITEMS.map((item) => {
                             const isActive = item.route === '/pricing'
                                 ? pathname === '/pricing'
@@ -84,7 +84,7 @@ export function PricingPageShell({ title, subtitle, children, badge }: PricingPa
                                     key={item.id}
                                     to={item.route}
                                     className={cn(
-                                        'flex items-center gap-1.5 px-2.5 py-1 rounded-md text-[11px] font-medium transition-all border',
+                                        'flex items-center gap-1.5 px-2.5 py-1 rounded-md text-[11px] font-medium transition-all border shrink-0',
                                         isActive
                                             ? 'bg-sage-50 text-sage-700 border-sage-200 shadow-sm'
                                             : 'text-gray-500 hover:bg-gray-50 hover:text-gray-700 border-transparent'

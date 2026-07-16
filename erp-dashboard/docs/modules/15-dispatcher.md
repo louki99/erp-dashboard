@@ -3623,6 +3623,78 @@ verified-live response shapes; decision registry (§16) updated to list all of t
 3. *New `reopen_delivery_mission` decision (§8.6) — atomic rollback from `in_preparation` back to `draft`: cancels the BP (`status: cancelled`, kept for audit), releases reserved stock, BLs → draft. Blocked once the BP is no longer `pending`/`in_progress` (race-condition guard, re-checked inside the transaction). Required a new migration adding `cancelled` to `preparation_orders`' status CHECK constraint.*
 4. *All of the above verified live end-to-end against a real WSL Postgres instance (transaction + rollback, not assumed from code reading).*
 
+## 20. Physical Metrics — Route/Van Optimization Foundation (2026-07-17)
+
+**Goal:** the Dispatcher must be able to sum weight/volume across dozens of orders and compare against a vehicle's capacity **instantly** — a flat `SUM(total_weight_kg)` over order headers, never a live walk of `order → lines → product → logistics_profile → packaging_levels` at request time.
+
+### 20.1 Master data — where weight/volume/dimensions actually live
+
+⚠️ **Two different "packaging" tables exist — don't confuse them:**
+
+| Table | Purpose | Weight/volume fields |
+|---|---|---|
+| `product_packagings` | **Ordering/colisage** — which units a customer can order in (e.g. "Carton x12") | `theoretical_weight` only — not used for logistics/shipping calculations |
+| `product_logistics_profiles` + `product_packaging_levels` | **Shipping/logistics** — real source of truth for capacity planning | `length_m`/`width_m`/`height_m`, `gross_weight_kg`/`net_weight_kg`, `volume_m3` |
+
+`product_packaging_levels.volume_m3` is now a **PostgreSQL `GENERATED ALWAYS AS (length_m * width_m * height_m) STORED` column** (migration `2026_07_28_000001_make_packaging_volume_generated_column`) — attempting to write it directly is rejected by the DB (`SQLSTATE[428C9]`). `gross_weight_kg`/`net_weight_kg` stay plain input columns (weight isn't derivable from dimensions).
+
+`Product::unit_weight_kg` / `Product::unit_volume_m3` (accessors, `app/Models/Product.php`) resolve per-base-unit rate from the profile's `shipping_level` (which packaging level — UNIT/CARTON/PALLET — governs) divided by that level's `units_per_package`. Unchanged by this work — this resolution logic already existed and is correct; what changed is *how often* it runs (once per document write, in a queued job, not on every dispatcher request).
+
+**⚠️ Known data gap (2026-07-17):** all 636 existing `product_packaging_levels` rows have `units_per_package` populated but `length_m`/`width_m`/`height_m`/`gross_weight_kg`/`net_weight_kg` are **all NULL** — the physical dimensions have never actually been entered for any real product. The structure below is correct and verified end-to-end with synthetic data, but `total_weight_kg`/`total_volume_m3` will compute as `0` for every real order until Master Data / Catalog populates this data. `VehicleCapacityService` already has a `data_incomplete`/`incomplete_product_ids` flag for exactly this scenario (§20.4) — it was already designed to detect it, just never had a way to fix it in bulk.
+
+#### 20.1.1 Admin CRUD for logistics profiles/packaging levels — already exists
+
+`App\Http\Controllers\Backend\ProductLogisticsController` (routes below) already covers exactly the "fill in the 636 rows" workflow — this was **not** built as part of this deep dive, it pre-existed, but two bugs in it were found and fixed while confirming it (2026-07-17, commit `f17b3577`):
+
+| Method | Route | Description |
+|---|---|---|
+| `GET` | `/api/backend/products/{product}/logistics` | Returns the product's `ProductLogisticsProfile` + all `packaging_levels`, plus an `inferred_default.shipping_level` (guessed from `ProductFlag.delivery_unit` when no profile exists yet) |
+| `PUT` | `/api/backend/products/{product}/logistics` | **Upsert** — creates the profile if it doesn't exist, full-replaces `packaging_levels` (deletes + recreates) if `packaging_levels` is present in the payload. One call handles both create and update. |
+
+`PUT` body: `shipping_level` (`UNIT`/`CARTON`/`PALLET` — which level governs `Product::unit_weight_kg`/`unit_volume_m3`), handling flags (`stackable`, `fragile`, `keep_upright`, `requires_separation`, `temperature_controlled`, …), and `packaging_levels: [{packaging_level, units_per_package, length_m, width_m, height_m, gross_weight_kg, net_weight_kg}]` — **no `volume_m3` key**, the DB computes it.
+
+Bugs fixed here (both blocked the exact "product has no profile yet" case, i.e. every one of the 636 rows before Master Data touches them):
+1. `upsert()` still wrote `volume_m3` directly — became a hard DB error the moment `product_packaging_levels.volume_m3` turned into a generated column (§20.1's migration, same day). Removed from the validated payload, the `create()` call, and `ProductPackagingLevel::$fillable`.
+2. A freshly-created `ProductLogisticsProfile`'s in-memory NOT NULL boolean attributes (`stackable`, `fragile`, `keep_upright`, …) stayed `null` even though the DB applied real defaults on INSERT (`stackable` defaults to `true`, etc.) — the very next line's `fill()` fell back to that stale `null` and the following `UPDATE` violated the NOT NULL constraint. Fixed with a `refresh()` right after `create()`.
+
+Verified end-to-end against the dev DB: first-time create (no prior profile — the 636-row scenario) now succeeds and returns the correctly DB-computed `volume_m3` for two packaging levels; `show()` and a follow-up update on the now-existing profile also verified.
+
+### 20.2 `orders`/`invoices` header columns
+
+Migration `2026_07_28_000000_add_physical_metrics_to_documents`:
+
+| Column | Type | Notes |
+|---|---|---|
+| `total_weight_kg` | `decimal(15,3)` | `SUM(quantity * unit_weight_kg)` across the document's lines |
+| `total_volume_m3` | `decimal(15,6)` | `SUM(quantity * unit_volume_m3)` across the document's lines |
+| `physical_metrics_calculated_at` | `timestamp` | Set by the job on every run — staleness indicator |
+
+Added to both `orders` and `invoices`. **Written only by `App\Jobs\CalculateDocumentPhysicalMetrics`** (via `DB::table(...)->update()`, bypassing Eloquent events to avoid a dispatch loop) — no controller should ever set these directly.
+
+### 20.3 `CalculateDocumentPhysicalMetrics` (queued job) + auto-dispatch
+
+`app/Jobs/CalculateDocumentPhysicalMetrics.php` — `handle(string $documentType, int $documentId)`, `$documentType` ∈ `order`/`invoice`. Loads the document's lines with `product.logisticsProfile.packagingLevels` eager-loaded (avoids N+1), sums `qty * unit_weight_kg`/`qty * unit_volume_m3`, writes the header. Queue: `logistics`. `$tries = 3`, backoff `[5, 15, 30]`.
+
+**Auto-triggered** by two new observers — not called manually from any controller:
+
+- `App\Observers\OrderProductObserver` — `saved()`/`deleted()` on `OrderProduct` → dispatches (`DB::afterCommit`) for that line's `order_id`.
+- `App\Observers\InvoiceItemObserver` — same pattern for `InvoiceItem` → `invoice_id`.
+
+Registered in `AppServiceProvider::boot()`. Hooking at the **line-item** model level (not the order/invoice header) was a deliberate choice: order lines are created from many different code paths (SFA app, POS, admin forms, shortage-backlog service, "Mission Vide" auto-injection — see §19) and hunting down every call site to add a dispatch call would be fragile and easy to miss one. Observing the line model itself means **no call site can forget to recalculate** — correctness by construction, not by convention. The job is idempotent and cheap (a SUM + one UPDATE), so redundant runs when multiple lines save in the same request are harmless, not a performance concern.
+
+### 20.4 Dispatcher capacity checks — `VehicleCapacityService` refactor (2026-07-17)
+
+`App\Services\Dispatcher\VehicleCapacityService` now has **two entry points reading from two different sources**, deliberately not unified:
+
+- **`checkFromOrderIds(vehicleId, deliveryDate, orderIds, excludeMissionId?)`** — used by `CreateDeliveryMissionDecision` ("Dispatcher selects N orders to build a new mission", before any BL exists). Incoming load is a **flat `SUM(total_weight_kg)`/`SUM(total_volume_m3)` over `orders`** — no per-product/logistics-chain resolution at request time. This is the exact "50 commandes → SUM en une requête" scenario from the brief, now implemented. If any selected order has `physical_metrics_calculated_at IS NULL` (job hasn't run yet — e.g. still queued), it contributes 0 to the sum and `data_incomplete` is flagged, same contract as the per-product flag.
+- **`check(vehicleId, deliveryDate, incomingItems, excludeMissionId?)`** — used by `UpdateDeliveryMissionDecision`/`ReassignDeliveryMissionDecision`, unchanged behavior. Still resolves `Product::unit_weight_kg`/`unit_volume_m3` per BL item at request time, using `prepared_quantity`/`allocated_quantity` (real post-preparation/post-allocation quantities, which can differ from what was originally ordered). **Intentionally left alone** — there's no equivalent pre-computed total at BL-item granularity, and the whole point of this path is precision against what's *actually* loaded, not what was ordered. Conflating it with the order-header totals would silently reduce accuracy for reassignment/update, which handle partial preparations and substitutions.
+
+The "concurrent load from other missions on the same vehicle+date" half of the calculation (unrelated to the incoming-orders-vs-incoming-BL-items distinction above) is now a shared private helper (`computeConcurrentLoad()`) used by both entry points — that logic was identical between the two, only the "incoming" half differed.
+
+`incomingItemsFromOrders()` (the old per-product-resolution helper for the order-based path) was removed — `checkFromOrderIds()` fully replaces it, confirmed to have exactly one caller (`CreateDeliveryMissionDecision`) before removal.
+
+Verified: both entry points tested directly against the dev DB — `checkFromOrderIds()` with two orders carrying known `total_weight_kg`/`total_volume_m3` returned the exact expected sum, and correctly flagged `data_incomplete` when one order's metrics hadn't been computed yet; `check()` re-verified unchanged (same return shape, no regression from the extraction into shared helpers).
+
 *Last updated: 2026-07-21 — **Feature "Mission Vide" (auto-planning).** Nouvelle section §19 : 4 endpoints CRUD pour les `MissionPlanningTemplate` (GET liste, POST créer, PUT modifier/toggle, DELETE soft-delete). `delivery_missions.rider_id` est maintenant nullable (les missions auto-créées démarrent sans livreur). Nouvelle colonne `planning_run_id` sur `delivery_missions` (soft-ref vers `mission_planning_runs`). §17 et §18 mis à jour pour refléter le schéma et le flux. Migrations : `2026_07_21_000000_create_mission_planning_tables` + `2026_07_21_000001_alter_delivery_missions_for_auto_planning`. Artisan command `missions:trigger-planned` (every minute, with `--dry-run` option). `OrderObserver::updated()` injecte automatiquement les BCs `CONFIRMED` dans la mission Draft du jour lorsque le couple (commercial × partenaire) matche un template actif.*
 
 *Previous update: 2026-06-20 — full rewrite for the BC → DeliveryMission architecture migration. The old BC → DO → LOT/BCH pipeline and the parallel "Dispatch V2" BC → DO → BP → BCH pipeline are both removed; `shipments`, `shipment_deliveries`, `shipment_delivery_orders`, `delivery_orders`, `delivery_order_items`, `delivery_order_orders`, `logistics_batches`, and `preparation_delivery_notes` are dropped (`database/migrations/2026_07_17_130000_drop_shipment_delivery_order_logistics_batch_tables.php`). `adjust_quantities` and `create_decharge` have no `delivery-mission` equivalent yet — explicitly deferred, see §2 and §16.*
