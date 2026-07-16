@@ -932,27 +932,8 @@ export const ProductsPage = () => {
             <MasterLayout
                 leftContent={
                     <div className="h-full bg-white border-r border-gray-100 flex flex-col">
-                        <div className="p-3 border-b border-gray-100 shrink-0">
-                            <h1 className="text-sm font-semibold text-gray-900 mb-2">Gestion des Produits</h1>
-
-                            <div className="grid grid-cols-2 gap-2 mt-2">
-                                <div className="bg-sage-50 rounded p-1.5">
-                                    <div className="text-xs text-gray-500">Total</div>
-                                    <div className="text-base font-bold text-sage-700">{stats.total_products}</div>
-                                </div>
-                                <div className="bg-green-50 rounded p-1.5">
-                                    <div className="text-xs text-gray-500">Actifs</div>
-                                    <div className="text-base font-bold text-green-700">{stats.active_products}</div>
-                                </div>
-                                <div className="bg-orange-50 rounded p-1.5">
-                                    <div className="text-xs text-gray-500">En attente</div>
-                                    <div className="text-base font-bold text-orange-700">{stats.pending_approval}</div>
-                                </div>
-                                <div className="bg-red-50 rounded p-1.5">
-                                    <div className="text-xs text-gray-500">Rupture</div>
-                                    <div className="text-base font-bold text-red-700">{stats.out_of_stock}</div>
-                                </div>
-                            </div>
+                        <div className="px-3 py-2 border-b border-gray-100 shrink-0">
+                            <h1 className="text-sm font-semibold text-gray-900">Gestion des Produits</h1>
                         </div>
 
                         {error && <div className="px-4 py-2 text-sm text-red-600 border-b border-gray-100 bg-red-50">{error}</div>}

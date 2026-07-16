@@ -1676,7 +1676,100 @@ curl -X POST https://api.omni360.cloud/api/backend/conventional-loading-requests
 
 **Not previously documented.** End-of-day reconciliation for **conventional sales** (Van_Vendeur model): the salesperson returns unsold stock from their van, and the Magasinier confirms the physical count before it's released back to depot stock. Gated by `config('conventional_sales.enabled')`.
 
-This is a **two-step** flow with two different endpoints:
+This is a **two-step** flow with two different endpoints, plus a list/detail
+pair (**new 2026-07-16** — previously the magasinier had no way to discover a
+request's ID except an external channel like the salesperson's QR code).
+
+### Step 0 — `GET /backend/conventional-decharge-reconciliation` (list)
+
+Scoped to the magasinier's own `branch_code` (same pattern as
+`GET /dispatcher/decharges`, §11). `items` is intentionally omitted from the
+list — `theoretical_by_product`/`physical_by_product`/`shortage_by_product`
+are `{product_id: quantity}` maps, not a joined table, so resolving product
+names for every row would be needless weight on a list. Use the detail
+endpoint below for that.
+
+**Query params:** `status` (`draft`/`reconciling`/`completed`/`approved`/`cancelled`),
+`search` (matches `id` or the initiating user's name), `per_page` (default 20).
+
+```bash
+curl "https://api.omni360.cloud/api/backend/conventional-decharge-reconciliation?status=reconciling" \
+  -H "Authorization: Bearer {TOKEN}" \
+  -H "Accept: application/json"
+```
+
+**Response `200` — capture réelle (staging, 2026-07-16), standard Laravel paginator:**
+```json
+{
+  "current_page": 1,
+  "data": [
+    {
+      "id": 1,
+      "work_session_id": 1,
+      "user_id": 5,
+      "branch_code": "A0001",
+      "status": "reconciling",
+      "theoretical_by_product": { "1": 50, "2": 20 },
+      "physical_by_product": { "1": 48, "2": 20 },
+      "shortage_by_product": { "1": 2 },
+      "shortage_value_total": "45.50",
+      "computed_at": "2026-07-16T13:57:54.000000Z",
+      "initiated_at": "2026-07-16T12:57:54.000000Z",
+      "completed_at": null,
+      "warehouse_confirmed_at": null,
+      "warehouse_transfer_id": null,
+      "user": { "id": 5, "name": "Magasinier Chef" }
+    }
+  ],
+  "per_page": 20,
+  "total": 1
+}
+```
+
+> `user` is trimmed to `{id, name}` — `App\Models\User` globally eager-loads
+> `roles`/`permissions` (`protected $with = ['roles', 'permissions']`), which
+> would otherwise bloat every row. Field names differ from what you might
+> guess by analogy with `UnloadOrder`/`dechargesIndex()`: it's `branch_code`
+> (string, not `branch_id`), `work_session_id` (not `loading_request_id`),
+> and status values are `draft/reconciling/completed/approved/cancelled` —
+> not `pending/confirmed/approved/rejected`.
+
+### Detail — `GET /backend/conventional-decharge-reconciliation/{id}`
+
+Same as the list row, plus `items` resolved from the three product-quantity
+maps into a display array with product names, and `work_session`/
+`warehouse_transfer` eager-loaded (id-only).
+
+```bash
+curl "https://api.omni360.cloud/api/backend/conventional-decharge-reconciliation/1" \
+  -H "Authorization: Bearer {TOKEN}" \
+  -H "Accept: application/json"
+```
+
+**Response `200` — capture réelle:**
+```json
+{
+  "id": 1,
+  "status": "reconciling",
+  "branch_code": "A0001",
+  "theoretical_by_product": { "1": 50, "2": 20 },
+  "physical_by_product": { "1": 48, "2": 20 },
+  "shortage_by_product": { "1": 2 },
+  "shortage_value_total": "45.50",
+  "user": { "id": 5, "name": "Magasinier Chef" },
+  "work_session": { "id": 1 },
+  "warehouse_transfer": null,
+  "items": [
+    { "product_id": 1, "product_name": "JAVANA PRO BOUILLON EN POUDRE POISSON 1KG", "theoretical_quantity": 50, "physical_quantity": 48, "shortage_quantity": 2 },
+    { "product_id": 2, "product_name": "BURGER DE VOLAILLE SAC 1KG", "theoretical_quantity": 20, "physical_quantity": 20, "shortage_quantity": null }
+  ]
+}
+```
+
+Permission for both: `browse-decharge-reconciliation` (root, admin,
+magasinier, preparateur, dispatcher) — separate from
+`confirm-decharge-reconciliation` (root, admin, magasinier, preparateur)
+used by Step 1 below.
 
 ### Step 1 — `POST /backend/conventional-decharge-reconciliation/{dechargeReconciliationRequest}/confirm`
 

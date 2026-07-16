@@ -396,25 +396,51 @@ export interface FulfillLoadingResponse {
 }
 
 // ─── §10 Conventional Décharge Reconciliation ─────────────────────────────────
-
+// Real statuses from staging capture (2026-07-16, commit db2c0ff7).
+// NOT pending/confirmed/approved/rejected — those were assumptions.
 export type ConventionalDechargeReconciliationStatus =
-    | 'pending'
-    | 'confirmed'
-    | 'approved'
-    | 'rejected';
+    | 'draft'        // created, not yet confirmed by magasinier
+    | 'reconciling'  // magasinier confirmed QR + count → ready to approve
+    | 'completed'    // count done, awaiting transfer
+    | 'approved'     // VAN → depot transfer executed (terminal)
+    | 'cancelled';   // cancelled (terminal)
 
-// Shape based on the GET /backend/conventional-decharge-reconciliation endpoint
-// requested from backend (same pattern as GET /dispatcher/decharges).
+// List row shape — verified against staging capture.
+// NOTE: branch_code (string "A0001") not branch_id (int).
+//       work_session_id not loading_request_id.
+//       items omitted from list — use getDetail() to get resolved product names.
 export interface ConventionalDechargeReconciliationRequest {
     id: number;
+    work_session_id: number | null;
+    user_id?: number;
+    branch_code: string;
     status: ConventionalDechargeReconciliationStatus;
-    loading_request_id?: number | null;
-    branch_id?: number;
-    created_at: string;
-    confirmed_at?: string | null;
-    approved_at?: string | null;
-    user?: { id: number; name: string } | null;
-    items?: { product_id: number; product_name?: string; quantity: number }[];
+    // Product-keyed maps (product_id as string key → quantity)
+    theoretical_by_product: Record<string, number>;
+    physical_by_product: Record<string, number>;
+    shortage_by_product: Record<string, number>;
+    shortage_value_total: string | null; // decimal as string (e.g. "45.50")
+    computed_at: string | null;
+    initiated_at: string | null;
+    completed_at: string | null;
+    warehouse_confirmed_at?: string | null;
+    warehouse_transfer_id?: number | null;
+    user: { id: number; name: string } | null;
+}
+
+// Detail response — same as list row plus resolved items, work_session, warehouse_transfer
+export interface ConventionalDechargeReconciliationItem {
+    product_id: number;
+    product_name: string;
+    theoretical_quantity: number;
+    physical_quantity: number;
+    shortage_quantity: number | null;
+}
+
+export interface ConventionalDechargeReconciliationDetail extends ConventionalDechargeReconciliationRequest {
+    items: ConventionalDechargeReconciliationItem[];
+    work_session: { id: number } | null;
+    warehouse_transfer: { id: number } | null;
 }
 
 export interface ConventionalDechargeReconciliationListResponse {

@@ -22,6 +22,7 @@ import type {
     LoadingRequestsResponse,
     FulfillLoadingResponse,
     ConventionalDechargeReconciliationListResponse,
+    ConventionalDechargeReconciliationDetail,
     DechargeReconciliationLine,
     DechargeReconciliationConfirmResponse,
     DechargeReconciliationApproveResponse,
@@ -225,11 +226,20 @@ export const magasinierApi = {
 
     // §10 — Conventional Décharge Reconciliation (EOD van→dépôt, ventes SFA)
     dechargeReconciliation: {
-        // Backend endpoint pending creation — will return data once GET /backend/conventional-decharge-reconciliation is deployed.
-        getList: async (params?: { status?: string; page?: number }): Promise<ConventionalDechargeReconciliationListResponse> => {
+        // Deployed 2026-07-16 (commit db2c0ff7, feature/optimization-router).
+        // status values: draft | reconciling | completed | approved | cancelled
+        // search: matches id or initiating user name
+        getList: async (params?: { status?: string; search?: string; per_page?: number; page?: number }): Promise<ConventionalDechargeReconciliationListResponse> => {
             const response = await apiClient.get<ConventionalDechargeReconciliationListResponse>(
                 '/api/backend/conventional-decharge-reconciliation',
                 { params }
+            );
+            return response.data;
+        },
+        // Detail includes items[] resolved with product names (theoretical/physical/shortage per product).
+        getDetail: async (id: number): Promise<ConventionalDechargeReconciliationDetail> => {
+            const response = await apiClient.get<ConventionalDechargeReconciliationDetail>(
+                `/api/backend/conventional-decharge-reconciliation/${id}`
             );
             return response.data;
         },

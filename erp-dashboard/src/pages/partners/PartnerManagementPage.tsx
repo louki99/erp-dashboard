@@ -971,8 +971,8 @@ export const PartnerManagementPage = () => {
                 leftContent={
                     <div className="h-full bg-white border-r border-gray-100 flex flex-col">
                         {/* ── Header ─────────────────────────────────────── */}
-                        <div className="p-3 border-b border-gray-100 shrink-0">
-                            <div className="flex items-center justify-between mb-2">
+                        <div className="px-3 py-2 border-b border-gray-100 shrink-0">
+                            <div className="flex items-center justify-between">
                                 <h1 className="text-sm font-semibold text-gray-900 flex items-center gap-2">
                                     <Users className="w-4 h-4 text-sage-600" />
                                     Partenaires
@@ -983,23 +983,6 @@ export const PartnerManagementPage = () => {
                                     </span>
                                 )}
                             </div>
-
-                            {/* KPI bar */}
-                            {stats && (
-                                <div className="grid grid-cols-4 gap-1.5 mb-2">
-                                    {[
-                                        { label: 'Actifs', value: stats.active, color: 'text-emerald-600' },
-                                        { label: 'En attente', value: stats.on_hold, color: 'text-amber-600' },
-                                        { label: 'Bloqués', value: stats.blocked, color: 'text-red-600' },
-                                        { label: 'Total', value: stats.total, color: 'text-gray-900' },
-                                    ].map(kpi => (
-                                        <div key={kpi.label} className="text-center px-1 py-1.5 bg-gray-50 rounded">
-                                            <div className={`text-sm font-bold ${kpi.color}`}>{kpi.value}</div>
-                                            <div className="text-[9px] text-gray-400">{kpi.label}</div>
-                                        </div>
-                                    ))}
-                                </div>
-                            )}
 
                             {/* ── Draft notification banner ─────────────── */}
                             {hasDrafts && !dismissedDraftBanner && formMode === 'view' && (

@@ -15,17 +15,15 @@ import {
     Save,
     RotateCcw,
     RefreshCw,
-    Hash,
     DollarSign,
-    Eye,
+    Calendar,
+    Settings2,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { isAxiosError } from 'axios';
 
 import { MasterLayout } from '@/components/layout/MasterLayout';
 import { DataGrid } from '@/components/common/DataGrid';
-import { SageTabs, type TabItem } from '@/components/common/SageTabs';
-import { SageCollapsible } from '@/components/common/SageCollapsible';
 import { ActionPanel, type ActionItemProps } from '@/components/layout/ActionPanel';
 import { PricingPageShell } from '@/components/pricing/PricingPageShell';
 import { Button } from '@/components/ui/button';
@@ -75,15 +73,9 @@ export function PriceListsPage() {
     // ── State ─────────────────────────────────────────────────────────────────
     const [selectedPriceList, setSelectedPriceList] = useState<PriceList | null>(null);
     const [showDetailPanel, setShowDetailPanel] = useState(false);
-    const [activeTab, setActiveTab] = useState('info');
 
     const [filters, setFilters] = useState<PriceListFilters>({ page: 1, per_page: 20 });
     const [searchQuery, setSearchQuery] = useState('');
-
-    const [openSections, setOpenSections] = useState<Record<string, boolean>>({
-        info: true,
-        lines: true,
-    });
 
     // ── Data Hooks ────────────────────────────────────────────────────────────
     const {
@@ -112,15 +104,25 @@ export function PriceListsPage() {
             return;
         }
         if (selectedDetailsLine) {
+            // Keep selection fresh after refetch
             const fresh = priceListDetailData.lines?.find(
                 (l: PriceListLine) => l.id === selectedDetailsLine.id
             );
             if (fresh) {
                 setSelectedDetailsLine(fresh);
             } else {
-                setSelectedDetailsLine(null);
+                // Period was deleted — auto-select first open period
+                const fallback = priceListDetailData.lines?.find((l: PriceListLine) => !l.closed)
+                    ?? priceListDetailData.lines?.[0]
+                    ?? null;
+                setSelectedDetailsLine(fallback);
                 setEditedDetails(new Map());
             }
+        } else if (priceListDetailData.lines?.length) {
+            // New price list selected — auto-select first open period
+            const first = priceListDetailData.lines.find((l: PriceListLine) => !l.closed)
+                ?? priceListDetailData.lines[0];
+            setSelectedDetailsLine(first);
         }
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [priceListDetailData]);
@@ -400,10 +402,6 @@ export function PriceListsPage() {
         }, 800);
     };
 
-    const toggleSection = (section: string, isOpen: boolean) => {
-        setOpenSections((prev) => ({ ...prev, [section]: isOpen }));
-    };
-
     // ── Columns ───────────────────────────────────────────────────────────────
     const priceListColumns = useMemo<ColDef[]>(
         () => [
@@ -613,11 +611,6 @@ export function PriceListsPage() {
     if (selectedPriceList) {
         actionItems.push(
             {
-                icon: Layers,
-                label: t('pricing.priceLists.line.create'),
-                onClick: handleCreateLine,
-            },
-            {
                 icon: Edit2,
                 label: t('common.edit'),
                 onClick: () => handleEditPL(selectedPriceList),
@@ -631,10 +624,8 @@ export function PriceListsPage() {
         );
     }
 
-    const tabs: TabItem[] = [
-        { id: 'info', label: t('pricing.priceLists.tabInfo'), icon: FileText },
-        { id: 'lines', label: t('pricing.priceLists.tabLines'), icon: Layers },
-    ];
+    const fmtDate = (d: string) =>
+        new Date(d).toLocaleDateString('fr-FR', { day: '2-digit', month: 'short', year: '2-digit' });
 
     return (
         <>
@@ -709,283 +700,235 @@ export function PriceListsPage() {
                     >
                         <div className="h-full flex overflow-hidden">
                             {showDetailPanel && priceListDetail ? (
-                                <div className="flex-1 flex flex-col bg-slate-50 min-w-0 overflow-hidden">
-                                    {/* Detail Header */}
-                                    <div className="bg-white px-5 py-4 border-b border-gray-200 shrink-0">
-                                        <div className="flex items-start justify-between gap-4">
-                                            <div className="flex items-center gap-3.5 min-w-0">
-                                                <div className="w-11 h-11 rounded-xl bg-gradient-to-br from-sage-500 to-sage-600 flex items-center justify-center text-white text-sm font-bold shadow-sm shrink-0">
-                                                    {priceListDetail.code?.slice(0, 2) || 'PL'}
+                                <div className="flex-1 flex flex-col bg-white min-w-0 overflow-hidden">
+
+                                    {/* ── Compact header ───────────────────── */}
+                                    <div className="flex items-center justify-between gap-4 px-5 py-3 border-b border-gray-200 shrink-0 bg-white">
+                                        <div className="flex items-center gap-3 min-w-0">
+                                            <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-sage-500 to-sage-600 flex items-center justify-center text-white text-sm font-bold shadow-sm shrink-0">
+                                                {priceListDetail.code?.slice(0, 2) || 'PL'}
+                                            </div>
+                                            <div className="min-w-0">
+                                                <div className="flex items-center gap-2">
+                                                    <h1 className="text-sm font-bold text-gray-900 truncate">{priceListDetail.name}</h1>
+                                                    <span className="px-1.5 py-0.5 text-[10px] font-mono bg-sage-50 text-sage-600 rounded border border-sage-100 shrink-0">
+                                                        {priceListDetail.code}
+                                                    </span>
                                                 </div>
-                                                <div className="min-w-0">
-                                                    <div className="flex items-center gap-2 flex-wrap">
-                                                        <h1 className="text-base font-bold text-gray-900 tracking-tight truncate">{priceListDetail.name}</h1>
-                                                        <span className="px-2 py-0.5 text-[10px] font-mono bg-sage-50 text-sage-600 rounded-md border border-sage-100 shrink-0">
-                                                            {priceListDetail.code}
-                                                        </span>
-                                                    </div>
-                                                    <div className="flex items-center gap-3 text-[11px] text-gray-500 mt-1 flex-wrap">
-                                                        <span className="flex items-center gap-1">
-                                                            {t('pricing.priceLists.rank')} <strong className="text-gray-700">{priceListDetail.rank}</strong>
-                                                        </span>
-                                                        <span className="text-gray-300">|</span>
-                                                        <span>{priceListDetail.lines_count || 0} {t('pricing.priceLists.lines')}</span>
-                                                        <span className="text-gray-300">|</span>
-                                                        <span className="flex items-center gap-1">
-                                                            {t('pricing.priceLists.createdAt')}{' '}
-                                                            {priceListDetail.created_at
-                                                                ? new Date(priceListDetail.created_at).toLocaleDateString()
-                                                                : '-'}
-                                                        </span>
-                                                    </div>
+                                                <div className="text-[11px] text-gray-400 flex items-center gap-2 mt-0.5">
+                                                    <span>{t('pricing.priceLists.rank')} <strong className="text-gray-600">{priceListDetail.rank}</strong></span>
+                                                    <span className="text-gray-200">·</span>
+                                                    <span>{priceListDetail.lines_count || 0} {t('pricing.priceLists.lines')}</span>
                                                 </div>
                                             </div>
-                                            <div className="flex items-center gap-1 shrink-0">
-                                                <Button
-                                                    variant="ghost"
-                                                    size="icon"
-                                                    onClick={() => {
-                                                        refetchDetail();
-                                                        toast.success(t('common.refreshed'));
-                                                    }}
-                                                    className="h-8 w-8 text-gray-400 hover:text-sage-600"
-                                                    title={t('common.refresh')}
-                                                >
-                                                    <RefreshCw className="w-4 h-4" />
-                                                </Button>
-                                                <Button
-                                                    variant="ghost"
-                                                    size="icon"
-                                                    onClick={() => handleEditPL(priceListDetail)}
-                                                    className="h-8 w-8 text-gray-400 hover:text-sage-600"
-                                                    title={t('common.edit')}
-                                                >
-                                                    <Edit2 className="w-4 h-4" />
-                                                </Button>
-                                                <Button
-                                                    variant="ghost"
-                                                    size="icon"
-                                                    onClick={() => setShowDetailPanel(false)}
-                                                    className="h-8 w-8 text-gray-400 hover:text-gray-600"
-                                                >
-                                                    <X className="w-4 h-4" />
-                                                </Button>
-                                            </div>
+                                        </div>
+                                        <div className="flex items-center gap-0.5 shrink-0">
+                                            <button
+                                                onClick={() => { refetchDetail(); toast.success(t('common.refreshed')); }}
+                                                className="p-1.5 rounded-md text-gray-400 hover:text-sage-600 hover:bg-gray-100 transition-colors"
+                                                title={t('common.refresh')}
+                                            >
+                                                <RefreshCw className="w-3.5 h-3.5" />
+                                            </button>
+                                            <button
+                                                onClick={() => handleEditPL(priceListDetail)}
+                                                className="p-1.5 rounded-md text-gray-400 hover:text-sage-600 hover:bg-gray-100 transition-colors"
+                                                title={t('common.edit')}
+                                            >
+                                                <Edit2 className="w-3.5 h-3.5" />
+                                            </button>
+                                            <button
+                                                onClick={() => setShowDetailPanel(false)}
+                                                className="p-1.5 rounded-md text-gray-400 hover:text-gray-600 hover:bg-gray-100 transition-colors"
+                                            >
+                                                <X className="w-3.5 h-3.5" />
+                                            </button>
                                         </div>
                                     </div>
 
-                                    {/* Tabs */}
-                                    <div className="bg-white border-b border-gray-200">
-                                        <SageTabs tabs={tabs} activeTabId={activeTab} onTabChange={setActiveTab} />
+                                    {/* ── Period chips ─────────────────────── */}
+                                    <div className="flex items-center gap-2 px-4 py-2.5 border-b border-gray-100 bg-gray-50/60 overflow-x-auto shrink-0">
+                                        <span className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider shrink-0 mr-1">
+                                            {t('pricing.priceLists.line.title')}
+                                        </span>
+                                        {(priceListDetail.lines ?? []).map(line => {
+                                            const isActive = selectedDetailsLine?.id === line.id;
+                                            return (
+                                                <button
+                                                    key={line.id}
+                                                    onClick={() => handleViewLineDetails(line)}
+                                                    className={`group flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-medium whitespace-nowrap transition-all border ${
+                                                        isActive
+                                                            ? 'bg-sage-600 text-white border-sage-600 shadow-sm'
+                                                            : 'bg-white text-gray-600 border-gray-200 hover:border-sage-300 hover:text-sage-700 hover:bg-sage-50'
+                                                    }`}
+                                                >
+                                                    <Calendar className={`w-3 h-3 shrink-0 ${isActive ? 'text-sage-200' : 'text-gray-400'}`} />
+                                                    <span>{line.name || `L${line.line_number}`}</span>
+                                                    <span className={`text-[10px] ${isActive ? 'text-sage-200' : 'text-gray-400'}`}>
+                                                        {fmtDate(line.start_date)} → {fmtDate(line.end_date)}
+                                                    </span>
+                                                    {line.closed ? (
+                                                        <span className={`text-[9px] font-semibold px-1 py-0.5 rounded ${isActive ? 'bg-white/20 text-white' : 'bg-gray-100 text-gray-500'}`}>
+                                                            {t('pricing.priceLists.line.closed')}
+                                                        </span>
+                                                    ) : (
+                                                        <CheckCircle2 className={`w-3 h-3 ${isActive ? 'text-sage-200' : 'text-emerald-500'}`} />
+                                                    )}
+                                                    <span className={`inline-flex items-center justify-center min-w-[18px] h-[18px] px-1 rounded-full text-[10px] font-bold ${
+                                                        isActive ? 'bg-white/20 text-white' : 'bg-gray-100 text-gray-600'
+                                                    }`}>
+                                                        {(line.details ?? []).length}
+                                                    </span>
+                                                    {/* Inline period actions */}
+                                                    <span className="flex items-center gap-0.5 ml-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
+                                                        <span
+                                                            onClick={e => { e.stopPropagation(); handleEditLine(line); }}
+                                                            className={`p-0.5 rounded hover:bg-black/10 cursor-pointer ${isActive ? 'text-white' : 'text-gray-400'}`}
+                                                            title={t('common.edit')}
+                                                        >
+                                                            <Settings2 className="w-3 h-3" />
+                                                        </span>
+                                                        <span
+                                                            onClick={e => { e.stopPropagation(); handleDuplicateLine(line); }}
+                                                            className={`p-0.5 rounded hover:bg-black/10 cursor-pointer ${isActive ? 'text-white' : 'text-gray-400'}`}
+                                                            title={t('pricing.priceLists.line.duplicate')}
+                                                        >
+                                                            <Copy className="w-3 h-3" />
+                                                        </span>
+                                                        <span
+                                                            onClick={e => { e.stopPropagation(); handleImportCsv(line); }}
+                                                            className={`p-0.5 rounded hover:bg-black/10 cursor-pointer ${isActive ? 'text-white' : 'text-gray-400'}`}
+                                                            title={t('pricing.priceLists.line.importCsv')}
+                                                        >
+                                                            <Upload className="w-3 h-3" />
+                                                        </span>
+                                                    </span>
+                                                </button>
+                                            );
+                                        })}
+                                        <button
+                                            onClick={handleCreateLine}
+                                            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium text-sage-600 border border-dashed border-sage-200 hover:bg-sage-50 hover:border-sage-400 whitespace-nowrap transition-all shrink-0"
+                                        >
+                                            <Plus className="w-3.5 h-3.5" /> {t('pricing.priceLists.line.create')}
+                                        </button>
                                     </div>
 
-                                    {/* Tab Content */}
-                                    <div className="flex-1 overflow-y-auto p-4 space-y-4">
-                                        {activeTab === 'info' && (
-                                            <SageCollapsible
-                                                title={t('pricing.priceLists.sectionGeneralInfo')}
-                                                isOpen={openSections.info}
-                                                onOpenChange={(open) => toggleSection('info', open)}
-                                            >
-                                                <div className="bg-white rounded-lg border border-gray-100 p-4">
-                                                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-y-4 gap-x-6">
-                                                            <div>
-                                                                <label className="block text-[11px] font-medium text-gray-400 uppercase tracking-wider mb-0.5">
-                                                                    {t('pricing.priceLists.fullName')}
-                                                                </label>
-                                                                <div className="text-sm font-semibold text-gray-900">{priceListDetail.name}</div>
-                                                            </div>
-                                                            <div>
-                                                                <label className="block text-[11px] font-medium text-gray-400 uppercase tracking-wider mb-0.5">
-                                                                    {t('pricing.priceLists.code')}
-                                                                </label>
-                                                                <div className="text-sm font-mono font-semibold text-gray-900">{priceListDetail.code}</div>
-                                                            </div>
-                                                            <div>
-                                                                <label className="block text-[11px] font-medium text-gray-400 uppercase tracking-wider mb-0.5">
-                                                                    {t('pricing.priceLists.createdAt')}
-                                                                </label>
-                                                                <div className="text-sm text-gray-700">
-                                                                    {priceListDetail.created_at
-                                                                        ? new Date(priceListDetail.created_at).toLocaleDateString('fr-FR', {
-                                                                              year: 'numeric',
-                                                                              month: 'long',
-                                                                              day: 'numeric',
-                                                                          })
-                                                                        : '-'}
-                                                                </div>
-                                                            </div>
-                                                            <div>
-                                                                <label className="block text-[11px] font-medium text-gray-400 uppercase tracking-wider mb-0.5">
-                                                                    {t('pricing.priceLists.updatedAt')}
-                                                                </label>
-                                                                <div className="text-sm text-gray-700">
-                                                                    {priceListDetail.updated_at
-                                                                        ? new Date(priceListDetail.updated_at).toLocaleDateString('fr-FR', {
-                                                                              year: 'numeric',
-                                                                              month: 'long',
-                                                                              day: 'numeric',
-                                                                          })
-                                                                        : '-'}
-                                                                </div>
-                                                            </div>
-                                                        </div>
-                                                    </div>
-                                            </SageCollapsible>
-                                        )}
+                                    {/* ── Active period info strip ──────────── */}
+                                    {selectedDetailsLine && (
+                                        <div className="flex items-center justify-between px-5 py-2 border-b border-gray-100 bg-white shrink-0">
+                                            <div className="flex items-center gap-3 text-[11px] text-gray-500 min-w-0">
+                                                <div className={`w-7 h-7 rounded-md flex items-center justify-center text-[10px] font-bold shrink-0 ${
+                                                    selectedDetailsLine.closed ? 'bg-red-100 text-red-700' : 'bg-emerald-100 text-emerald-700'
+                                                }`}>
+                                                    L{selectedDetailsLine.line_number}
+                                                </div>
+                                                <span className="font-semibold text-gray-800 truncate">{selectedDetailsLine.name}</span>
+                                                <span className="text-gray-300 shrink-0">·</span>
+                                                <span className="shrink-0">
+                                                    {fmtDate(selectedDetailsLine.start_date)} → {fmtDate(selectedDetailsLine.end_date)}
+                                                </span>
+                                                <span className="text-gray-300 shrink-0">·</span>
+                                                <span className={`font-semibold shrink-0 ${selectedDetailsLine.closed ? 'text-red-600' : 'text-emerald-600'}`}>
+                                                    {selectedDetailsLine.closed ? t('pricing.priceLists.line.closed') : t('pricing.priceLists.line.open')}
+                                                </span>
+                                                <span className="text-gray-300 shrink-0">·</span>
+                                                <span className="shrink-0">
+                                                    <strong className="text-gray-700">{(selectedDetailsLine.details ?? []).length}</strong> {t('pricing.priceLists.products')}
+                                                </span>
+                                            </div>
+                                            <div className="flex items-center gap-1 shrink-0">
+                                                <button
+                                                    onClick={() => handleImportCsv(selectedDetailsLine)}
+                                                    className="flex items-center gap-1 px-2 py-1 text-[11px] text-gray-500 border border-gray-200 rounded-md hover:bg-gray-50 transition-colors"
+                                                    title={t('pricing.priceLists.line.importCsv')}
+                                                >
+                                                    <Upload className="w-3 h-3" /> CSV
+                                                </button>
+                                                <button
+                                                    onClick={() => handleClearLineDetailsClick(selectedDetailsLine)}
+                                                    className="flex items-center gap-1 px-2 py-1 text-[11px] text-red-500 border border-red-100 rounded-md hover:bg-red-50 transition-colors"
+                                                    title={t('pricing.priceLists.line.clearDetails')}
+                                                >
+                                                    <Trash2 className="w-3 h-3" /> {t('pricing.priceLists.line.clearDetails')}
+                                                </button>
+                                            </div>
+                                        </div>
+                                    )}
 
-                                        {activeTab === 'lines' && (
-                                            <div className="space-y-3">
-                                                <div className="flex justify-between items-center bg-white rounded-lg border border-gray-200 px-4 py-3 shadow-sm">
-                                                    <h3 className="text-sm font-semibold text-gray-900 flex items-center gap-2">
-                                                        <Layers className="w-4 h-4 text-sage-500" />
-                                                        {t('pricing.priceLists.line.title')}
-                                                        <span className="ml-1 px-2 py-0.5 text-[10px] font-semibold rounded-full bg-gray-100 text-gray-600">
-                                                            {priceListDetail.lines?.length ?? 0}
-                                                        </span>
-                                                    </h3>
-                                                    <Button
-                                                        size="sm"
-                                                        onClick={handleCreateLine}
-                                                        className="h-8 text-xs bg-sage-600 hover:bg-sage-700 text-white"
+                                    {/* ── Full-height product prices DataGrid ── */}
+                                    <div className="flex-1 min-h-0">
+                                        {selectedDetailsLine ? (
+                                            detailLoading ? (
+                                                <div className="h-full flex items-center justify-center text-gray-400 text-sm gap-2">
+                                                    <RefreshCw className="w-4 h-4 animate-spin" /> Chargement...
+                                                </div>
+                                            ) : (selectedDetailsLine.details ?? []).length > 0 ? (
+                                                <DataGrid
+                                                    rowData={selectedDetailsLine.details ?? []}
+                                                    columnDefs={detailsColumns}
+                                                    loading={false}
+                                                    onCellValueChanged={handleDetailCellChange}
+                                                />
+                                            ) : (
+                                                <div className="h-full flex flex-col items-center justify-center text-gray-400 gap-3">
+                                                    <FileText className="w-10 h-10 opacity-20" />
+                                                    <p className="text-sm font-medium">{t('pricing.priceLists.details.empty')}</p>
+                                                    <button
+                                                        onClick={() => handleImportCsv(selectedDetailsLine)}
+                                                        className="flex items-center gap-1.5 px-3 py-1.5 text-xs text-sage-600 border border-sage-200 rounded-lg hover:bg-sage-50 transition-colors"
                                                     >
-                                                        <Plus className="w-3.5 h-3.5 mr-1.5" /> {t('pricing.priceLists.line.create')}
-                                                    </Button>
+                                                        <Upload className="w-3.5 h-3.5" /> Importer des prix (CSV)
+                                                    </button>
                                                 </div>
-
-                                                <div className="bg-white rounded-lg border border-gray-200 shadow-sm h-[260px]">
-                                                    <DataGrid
-                                                        rowData={priceListDetail.lines || []}
-                                                        columnDefs={linesColumns}
-                                                        loading={detailLoading}
-                                                        rowSelection="single"
-                                                        onRowClicked={(e: any) => handleViewLineDetails(e.data)}
-                                                    />
-                                                </div>
-
-                                                {!priceListDetail.lines?.length && !detailLoading && (
-                                                    <div className="flex flex-col items-center justify-center py-6 text-xs text-gray-500 bg-white rounded-lg border border-dashed border-gray-200">
-                                                        <Layers className="w-8 h-8 mb-2 text-gray-300" />
-                                                        {t('pricing.priceLists.line.empty')}
-                                                    </div>
-                                                )}
-
-                                                {/* Line Details Editor */}
-                                                {selectedDetailsLine && (
-                                                    <div className="bg-white rounded-lg border border-gray-200 shadow-sm overflow-hidden">
-                                                        <div className="flex items-center justify-between px-4 py-3 bg-gray-50/70 border-b border-gray-200">
-                                                            <div className="flex items-center gap-3 min-w-0">
-                                                                <div
-                                                                    className={`w-9 h-9 rounded-lg flex items-center justify-center text-xs font-bold shrink-0 ${
-                                                                        selectedDetailsLine.closed ? 'bg-red-100 text-red-700' : 'bg-emerald-100 text-emerald-700'
-                                                                    }`}
-                                                                >
-                                                                    L{selectedDetailsLine.line_number}
-                                                                </div>
-                                                                <div className="min-w-0">
-                                                                    <div className="text-sm font-semibold text-gray-900 truncate">{selectedDetailsLine.name}</div>
-                                                                    <div className="text-[11px] text-gray-500 flex items-center gap-2 flex-wrap">
-                                                                        <span>{(selectedDetailsLine.details ?? []).length} {t('pricing.priceLists.products')}</span>
-                                                                        <span className="text-gray-300">|</span>
-                                                                        <span className={selectedDetailsLine.closed ? 'text-red-600 font-medium' : 'text-emerald-600 font-medium'}>
-                                                                            {selectedDetailsLine.closed
-                                                                                ? t('pricing.priceLists.line.closed')
-                                                                                : t('pricing.priceLists.line.open')}
-                                                                        </span>
-                                                                    </div>
-                                                                </div>
-                                                            </div>
-
-                                                            <div className="flex items-center gap-1.5 shrink-0">
-                                                                {editedDetails.size > 0 && (
-                                                                    <>
-                                                                        <span className="hidden sm:inline text-[11px] text-amber-600 font-medium mr-1">
-                                                                            {t('pricing.priceLists.details.modified', { count: editedDetails.size })}
-                                                                        </span>
-                                                                        <Button
-                                                                            variant="outline"
-                                                                            size="sm"
-                                                                            onClick={handleResetDetails}
-                                                                            className="h-7 px-2 text-xs text-gray-600 border-gray-200 hover:bg-gray-100"
-                                                                        >
-                                                                            <RotateCcw className="w-3 h-3 mr-1" /> {t('pricing.priceLists.details.reset')}
-                                                                        </Button>
-                                                                        <Button
-                                                                            size="sm"
-                                                                            onClick={handleSaveDetails}
-                                                                            disabled={upsertLoading}
-                                                                            className="h-7 px-2 text-xs bg-emerald-600 hover:bg-emerald-700 text-white"
-                                                                        >
-                                                                            <Save className="w-3 h-3 mr-1" /> {t('pricing.priceLists.details.save')}
-                                                                        </Button>
-                                                                    </>
-                                                                )}
-                                                                <Button
-                                                                    variant="outline"
-                                                                    size="sm"
-                                                                    onClick={() => handleImportCsv(selectedDetailsLine)}
-                                                                    className="h-7 px-2 text-xs text-gray-600 border-gray-200 hover:bg-gray-50"
-                                                                    title={t('pricing.priceLists.line.importCsv')}
-                                                                >
-                                                                    <Upload className="w-3 h-3" />
-                                                                </Button>
-                                                                <Button
-                                                                    variant="outline"
-                                                                    size="sm"
-                                                                    onClick={() => handleClearLineDetailsClick(selectedDetailsLine)}
-                                                                    className="h-7 px-2 text-xs text-red-600 border-red-100 hover:bg-red-50 hover:text-red-700"
-                                                                    title={t('pricing.priceLists.line.clearDetails')}
-                                                                >
-                                                                    <Trash2 className="w-3 h-3" />
-                                                                </Button>
-                                                                <Button
-                                                                    variant="ghost"
-                                                                    size="icon"
-                                                                    onClick={() => setSelectedDetailsLine(null)}
-                                                                    className="h-7 w-7 text-gray-400 hover:text-gray-600"
-                                                                >
-                                                                    <X className="w-4 h-4" />
-                                                                </Button>
-                                                            </div>
-                                                        </div>
-
-                                                        <div className="h-[360px]">
-                                                            <DataGrid
-                                                                rowData={selectedDetailsLine.details ?? []}
-                                                                columnDefs={detailsColumns}
-                                                                loading={false}
-                                                                onCellValueChanged={handleDetailCellChange}
-                                                            />
-                                                        </div>
-
-                                                        {!(selectedDetailsLine.details ?? []).length && (
-                                                            <div className="py-6 text-center text-xs text-gray-400 border-t border-gray-100 bg-gray-50/30">
-                                                                <FileText className="w-8 h-8 mx-auto mb-2 text-gray-300" />
-                                                                {t('pricing.priceLists.details.empty')}
-                                                            </div>
-                                                        )}
-                                                    </div>
-                                                )}
-
-                                                {!selectedDetailsLine && (priceListDetail.lines?.length ?? 0) > 0 && (
-                                                    <div className="flex items-center justify-center py-5 text-xs text-gray-500 bg-white rounded-lg border border-dashed border-gray-200">
-                                                        <div className="w-8 h-8 rounded-full bg-gray-50 flex items-center justify-center mr-3">
-                                                            <Eye className="w-4 h-4 text-gray-400" />
-                                                        </div>
-                                                        {t('pricing.priceLists.details.hint')}
-                                                    </div>
-                                                )}
+                                            )
+                                        ) : (
+                                            <div className="h-full flex flex-col items-center justify-center text-gray-400 gap-2">
+                                                <Layers className="w-10 h-10 opacity-20" />
+                                                <p className="text-sm font-medium">Aucune période disponible</p>
+                                                <button
+                                                    onClick={handleCreateLine}
+                                                    className="flex items-center gap-1.5 px-3 py-1.5 text-xs text-sage-600 border border-sage-200 rounded-lg hover:bg-sage-50 transition-colors"
+                                                >
+                                                    <Plus className="w-3.5 h-3.5" /> Créer une période de validité
+                                                </button>
                                             </div>
                                         )}
                                     </div>
+
+                                    {/* ── Sticky save/reset footer (only when pending changes) ── */}
+                                    {editedDetails.size > 0 && (
+                                        <div className="flex items-center justify-between px-5 py-2.5 bg-amber-50 border-t border-amber-200 shrink-0">
+                                            <div className="flex items-center gap-2 text-xs text-amber-700 font-medium">
+                                                <div className="w-2 h-2 rounded-full bg-amber-400 animate-pulse" />
+                                                {t('pricing.priceLists.details.modified', { count: editedDetails.size })}
+                                            </div>
+                                            <div className="flex items-center gap-2">
+                                                <button
+                                                    onClick={handleResetDetails}
+                                                    className="flex items-center gap-1.5 px-3 py-1.5 text-xs text-gray-600 bg-white border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors"
+                                                >
+                                                    <RotateCcw className="w-3 h-3" /> {t('pricing.priceLists.details.reset')}
+                                                </button>
+                                                <button
+                                                    onClick={handleSaveDetails}
+                                                    disabled={upsertLoading}
+                                                    className="flex items-center gap-1.5 px-3 py-1.5 text-xs text-white bg-emerald-600 rounded-lg hover:bg-emerald-700 disabled:opacity-50 transition-colors"
+                                                >
+                                                    <Save className="w-3 h-3" /> {t('pricing.priceLists.details.save')}
+                                                </button>
+                                            </div>
+                                        </div>
+                                    )}
                                 </div>
                             ) : (
                                 <div className="flex-1 flex flex-col items-center justify-center bg-slate-50/80 text-gray-400">
-                                    <div className="w-24 h-24 bg-white rounded-2xl flex items-center justify-center mb-5 shadow-lg border border-gray-100">
-                                        <DollarSign className="w-12 h-12 text-gray-200" />
+                                    <div className="w-20 h-20 bg-white rounded-2xl flex items-center justify-center mb-5 shadow-md border border-gray-100">
+                                        <DollarSign className="w-10 h-10 text-gray-200" />
                                     </div>
-                                    <h3 className="text-lg font-semibold text-gray-800">{t('pricing.priceLists.noSelectionTitle')}</h3>
-                                    <p className="text-sm mt-2 text-gray-500 max-w-sm text-center leading-relaxed">
+                                    <h3 className="text-base font-semibold text-gray-800">{t('pricing.priceLists.noSelectionTitle')}</h3>
+                                    <p className="text-sm mt-1.5 text-gray-500 max-w-xs text-center leading-relaxed">
                                         {t('pricing.priceLists.noSelectionSubtitle')}
                                     </p>
                                     <Button

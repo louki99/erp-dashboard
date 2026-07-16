@@ -1,9 +1,36 @@
 import { AgGridReact } from 'ag-grid-react';
 import { AllCommunityModule, ModuleRegistry, themeQuartz } from 'ag-grid-community';
-import { useState, useEffect, useRef, forwardRef } from 'react';
+import { useState, useEffect, useRef, forwardRef, useMemo } from 'react';
 
-// Register all Community features
 ModuleRegistry.registerModules([AllCommunityModule]);
+
+// ─── Dynamic theme from backend CSS vars ──────────────────────────────────────
+
+function readHslVar(varName: string, fallback: string): string {
+    if (typeof window === 'undefined') return fallback;
+    const val = getComputedStyle(document.documentElement).getPropertyValue(varName).trim();
+    return val ? `hsl(${val})` : fallback;
+}
+
+function useThemeColors() {
+    const read = () => ({
+        accent: readHslVar('--sage-500', 'hsl(158 100% 34%)'),
+        light:  readHslVar('--sage-50',  'hsl(152 76% 97%)'),
+    });
+
+    const [colors, setColors] = useState(read);
+
+    useEffect(() => {
+        const mo = new MutationObserver(() => setColors(read()));
+        // ThemeContext sets inline style on <html> whenever backend theme is loaded
+        mo.observe(document.documentElement, { attributes: true, attributeFilter: ['style'] });
+        return () => mo.disconnect();
+    }, []);
+
+    return colors;
+}
+
+// ─── Types ────────────────────────────────────────────────────────────────────
 
 interface DataGridProps {
     rowData: any[];
@@ -19,12 +46,15 @@ interface DataGridProps {
     paginationPageSize?: number;
     getRowClass?: (params: any) => string;
     isRowSelectable?: (params: any) => boolean;
-    defaultSelectedIds?: (row: any) => boolean; // Function to determine if a row should be selected by default
+    /** Function to determine if a row should be selected by default */
+    defaultSelectedIds?: (row: any) => boolean;
     getRowId?: (data: any) => string;
     rowHeight?: number;
     /** When true, columns keep their explicit widths and AG Grid shows a horizontal scrollbar */
     suppressAutoFit?: boolean;
 }
+
+// ─── Component ────────────────────────────────────────────────────────────────
 
 export const DataGrid = forwardRef<AgGridReact, DataGridProps>(({
     rowData,
@@ -49,6 +79,19 @@ export const DataGrid = forwardRef<AgGridReact, DataGridProps>(({
     const isInitializingSelection = useRef(false);
     const previousSelectedIdsRef = useRef<Set<any>>(new Set());
 
+    const { accent, light } = useThemeColors();
+
+    // Rebuild AG Grid theme whenever brand color changes (e.g. after ThemeContext refresh)
+    const gridTheme = useMemo(() => themeQuartz.withParams({
+        accentColor:                accent,
+        selectedRowBackgroundColor: light,
+        rowHoverColor:              light,
+        headerBackgroundColor:      '#f9fafb',  // gray-50 — consistent across all pages
+        fontFamily:                 'Cairo, system-ui, -apple-system, sans-serif',
+        fontSize:                   13,
+        cellHorizontalPaddingScale: 0.8,
+    }), [accent, light]);
+
     const defaultColDef = {
         flex: suppressAutoFit ? undefined : 1,
         minWidth: 100,
@@ -57,7 +100,7 @@ export const DataGrid = forwardRef<AgGridReact, DataGridProps>(({
         resizable: true,
         floatingFilter: true,
         cellStyle: { fontSize: '13px', display: 'flex', alignItems: 'center' },
-        headerClass: 'text-xs font-semibold uppercase tracking-wide text-gray-600 bg-gray-50',
+        headerClass: 'text-xs font-semibold uppercase tracking-wide text-gray-500',
     };
 
     const onGridReady = (params: any) => {
@@ -81,7 +124,6 @@ export const DataGrid = forwardRef<AgGridReact, DataGridProps>(({
             }
         });
 
-        // For single selection, keep only the first matching row
         const effectiveSelectedIds = rowSelection === 'single'
             ? new Set(shouldBeSelectedIds.size > 0 ? [Array.from(shouldBeSelectedIds)[0]] : [])
             : shouldBeSelectedIds;
@@ -90,9 +132,7 @@ export const DataGrid = forwardRef<AgGridReact, DataGridProps>(({
             effectiveSelectedIds.size !== previousSelectedIdsRef.current.size ||
             Array.from(effectiveSelectedIds).some((id) => !previousSelectedIdsRef.current.has(id));
 
-        if (!hasChanged) {
-            return;
-        }
+        if (!hasChanged) return;
 
         previousSelectedIdsRef.current = effectiveSelectedIds;
         isInitializingSelection.current = true;
@@ -102,66 +142,55 @@ export const DataGrid = forwardRef<AgGridReact, DataGridProps>(({
                 const id = node.data.id || node.data.code || node.data.name || JSON.stringify(node.data);
                 const shouldBeSelected = effectiveSelectedIds.has(id);
                 const isCurrentlySelected = node.isSelected();
-
                 if (shouldBeSelected !== isCurrentlySelected) {
-                    node.setSelected(shouldBeSelected, false, true); // suppressEvents = true
+                    node.setSelected(shouldBeSelected, false, true);
                 }
             }
         });
 
-        setTimeout(() => {
-            isInitializingSelection.current = false;
-        }, 50);
+        setTimeout(() => { isInitializingSelection.current = false; }, 50);
     }, [gridApi, rowData, defaultSelectedIds, rowSelection]);
 
     return (
-        <div className="ag-theme-sage h-full w-full">
+        <div className="h-full w-full">
             <AgGridReact
-                    ref={ref}
-                    theme={themeQuartz}
-                    rowData={rowData}
-                    columnDefs={columnDefs}
-                    defaultColDef={defaultColDef}
-                    rowSelection={rowSelection === 'multiple'
-                        ? { mode: "multiRow", checkboxes: true, enableClickSelection: false }
-                        : { mode: "singleRow", checkboxes: false, enableClickSelection: true }
+                ref={ref}
+                theme={gridTheme}
+                rowData={rowData}
+                columnDefs={columnDefs}
+                defaultColDef={defaultColDef}
+                rowSelection={rowSelection === 'multiple'
+                    ? { mode: 'multiRow', checkboxes: true, enableClickSelection: false }
+                    : { mode: 'singleRow', checkboxes: false, enableClickSelection: true }
+                }
+                getRowClass={getRowClass}
+                isRowSelectable={isRowSelectable}
+                onSelectionChanged={(event) => {
+                    if (isInitializingSelection.current) return;
+                    const selectedRows = event.api.getSelectedRows();
+                    if (rowSelection === 'multiple' && onSelectionChanged) {
+                        onSelectionChanged(selectedRows);
+                    } else if (selectedRows.length > 0 && onRowSelected) {
+                        onRowSelected(selectedRows[0]);
                     }
-                    getRowClass={getRowClass}
-                    isRowSelectable={isRowSelectable}
-                    onSelectionChanged={(event) => {
-                        // Skip callback if we're programmatically updating selection
-                        if (isInitializingSelection.current) {
-                            return;
-                        }
-
-                        const selectedRows = event.api.getSelectedRows();
-                        if (rowSelection === 'multiple' && onSelectionChanged) {
-                            onSelectionChanged(selectedRows);
-                        } else if (selectedRows.length > 0 && onRowSelected) {
-                            onRowSelected(selectedRows[0]);
-                        }
-                    }}
-                    onRowDoubleClicked={(event) => {
-                        if (onRowDoubleClicked && event.data) {
-                            onRowDoubleClicked(event.data);
-                        }
-                    }}
-                    onRowClicked={(event) => {
-                        if (onRowClicked) {
-                            onRowClicked(event);
-                        }
-                    }}
-                    onCellValueChanged={onCellValueChanged}
-                    onGridReady={onGridReady}
-                    getRowId={getRowId}
-                    animateRows={true}
-                    headerHeight={40}
-                    rowHeight={customRowHeight ?? 36}
-                    loading={loading}
-                    paginationPageSize={paginationPageSize}
-                    pagination={pagination}
-                    overlayLoadingTemplate={'<span class="ag-overlay-loading-center">Loading...</span>'}
-                />
+                }}
+                onRowDoubleClicked={(event) => {
+                    if (onRowDoubleClicked && event.data) onRowDoubleClicked(event.data);
+                }}
+                onRowClicked={(event) => {
+                    if (onRowClicked) onRowClicked(event);
+                }}
+                onCellValueChanged={onCellValueChanged}
+                onGridReady={onGridReady}
+                getRowId={getRowId}
+                animateRows={true}
+                headerHeight={40}
+                rowHeight={customRowHeight ?? 36}
+                loading={loading}
+                paginationPageSize={paginationPageSize}
+                pagination={pagination}
+                overlayLoadingTemplate={'<span class="ag-overlay-loading-center">Chargement...</span>'}
+            />
         </div>
     );
 });

@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import {
     ScanLine, CheckCircle2, RefreshCw, AlertCircle,
-    Package, Upload, Clock, User, Plus, X,
+    Package, Upload, Clock, User, Plus, X, TrendingDown,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { MasterLayout } from '@/components/layout/MasterLayout';
@@ -9,6 +9,7 @@ import { ActionPanel } from '@/components/layout/ActionPanel';
 import { magasinierApi } from '@/services/api/magasinierApi';
 import type {
     ConventionalDechargeReconciliationRequest,
+    ConventionalDechargeReconciliationDetail,
     ConventionalDechargeReconciliationStatus,
     DechargeReconciliationLine,
 } from '@/types/magasinier.types';
@@ -16,14 +17,16 @@ import type {
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 const STATUS_META: Record<ConventionalDechargeReconciliationStatus, { label: string; bg: string; text: string; border: string }> = {
-    pending:   { label: 'En attente',  bg: 'bg-blue-50',    text: 'text-blue-700',    border: 'border-blue-200'    },
-    confirmed: { label: 'Confirmé',   bg: 'bg-indigo-50',  text: 'text-indigo-700',  border: 'border-indigo-200'  },
-    approved:  { label: 'Approuvé',   bg: 'bg-emerald-50', text: 'text-emerald-700', border: 'border-emerald-200' },
-    rejected:  { label: 'Rejeté',     bg: 'bg-red-50',     text: 'text-red-700',     border: 'border-red-200'     },
+    draft:        { label: 'En attente',   bg: 'bg-gray-50',    text: 'text-gray-600',    border: 'border-gray-200'    },
+    reconciling:  { label: 'En cours',     bg: 'bg-blue-50',    text: 'text-blue-700',    border: 'border-blue-200'    },
+    completed:    { label: 'Complété',     bg: 'bg-indigo-50',  text: 'text-indigo-700',  border: 'border-indigo-200'  },
+    approved:     { label: 'Approuvé',     bg: 'bg-emerald-50', text: 'text-emerald-700', border: 'border-emerald-200' },
+    cancelled:    { label: 'Annulé',       bg: 'bg-red-50',     text: 'text-red-600',     border: 'border-red-200'     },
 };
 
-const statusMeta = (status?: string) =>
-    STATUS_META[status as ConventionalDechargeReconciliationStatus] ?? { label: status ?? '—', bg: 'bg-gray-50', text: 'text-gray-600', border: 'border-gray-200' };
+const statusMeta = (s?: string) =>
+    STATUS_META[s as ConventionalDechargeReconciliationStatus] ??
+    { label: s ?? '—', bg: 'bg-gray-50', text: 'text-gray-600', border: 'border-gray-200' };
 
 // ─── List card ────────────────────────────────────────────────────────────────
 
@@ -37,6 +40,7 @@ const ReconciliationCard = ({
     onClick: () => void;
 }) => {
     const s = statusMeta(req.status);
+    const shortageTotal = parseFloat(req.shortage_value_total ?? '0');
     return (
         <button
             onClick={onClick}
@@ -57,24 +61,27 @@ const ReconciliationCard = ({
                 </div>
                 <p className="text-xs font-semibold text-gray-900">Réconciliation #{req.id}</p>
                 <div className="flex items-center justify-between mt-1.5">
-                    {req.user ? (
-                        <span className="text-[10px] text-gray-400 flex items-center gap-1">
-                            <User className="w-3 h-3" /> {req.user.name}
-                        </span>
-                    ) : (
-                        <span className="text-[10px] text-gray-400">—</span>
-                    )}
                     <span className="text-[10px] text-gray-400 flex items-center gap-1">
-                        <Clock className="w-3 h-3" />
-                        {new Date(req.created_at).toLocaleDateString('fr-FR')}
+                        <User className="w-3 h-3" /> {req.user?.name ?? '—'}
                     </span>
+                    {shortageTotal > 0 && (
+                        <span className="text-[10px] text-red-500 font-semibold flex items-center gap-0.5">
+                            <TrendingDown className="w-3 h-3" /> {shortageTotal.toFixed(2)}
+                        </span>
+                    )}
                 </div>
+                {req.initiated_at && (
+                    <p className="text-[10px] text-gray-400 mt-1 flex items-center gap-1">
+                        <Clock className="w-3 h-3" />
+                        {new Date(req.initiated_at).toLocaleString('fr-FR')}
+                    </p>
+                )}
             </div>
         </button>
     );
 };
 
-// ─── Inline line editor ───────────────────────────────────────────────────────
+// ─── Line editor for confirm step ─────────────────────────────────────────────
 
 const LineEditor = ({
     lines,
@@ -82,20 +89,20 @@ const LineEditor = ({
     disabled,
 }: {
     lines: DechargeReconciliationLine[];
-    onChange: (lines: DechargeReconciliationLine[]) => void;
+    onChange: (l: DechargeReconciliationLine[]) => void;
     disabled?: boolean;
 }) => {
-    const addLine    = () => onChange([...lines, { product_id: 0, physical_qty: 0 }]);
-    const removeLine = (i: number) => onChange(lines.filter((_, idx) => idx !== i));
-    const update     = (i: number, field: keyof DechargeReconciliationLine, v: number) =>
+    const add    = () => onChange([...lines, { product_id: 0, physical_qty: 0 }]);
+    const remove = (i: number) => onChange(lines.filter((_, idx) => idx !== i));
+    const update = (i: number, field: keyof DechargeReconciliationLine, v: number) =>
         onChange(lines.map((l, idx) => idx === i ? { ...l, [field]: v } : l));
 
     return (
         <div className="space-y-2">
             <div className="flex items-center justify-between">
-                <p className="text-xs font-semibold text-gray-700">Décompte physique</p>
+                <p className="text-xs font-semibold text-gray-700">Décompte physique par produit</p>
                 {!disabled && (
-                    <button onClick={addLine} className="flex items-center gap-1 text-[10px] text-blue-600 hover:text-blue-700">
+                    <button onClick={add} className="flex items-center gap-1 text-[10px] text-blue-600 hover:text-blue-700">
                         <Plus className="w-3 h-3" /> Ajouter
                     </button>
                 )}
@@ -114,13 +121,13 @@ const LineEditor = ({
                         type="number"
                         value={l.physical_qty}
                         onChange={e => update(i, 'physical_qty', Number(e.target.value))}
-                        placeholder="Qté"
+                        placeholder="Qté physique"
                         min={0}
                         disabled={disabled}
                         className="flex-1 px-2 py-1.5 text-xs border border-gray-200 rounded-lg bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-400 disabled:opacity-50"
                     />
                     {!disabled && lines.length > 1 && (
-                        <button onClick={() => removeLine(i)} className="text-gray-300 hover:text-red-400 transition-colors">
+                        <button onClick={() => remove(i)} className="text-gray-300 hover:text-red-400">
                             <X className="w-3.5 h-3.5" />
                         </button>
                     )}
@@ -133,48 +140,38 @@ const LineEditor = ({
 // ─── Main page ────────────────────────────────────────────────────────────────
 
 export const MagasinierDechargeReconciliationPage = () => {
-    const [requests, setRequests]     = useState<ConventionalDechargeReconciliationRequest[]>([]);
-    const [selectedId, setSelectedId] = useState<number | null>(null);
-    const [filterStatus, setFilterStatus] = useState<string>('pending');
+    const [requests, setRequests]         = useState<ConventionalDechargeReconciliationRequest[]>([]);
+    const [selectedId, setSelectedId]     = useState<number | null>(null);
+    const [detail, setDetail]             = useState<ConventionalDechargeReconciliationDetail | null>(null);
+    const [filterStatus, setFilterStatus] = useState<string>('draft');
     const [loading, setLoading]           = useState(true);
-    const [listUnavailable, setListUnavailable] = useState(false);
-    const [actionLoading, setActionLoading]     = useState(false);
+    const [detailLoading, setDetailLoading] = useState(false);
+    const [actionLoading, setActionLoading] = useState(false);
 
-    // Confirm step state
     const [qrToken, setQrToken]     = useState('');
     const [photo, setPhoto]         = useState<File | null>(null);
     const [lines, setLines]         = useState<DechargeReconciliationLine[]>([{ product_id: 0, physical_qty: 0 }]);
-    const [confirmDone, setConfirmDone] = useState(false);
-
-    // Approve step state
     const [approveNotes, setApproveNotes] = useState('');
     const [approveDone, setApproveDone]   = useState(false);
     const [approveResult, setApproveResult] = useState<unknown>(null);
 
     const selected = requests.find(r => r.id === selectedId) ?? null;
 
-    const pending  = requests.filter(r => r.status === 'pending').length;
-    const confirmed = requests.filter(r => r.status === 'confirmed').length;
-    const approved  = requests.filter(r => r.status === 'approved').length;
+    // real status transitions: draft → (confirm) → reconciling → (approve) → approved
+    const canConfirm = !!selected && selected.status === 'draft' && !!qrToken.trim() && !actionLoading;
+    const canApprove = !!selected && selected.status === 'reconciling'              && !approveDone && !actionLoading;
 
-    const canConfirm = !!selected && (selected.status === 'pending' || selected.status === 'confirmed') && !confirmDone && !!qrToken.trim() && !actionLoading;
-    const canApprove = !!selected && (selected.status === 'confirmed' || confirmDone) && !approveDone && !actionLoading;
+    const pending     = requests.filter(r => r.status === 'draft').length;
+    const reconciling = requests.filter(r => r.status === 'reconciling').length;
+    const approved    = requests.filter(r => r.status === 'approved').length;
 
     const fetchList = useCallback(async () => {
         setLoading(true);
-        setListUnavailable(false);
         try {
             const res = await magasinierApi.dechargeReconciliation.getList({ status: filterStatus || undefined });
             setRequests(res.data ?? []);
-        } catch (e: unknown) {
-            const err = e as { response?: { status?: number } };
-            // 404 = endpoint not yet deployed on backend
-            if (err?.response?.status === 404 || err?.response?.status === 405) {
-                setListUnavailable(true);
-                setRequests([]);
-            } else {
-                toast.error('Erreur chargement des réconciliations');
-            }
+        } catch {
+            toast.error('Erreur chargement des réconciliations');
         } finally {
             setLoading(false);
         }
@@ -182,15 +179,38 @@ export const MagasinierDechargeReconciliationPage = () => {
 
     useEffect(() => { fetchList(); }, [fetchList]);
 
-    const handleSelect = (req: ConventionalDechargeReconciliationRequest) => {
+    const handleSelect = async (req: ConventionalDechargeReconciliationRequest) => {
         setSelectedId(req.id);
+        setDetail(null);
         setQrToken('');
         setPhoto(null);
-        setLines([{ product_id: 0, physical_qty: 0 }]);
-        setConfirmDone(req.status === 'confirmed' || req.status === 'approved');
-        setApproveDone(req.status === 'approved');
         setApproveNotes('');
+        setApproveDone(req.status === 'approved');
         setApproveResult(null);
+
+        // Seed lines from theoretical_by_product map as default
+        const theoreticalLines: DechargeReconciliationLine[] = Object.entries(req.theoretical_by_product).map(
+            ([pid, qty]) => ({ product_id: Number(pid), physical_qty: qty })
+        );
+        setLines(theoreticalLines.length > 0 ? theoreticalLines : [{ product_id: 0, physical_qty: 0 }]);
+
+        // Load full detail with resolved product names
+        setDetailLoading(true);
+        try {
+            const d = await magasinierApi.dechargeReconciliation.getDetail(req.id);
+            setDetail(d);
+            // Re-seed lines from resolved items if available
+            if (d.items && d.items.length > 0) {
+                setLines(d.items.map(item => ({
+                    product_id: item.product_id,
+                    physical_qty: item.physical_quantity ?? item.theoretical_quantity,
+                })));
+            }
+        } catch {
+            // keep theoretical map as fallback — non-blocking
+        } finally {
+            setDetailLoading(false);
+        }
     };
 
     const handleConfirm = async () => {
@@ -204,9 +224,8 @@ export const MagasinierDechargeReconciliationPage = () => {
                 lines,
                 photo: photo ?? undefined,
             });
-            setConfirmDone(true);
-            setRequests(prev => prev.map(r => r.id === selected.id ? { ...r, status: 'confirmed' as const } : r));
-            toast.success('Décompte confirmé — approuvez pour finaliser');
+            setRequests(prev => prev.map(r => r.id === selected.id ? { ...r, status: 'reconciling' as const } : r));
+            toast.success('Décompte confirmé — approuvez pour finaliser le transfert');
         } catch (e: unknown) {
             const err = e as { response?: { data?: { message?: string } } };
             toast.error(err?.response?.data?.message ?? 'Erreur lors de la confirmation');
@@ -243,19 +262,19 @@ export const MagasinierDechargeReconciliationPage = () => {
                     </div>
                     <div>
                         <h1 className="text-sm font-bold text-gray-900">Réconciliations</h1>
-                        <p className="text-[10px] text-gray-400">
-                            {listUnavailable ? 'Endpoint en déploiement' : `${requests.length} demande${requests.length !== 1 ? 's' : ''}`}
-                        </p>
+                        <p className="text-[10px] text-gray-400">{requests.length} demande{requests.length !== 1 ? 's' : ''}</p>
                     </div>
                 </div>
                 <select
                     value={filterStatus}
-                    onChange={e => { setFilterStatus(e.target.value); setSelectedId(null); }}
+                    onChange={e => { setFilterStatus(e.target.value); setSelectedId(null); setDetail(null); }}
                     className="w-full px-3 py-1.5 text-xs border border-gray-200 rounded-xl bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-400 focus:bg-white transition-all"
                 >
-                    <option value="pending">En attente</option>
-                    <option value="confirmed">Confirmés</option>
+                    <option value="draft">En attente (draft)</option>
+                    <option value="reconciling">En cours de réconciliation</option>
+                    <option value="completed">Complétés</option>
                     <option value="approved">Approuvés</option>
+                    <option value="cancelled">Annulés</option>
                     <option value="">Tous</option>
                 </select>
             </div>
@@ -265,19 +284,6 @@ export const MagasinierDechargeReconciliationPage = () => {
                     <div className="flex items-center justify-center pt-16 text-gray-400">
                         <div className="w-5 h-5 border-b-2 border-blue-500 rounded-full animate-spin mr-2" />
                         Chargement...
-                    </div>
-                ) : listUnavailable ? (
-                    <div className="flex flex-col items-center justify-center pt-12 text-gray-400 gap-3 px-3">
-                        <div className="w-10 h-10 rounded-xl bg-yellow-50 flex items-center justify-center">
-                            <AlertCircle className="w-5 h-5 text-yellow-500" />
-                        </div>
-                        <div className="text-center">
-                            <p className="text-xs font-semibold text-gray-600">Liste non disponible</p>
-                            <p className="text-[10px] text-gray-400 mt-1">
-                                Le backend déploie le endpoint<br />
-                                <code className="bg-gray-100 px-1 rounded">GET /conventional-decharge-reconciliation</code>
-                            </p>
-                        </div>
                     </div>
                 ) : requests.length === 0 ? (
                     <div className="flex flex-col items-center justify-center pt-16 text-gray-400 gap-3">
@@ -308,12 +314,11 @@ export const MagasinierDechargeReconciliationPage = () => {
                 </div>
                 <div>
                     <h2 className="text-lg font-bold text-gray-900">Réconciliation de Décharge</h2>
-                    <p className="text-sm text-gray-400">Confirmez le décompte physique à la réception des marchandises SFA (§10)</p>
+                    <p className="text-sm text-gray-400">Confirmez le décompte physique EOD, puis approuvez le transfert VAN → DÉPÔT (§10)</p>
                 </div>
             </div>
 
             <div className="flex-1 overflow-y-auto p-6 lg:p-8">
-                {/* Info banner */}
                 <div className="flex items-start gap-3 px-4 py-3 bg-blue-50 border border-blue-100 rounded-xl mb-6">
                     <div className="w-8 h-8 rounded-lg bg-blue-100 flex items-center justify-center shrink-0">
                         <ScanLine className="w-4 h-4 text-blue-600" />
@@ -321,18 +326,17 @@ export const MagasinierDechargeReconciliationPage = () => {
                     <div>
                         <p className="text-sm font-semibold text-blue-800">Procédure en 2 étapes</p>
                         <p className="text-xs text-blue-600/80 mt-0.5">
-                            <strong>1. Confirmer</strong> — Scannez le QR vendeur et saisissez les quantités réelles reçues.&nbsp;
-                            <strong>2. Approuver</strong> — Validez la réconciliation pour déclencher le transfert VAN → DÉPÔT.
+                            <strong>1. Confirmer (draft → reconciling)</strong> — Scannez le QR vendeur et saisissez les quantités réelles reçues.<br />
+                            <strong>2. Approuver (reconciling → approved)</strong> — Déclenche le transfert VAN → DÉPÔT.
                         </p>
                     </div>
                 </div>
 
-                {/* KPI */}
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-6">
                     {[
-                        { label: 'En attente',  value: pending,   color: 'text-blue-600',    bg: pending    > 0 ? 'bg-blue-50'    : 'bg-gray-50', border: pending    > 0 ? 'border-blue-100'    : 'border-gray-200' },
-                        { label: 'Confirmés',   value: confirmed, color: 'text-indigo-600',  bg: confirmed  > 0 ? 'bg-indigo-50'  : 'bg-gray-50', border: confirmed  > 0 ? 'border-indigo-100'  : 'border-gray-200' },
-                        { label: 'Approuvés',   value: approved,  color: 'text-emerald-600', bg: approved   > 0 ? 'bg-emerald-50' : 'bg-gray-50', border: approved   > 0 ? 'border-emerald-100' : 'border-gray-200' },
+                        { label: 'En attente',       value: pending,     color: 'text-gray-600',    bg: pending     > 0 ? 'bg-gray-50'    : 'bg-gray-50', border: pending     > 0 ? 'border-gray-300'    : 'border-gray-200' },
+                        { label: 'En réconciliation', value: reconciling, color: 'text-blue-600',    bg: reconciling > 0 ? 'bg-blue-50'    : 'bg-gray-50', border: reconciling > 0 ? 'border-blue-100'    : 'border-gray-200' },
+                        { label: 'Approuvés',         value: approved,    color: 'text-emerald-600', bg: approved    > 0 ? 'bg-emerald-50' : 'bg-gray-50', border: approved    > 0 ? 'border-emerald-100' : 'border-gray-200' },
                     ].map(k => (
                         <div key={k.label} className={`${k.bg} border ${k.border} rounded-xl p-5 shadow-sm`}>
                             <div className={`text-3xl font-bold ${k.color}`}>{k.value}</div>
@@ -341,36 +345,31 @@ export const MagasinierDechargeReconciliationPage = () => {
                     ))}
                 </div>
 
-                {/* Empty state */}
                 {!selected ? (
                     <div className="flex flex-col items-center justify-center h-40 text-gray-400 gap-2">
                         <ScanLine className="w-10 h-10 opacity-20" />
                         <p className="text-sm font-medium">Sélectionnez une réconciliation dans la liste</p>
-                        {listUnavailable && (
-                            <p className="text-xs text-yellow-600 mt-1">
-                                La liste sera disponible dès que le backend déploie le endpoint GET.
-                            </p>
-                        )}
                     </div>
                 ) : (
                     <div className="space-y-5">
-                        {/* Request header */}
+                        {/* Header */}
                         <div className="bg-white border border-gray-200 rounded-xl shadow-sm p-5">
-                            <div className="flex items-start justify-between mb-4">
+                            <div className="flex items-start justify-between mb-3">
                                 <div>
                                     <h3 className="text-base font-bold text-gray-900">Réconciliation #{selected.id}</h3>
                                     <div className="flex flex-col gap-1 mt-1.5">
-                                        {selected.user && (
-                                            <p className="text-xs text-gray-500 flex items-center gap-1">
-                                                <User className="w-3 h-3" /> {selected.user.name}
-                                            </p>
-                                        )}
-                                        <p className="text-xs text-gray-400 flex items-center gap-1">
-                                            <Clock className="w-3 h-3" />
-                                            {new Date(selected.created_at).toLocaleString('fr-FR')}
+                                        <p className="text-xs text-gray-500 flex items-center gap-1">
+                                            <User className="w-3 h-3" /> {selected.user?.name ?? '—'}
                                         </p>
-                                        {selected.loading_request_id && (
-                                            <p className="text-[10px] text-gray-400">Chargement lié : #{selected.loading_request_id}</p>
+                                        <p className="text-[10px] text-gray-400">Branche : {selected.branch_code}</p>
+                                        {selected.work_session_id && (
+                                            <p className="text-[10px] text-gray-400">Session de travail : #{selected.work_session_id}</p>
+                                        )}
+                                        {selected.initiated_at && (
+                                            <p className="text-xs text-gray-400 flex items-center gap-1">
+                                                <Clock className="w-3 h-3" />
+                                                Initiée le {new Date(selected.initiated_at).toLocaleString('fr-FR')}
+                                            </p>
                                         )}
                                     </div>
                                 </div>
@@ -379,35 +378,77 @@ export const MagasinierDechargeReconciliationPage = () => {
                                 </span>
                             </div>
 
-                            {/* Items snapshot (if backend returns them) */}
-                            {selected.items && selected.items.length > 0 && (
-                                <div className="border border-gray-100 rounded-lg overflow-hidden mb-4">
+                            {/* Product counts table — from resolved detail or product maps */}
+                            {detailLoading ? (
+                                <div className="flex items-center gap-2 py-3 text-xs text-gray-400">
+                                    <div className="w-4 h-4 border-b-2 border-blue-400 rounded-full animate-spin" />
+                                    Chargement des détails produit...
+                                </div>
+                            ) : detail?.items && detail.items.length > 0 ? (
+                                <div className="border border-gray-100 rounded-lg overflow-hidden mt-3">
                                     <table className="w-full text-xs">
                                         <thead className="bg-gray-50 border-b border-gray-100">
                                             <tr>
                                                 <th className="text-left px-4 py-2 font-semibold text-gray-500 uppercase tracking-wider">Produit</th>
-                                                <th className="text-right px-4 py-2 font-semibold text-gray-500 uppercase tracking-wider">Attendu</th>
+                                                <th className="text-right px-4 py-2 font-semibold text-gray-500 uppercase tracking-wider">Théorique</th>
+                                                <th className="text-right px-4 py-2 font-semibold text-gray-500 uppercase tracking-wider">Physique</th>
+                                                <th className="text-right px-4 py-2 font-semibold text-gray-500 uppercase tracking-wider">Écart</th>
                                             </tr>
                                         </thead>
                                         <tbody className="divide-y divide-gray-50">
-                                            {selected.items.map((item, i) => (
-                                                <tr key={i} className="bg-white">
-                                                    <td className="px-4 py-2.5 text-gray-800">{item.product_name ?? `#${item.product_id}`}</td>
-                                                    <td className="px-4 py-2.5 text-right text-gray-600">{item.quantity}</td>
+                                            {detail.items.map(item => (
+                                                <tr key={item.product_id} className="bg-white">
+                                                    <td className="px-4 py-2.5 text-gray-800 font-medium">{item.product_name}</td>
+                                                    <td className="px-4 py-2.5 text-right text-gray-600">{item.theoretical_quantity}</td>
+                                                    <td className="px-4 py-2.5 text-right text-gray-600">{item.physical_quantity}</td>
+                                                    <td className={`px-4 py-2.5 text-right font-semibold ${(item.shortage_quantity ?? 0) > 0 ? 'text-red-600' : 'text-emerald-600'}`}>
+                                                        {(item.shortage_quantity ?? 0) > 0 ? `-${item.shortage_quantity}` : '✓'}
+                                                    </td>
+                                                </tr>
+                                            ))}
+                                        </tbody>
+                                    </table>
+                                    {selected.shortage_value_total && parseFloat(selected.shortage_value_total) > 0 && (
+                                        <div className="flex items-center justify-between px-4 py-2 bg-red-50 border-t border-red-100">
+                                            <span className="text-xs text-red-600 font-medium flex items-center gap-1">
+                                                <TrendingDown className="w-3 h-3" /> Valeur de l'écart total
+                                            </span>
+                                            <span className="text-xs font-bold text-red-700">{parseFloat(selected.shortage_value_total).toFixed(2)} MAD</span>
+                                        </div>
+                                    )}
+                                </div>
+                            ) : Object.keys(selected.theoretical_by_product).length > 0 ? (
+                                <div className="border border-gray-100 rounded-lg overflow-hidden mt-3">
+                                    <table className="w-full text-xs">
+                                        <thead className="bg-gray-50 border-b border-gray-100">
+                                            <tr>
+                                                <th className="text-left px-4 py-2 font-semibold text-gray-500 uppercase tracking-wider">ID produit</th>
+                                                <th className="text-right px-4 py-2 font-semibold text-gray-500 uppercase tracking-wider">Théorique</th>
+                                                <th className="text-right px-4 py-2 font-semibold text-gray-500 uppercase tracking-wider">Physique</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody className="divide-y divide-gray-50">
+                                            {Object.entries(selected.theoretical_by_product).map(([pid, theo]) => (
+                                                <tr key={pid} className="bg-white">
+                                                    <td className="px-4 py-2.5 text-gray-600">#{pid}</td>
+                                                    <td className="px-4 py-2.5 text-right text-gray-600">{theo}</td>
+                                                    <td className="px-4 py-2.5 text-right text-gray-600">
+                                                        {selected.physical_by_product?.[pid] ?? '—'}
+                                                    </td>
                                                 </tr>
                                             ))}
                                         </tbody>
                                     </table>
                                 </div>
-                            )}
+                            ) : null}
                         </div>
 
-                        {/* Step 1 — Confirm form */}
-                        {!confirmDone && (
+                        {/* Step 1 — Confirm form (only when draft) */}
+                        {selected.status === 'draft' && (
                             <div className="bg-white border border-blue-100 rounded-xl shadow-sm p-5">
                                 <p className="text-sm font-bold text-blue-800 mb-4 flex items-center gap-2">
                                     <span className="w-5 h-5 rounded-full bg-blue-100 text-blue-700 text-[10px] font-black flex items-center justify-center">1</span>
-                                    Confirmation du décompte
+                                    Confirmation du décompte (draft → reconciling)
                                 </p>
                                 <div className="space-y-3">
                                     <div>
@@ -416,14 +457,14 @@ export const MagasinierDechargeReconciliationPage = () => {
                                             type="text"
                                             value={qrToken}
                                             onChange={e => setQrToken(e.target.value)}
-                                            placeholder="Scannez ou collez le token QR du vendeur"
+                                            placeholder="Scannez ou collez le token QR"
                                             className="w-full px-3 py-2 text-xs border border-gray-200 rounded-lg bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-400 focus:bg-white"
                                         />
                                     </div>
                                     <LineEditor lines={lines} onChange={setLines} />
                                     <div>
                                         <label className="block text-xs font-medium text-gray-600 mb-1 flex items-center gap-1">
-                                            <Upload className="w-3 h-3" /> Photo justificative
+                                            <Upload className="w-3 h-3" /> Photo du bon signé (optionnel, max 15 Mo)
                                         </label>
                                         <input
                                             type="file"
@@ -436,25 +477,21 @@ export const MagasinierDechargeReconciliationPage = () => {
                             </div>
                         )}
 
-                        {/* Step 1 — Done indicator */}
-                        {confirmDone && !approveDone && (
-                            <div className="flex items-center gap-3 bg-indigo-50 border border-indigo-100 rounded-xl p-4">
-                                <CheckCircle2 className="w-4 h-4 text-indigo-500 shrink-0" />
-                                <p className="text-xs text-indigo-700">Décompte confirmé — passez à l'approbation.</p>
-                            </div>
-                        )}
-
-                        {/* Step 2 — Approve form */}
-                        {confirmDone && !approveDone && (
+                        {/* Step 2 — Approve form (only when reconciling) */}
+                        {selected.status === 'reconciling' && !approveDone && (
                             <div className="bg-white border border-indigo-100 rounded-xl shadow-sm p-5">
                                 <p className="text-sm font-bold text-indigo-800 mb-4 flex items-center gap-2">
                                     <span className="w-5 h-5 rounded-full bg-indigo-100 text-indigo-700 text-[10px] font-black flex items-center justify-center">2</span>
-                                    Approbation de la réconciliation
+                                    Approbation (reconciling → approved)
                                 </p>
+                                <div className="flex items-start gap-2 bg-indigo-50 border border-indigo-100 rounded-lg px-3 py-2 mb-3">
+                                    <AlertCircle className="w-3.5 h-3.5 text-indigo-500 mt-0.5 shrink-0" />
+                                    <p className="text-xs text-indigo-700">Cette action déclenche le transfert physique VAN → DÉPÔT. Elle est irréversible.</p>
+                                </div>
                                 <textarea
                                     value={approveNotes}
                                     onChange={e => setApproveNotes(e.target.value)}
-                                    placeholder="Notes d'approbation (facultatif)"
+                                    placeholder="Notes d'approbation (facultatif) — ex: RAS, conforme au comptage."
                                     rows={2}
                                     className="w-full text-xs border border-gray-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-400 resize-none"
                                 />
@@ -464,17 +501,23 @@ export const MagasinierDechargeReconciliationPage = () => {
                         {/* Done */}
                         {approveDone && (
                             <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-5">
-                                <p className="text-sm font-bold text-emerald-900 mb-3 flex items-center gap-2">
+                                <p className="text-sm font-bold text-emerald-900 mb-2 flex items-center gap-2">
                                     <CheckCircle2 className="w-4 h-4 text-emerald-600" />
                                     Réconciliation approuvée — transfert VAN → DÉPÔT effectué
                                 </p>
                                 {approveResult && (
-                                    <div className="bg-white rounded-lg border border-emerald-100 p-3">
-                                        <pre className="text-[10px] text-emerald-700 whitespace-pre-wrap">
-                                            {JSON.stringify(approveResult, null, 2)}
-                                        </pre>
+                                    <div className="bg-white rounded-lg border border-emerald-100 p-3 mt-3">
+                                        <pre className="text-[10px] text-emerald-700 whitespace-pre-wrap">{JSON.stringify(approveResult, null, 2)}</pre>
                                     </div>
                                 )}
+                            </div>
+                        )}
+
+                        {/* Cancelled */}
+                        {selected.status === 'cancelled' && (
+                            <div className="flex items-center gap-3 bg-red-50 border border-red-100 rounded-xl p-4">
+                                <AlertCircle className="w-4 h-4 text-red-400 shrink-0" />
+                                <p className="text-xs text-red-700">Cette réconciliation a été annulée — aucune action disponible.</p>
                             </div>
                         )}
                     </div>
@@ -503,7 +546,7 @@ export const MagasinierDechargeReconciliationPage = () => {
                     items: [
                         {
                             icon: CheckCircle2,
-                            label: 'Approuver la réconciliation',
+                            label: 'Approuver le transfert',
                             variant: 'success',
                             onClick: handleApprove,
                             disabled: !canApprove,
@@ -513,8 +556,15 @@ export const MagasinierDechargeReconciliationPage = () => {
                 {
                     items: [
                         {
+                            icon: Package,
+                            label: 'Recharger le détail',
+                            variant: 'sage',
+                            onClick: () => selected && handleSelect(selected),
+                            disabled: !selected || detailLoading,
+                        },
+                        {
                             icon: RefreshCw,
-                            label: 'Actualiser',
+                            label: 'Actualiser la liste',
                             variant: 'sage',
                             onClick: fetchList,
                         },
