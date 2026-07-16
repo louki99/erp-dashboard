@@ -251,10 +251,15 @@ curl "https://api.omni360.cloud/api/backend/partners/1492" \
 
 > `financial_profile` / `credit_state` sont `null` tant qu'aucun profil n'a
 > été initialisé pour ce partner (voir [08-payment-credit.md](08-payment-credit.md)
-> §9.0). `address_line1`…`postal_code` + `geo_lat`/`geo_lng` sont les colonnes
-> plates de `partners` — c'est le **seul** chemin d'écriture utilisé par la
-> fiche client (`default_address_id`/table `addresses` polymorphe est un
-> système séparé, non alimenté par ce endpoint — voir [§20.1](#201-adresses--colonnes-plates-vs-polymorphe-address)).
+> §9.0).
+>
+> ⚠️ **Depuis le 2026-07-16 (§21), `address_line1`…`postal_code` ne sont plus
+> des colonnes `partners`** — ce sont des accesseurs calculés depuis
+> `defaultAddress` (table `addresses`, polymorphe). Ils restent présents et au
+> même format dans la réponse JSON (rétro-compatible), mais l'écriture passe
+> désormais par `defaultAddress`/`addresses[]` (voir §21) — plus par les clés
+> plates du payload `PUT /partners/{id}`. `geo_lat`/`geo_lng` restent de
+> vraies colonnes sur `partners`. Voir aussi [§20.1](#201-adresses--colonnes-plates-vs-polymorphe-address-️-obsolète--voir-21) (historique, obsolète).
 
 **Pour une vue 360° complète, combiner avec :**
 - `GET /partners/{id}/payment-terms` — toutes les conditions de paiement (§6)
@@ -1602,7 +1607,9 @@ interface Partner {
   email?: string | null;
   website?: string | null;
 
-  // Adresse & Géo
+  // Adresse & Géo — address_line1…postal_code sont des accesseurs calculés
+  // depuis defaultAddress (table addresses) depuis le 2026-07-16 (§21), pas
+  // des colonnes partners. Même forme JSON, écriture via §21 uniquement.
   address_line1?: string | null;
   address_line2?: string | null;
   city?: string | null;
@@ -1612,6 +1619,7 @@ interface Partner {
   geo_lat?: string | null;
   geo_lng?: string | null;
   geo_area_id?: number | null;
+  default_address_id?: number | null;
   geo_area?: GeoArea | null;
   delivery_instructions?: string | null;
   min_order_amount: string;
@@ -1772,9 +1780,9 @@ interface PartnerPriceOverride {
 | `channel_id` | `bigint FK → channels` | Canal (remplace l'ancien enum `channel` — voir [20-channels-chronologies.md](20-channels-chronologies.md)) |
 | `status` | `enum` | `ACTIVE`, `ON_HOLD`, `BLOCKED`, `CLOSED` |
 | `price_list_id` | `bigint FK → price_lists` | Liste de prix par défaut |
-| `default_address_id` | `bigint FK → addresses` | **Non alimenté par la fiche client** — voir [§20.1](#201-adresses--colonnes-plates-vs-polymorphe-address) |
-| `address_line1/2`, `city`, `region`, `country`, `postal_code` | `varchar` | Adresse plate — **seul** chemin d'écriture utilisé par `POST`/`PUT /partners` |
-| `geo_lat` / `geo_lng` | `decimal(10,7)` | Coordonnées GPS |
+| `default_address_id` | `bigint FK → addresses` | Adresse par défaut du partner — alimenté depuis le 2026-07-16 (§21) par `PartnerRepository::syncDefaultAddress()` et l'endpoint `PATCH .../addresses/{address}/default` |
+| ~~`address_line1/2`, `city`, `region`, `country`, `postal_code`~~ | — | **Supprimées de `partners` le 2026-07-16** (migration `2026_07_24_000000_move_partner_address_to_addresses_table`) — vivent maintenant sur `addresses` (polymorphe, `addressable_type='App\Models\Partner'`). Voir §21. |
+| `geo_lat` / `geo_lng` | `decimal(10,7)` | Coordonnées GPS — **restées** sur `partners` (utilisées par le trigger PostGIS `fn_assign_partner_geo_area`), dupliquées aussi sur `addresses.geo_lat/geo_lng` |
 | `tax_number_ice` / `tax_number_if` | `varchar(100)` | Identifiants fiscaux — pas de validation de format serveur |
 | `tax_exempt` | `boolean` | Stocké et lu (POS dashboard) — **non consommé par l'Invoice Engine** (§20.2) |
 | `vat_group_code` | `varchar(50)` | Idem `tax_exempt` |
@@ -1880,23 +1888,21 @@ adresses/géo, taxes/facturation, KPI performance, réassignation
 commercial/itinéraire. Captures et corrections faites en staging avant mise à
 jour de ce document.
 
-### 20.1 Adresses — colonnes plates vs polymorphe `Address`
+### 20.1 Adresses — colonnes plates vs polymorphe `Address` (⚠️ obsolète — voir §21)
 
-Les **deux** systèmes coexistent : `partners` a des colonnes plates
+> Cette section décrit l'état **avant** la revue du 2026-07-16 (§21), qui a
+> supprimé les colonnes plates. Conservée pour l'historique du diagnostic.
+
+Les **deux** systèmes coexistaient : `partners` avait des colonnes plates
 (`address_line1`, `address_line2`, `city`, `region`, `country`, `postal_code`,
 `geo_lat`, `geo_lng`) **et** une relation `defaultAddress()` (`default_address_id`
 → `addresses`) plus une relation polymorphe `addresses()` (`morphMany`, table
 `addresses`, `addressable_type/id`).
 
-**Le chemin d'écriture de la fiche client (`POST`/`PUT /partners`, §4) n'écrit
-QUE les colonnes plates** — `default_address_id` n'est jamais renseigné par
-`PartnerRepository::normalize()`/`edit()`. La table `addresses` polymorphe est
-un système **séparé**, alimenté par `AddressController`/`AddressRepository`
-(adresses de livraison multiples, cf. `OrderDeliveryAddressResolver`), pas par
-la fiche 360. `geo_lat`/`geo_lng` vivent uniquement sur les colonnes plates de
-`partners` et sont bien persistées/retournées telles quelles (vérifié §3, §4.2).
-**Aucune perte de données** — les deux systèmes ne se recouvrent pas dans le
-flux actuel de la fiche client.
+Le chemin d'écriture de la fiche client (`POST`/`PUT /partners`, §4) n'écrivait
+QUE les colonnes plates — `default_address_id` n'était jamais renseigné par
+`PartnerRepository::normalize()`/`edit()`. C'était exactement la duplication que
+§21 a résorbée.
 
 ### 20.2 Taxes & Facturation — `tax_exempt` / `vat_group_code`
 
@@ -1979,3 +1985,134 @@ Ces trois bugs empêchaient purement et simplement la création/modification de
 partenaires sur toute base fraîchement provisionnée (`db:fresh` + seed) — ils
 ne sont pas une régression de ce sprint, mais n'avaient jamais été exercés en
 staging avec un flux de bout en bout avant cette revue.
+
+---
+
+## 21. Unification Partner ↔ Address (2026-07-16)
+
+`partners` avait 6 colonnes texte d'adresse (`address_line1`, `address_line2`,
+`city`, `region`, `country`, `postal_code`) qui dupliquaient exactement les
+colonnes de la table polymorphe `addresses` (déjà utilisée pour d'autres
+besoins — adresses de livraison via `Partner::addresses()`/`morphMany`). Avant
+le `db:fresh` de mise en production, ces colonnes ont été supprimées de
+`partners` et `addresses` devient la **seule source de vérité**.
+`geo_lat`/`geo_lng` restent sur `partners` (utilisés par le trigger PostGIS
+`fn_assign_partner_geo_area`) — dupliqués aussi sur `addresses` pour cohérence
+avec la géolocalisation de l'adresse elle-même.
+
+### 21.1 Ce qui a changé côté API
+
+**Aucun breaking change sur `GET /api/backend/partners/{id}`** —
+`address_line1`, `address_line2`, `city`, `region`, `country`, `postal_code`
+apparaissent toujours dans la réponse JSON, au même format qu'avant. Ce sont
+maintenant des accesseurs calculés sur `App\Models\Partner`, résolus depuis
+`defaultAddress` (avec repli automatique sur l'adresse la plus récente si
+`default_address_id` n'est pas chargé). La réponse expose en plus :
+
+- `partner.default_address` — l'objet `Address` complet (id, label,
+  soft-delete, etc.), pas seulement les champs plats.
+- `addresses` (au niveau racine de la réponse, à côté de `partner`) — la liste
+  complète des adresses du partner (`Partner::addresses()`, `morphMany`), pour
+  les UIs qui gèrent plusieurs adresses par partner (facturation/livraison/…).
+- `default_address_id` (racine) — id de l'adresse par défaut.
+
+**Capture réelle, staging, `GET /api/backend/partners/1`** (extrait) :
+
+```json
+{
+  "partner": {
+    "id": 1,
+    "code": "CL00001",
+    "name": "TIMITAR FOOD",
+    "default_address_id": 1,
+    "address_line1": "105, hay Mandarona rue 14 Bd",
+    "address_line2": null,
+    "city": null,
+    "region": null,
+    "country": "MA",
+    "postal_code": null,
+    "default_address": {
+      "id": 1,
+      "label": "Principale",
+      "address_line1": "105, hay Mandarona rue 14 Bd",
+      "city": null,
+      "postal_code": null,
+      "geo_lat": "33.5329254",
+      "geo_lng": "-7.6138989",
+      "addressable_type": "App\\Models\\Partner",
+      "addressable_id": 1,
+      "region": null,
+      "country": "MA"
+    }
+  },
+  "addresses": [ { "id": 1, "label": "Principale", "...": "..." } ],
+  "default_address_id": 1,
+  "taxId": null,
+  "customFields": {}
+}
+```
+
+### 21.2 Nouveaux endpoints — gestion des adresses d'un partner
+
+Toutes sous `permission:manage-partners`, scope `/api/backend/partners/{partner}/addresses`.
+
+| Méthode | Route | Description |
+|---|---|---|
+| `GET` | `/partners/{partner}/addresses` | Liste toutes les adresses du partner + `default_address_id` |
+| `POST` | `/partners/{partner}/addresses` | Crée une adresse. `is_default: true` (ou 1ère adresse créée) → devient l'adresse par défaut |
+| `PUT` | `/partners/{partner}/addresses/{address}` | Met à jour une adresse (`sometimes|required` sur les champs obligatoires — payload partiel accepté) |
+| `DELETE` | `/partners/{partner}/addresses/{address}` | Supprime (soft-delete). Si c'était l'adresse par défaut, `default_address_id` retombe automatiquement sur l'adresse la plus récente restante (ou `null` s'il n'en reste aucune) |
+| `PATCH` | `/partners/{partner}/addresses/{address}/default` | Change l'adresse par défaut sans la modifier |
+
+Champs acceptés (`store`/`update`) : `label`, `address_line1` (requis),
+`address_line2`, `city` (requis), `region`, `country`, `postal_code`,
+`geo_lat`, `geo_lng`, `is_default`. `addressable_type`/`addressable_id` ne sont
+**jamais** acceptés du client — toujours dérivés du `{partner}` de la route
+(`$partner->addresses()->create(...)`), donc pas de risque qu'un client
+rattache une adresse à un autre partner.
+
+**Capture réelle, staging** :
+
+```
+POST /api/backend/partners/1/addresses
+{"label":"Livraison","address_line1":"47 Boulevard Mohammed V","city":"Casablanca","region":"Grand Casablanca","postal_code":"20000","country":"MA","is_default":false}
+
+→ 201
+{"success":true,"message":"Address created successfully",
+ "address":{"id":1475,"label":"Livraison","address_line1":"47 Boulevard Mohammed V","city":"Casablanca","region":"Grand Casablanca","country":"MA","postal_code":"20000","addressable_id":1,"addressable_type":"App\\Models\\Partner"},
+ "default_address_id":1}
+
+PATCH /api/backend/partners/1/addresses/1475/default
+→ 200 {"success":true,"message":"Default address updated successfully","default_address_id":1475}
+
+DELETE /api/backend/partners/1/addresses/1
+→ 200 {"success":true,"message":"Address deleted successfully","default_address_id":1475}
+```
+
+### 21.3 Écriture — `POST`/`PUT /partners` et `PartnerService::createPartner()`
+
+Le payload `PUT`/`POST /partners` accepte toujours `address_line1`, `city`,
+etc. **au même format qu'avant** — `PartnerRepository::syncDefaultAddress()`
+les intercepte et fait un upsert sur `defaultAddress` (crée l'adresse si
+absente, sinon la met à jour), puis pointe `default_address_id`. Aucun
+changement requis côté UI pour ce flux ; c'est purement interne
+(`Partner::$fillable` ne liste plus ces 6 clés, donc un payload qui les
+contient ne provoque plus d'erreur SQL — elles sont simplement redirigées).
+
+### 21.4 Blast radius traité
+
+La suppression des colonnes touchait ~15 fichiers avec des `select()`/`with()`
+contraints nommant explicitement `address_line1`/`city`/`postal_code` comme
+colonnes `partners` (POS catalog, dispatcher, résolveurs SDUI de bons de
+livraison/session/carte partenaires, recherche partner, tournée salesperson) —
+tous corrigés pour eager-charger `defaultAddress` à la place. Un seeder
+(`PartnerCsvSeeder`) faisait un upsert SQL brut sur ces colonnes (hors ORM,
+donc invisible au premier passage) — corrigé pour upserter dans `addresses`
+après résolution des ids partner. La vue SQL `vw_clients_summary` référençait
+`p.city`/`p.address_line1` directement — recréée avec un `LEFT JOIN addresses`.
+
+Migration `2026_07_24_000000_move_partner_address_to_addresses_table` :
+backfill idempotent (crée une `Address` + `default_address_id` pour tout
+partner ayant des données d'adresse mais pas encore de `default_address_id`),
+recrée la vue, puis `dropColumn`. `down()` restaure les colonnes et réinjecte
+les données depuis `defaultAddress`.
