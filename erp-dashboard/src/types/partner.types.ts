@@ -2,6 +2,45 @@
 
 export type PartnerStatus = 'ACTIVE' | 'ON_HOLD' | 'BLOCKED' | 'CLOSED';
 
+// ─── Address (table `addresses`, polymorphic) — §21 ─────────────────────────
+// Depuis 2026-07-16, les adresses partenaires vivent exclusivement dans cette
+// table. address_line1…postal_code sur Partner sont des accesseurs PHP.
+export interface PartnerAddress {
+    id: number;
+    label: string | null;
+    address_line1: string;
+    address_line2: string | null;
+    city: string;
+    region: string | null;
+    country: string | null;
+    postal_code: string | null;
+    geo_lat: string | null;
+    geo_lng: string | null;
+    addressable_type: string;
+    addressable_id: number;
+    is_default?: boolean;
+    created_at?: string;
+    updated_at?: string;
+}
+
+export interface PartnerAddressPayload {
+    label?: string;
+    address_line1: string;
+    address_line2?: string;
+    city: string;
+    region?: string;
+    country?: string;
+    postal_code?: string;
+    geo_lat?: number | string;
+    geo_lng?: number | string;
+    is_default?: boolean;
+}
+
+export interface PartnerAddressesResponse {
+    addresses: PartnerAddress[];
+    default_address_id: number | null;
+}
+
 export interface Partner {
     id: number;
     code: string;
@@ -26,7 +65,7 @@ export interface Partner {
     tax_number_if: string | null;
     tax_exempt: boolean;
     vat_group_code: string | null;
-    // Address
+    // Address (accesseurs PHP depuis `addresses` table — §21 rétrocompatibles)
     address_line1: string | null;
     address_line2: string | null;
     city: string | null;
@@ -36,6 +75,10 @@ export interface Partner {
     geo_area_code: string | null;
     geo_lat: number | null;
     geo_lng: number | null;
+    // Depuis §21 : objets adresse complets (nouveaux champs JSON)
+    default_address_id?: number | null;
+    default_address?: PartnerAddress | null;
+    addresses?: PartnerAddress[];
     // Ops
     opening_hours: string | null;
     delivery_instructions: string | null;
@@ -174,6 +217,9 @@ export interface PartnerShowResponse {
         type: string;
         field: any;
     }>;
+    // §21: liste complète des adresses + id par défaut
+    addresses?: PartnerAddress[];
+    default_address_id?: number | null;
 }
 
 export interface PartnerCreateFormResponse {

@@ -23,6 +23,9 @@ import type {
     PaymentOverride,
     CreatePaymentOverrideRequest,
     PartnerItineraryResponse,
+    PartnerAddress,
+    PartnerAddressPayload,
+    PartnerAddressesResponse,
 } from '../../types/partner.types';
 
 // ─── Generic mutation helper ────────────────────────────────────────────────
@@ -521,4 +524,64 @@ export const useRejectOverride = () => {
         ({ id, reason }) => partnerApi.rejectOverride(id, reason)
     );
     return { rejectOverride: execute, loading, error };
+};
+
+// ─── Adresses partenaire (§21) ───────────────────────────────────────────────
+
+export const usePartnerAddresses = (partnerId: number | null) => {
+    const [addresses, setAddresses] = useState<PartnerAddress[]>([]);
+    const [defaultAddressId, setDefaultAddressId] = useState<number | null>(null);
+    const [loading, setLoading] = useState(false);
+    const [error, setError] = useState<string | null>(null);
+
+    const fetch = useCallback(async () => {
+        if (!partnerId) return;
+        setLoading(true);
+        setError(null);
+        try {
+            const res = await partnerApi.getPartnerAddresses(partnerId);
+            setAddresses(res.addresses);
+            setDefaultAddressId(res.default_address_id);
+        } catch {
+            setError('Erreur lors du chargement des adresses');
+        } finally {
+            setLoading(false);
+        }
+    }, [partnerId]);
+
+    useEffect(() => { fetch(); }, [fetch]);
+
+    return { addresses, defaultAddressId, loading, error, refetch: fetch, setAddresses, setDefaultAddressId };
+};
+
+export const useCreatePartnerAddress = () => {
+    const { loading, error, execute } = useMutation<
+        { partnerId: number; data: PartnerAddressPayload },
+        { success: boolean; message: string; address: PartnerAddress; default_address_id: number | null }
+    >(({ partnerId, data }) => partnerApi.createPartnerAddress(partnerId, data));
+    return { createAddress: execute, loading, error };
+};
+
+export const useUpdatePartnerAddress = () => {
+    const { loading, error, execute } = useMutation<
+        { partnerId: number; addressId: number; data: Partial<PartnerAddressPayload> },
+        { success: boolean; message: string; address: PartnerAddress }
+    >(({ partnerId, addressId, data }) => partnerApi.updatePartnerAddress(partnerId, addressId, data));
+    return { updateAddress: execute, loading, error };
+};
+
+export const useDeletePartnerAddress = () => {
+    const { loading, error, execute } = useMutation<
+        { partnerId: number; addressId: number },
+        { success: boolean; message: string; default_address_id: number | null }
+    >(({ partnerId, addressId }) => partnerApi.deletePartnerAddress(partnerId, addressId));
+    return { deleteAddress: execute, loading, error };
+};
+
+export const useSetDefaultPartnerAddress = () => {
+    const { loading, error, execute } = useMutation<
+        { partnerId: number; addressId: number },
+        { success: boolean; message: string; default_address_id: number }
+    >(({ partnerId, addressId }) => partnerApi.setDefaultPartnerAddress(partnerId, addressId));
+    return { setDefaultAddress: execute, loading, error };
 };

@@ -24,6 +24,9 @@ import type {
     PaymentOverride,
     CreatePaymentOverrideRequest,
     PartnerItineraryResponse,
+    PartnerAddress,
+    PartnerAddressPayload,
+    PartnerAddressesResponse,
 } from '../../types/partner.types';
 
 const BASE_PATH = '/api/backend/partners';
@@ -294,5 +297,54 @@ export const bulkUpdateStatus = async (data: { partner_ids: number[]; status: st
 
 export const bulkDelete = async (data: { partner_ids: number[] }) => {
     const response = await apiClient.delete<{ success: boolean; message: string }>(`${BASE_PATH}/bulk/delete`, { data });
+    return response.data;
+};
+
+// ─── Adresses partenaire (§21 — table `addresses` polymorphe) ────────────────
+
+export const getPartnerAddresses = async (partnerId: number): Promise<PartnerAddressesResponse> => {
+    const response = await apiClient.get<PartnerAddressesResponse>(
+        `${BASE_PATH}/${partnerId}/addresses`
+    );
+    return response.data;
+};
+
+export const createPartnerAddress = async (
+    partnerId: number,
+    data: PartnerAddressPayload
+): Promise<{ success: boolean; message: string; address: PartnerAddress; default_address_id: number | null }> => {
+    const response = await apiClient.post(`${BASE_PATH}/${partnerId}/addresses`, data);
+    return response.data;
+};
+
+export const updatePartnerAddress = async (
+    partnerId: number,
+    addressId: number,
+    data: Partial<PartnerAddressPayload>
+): Promise<{ success: boolean; message: string; address: PartnerAddress }> => {
+    const response = await apiClient.put(
+        `${BASE_PATH}/${partnerId}/addresses/${addressId}`,
+        data
+    );
+    return response.data;
+};
+
+export const deletePartnerAddress = async (
+    partnerId: number,
+    addressId: number
+): Promise<{ success: boolean; message: string; default_address_id: number | null }> => {
+    const response = await apiClient.delete(
+        `${BASE_PATH}/${partnerId}/addresses/${addressId}`
+    );
+    return response.data;
+};
+
+export const setDefaultPartnerAddress = async (
+    partnerId: number,
+    addressId: number
+): Promise<{ success: boolean; message: string; default_address_id: number }> => {
+    const response = await apiClient.patch(
+        `${BASE_PATH}/${partnerId}/addresses/${addressId}/default`
+    );
     return response.data;
 };

@@ -13,6 +13,9 @@ import {
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 
+import { getGeoAreas } from '@/services/api/routingApi';
+import { getCountries } from '@/services/api/partnerApi';
+
 import { MasterLayout } from '@/components/layout/MasterLayout';
 import { DataGrid } from '@/components/common/DataGrid';
 import { SageTabs, type TabItem } from '@/components/common/SageTabs';
@@ -47,6 +50,11 @@ import {
     usePartnerItinerary,
     useUploadPartnerImage,
     usePaymentMethods,
+    usePartnerAddresses,
+    useCreatePartnerAddress,
+    useUpdatePartnerAddress,
+    useDeletePartnerAddress,
+    useSetDefaultPartnerAddress,
 } from '@/hooks/partners/usePartners';
 
 import { useChannels } from '@/hooks/pricing/usePricing';
@@ -60,6 +68,8 @@ import type {
     UpdateCreditRequest,
     PartnerSavePayload,
     CreditExposureStatus,
+    PartnerAddress,
+    PartnerAddressPayload,
 } from '@/types/partner.types';
 
 import {
@@ -371,6 +381,449 @@ const PaymentTermsContent: React.FC<{
                 </div>
             )}
         </>
+    );
+};
+
+// ─── Partner Addresses Section (§21) ─────────────────────────────────────────
+
+const inputCls =
+    'w-full h-9 px-3 border border-gray-200 rounded-lg bg-white text-xs text-gray-900 ' +
+    'placeholder:text-gray-300 focus:outline-none focus:ring-2 focus:ring-sage-500 ' +
+    'focus:border-sage-500 transition-all';
+
+const selectCls =
+    'w-full h-9 pl-3 pr-8 border border-gray-200 rounded-lg bg-white text-xs text-gray-900 ' +
+    'appearance-none focus:outline-none focus:ring-2 focus:ring-sage-500 ' +
+    'focus:border-sage-500 transition-all cursor-pointer';
+
+const AddrSelect: React.FC<{ value: string; onChange: (v: string) => void; placeholder: string; children: React.ReactNode }> =
+    ({ value, onChange, placeholder, children }) => (
+        <div className="relative">
+            <select value={value} onChange={e => onChange(e.target.value)} className={selectCls}>
+                <option value="">{placeholder}</option>
+                {children}
+            </select>
+            <svg className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400"
+                viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <polyline points="6 9 12 15 18 9" />
+            </svg>
+        </div>
+    );
+
+interface AddressFormState {
+    label: string;
+    address_line1: string;
+    address_line2: string;
+    city: string;
+    region: string;
+    country: string;
+    postal_code: string;
+    geo_lat: string;
+    geo_lng: string;
+    is_default: boolean;
+}
+
+const emptyForm = (): AddressFormState => ({
+    label: '', address_line1: '', address_line2: '',
+    city: '', region: '', country: '', postal_code: '',
+    geo_lat: '', geo_lng: '', is_default: false,
+});
+
+const AddressFormModal: React.FC<{
+    title: string;
+    initial: AddressFormState;
+    saving: boolean;
+    regions: { code: string; name: string }[];
+    villes: { code: string; name: string }[];
+    countries: { name: string }[];
+    onSave: (data: AddressFormState) => void;
+    onClose: () => void;
+}> = ({ title, initial, saving, regions, villes, countries, onSave, onClose }) => {
+    const [form, setForm] = useState<AddressFormState>(initial);
+    const [extracting, setExtracting] = useState(false);
+    const set = (k: keyof AddressFormState, v: string | boolean) =>
+        setForm(prev => ({ ...prev, [k]: v }));
+
+    const handleExtract = async () => {
+        const lat = form.geo_lat.trim();
+        const lng = form.geo_lng.trim();
+        if (!lat || !lng) return;
+        setExtracting(true);
+        try {
+            const res = await fetch(
+                `https://nominatim.openstreetmap.org/reverse?format=json&lat=${encodeURIComponent(lat)}&lon=${encodeURIComponent(lng)}&accept-language=fr`,
+                { headers: { 'Accept': 'application/json' } }
+            );
+            if (!res.ok) throw new Error('HTTP ' + res.status);
+            const data = await res.json();
+            if (data.error) throw new Error(data.error);
+            const a = data.address ?? {};
+            const line1Parts = [a.house_number, a.road || a.pedestrian || a.footway].filter(Boolean);
+            const line1 = line1Parts.join(', ');
+            const line2 = a.suburb || a.neighbourhood || a.quarter || '';
+            const city = a.city || a.town || a.village || a.municipality || '';
+            const postal = a.postcode || '';
+            const country = a.country || '';
+            setForm(prev => ({
+                ...prev,
+                address_line1: line1 || prev.address_line1,
+                address_line2: line2 || prev.address_line2,
+                city: city || prev.city,
+                postal_code: postal || prev.postal_code,
+                country: country || prev.country,
+            }));
+            toast.success('Adresse extraite avec succès');
+        } catch {
+            toast.error('Extraction échouée — renseignez l\'adresse manuellement');
+        } finally {
+            setExtracting(false);
+        }
+    };
+
+    return (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4">
+            <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md">
+                <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100">
+                    <span className="text-sm font-semibold text-gray-900">{title}</span>
+                    <button onClick={onClose} className="text-gray-400 hover:text-gray-600 transition-colors">
+                        <X className="w-4 h-4" />
+                    </button>
+                </div>
+                <div className="p-5 space-y-3 overflow-y-auto max-h-[70vh]">
+                    <div>
+                        <label className="block text-[11px] font-medium text-gray-500 mb-1">Libellé (optionnel)</label>
+                        <input className={inputCls} placeholder="ex: Siège social, Entrepôt…" value={form.label} onChange={e => set('label', e.target.value)} />
+                    </div>
+                    <div>
+                        <label className="block text-[11px] font-medium text-gray-500 mb-1">Adresse ligne 1 <span className="text-red-400">*</span></label>
+                        <input className={inputCls} placeholder="Rue, N° voie…" value={form.address_line1} onChange={e => set('address_line1', e.target.value)} />
+                    </div>
+                    <div>
+                        <label className="block text-[11px] font-medium text-gray-500 mb-1">Adresse ligne 2</label>
+                        <input className={inputCls} placeholder="Bâtiment, Étage…" value={form.address_line2} onChange={e => set('address_line2', e.target.value)} />
+                    </div>
+                    <div className="grid grid-cols-2 gap-3">
+                        <div>
+                            <label className="block text-[11px] font-medium text-gray-500 mb-1">Ville <span className="text-red-400">*</span></label>
+                            <AddrSelect value={form.city} onChange={v => set('city', v)} placeholder="Sélectionner…">
+                                {villes.map(v => (
+                                    <option key={v.code} value={v.name}>{v.name}</option>
+                                ))}
+                            </AddrSelect>
+                        </div>
+                        <div>
+                            <label className="block text-[11px] font-medium text-gray-500 mb-1">Code postal</label>
+                            <input className={inputCls} placeholder="00000" value={form.postal_code} onChange={e => set('postal_code', e.target.value)} />
+                        </div>
+                    </div>
+                    <div className="grid grid-cols-2 gap-3">
+                        <div>
+                            <label className="block text-[11px] font-medium text-gray-500 mb-1">Région</label>
+                            <AddrSelect value={form.region} onChange={v => set('region', v)} placeholder="Sélectionner…">
+                                {regions.map(r => (
+                                    <option key={r.code} value={r.name}>{r.name}</option>
+                                ))}
+                            </AddrSelect>
+                        </div>
+                        <div>
+                            <label className="block text-[11px] font-medium text-gray-500 mb-1">Pays</label>
+                            <AddrSelect value={form.country} onChange={v => set('country', v)} placeholder="Sélectionner…">
+                                {countries.map(c => (
+                                    <option key={c.name} value={c.name}>{c.name}</option>
+                                ))}
+                            </AddrSelect>
+                        </div>
+                    </div>
+                    <div className="rounded-lg border border-dashed border-gray-200 bg-gray-50/50 p-3 space-y-2.5">
+                        <div className="flex items-center justify-between">
+                            <span className="text-[11px] font-medium text-gray-500 flex items-center gap-1">
+                                <Locate className="w-3 h-3" /> Coordonnées GPS <span className="text-gray-300 font-normal">(optionnel)</span>
+                            </span>
+                            <button
+                                type="button"
+                                onClick={handleExtract}
+                                disabled={extracting || !form.geo_lat.trim() || !form.geo_lng.trim()}
+                                className="flex items-center gap-1.5 px-2.5 py-1 text-[11px] font-medium rounded-lg border border-sage-500 text-sage-600 hover:bg-sage-50 disabled:opacity-40 disabled:cursor-not-allowed transition-all"
+                            >
+                                {extracting
+                                    ? <><Loader2 className="w-3 h-3 animate-spin" /> Extraction…</>
+                                    : <><MapPin className="w-3 h-3" /> Extraire l'adresse</>
+                                }
+                            </button>
+                        </div>
+                        <div className="grid grid-cols-2 gap-2">
+                            <div>
+                                <label className="block text-[10px] text-gray-400 mb-1">Latitude</label>
+                                <input className={inputCls} placeholder="33.5731" value={form.geo_lat} onChange={e => set('geo_lat', e.target.value)} />
+                            </div>
+                            <div>
+                                <label className="block text-[10px] text-gray-400 mb-1">Longitude</label>
+                                <input className={inputCls} placeholder="-7.5898" value={form.geo_lng} onChange={e => set('geo_lng', e.target.value)} />
+                            </div>
+                        </div>
+                    </div>
+                    <label className="flex items-center gap-2 cursor-pointer select-none pt-1">
+                        <input type="checkbox" checked={form.is_default} onChange={e => set('is_default', e.target.checked)}
+                            className="rounded border-gray-300 text-sage-500 focus:ring-sage-500" />
+                        <span className="text-xs text-gray-600">Définir comme adresse par défaut</span>
+                    </label>
+                </div>
+                <div className="flex items-center justify-end gap-2 px-5 py-4 border-t border-gray-100">
+                    <button onClick={onClose} className="px-3.5 py-1.5 text-xs rounded-lg border border-gray-200 text-gray-600 hover:bg-gray-50 transition-colors">
+                        Annuler
+                    </button>
+                    <button
+                        onClick={() => onSave(form)}
+                        disabled={saving || !(form.address_line1 ?? '').trim() || !(form.city ?? '').trim()}
+                        className="px-3.5 py-1.5 text-xs rounded-lg bg-sage-500 text-white font-medium hover:bg-sage-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                    >
+                        {saving ? 'Enregistrement…' : 'Enregistrer'}
+                    </button>
+                </div>
+            </div>
+        </div>
+    );
+};
+
+const PartnerAddressesSection: React.FC<{ partnerId: number }> = ({ partnerId }) => {
+    const { addresses, defaultAddressId, loading, refetch, setAddresses, setDefaultAddressId } =
+        usePartnerAddresses(partnerId);
+    const { createAddress, loading: creating } = useCreatePartnerAddress();
+    const { updateAddress, loading: updating } = useUpdatePartnerAddress();
+    const { deleteAddress, loading: deleting } = useDeletePartnerAddress();
+    const { setDefaultAddress, loading: settingDefault } = useSetDefaultPartnerAddress();
+
+    const [regions, setRegions] = useState<{ code: string; name: string }[]>([]);
+    const [villes, setVilles] = useState<{ code: string; name: string }[]>([]);
+    const [countries, setCountries] = useState<{ name: string }[]>([]);
+
+    useEffect(() => {
+        getGeoAreas({ type_id: 2, per_page: 50 }).then(res => {
+            setRegions((res.geoAreas?.data ?? []).map(g => ({ code: g.code, name: g.name })));
+        }).catch(() => {});
+        getGeoAreas({ type_id: 4, per_page: 200 }).then(res => {
+            setVilles((res.geoAreas?.data ?? []).map(g => ({ code: g.code, name: g.name })));
+        }).catch(() => {});
+        getCountries().then(list => {
+            setCountries(list.map(c => ({ name: c.name })));
+        }).catch(() => {});
+    }, []);
+
+    const [showAdd, setShowAdd] = useState(false);
+    const [editing, setEditing] = useState<PartnerAddress | null>(null);
+    const [confirmDeleteId, setConfirmDeleteId] = useState<number | null>(null);
+
+    const handleCreate = async (data: AddressFormState) => {
+        const payload: PartnerAddressPayload = {
+            label: data.label || undefined,
+            address_line1: data.address_line1,
+            address_line2: data.address_line2 || undefined,
+            city: data.city,
+            region: data.region || undefined,
+            country: data.country || undefined,
+            postal_code: data.postal_code || undefined,
+            geo_lat: data.geo_lat || undefined,
+            geo_lng: data.geo_lng || undefined,
+            is_default: data.is_default,
+        };
+        const res = await createAddress({ partnerId, data: payload });
+        if (res) {
+            toast.success('Adresse ajoutée');
+            setShowAdd(false);
+            refetch();
+        }
+    };
+
+    const handleUpdate = async (data: AddressFormState) => {
+        if (!editing) return;
+        const payload: Partial<PartnerAddressPayload> = {
+            label: data.label || undefined,
+            address_line1: data.address_line1,
+            address_line2: data.address_line2 || undefined,
+            city: data.city,
+            region: data.region || undefined,
+            country: data.country || undefined,
+            postal_code: data.postal_code || undefined,
+            geo_lat: data.geo_lat || undefined,
+            geo_lng: data.geo_lng || undefined,
+            is_default: data.is_default,
+        };
+        const res = await updateAddress({ partnerId, addressId: editing.id, data: payload });
+        if (res) {
+            toast.success('Adresse mise à jour');
+            setEditing(null);
+            refetch();
+        }
+    };
+
+    const handleDelete = async (id: number) => {
+        const res = await deleteAddress({ partnerId, addressId: id });
+        if (res) {
+            toast.success('Adresse supprimée');
+            setConfirmDeleteId(null);
+            setAddresses(prev => prev.filter(a => a.id !== id));
+            setDefaultAddressId(res.default_address_id);
+        }
+    };
+
+    const handleSetDefault = async (id: number) => {
+        const res = await setDefaultAddress({ partnerId, addressId: id });
+        if (res) {
+            toast.success('Adresse par défaut mise à jour');
+            setDefaultAddressId(res.default_address_id);
+        }
+    };
+
+    return (
+        <div className="rounded-xl border border-gray-200 bg-white overflow-hidden">
+            <div className="px-4 py-2.5 bg-gray-50 border-b border-gray-100 flex items-center justify-between">
+                <span className="text-xs font-semibold text-gray-600 uppercase tracking-wider">Adresses</span>
+                {loading && <Loader2 className="w-3.5 h-3.5 text-gray-400 animate-spin" />}
+            </div>
+
+            {addresses.length === 0 && !loading ? (
+                <div className="p-4 flex items-center gap-2">
+                    <MapPin className="w-3.5 h-3.5 text-gray-300 shrink-0" />
+                    <span className="text-xs text-gray-300 italic">Aucune adresse enregistrée</span>
+                </div>
+            ) : (
+                <div className="divide-y divide-gray-100">
+                    {addresses.map(addr => {
+                        const isDefault = addr.id === defaultAddressId;
+                        return (
+                            <div key={addr.id} className="px-4 py-3 group flex items-start gap-3 hover:bg-gray-50/60 transition-colors">
+                                <MapPin className={`w-3.5 h-3.5 mt-0.5 shrink-0 ${isDefault ? 'text-sage-500' : 'text-gray-300'}`} />
+                                <div className="flex-1 min-w-0">
+                                    <div className="flex items-center gap-1.5 mb-0.5">
+                                        {addr.label && (
+                                            <span className="text-[11px] font-semibold text-gray-700">{addr.label}</span>
+                                        )}
+                                        {isDefault && (
+                                            <span className="inline-flex items-center gap-0.5 text-[10px] font-medium text-sage-700 bg-sage-50 border border-sage-200 rounded-full px-1.5 py-0">
+                                                <Star className="w-2.5 h-2.5" /> Défaut
+                                            </span>
+                                        )}
+                                    </div>
+                                    <div className="text-xs text-gray-900 font-medium leading-snug">{addr.address_line1}</div>
+                                    {addr.address_line2 && <div className="text-xs text-gray-500">{addr.address_line2}</div>}
+                                    <div className="text-xs text-gray-500">
+                                        {[addr.city, addr.region, addr.postal_code].filter(Boolean).join(', ')}
+                                        {addr.country ? ` — ${addr.country}` : ''}
+                                    </div>
+                                </div>
+                                <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity shrink-0">
+                                    {!isDefault && (
+                                        <button
+                                            onClick={() => handleSetDefault(addr.id)}
+                                            disabled={settingDefault}
+                                            title="Définir par défaut"
+                                            className="p-1 rounded-md text-gray-400 hover:text-amber-500 hover:bg-amber-50 transition-colors"
+                                        >
+                                            <Star className="w-3.5 h-3.5" />
+                                        </button>
+                                    )}
+                                    <button
+                                        onClick={() => setEditing(addr)}
+                                        title="Modifier"
+                                        className="p-1 rounded-md text-gray-400 hover:text-blue-500 hover:bg-blue-50 transition-colors"
+                                    >
+                                        <Edit2 className="w-3.5 h-3.5" />
+                                    </button>
+                                    <button
+                                        onClick={() => addresses.length === 1
+                                            ? toast.error('Impossible de supprimer la seule adresse du partenaire')
+                                            : setConfirmDeleteId(addr.id)
+                                        }
+                                        title="Supprimer"
+                                        className="p-1 rounded-md text-gray-400 hover:text-red-500 hover:bg-red-50 transition-colors"
+                                    >
+                                        <Trash2 className="w-3.5 h-3.5" />
+                                    </button>
+                                </div>
+                            </div>
+                        );
+                    })}
+                </div>
+            )}
+
+            <div className="px-4 pb-3 pt-2">
+                <button
+                    onClick={() => setShowAdd(true)}
+                    className="w-full flex items-center justify-center gap-1.5 h-8 rounded-lg border border-dashed border-gray-300 text-xs text-gray-400 hover:border-sage-400 hover:text-sage-600 hover:bg-sage-50/30 transition-all"
+                >
+                    <Plus className="w-3.5 h-3.5" />
+                    Ajouter une adresse
+                </button>
+            </div>
+
+            {/* Confirm delete */}
+            {confirmDeleteId !== null && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4">
+                    <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm p-6">
+                        <div className="flex items-center gap-3 mb-4">
+                            <div className="w-9 h-9 rounded-xl bg-red-50 flex items-center justify-center">
+                                <Trash2 className="w-4 h-4 text-red-500" />
+                            </div>
+                            <div>
+                                <div className="text-sm font-semibold text-gray-900">Supprimer cette adresse ?</div>
+                                <div className="text-xs text-gray-500">Cette action est irréversible.</div>
+                            </div>
+                        </div>
+                        <div className="flex gap-2">
+                            <button onClick={() => setConfirmDeleteId(null)} className="flex-1 py-2 text-xs rounded-lg border border-gray-200 text-gray-600 hover:bg-gray-50 transition-colors">
+                                Annuler
+                            </button>
+                            <button
+                                onClick={() => handleDelete(confirmDeleteId)}
+                                disabled={deleting}
+                                className="flex-1 py-2 text-xs rounded-lg bg-red-500 text-white font-medium hover:bg-red-600 disabled:opacity-50 transition-colors"
+                            >
+                                {deleting ? 'Suppression…' : 'Supprimer'}
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Add modal */}
+            {showAdd && (
+                <AddressFormModal
+                    title="Ajouter une adresse"
+                    initial={emptyForm()}
+                    saving={creating}
+                    regions={regions}
+                    villes={villes}
+                    countries={countries}
+                    onSave={handleCreate}
+                    onClose={() => setShowAdd(false)}
+                />
+            )}
+
+            {/* Edit modal */}
+            {editing && (
+                <AddressFormModal
+                    title="Modifier l'adresse"
+                    initial={{
+                        label: editing.label ?? '',
+                        address_line1: editing.address_line1 ?? '',
+                        address_line2: editing.address_line2 ?? '',
+                        city: editing.city ?? '',
+                        region: editing.region ?? '',
+                        country: editing.country ?? '',
+                        postal_code: editing.postal_code ?? '',
+                        geo_lat: editing.geo_lat ?? '',
+                        geo_lng: editing.geo_lng ?? '',
+                        is_default: editing.id === defaultAddressId,
+                    }}
+                    saving={updating}
+                    regions={regions}
+                    villes={villes}
+                    countries={countries}
+                    onSave={handleUpdate}
+                    onClose={() => setEditing(null)}
+                />
+            )}
+        </div>
     );
 };
 
@@ -1351,59 +1804,36 @@ export const PartnerManagementPage = () => {
                                                     </div>
                                                 </div>
 
-                                                {/* Adresse */}
-                                                <div className="rounded-xl border border-gray-200 bg-white overflow-hidden">
-                                                    <div className="px-4 py-2.5 bg-gray-50 border-b border-gray-100">
-                                                        <span className="text-xs font-semibold text-gray-600 uppercase tracking-wider">Adresse & Livraison</span>
-                                                    </div>
-                                                    <div className="p-4 space-y-2.5">
-                                                        {partnerDetail.address_line1 ? (
-                                                            <div className="flex items-start gap-2">
-                                                                <MapPin className="w-3.5 h-3.5 text-sage-500 mt-0.5 shrink-0" />
-                                                                <div className="text-xs space-y-0.5">
-                                                                    <div className="font-semibold text-gray-900">{partnerDetail.address_line1}</div>
-                                                                    {partnerDetail.address_line2 && <div className="text-gray-500">{partnerDetail.address_line2}</div>}
-                                                                    <div className="text-gray-500">
-                                                                        {[partnerDetail.city, partnerDetail.region, partnerDetail.postal_code].filter(Boolean).join(', ')}
-                                                                    </div>
-                                                                    {partnerDetail.country && <div className="text-gray-500">{partnerDetail.country}</div>}
+                                                {/* Adresses §21 */}
+                                                <PartnerAddressesSection partnerId={partnerDetail.id} />
+
+                                                {/* Livraison */}
+                                                {(toNum(partnerDetail.min_order_amount) > 0 || partnerDetail.delivery_zone || partnerDetail.delivery_instructions) && (
+                                                    <div className="rounded-xl border border-gray-200 bg-white overflow-hidden">
+                                                        <div className="px-4 py-2.5 bg-gray-50 border-b border-gray-100">
+                                                            <span className="text-xs font-semibold text-gray-600 uppercase tracking-wider">Livraison</span>
+                                                        </div>
+                                                        <div className="p-4 space-y-1.5">
+                                                            {toNum(partnerDetail.min_order_amount) > 0 && (
+                                                                <div className="flex items-center justify-between text-xs">
+                                                                    <span className="text-gray-400">Commande min.</span>
+                                                                    <span className="font-medium text-gray-700">{fmtNumber(partnerDetail.min_order_amount)}</span>
                                                                 </div>
-                                                            </div>
-                                                        ) : (
-                                                            <div className="flex items-center gap-2">
-                                                                <MapPin className="w-3.5 h-3.5 text-gray-300 shrink-0" />
-                                                                <span className="text-xs text-gray-300 italic">Adresse non renseignée</span>
-                                                            </div>
-                                                        )}
-                                                        {(toNum(partnerDetail.min_order_amount) > 0 || partnerDetail.delivery_zone || partnerDetail.delivery_instructions) && (
-                                                            <div className="pt-2 border-t border-gray-100 space-y-1.5">
-                                                                {toNum(partnerDetail.min_order_amount) > 0 && (
-                                                                    <div className="flex items-center justify-between text-xs">
-                                                                        <span className="text-gray-400">Commande min.</span>
-                                                                        <span className="font-medium text-gray-700">{fmtNumber(partnerDetail.min_order_amount)}</span>
-                                                                    </div>
-                                                                )}
-                                                                {partnerDetail.delivery_zone && (
-                                                                    <div className="flex items-center justify-between text-xs">
-                                                                        <span className="text-gray-400">Zone livraison</span>
-                                                                        <span className="font-medium text-gray-700 truncate max-w-[60%] text-right">{partnerDetail.delivery_zone}</span>
-                                                                    </div>
-                                                                )}
-                                                                {partnerDetail.delivery_instructions && (
-                                                                    <div className="text-[11px] text-gray-500 bg-gray-50 rounded-lg px-2 py-1.5 leading-relaxed">
-                                                                        {partnerDetail.delivery_instructions}
-                                                                    </div>
-                                                                )}
-                                                            </div>
-                                                        )}
-                                                        {partnerDetail.geo_lat && partnerDetail.geo_lng && (
-                                                            <div className="flex items-center gap-1 text-[10px] text-gray-400 pt-1 border-t border-gray-100">
-                                                                <Locate className="w-3 h-3" />
-                                                                <span>{partnerDetail.geo_lat}, {partnerDetail.geo_lng}</span>
-                                                            </div>
-                                                        )}
+                                                            )}
+                                                            {partnerDetail.delivery_zone && (
+                                                                <div className="flex items-center justify-between text-xs">
+                                                                    <span className="text-gray-400">Zone livraison</span>
+                                                                    <span className="font-medium text-gray-700 truncate max-w-[60%] text-right">{partnerDetail.delivery_zone}</span>
+                                                                </div>
+                                                            )}
+                                                            {partnerDetail.delivery_instructions && (
+                                                                <div className="text-[11px] text-gray-500 bg-gray-50 rounded-lg px-2 py-1.5 leading-relaxed">
+                                                                    {partnerDetail.delivery_instructions}
+                                                                </div>
+                                                            )}
+                                                        </div>
                                                     </div>
-                                                </div>
+                                                )}
                                             </div>
 
                                         </div>

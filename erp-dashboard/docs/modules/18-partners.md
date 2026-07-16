@@ -2116,3 +2116,66 @@ backfill idempotent (crée une `Address` + `default_address_id` pour tout
 partner ayant des données d'adresse mais pas encore de `default_address_id`),
 recrée la vue, puis `dropColumn`. `down()` restaure les colonnes et réinjecte
 les données depuis `defaultAddress`.
+
+### 21.5 Master data pour le formulaire "Ajouter une adresse" — Région/Pays/Ville
+
+L'équipe UI a demandé des dropdowns Région/Ville/Pays au lieu de champs texte
+libres pour le modal d'ajout d'adresse. Deux tables `regions`/`villes`
+(+ pivot `region_ville`) existent en base mais sont **mortes** : 0 lignes,
+aucun seeder, aucune route dédiée — seulement référencées dans deux blocs
+inutilisés de `PartnerController::create()`/`edit()`. **Ne pas les utiliser.**
+
+Le vrai référentiel géographique de l'app est `geo_areas` (88 lignes, seedé,
+hiérarchie via `geo_area_type_id`/`parent_code`, déjà branché sur
+`partners.geo_area_id` et le routing de livraison) :
+
+| `geo_area_types.code` | Niveau | Nb lignes |
+|---|---|---|
+| `100` | Pays | 1 |
+| `200` | **Région** | 7 (les 12 régions officielles du Maroc ne sont pas toutes seedées) |
+| `300` | Agence (branche commerciale) | 6 |
+| `400` | Ville / Secteur | 65 |
+| `500` | Secteur | 3 |
+| `600` | Localité/Zone | 6 |
+
+⚠️ **Le niveau 400 n'est pas une liste propre de villes** — la plupart des
+lignes de ce type sont des quartiers/secteurs de livraison rattachés à une
+"Agence" commerciale (ex: `CAS003 Aïn Chok`, `CAS010 Sidi Maarouf`, parent =
+`A0001 Agence Casablanca`), pas des villes administratives. Une région n'a
+qu'**un seul** enfant direct de type Ville (ex: `REGCASA` → `CASACITY
+Casablanca` uniquement) — pas de vraie liste "Casablanca, Mohammédia,
+Bouskoura, …" exploitable pour un dropdown ville.
+
+**Recommandation appliquée** :
+- **Région** → dropdown alimenté par `GET /api/backend/geo-areas?type_id=2`
+  (7 régions officielles, propre).
+- **Pays** → dropdown alimenté par `GET /api/countries` (déjà existant,
+  10 pays actifs, `id`/`name`/`phone_code`).
+- **Ville** → reste un champ texte libre (pas de master data fiable
+  actuellement — en construire une proprement nécessiterait une saisie de
+  données dédiée, hors périmètre de cette revue).
+
+**Capture réelle** :
+
+```
+GET /api/backend/geo-areas?type_id=2
+→ 200 { "geoAreas": { "data": [
+    {"id":8,"code":"REGCASA","name":"Grand Casablanca-Settat","name_ar":"...",
+     "geo_area_type":{"code":"200","name":"Région"}, "parent":{"code":"MAROC","name":"Maroc"}, ...},
+    {"id":9,"code":"REGRABA","name":"Rabat-Salé-Kénitra","name_ar":"..."},
+    {"id":12,"code":"REGTANG","name":"Tanger-Tétouan-Al Hoceïma","name_ar":"..."},
+    ... (7 au total, paginé 20/page)
+  ] }, "geoAreaTypes": [...], "parentAreas": [...] }
+
+GET /api/countries
+→ 200 { "message":"all countries", "countries":[
+    {"id":1,"name":"Morocco","phone_code":"212"},
+    {"id":2,"name":"Algeria","phone_code":"213"},
+    ... (10 au total)
+  ] }
+```
+
+Le champ `region` sur `Address`/`Partner` reste `varchar` (pas de FK) — le
+front envoie le `name` du `geo_area` sélectionné (ex: `"Grand
+Casablanca-Settat"`), pas son `id`/`code`. Aucun changement de schéma
+nécessaire côté backend pour ce point.
