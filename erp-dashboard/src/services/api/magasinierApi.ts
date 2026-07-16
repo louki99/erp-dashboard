@@ -19,6 +19,21 @@ import type {
     RejectPreparationResponse,
     UpdatePreparationResponse,
     StockMovementsResponse,
+    LoadingRequestsResponse,
+    FulfillLoadingResponse,
+    ConventionalDechargeReconciliationListResponse,
+    DechargeReconciliationLine,
+    DechargeReconciliationConfirmResponse,
+    DechargeReconciliationApproveResponse,
+    MagasinierDecharge,
+    MagasinierDechargesResponse,
+    ApproveDechargeWorkflowResponse,
+    ReturnsResponse,
+    PartnerReturn,
+    ReceiveReturnResponse,
+    CloseReturnResponse,
+    ApproveReturnResponse,
+    AssignReturnResponse,
 } from '@/types/magasinier.types';
 
 const MAGASINIER_BASE = '/api/backend/magasinier';
@@ -180,6 +195,171 @@ export const magasinierApi = {
 
         save: async (id: number, prepared: Record<string, Record<string, number>>): Promise<ApiSuccessResponse> => {
             const response = await apiClient.post<ApiSuccessResponse>(`${MAGASINIER_BASE}/batch-picking/${id}/save`, { prepared });
+            return response.data;
+        },
+    },
+
+    // §9 — Conventional Loading (SFA field salesperson → van stock loading)
+    conventionalLoading: {
+        getList: async (params?: { status?: string; page?: number }): Promise<LoadingRequestsResponse> => {
+            const response = await apiClient.get<LoadingRequestsResponse>('/api/backend/conventional-loading-requests', { params });
+            return response.data;
+        },
+        fulfill: async (id: number, data: { fulfilled_quantities: Record<string, number>; notes?: string }): Promise<FulfillLoadingResponse> => {
+            const response = await apiClient.post<FulfillLoadingResponse>(
+                `/api/backend/conventional-loading-requests/${id}/fulfill`,
+                data,
+                { headers: { 'Idempotency-Key': mkKey(`lr:${id}:fulfill`) } }
+            );
+            return response.data;
+        },
+        rejectAtVendor: async (id: number, reason: string): Promise<ApiSuccessResponse> => {
+            const response = await apiClient.post<ApiSuccessResponse>(
+                `/api/backend/conventional-loading-requests/${id}/reject-at-vendor`,
+                { reason },
+                { headers: { 'Idempotency-Key': mkKey(`lr:${id}:reject-vendor`) } }
+            );
+            return response.data;
+        },
+    },
+
+    // §10 — Conventional Décharge Reconciliation (EOD van→dépôt, ventes SFA)
+    dechargeReconciliation: {
+        // Backend endpoint pending creation — will return data once GET /backend/conventional-decharge-reconciliation is deployed.
+        getList: async (params?: { status?: string; page?: number }): Promise<ConventionalDechargeReconciliationListResponse> => {
+            const response = await apiClient.get<ConventionalDechargeReconciliationListResponse>(
+                '/api/backend/conventional-decharge-reconciliation',
+                { params }
+            );
+            return response.data;
+        },
+        confirm: async (
+            id: number,
+            data: { qr_token: string; lines: DechargeReconciliationLine[]; photo?: File | null }
+        ): Promise<DechargeReconciliationConfirmResponse> => {
+            const formData = new FormData();
+            formData.append('qr_token', data.qr_token);
+            formData.append('lines', JSON.stringify(data.lines));
+            if (data.photo) formData.append('photo', data.photo);
+            const response = await apiClient.post<DechargeReconciliationConfirmResponse>(
+                `/api/backend/conventional-decharge-reconciliation/${id}/confirm`,
+                formData,
+                { headers: { 'Content-Type': 'multipart/form-data', 'Idempotency-Key': mkKey(`drr:${id}:confirm`) } }
+            );
+            return response.data;
+        },
+        approve: async (id: number, notes?: string): Promise<DechargeReconciliationApproveResponse> => {
+            const response = await apiClient.post<DechargeReconciliationApproveResponse>(
+                `${WORKFLOW_BASE}/decharge-reconciliation/${id}/execute`,
+                { decision: 'approve_decharge_reconciliation', metadata: { notes: notes ?? '' } },
+                { headers: { 'Idempotency-Key': mkKey(`drr:${id}:approve`) } }
+            );
+            return response.data;
+        },
+    },
+
+    // §11 — Décharge Van→Dépôt (retour marchandises non livrées)
+    // Listing reuses GET /dispatcher/decharges (accessible to magasinier role per docs).
+    // Approval goes through the workflow engine, not the dispatcher's approve-return shortcut.
+    decharges: {
+        getList: async (params?: { status?: string; page?: number }): Promise<MagasinierDechargesResponse> => {
+            const response = await apiClient.get<MagasinierDechargesResponse>('/api/backend/dispatcher/decharges', { params });
+            return response.data;
+        },
+        getDetail: async (id: number): Promise<MagasinierDecharge> => {
+            const response = await apiClient.get<MagasinierDecharge>(`/api/backend/dispatcher/decharges/${id}`);
+            return response.data;
+        },
+        approve: async (id: number, notes?: string): Promise<ApproveDechargeWorkflowResponse> => {
+            const response = await apiClient.post<ApproveDechargeWorkflowResponse>(
+                `${WORKFLOW_BASE}/decharge/${id}/execute`,
+                { decision: 'approve_decharge', metadata: { notes: notes ?? '' } },
+                { headers: { 'Idempotency-Key': mkKey(`decharge:${id}:approve`) } }
+            );
+            return response.data;
+        },
+    },
+
+    // §12 — Returns Processing (PartnerReturn — /api/v2/returns/*, different base path)
+    // NOTE: All /v2/returns/* endpoints use a different base than /api/backend/...
+    // NOTE: POST /v2/returns/immediate now returns status ROLLED_BACK immediately
+    //       (atomic stock rollback). Do NOT expect IMMEDIATE as initial status.
+    // NOTE: No financial credit (avoir) is generated automatically on approve/close.
+    returns: {
+        getPending: async (params?: { status?: string; page?: number }): Promise<ReturnsResponse> => {
+            const response = await apiClient.get<ReturnsResponse>(`${MAGASINIER_BASE}/returns/pending`, { params });
+            return response.data;
+        },
+        getDetail: async (id: number): Promise<PartnerReturn> => {
+            const response = await apiClient.get<PartnerReturn>(`${MAGASINIER_BASE}/returns/${id}`);
+            return response.data;
+        },
+        // Magasinier action — confirm physical receipt at warehouse
+        receive: async (id: number): Promise<ReceiveReturnResponse> => {
+            const response = await apiClient.post<ReceiveReturnResponse>(
+                `/api/v2/returns/${id}/receive`,
+                {},
+                { headers: { 'Idempotency-Key': mkKey(`pr:${id}:receive`) } }
+            );
+            return response.data;
+        },
+        // Magasinier action — close after quality check (does NOT generate financial credit)
+        close: async (id: number): Promise<CloseReturnResponse> => {
+            const response = await apiClient.post<CloseReturnResponse>(
+                `/api/v2/returns/${id}/close`,
+                {},
+                { headers: { 'Idempotency-Key': mkKey(`pr:${id}:close`) } }
+            );
+            return response.data;
+        },
+        // Direction action — approve pending return.
+        // Check response.data.requires_manual_assignment: if true, auto-assign failed
+        // (no planned tour found for partner) → call assign() with a driver_id.
+        approve: async (id: number): Promise<ApproveReturnResponse> => {
+            const response = await apiClient.post<ApproveReturnResponse>(
+                `/api/v2/returns/${id}/approve`,
+                {},
+                { headers: { 'Idempotency-Key': mkKey(`pr:${id}:approve`) } }
+            );
+            return response.data;
+        },
+        // Dispatcher/coordinator action — manual driver assignment when approve()
+        // returns requires_manual_assignment=true.
+        assign: async (id: number, driverId: number): Promise<AssignReturnResponse> => {
+            const response = await apiClient.post<AssignReturnResponse>(
+                `/api/v2/returns/${id}/assign`,
+                { driver_id: driverId },
+                { headers: { 'Idempotency-Key': mkKey(`pr:${id}:assign:${driverId}`) } }
+            );
+            return response.data;
+        },
+        // Direction action — reject a pending return.
+        reject: async (id: number, reason: string): Promise<{ data: { id: number; status: 'REJECTED'; rejection_reason: string } }> => {
+            const response = await apiClient.post(
+                `/api/v2/returns/${id}/reject`,
+                { reason },
+                { headers: { 'Idempotency-Key': mkKey(`pr:${id}:reject`) } }
+            );
+            return response.data;
+        },
+        // Driver action — confirm physical collection at partner site (§5.1 step 4).
+        // ⚠️ After collect: dispatcher is HARD LOCKED from assigning new routes to this driver
+        // until magasinier calls receive(). Unblocking the driver is one of the most
+        // time-sensitive tasks for the magasinier.
+        collect: async (id: number): Promise<{ data: { id: number; status: 'COLLECTED'; collection_timestamp: string } }> => {
+            const response = await apiClient.post(
+                `/api/v2/returns/${id}/collect`,
+                {},
+                { headers: { 'Idempotency-Key': mkKey(`pr:${id}:collect`) } }
+            );
+            return response.data;
+        },
+        // Full audit trail — every state transition, stock movement, and discharge decision.
+        getAudit: async (id: number, periodId?: number): Promise<unknown> => {
+            const response = await apiClient.get(
+                `/api/v2/returns/${id}/audit`,
+                { params: periodId ? { period_id: periodId } : undefined }
+            );
             return response.data;
         },
     },

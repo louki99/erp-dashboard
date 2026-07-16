@@ -34,9 +34,12 @@ import { MagasinierDashboard } from '@/pages/magasinier/MagasinierDashboard';
 import { MagasinierPreparationsPage } from '@/pages/magasinier/MagasinierPreparationsPage';
 import { MagasinierStockPage } from '@/pages/magasinier/MagasinierStockPage';
 import { MagasinierBatchPickingPage } from '@/pages/magasinier/MagasinierBatchPickingPage';
+import { MagasinierConventionalLoadingPage } from '@/pages/magasinier/MagasinierConventionalLoadingPage';
+import { MagasinierDechargeReconciliationPage } from '@/pages/magasinier/MagasinierDechargeReconciliationPage';
+import { MagasinierDechargePage } from '@/pages/magasinier/MagasinierDechargePage';
+import { MagasinierReturnsPage } from '@/pages/magasinier/MagasinierReturnsPage';
 import { ProductsPage } from '@/pages/products/ProductsPage';
 import { ProductMasterDataPage } from '@/pages/products/ProductMasterDataPage';
-import { SettingsPage } from '@/pages/settings/SettingsPage';
 import { ConfigurationSettingsPage } from '@/pages/settings/ConfigurationSettingsPage';
 import { PromotionsPage } from '@/pages/promotions/PromotionsPage';
 import { PromotionFormRedesigned } from '@/pages/promotions/components/PromotionFormRedesigned';
@@ -302,6 +305,30 @@ function AppRoutes() {
         </ProtectedRoute>
       } />
 
+      <Route path="/magasinier/conventional-loading" element={
+        <ProtectedRoute requiredRole={['admin', 'root', 'magasinier']}>
+          <MagasinierConventionalLoadingPage />
+        </ProtectedRoute>
+      } />
+
+      <Route path="/magasinier/decharge-reconciliation" element={
+        <ProtectedRoute requiredRole={['admin', 'root', 'magasinier']}>
+          <MagasinierDechargeReconciliationPage />
+        </ProtectedRoute>
+      } />
+
+      <Route path="/magasinier/decharges" element={
+        <ProtectedRoute requiredRole={['admin', 'root', 'magasinier', 'dispatcher']}>
+          <MagasinierDechargePage />
+        </ProtectedRoute>
+      } />
+
+      <Route path="/magasinier/returns" element={
+        <ProtectedRoute requiredRole={['admin', 'root', 'magasinier']}>
+          <MagasinierReturnsPage />
+        </ProtectedRoute>
+      } />
+
       {/* Products Module Routes */}
       <Route path="/products" element={
         <ProtectedRoute>
@@ -316,11 +343,7 @@ function AppRoutes() {
       } />
 
       {/* Settings Routes */}
-      <Route path="/settings" element={
-        <ProtectedRoute requiredPermission={PERMISSIONS.SETTINGS.GENERAL}>
-          <SettingsPage />
-        </ProtectedRoute>
-      } />
+      <Route path="/settings" element={<Navigate to="/settings/configuration" replace />} />
       <Route path="/settings/configuration" element={
         <ProtectedRoute requiredPermission={PERMISSIONS.SETTINGS.GENERAL}>
           <ConfigurationSettingsPage />

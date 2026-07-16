@@ -1,3 +1,4 @@
+import { useState, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { X, Zap, Grid3x3, Clock, ChevronRight, Sparkles, ChevronLeft } from 'lucide-react';
@@ -61,6 +62,20 @@ interface ProcessCardProps {
 
 const ProcessCard = ({ process, colors, onNavigate }: ProcessCardProps) => {
     const ProcessIcon = process.icon;
+    const [expanded, setExpanded] = useState(false);
+    const chipsRef = useRef<HTMLDivElement>(null);
+    const VISIBLE = 3;
+    const visibleActions = expanded ? process.actions : process.actions.slice(0, VISIBLE);
+    const hiddenCount = process.actions.length - VISIBLE;
+
+    const handleExpand = (e: React.MouseEvent) => {
+        e.stopPropagation();
+        setExpanded(true);
+        // Scroll the chips into view after the DOM updates
+        requestAnimationFrame(() => {
+            chipsRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+        });
+    };
 
     return (
         <div className={cn(
@@ -96,13 +111,13 @@ const ProcessCard = ({ process, colors, onNavigate }: ProcessCardProps) => {
 
             {/* Action chips */}
             {process.actions.length > 0 && (
-                <div className="flex flex-wrap gap-1.5 pt-2.5 border-t border-gray-100 dark:border-gray-700/50">
-                    {process.actions.slice(0, 3).map(action => {
+                <div ref={chipsRef} className="flex flex-wrap gap-1.5 pt-2.5 border-t border-gray-100 dark:border-gray-700/50">
+                    {visibleActions.map(action => {
                         const ActionIcon = action.icon;
                         return (
                             <button
                                 key={action.id}
-                                onClick={() => onNavigate(action.route, action.label)}
+                                onClick={(e) => { e.stopPropagation(); onNavigate(action.route, action.label); }}
                                 className={cn(
                                     'inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full',
                                     'text-[10px] font-semibold transition-all duration-150',
@@ -117,18 +132,32 @@ const ProcessCard = ({ process, colors, onNavigate }: ProcessCardProps) => {
                             </button>
                         );
                     })}
-                    {process.actions.length > 3 && (
+                    {!expanded && hiddenCount > 0 && (
                         <button
-                            onClick={() => onNavigate(process.route, process.label)}
+                            onClick={handleExpand}
+                            className={cn(
+                                'inline-flex items-center gap-1 px-2.5 py-1 rounded-full',
+                                'text-[10px] font-semibold transition-all duration-150',
+                                colors.bg, colors.text,
+                                'border border-current/20',
+                                'hover:opacity-80',
+                            )}
+                        >
+                            +{hiddenCount} autres
+                        </button>
+                    )}
+                    {expanded && hiddenCount > 0 && (
+                        <button
+                            onClick={(e) => { e.stopPropagation(); setExpanded(false); }}
                             className={cn(
                                 'inline-flex items-center px-2.5 py-1 rounded-full',
                                 'text-[10px] font-semibold transition-all duration-150',
                                 'bg-gray-50 dark:bg-gray-700/60 text-gray-400 dark:text-gray-500',
                                 'border border-gray-200 dark:border-gray-600/50',
-                                'hover:bg-gray-100 hover:text-gray-600',
+                                'hover:bg-gray-100 hover:text-gray-700',
                             )}
                         >
-                            +{process.actions.length - 3}
+                            Moins
                         </button>
                     )}
                 </div>

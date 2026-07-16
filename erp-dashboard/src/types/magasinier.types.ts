@@ -344,3 +344,289 @@ export interface StockAdjustmentRequest {
     reason?: string;
     notes?: string;
 }
+
+// ─── §9 Conventional Loading ──────────────────────────────────────────────────
+
+export type LoadingRequestStatus =
+    | 'submitted'
+    | 'pending_cdz'
+    | 'pending_adv'
+    | 'approved'
+    | 'fulfilled'
+    | 'confirmed'
+    | 'cancelled'
+    | 'rejected'
+    | 'rejected_by_vendor';
+
+export interface LoadingRequestItem {
+    product_id: number;
+    product_name: string;
+    quantity: number;
+}
+
+export interface LoadingRequest {
+    id: number;
+    status: LoadingRequestStatus;
+    branch_id: number;
+    notes?: string | null;
+    approved_at?: string | null;
+    fulfilled_at?: string | null;
+    confirmed_at?: string | null;
+    user: { id: number; name: string };
+    vendeur_items_snapshot: LoadingRequestItem[];
+}
+
+export interface LoadingRequestsResponse {
+    current_page: number;
+    per_page: number;
+    total: number;
+    data: LoadingRequest[];
+}
+
+export interface FulfillLoadingResponse {
+    success: boolean;
+    message: string;
+    data: {
+        loading_request_id: number;
+        status: string;
+        qr_token: string;
+        qr_expires_at: string;
+        fulfilled_at: string;
+    };
+}
+
+// ─── §10 Conventional Décharge Reconciliation ─────────────────────────────────
+
+export type ConventionalDechargeReconciliationStatus =
+    | 'pending'
+    | 'confirmed'
+    | 'approved'
+    | 'rejected';
+
+// Shape based on the GET /backend/conventional-decharge-reconciliation endpoint
+// requested from backend (same pattern as GET /dispatcher/decharges).
+export interface ConventionalDechargeReconciliationRequest {
+    id: number;
+    status: ConventionalDechargeReconciliationStatus;
+    loading_request_id?: number | null;
+    branch_id?: number;
+    created_at: string;
+    confirmed_at?: string | null;
+    approved_at?: string | null;
+    user?: { id: number; name: string } | null;
+    items?: { product_id: number; product_name?: string; quantity: number }[];
+}
+
+export interface ConventionalDechargeReconciliationListResponse {
+    current_page: number;
+    per_page: number;
+    total: number;
+    data: ConventionalDechargeReconciliationRequest[];
+}
+
+export interface DechargeReconciliationLine {
+    product_id: number;
+    physical_qty: number;
+}
+
+export interface DechargeReconciliationConfirmResponse {
+    message: string;
+    data?: Record<string, unknown>;
+}
+
+export interface DechargeReconciliationApproveResponse {
+    success: boolean;
+    data: {
+        decharge_reconciliation_id: number;
+        status: 'approved';
+        warehouse_transfer_id: number;
+        products_transferred: number;
+        message: string;
+    };
+}
+
+// ─── §11 Décharge Van→Depot ───────────────────────────────────────────────────
+
+export type MagasinierDechargeStatus = 'pending' | 'approved';
+
+export interface MagasinierDechargeItem {
+    id?: number;
+    product_id?: number;
+    product_name?: string;
+    quantity?: number;
+    returned_quantity?: number;
+    stock_released?: boolean;
+    product?: { id: number; name: string; sku?: string };
+}
+
+export interface MagasinierDecharge {
+    id: number;
+    decharge_number?: string;
+    status?: string;
+    comment?: string;
+    reason?: string;
+    partner?: { id: number; name: string } | null;
+    rider?: { id: number; name: string } | null;
+    created_at?: string;
+    items?: MagasinierDechargeItem[];
+}
+
+export interface MagasinierDechargesResponse {
+    current_page: number;
+    per_page: number;
+    total: number;
+    data: MagasinierDecharge[];
+}
+
+export interface ApproveDechargeWorkflowResponse {
+    success: boolean;
+    data?: {
+        decharge_id: number;
+        decharge_number: string;
+        status: 'approved';
+        items_released: number;
+        total_value?: number;
+        message: string;
+    };
+    output?: {
+        decharge_id: number;
+        decharge_number: string;
+        status: 'approved';
+        items_released: number;
+        total_value?: number;
+        message: string;
+    };
+    message?: string;
+}
+
+// ─── §12 Returns Processing ────────────────────────────────────────────────────
+
+export type PartnerReturnStatus =
+    | 'PENDING_DIRECTION_APPROVAL'
+    | 'APPROVED'
+    | 'REJECTED'
+    | 'ASSIGNED_TO_DRIVER'
+    | 'COLLECTED'
+    | 'RECEIVED_AT_WAREHOUSE'
+    | 'CLOSED'
+    // IMMEDIATE is a legacy status — after backend update, POST /v2/returns/immediate
+    // now immediately transitions to ROLLED_BACK (atomic stock rollback in same call).
+    | 'IMMEDIATE'
+    // ROLLED_BACK = stock van remis en dépôt de façon atomique (retour immédiat finalisé).
+    // Also the initial status returned by POST /v2/returns/immediate.
+    | 'ROLLED_BACK'
+    | 'RECONCILED';
+
+export type ReturnType = 'commercial' | 'immediate';
+
+// Only 3 conditions exist — no "technical return" condition.
+// If business requires it, must be discussed with backend (impacts stock routing).
+export type ReturnItemCondition = 'good' | 'damaged' | 'expired';
+
+// Valid reasons for commercial returns (§8)
+export type CommercialReturnReason =
+    | 'DAMAGED'
+    | 'PRICING_ERROR'
+    | 'COMMERCIAL_RETURN'
+    | 'EXPIRED'
+    | 'QUALITY_ISSUE';
+
+// Valid reasons for immediate returns / field refusals (§8)
+export type ImmediateReturnReason =
+    | 'CLIENT_CLOSED'
+    | 'CLIENT_REFUSED'
+    | 'PARTIAL_REFUSAL'
+    | 'DISPUTE'
+    | 'WRONG_DELIVERY';
+
+export type ReturnReason = CommercialReturnReason | ImmediateReturnReason;
+
+export interface PartnerReturnItem {
+    id: number;
+    product_id: number;
+    return_quantity: number;
+    delivered_quantity?: number;
+    condition?: ReturnItemCondition | null;
+    reason?: string;
+    unit_price?: number;
+    total_value?: number;
+    product: { id: number; name: string; sku?: string };
+}
+
+export interface PartnerReturn {
+    id: number;
+    return_number: string;
+    status: PartnerReturnStatus;
+    return_type: ReturnType;
+    return_reason?: ReturnReason | null;
+    partner: { id: number; name: string };
+    deliveryNote?: { id: number; delivery_number: string } | null;
+    items?: PartnerReturnItem[];
+    // Populated after approve() — present when requires_manual_assignment=true
+    metadata?: {
+        requires_manual_assignment?: boolean;
+        assigned_driver_id?: number | null;
+        [key: string]: unknown;
+    } | null;
+    // Who created / approved (from DB schema §9)
+    initiated_by?: number | null;
+    approved_by?: number | null;
+    assigned_driver_id?: number | null;
+    approval_timestamp?: string | null;
+    rejection_reason?: string | null;
+    // GPS captured automatically on immediate returns (field refusal)
+    gps_latitude?: number | null;
+    gps_longitude?: number | null;
+    collection_timestamp?: string | null;
+    warehouse_receipt_timestamp?: string | null;
+    created_at: string;
+    notes?: string | null;
+}
+
+export interface ReturnsResponse {
+    current_page: number;
+    per_page: number;
+    total: number;
+    data: PartnerReturn[];
+}
+
+export interface ReceiveReturnResponse {
+    data: {
+        id: number;
+        return_number: string;
+        status: PartnerReturnStatus;
+        warehouse_receipt_timestamp?: string | null;
+    };
+}
+
+export interface CloseReturnResponse {
+    data: {
+        id: number;
+        return_number: string;
+        status: PartnerReturnStatus;
+    };
+}
+
+// Response from POST /v2/returns/{id}/approve (direction role).
+// If requires_manual_assignment=true, no driver was auto-assigned — a coordinator
+// must call POST /v2/returns/{id}/assign with { driver_id } manually.
+export interface ApproveReturnResponse {
+    data: {
+        id: number;
+        return_number: string;
+        status: 'APPROVED' | 'ASSIGNED_TO_DRIVER';
+        assigned_driver_id: number | null;
+        requires_manual_assignment: boolean;
+    };
+}
+
+// Response from POST /v2/returns/{id}/assign (dispatcher/coordinator role).
+// Used when approve returned requires_manual_assignment=true.
+export interface AssignReturnResponse {
+    data: {
+        id: number;
+        return_number: string;
+        status: 'ASSIGNED_TO_DRIVER';
+        assigned_driver_id: number;
+    };
+}

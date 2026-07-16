@@ -23,9 +23,12 @@
    - [Reject Preparation](#66-reject-preparation)
    - [Report Shortage (explicit)](#67-report-shortage-explicit)
    - [Continue Preparation (Rework)](#68-continue-preparation-rework)
+   - [Print / Download BP PDF](#69-print--download-bp-pdf)
+   - [Dispatcher-side collective BP creation](#610-dispatcher-side-collective-bp-creation-backendstockpreparation-bills-️) ⚠️ undocumented parallel path, stock-reservation gap
 7. [Batch Picking](#7-batch-picking) ⚠️ orphaned/legacy — see warning in section
 8. [Stock Management](#8-stock-management)
    - [WMS Stock API (Epic 5/6/7)](#85-wms-stock-api-epic-567)
+   - [Tier 2/3 — Emplacements & Lots](#86-tier-23--emplacements--lots-getpost-backendwms) ⚠️ built but disconnected from the BP flow
 9. [Conventional Loading (SFA → Van)](#9-conventional-loading)
 10. [Conventional Décharge Reconciliation (EOD Van → Depot)](#10-conventional-décharge-reconciliation-eod-van--depot)
 11. [Décharge — Van → Depot Unloading](#11-décharge--van--depot-unloading)
@@ -34,6 +37,7 @@
 14. [Error Handling](#14-error-handling)
 15. [TypeScript Interfaces](#15-typescript-interfaces)
 16. [End-to-End Workflow Examples](#16-end-to-end-workflow-examples)
+17. [Production Readiness Review — 2026-07-16](#17-production-readiness-review--2026-07-16)
 
 > **Removed 2026-06-22:** "BC → BP Exception Flow" (the old direct BC→BP shortcut,
 > `GET orders/approved` + `POST preparations/from-orders`) — deleted entirely along with the
@@ -345,6 +349,9 @@ DechargeReconciliationRequest: approved — VAN→depot stock transfer executed
 | `shortage_accepted` | Dispatcher accepted shortage | Transient as of 2026-06-17 — immediately auto-chains to `shortage_split_done` in the same `accept_partial_preparation` call; only observable mid-transaction |
 | `rejected` | Rejected by Magasinier | Mission/BLs revert to `draft` — dispatcher re-runs `confirm_delivery_mission` once resolved |
 | `cancelled` | **New 2026-06-22.** Mission pulled back to draft by the dispatcher mid-preparation (`reopen_delivery_mission`, Module 15 §8.6) — e.g. a salesperson needs to edit a BC already inside the mission. Kept for audit, never deleted | Terminal for this BP — a brand-new BP is generated when the dispatcher re-confirms the mission |
+
+> ⚠️ `completed` and `validated` are also allowed by the DB CHECK constraint but are **dead** —
+> no live Decision writes either one (see §17.2). Don't build UI logic expecting to see them.
 
 ### Décharge (UnloadOrder) statuses
 
@@ -1081,6 +1088,60 @@ GET /api/backend/documents/bp/{id}/download  → attachment (save to disk)
 
 **No batch print endpoint exists** — to print all BLs for a mission, see Module 15 §12e.
 
+### 6.10 Dispatcher-side collective BP creation (`/backend/stock/preparation-bills`) ⚠️
+
+**Not previously documented, and architecturally distinct from everything above.** §2's
+"Removed 2026-06-22" note says orders always flow through a Delivery Mission now (one
+auto-generated BP per mission, on `confirm_delivery_mission`). That's true for the **mission**
+pipeline — but `PreparationBillController` (routes below) is a **second, parallel path** that
+creates a `PreparationOrder` directly from a dispatcher's multi-selection of orders ("lasso" UX),
+entirely independent of any `DeliveryMission`. It predates or coexists with the mission
+migration and was found undocumented during this review.
+
+```
+GET    /api/backend/stock/preparation-bills            — list (any status)
+GET    /api/backend/stock/preparation-bills/{id}        — detail
+POST   /api/backend/stock/preparation-bills              — create from order_ids[]
+PUT    /api/backend/stock/preparation-bills/{id}        — reassign/edit/advance to in_progress
+```
+Permissions: `browse-preparation-bills` / `create-preparation-bills` / `edit-preparation-bills`
+(root, admin, dispatcher, magasinier).
+
+```bash
+curl -X POST "https://api.omni360.cloud/api/backend/stock/preparation-bills" \
+  -H "Authorization: Bearer {TOKEN}" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "order_ids": [1204, 1205, 1211],
+    "magasinier_id": 59,
+    "priority_level": 2,
+    "notes": "Urgent — client VIP"
+  }'
+```
+
+**Response `201`:** `{"success": true, "preparation_bill": { "id": ..., "bp_number": "BP-20260716-00001", "status": "pending", ... }}`
+
+> ⚠️ **Production-readiness gap — read before building a UI screen against this path.** A BP
+> created here starts `pending` with **`available_quantity: 0` on every item and no stock
+> reservation whatsoever** — unlike the mission pipeline, where `confirm_delivery_mission`
+> auto-reserves stock atomically (shortage-tolerant, §2). `PUT .../{id}` can also advance
+> `pending → in_progress` by writing `status` directly, **bypassing `StartPreparationDecision`
+> entirely** — no magasinier auto-assignment beyond what you pass, no `PreparationStartedEvent`,
+> no `StockPrePickingValidationConstraint` check, and (since `delivery_mission_id` is null on
+> this kind of BP) none of the mission-linked BL-status transitions ever fire for it either.
+> Two bugs found and fixed in this review (both live, both would have thrown/misbehaved on
+> first real use): `index()`/`show()` eager-loaded a non-existent `delivery_missions.code`
+> column (real column is `mission_number` — this would have crashed any call with a
+> `SQLSTATE[42703]` the moment a result set was returned); `update()`'s "can't edit a finished
+> BP" guard only checked the dead legacy `'completed'` status, not the real
+> `completed_full`/`completed_partial` terminal states, so an actually-finished BP could still be
+> silently edited. Both are fixed as of this review — the **stock-reservation and
+> workflow-engine bypass are not** (that's a design decision, not a one-line bug: either this
+> controller needs to gain a reservation step and route through the same Decision classes as the
+> mission flow, or it should be deprecated in favor of always creating a mission first). **Confirm
+> with backend whether this endpoint is still meant to be used before wiring a UI screen to it** —
+> if it's legacy/dead on the frontend already, prefer retiring it over building new UI against it.
+
 ---
 
 ## 7. Batch Picking
@@ -1493,6 +1554,31 @@ curl https://api.omni360.cloud/api/backend/stocks/scan/3760123456789 \
 > where noted by the controller's own validation. Request/response shapes were not exhaustively
 > verified for this doc pass; treat field names as indicative and confirm against a live response
 > before building UI against them.
+
+### 8.6 Tier 2/3 — Emplacements & Lots (`GET/POST /backend/wms/*`)
+
+**Separate module, separate doc.** [`docs/modules/22-stock-wms.md`](22-stock-wms.md) is the
+full contract for bin-level stock (`storage_location_id`), lot/batch tracking (FEFO, expiry
+alerts), goods receipt, inter-warehouse transfer, and manual adjustment — `GET wms/stock-levels`,
+`GET/POST wms/pick-tasks*`, `GET/POST wms/batches/*`, `POST wms/receipts`, `POST wms/transfers`,
+`POST wms/adjustments`. Gated by `wms.advanced_mode`/`wms.emplacements_enabled`/`wms.lot_tracking`
+(all `false` by default) — read that doc's §5/§8 before building against it.
+
+> ⚠️ **`wms/pick-tasks` does NOT replace §6 of this document.** The BP lifecycle you build the
+> magasinier's picking screen against (`start_preparation` → `update_preparation` →
+> `complete_preparation`/`report_shortage`) is **completely independent** of `WmsPickTask`/
+> `PickTaskEngine` (Tier 2 structured per-bin pick instructions). As of this review,
+> `PickTaskEngine::generateForPreparationOrder()` is **never called** by any live Decision —
+> `StartPreparationDecision`, `UpdatePreparationDecision`, and `CompletePreparationDecision` know
+> nothing about `wms_pick_tasks`. Its only caller was `PreparationService::savePreparation()`,
+> which was **deleted in this review** (see §17) because it was itself unreachable and broken
+> (referenced model relations removed by the 2026-06-22 mission migration). Bugs found in
+> `PickTaskEngine` while auditing it (wrong `warehouse_code`/`quantity` attribute reads, a dead
+> `'completed'` status write) were fixed so the class is at least internally correct, but **it
+> remains fully disconnected from the BP flow** — do not build a UI screen assuming completing a
+> `wms_pick_task` advances a BP's status; it doesn't, and completing a BP doesn't generate pick
+> tasks either. If Tier 2 structured picking is wanted for real, that's a backend wiring task to
+> schedule explicitly, not something already live under the hood.
 
 ---
 
@@ -2605,3 +2691,55 @@ auto-creates the CENTRAL→VAN warehouse transfer. The "BC → BP Exception Flow
 removed (feature deleted). Depot/stock lookups now correctly resolve the branch's real
 sellable PFZ0 zone instead of an empty placeholder "DEPOT" location. The "Batch Picking"
 section (§7) is flagged as an orphaned, pre-mission-pipeline feature.*
+
+---
+
+## 17. Production Readiness Review — 2026-07-16
+
+Deep review of the whole Magasinier domain (BP lifecycle, shortage/rework, stock adjustments,
+Tier 2/3 WMS wiring) ahead of production sign-off. Six real bugs found and fixed; two
+architectural gaps documented (not silently fixed — they need a product decision, not a
+one-line patch).
+
+### 17.1 Bugs fixed
+
+| # | Where | Bug | Fix |
+|---|---|---|---|
+| 1 | `MagasinierController::dashboard()` | `completedToday` counted `status = 'completed'` — a legacy value no live Decision ever writes (see §17.3). The counter was **structurally always 0**, even on days with real completed BPs. | Now counts `completed_full`/`completed_partial` (the real terminal states `CompletePreparationDecision`/`ContinuePreparationDecision` write). |
+| 2 | `PreparationBillController::index()`/`show()` | Eager-loaded `deliveryMission:id,code` — `delivery_missions` has no `code` column (only `mission_number`). Any call returning a result set would throw `SQLSTATE[42703]`. | Column reference fixed to `mission_number`. |
+| 3 | `PreparationBillController::update()` | "Can't edit a finished BP" guard checked only the dead `'completed'` status — a BP that had actually reached `completed_full`/`completed_partial` could still be silently edited (quantities changed, orders appended) after the physical pick was already done. | Guard now checks `completed`, `completed_full`, `completed_partial`, `rejected`, `cancelled`. |
+| 4 | `PreparationOrder::getStatusBadgeClass()` / `getStatusLabel()` | Only handled 4 of the 12 allowed statuses (`pending`/`in_progress`/`completed`/`rejected`) — every other real-world status (`completed_full`, `completed_partial`, `awaiting_shortage_review`, `shortage_accepted`, `shortage_split_done`, `partial_rework_requested`, `validated`, `cancelled`) fell through to `bg-secondary`/"Unknown". Not currently called by any live controller, but it's exactly the helper a UI status-badge would reach for. | Both methods now cover the full status set. |
+| 5 | `PickTaskEngine::generateForPreparationOrder()` / `completePickTask()` | Three crash bugs: read a `PreparationOrder.warehouse_code` attribute that doesn't exist (column was dropped with `bonChargement`/`logisticsBatch` in the 2026-06-22 migration — would have passed `null` into a non-nullable `string $warehouseCode` param and thrown a `TypeError`); read `PreparationOrderItem->quantity`, which doesn't exist (`requested_quantity` does); wrote the dead `'completed'` status on auto-completion. | Warehouse code now resolved via `deliveryMission.branch_code` → `Warehouse::centralForBranch()` (same pattern as the live Decision classes); quantity field corrected; status fixed to `completed_full`. **Still not wired to the live BP flow** — see §8.6 and §17.2. |
+| 6 | `app/Services/PreparationService.php`, `app/Services/B2BWorkflowOrchestrator.php` | Both fully dead (zero live callers — `MagasinierController` injected `PreparationService` but never called a method on it; `B2BWorkflowOrchestrator` had zero references anywhere). Both were also broken if ever invoked: `PreparationService` read `$bp->bonChargement` (relation removed 2026-06-20); `B2BWorkflowOrchestrator` called `$this->preparationService->createFromBch()`, a method that doesn't exist on `PreparationService` at all — would have thrown `BadMethodCallException` on the very first line. | **Deleted both files** and the now-unused `PreparationService`/`WorkflowTransitionService` constructor injections on `MagasinierController` (the latter was also never called). Confirmed zero remaining references. |
+
+### 17.2 Dead statuses in the `preparation_orders` CHECK constraint
+
+`preparation_orders.status` allows 12 values; **`completed` and `validated` are dead** — no live
+Decision class writes either one. `completed` was only ever set by the now-deleted
+`PreparationService::savePreparation()` and by `PickTaskEngine::completePickTask()` (fixed in
+§17.1 #5 to write `completed_full` instead). `validated` was only ever set by the deleted
+`PreparationService::validatePreparation()` — nothing else in the codebase writes it. Both
+remain in the DB CHECK constraint (harmless — a constraint allowing more values than are used
+isn't itself a bug) but **do not build UI logic that expects either value to appear** for a BP
+reached through the normal flow in §6. If you see `completed` or `validated` on a real BP, that's
+a signal something wrote it outside the documented Decision flow — worth flagging to backend.
+
+### 17.3 Known gaps — flagged, not silently fixed
+
+These need a product/architecture decision, not a mechanical bug fix, so they're documented
+rather than patched:
+
+1. **`PreparationBillController` stock-reservation gap** — see §6.10. A BP created through this
+   dispatcher "lasso" path has zero stock reservation and bypasses the entire Decision/workflow
+   engine (`StartPreparationDecision` and everything downstream of it). Either this needs a
+   reservation step and routing through the same Decisions as the mission pipeline, or it should
+   be deprecated. **Do not build new UI against `POST/PUT /backend/stock/preparation-bills`
+   without confirming with backend which direction this is going.**
+2. **`PickTaskEngine`/`WmsPickTask` (Tier 2 structured picking) is built but disconnected** — see
+   §8.6. Bugs that would have crashed it on first use are fixed, but no live Decision generates or
+   consumes pick tasks during a real BP's lifecycle. Treat it as not-yet-shipped, not as a
+   parallel picking UI you can build against today.
+
+Both gaps were present before this review and are not regressions introduced by it — they were
+found by reading the actual Decision/Service call graph end-to-end, the same way the 2026-06-23
+dispatcher↔magasinier bugs above were found.

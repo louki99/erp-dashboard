@@ -19,6 +19,8 @@ import {
   Package,
   PackageCheck,
   Radio,
+  RotateCcw,
+  ScanLine,
   Settings,
   Shield,
   ShoppingCart,
@@ -611,6 +613,34 @@ export const MENU_MODULES: MenuModule[] = [
           { id: 'mag:wms:receipt',     label: 'Nouvelle Réception',  route: '/stock/wms-receipt',     icon: PackageCheck,   description: 'Entrée de marchandises avec saisie obligatoire des emplacements (bins)' },
           { id: 'mag:wms:transfer',    label: 'Bon de Transfert',    route: '/stock/wms-transfer',    icon: ArrowLeftRight, description: 'Transfert inter-entrepôt avec lot source FEFO optionnel' },
           { id: 'mag:wms:adjustment',  label: 'Ajustement Manuel',   route: '/stock/wms-adjustment',  icon: ClipboardCheck, description: 'Correction de stock signée — casse, perte, vol ou écart inventaire' },
+        ],
+      },
+      {
+        id: 'conventional-loading',
+        title: 'Chargement Conventionnel',
+        items: [
+          { id: 'mag:conv:loading', label: 'Demandes de chargement', route: '/magasinier/conventional-loading', icon: Truck, description: 'Préparer et émettre les QR de chargement pour les vendeurs SFA (§9)' },
+        ],
+      },
+      {
+        id: 'decharge-reconciliation',
+        title: 'Réconciliation Décharge EOD',
+        items: [
+          { id: 'mag:drr:confirm', label: 'Réconciliation fin de journée', route: '/magasinier/decharge-reconciliation', icon: ScanLine, description: 'Scanner QR + décompte physique + approbation retour VAN → Dépôt (§10)' },
+        ],
+      },
+      {
+        id: 'decharges',
+        title: 'Décharges Van → Dépôt',
+        items: [
+          { id: 'mag:decharge:approve', label: 'Approuver une décharge', route: '/magasinier/decharges', icon: PackageCheck, description: 'Libérer le stock des marchandises non livrées retournées au dépôt (§11)' },
+        ],
+      },
+      {
+        id: 'returns',
+        title: 'Retours Partenaires',
+        items: [
+          { id: 'mag:returns:list', label: 'Retours à traiter', route: '/magasinier/returns', icon: RotateCcw, description: 'Réceptionner et clôturer les retours partenaires collectés par le livreur (§12)' },
         ],
       },
     ],

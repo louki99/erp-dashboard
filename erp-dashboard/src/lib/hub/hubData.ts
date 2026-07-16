@@ -5,7 +5,7 @@ import {
     List, Clock, CheckCircle2, TrendingUp,
     UserPlus, FilePlus, PackageCheck, Banknote, Route, Layers,
     Target, AlertTriangle, Import, GitBranch,
-    Calculator, Globe, Cog, FileSearch,
+    Calculator, Globe, Cog, FileSearch, RotateCcw, ScanLine,
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 
@@ -281,6 +281,50 @@ export const BUSINESS_DOMAINS: BusinessDomain[] = [
                     { id: 'wms-receipt',     label: 'Nouvelle Réception',  route: '/stock/wms-receipt',     icon: PackageCheck  },
                     { id: 'wms-transfer',    label: 'Bon de Transfert',    route: '/stock/wms-transfer',    icon: ArrowLeftRight},
                     { id: 'wms-adjustment',  label: 'Ajustement Manuel',   route: '/stock/wms-adjustment',  icon: Calculator    },
+                ],
+            },
+            {
+                id: 'conventional-loading',
+                label: 'Chargement Conventionnel',
+                description: 'Préparer les demandes de chargement SFA et émettre les QR de confirmation',
+                route: '/magasinier/conventional-loading',
+                icon: Truck,
+                actions: [
+                    { id: 'conv-loading-list',    label: 'Demandes à préparer', route: '/magasinier/conventional-loading', icon: Package  },
+                    { id: 'conv-loading-history', label: 'Historique chargements', route: '/magasinier/conventional-loading', icon: List  },
+                ],
+            },
+            {
+                id: 'decharge-reconciliation',
+                label: 'Réconciliation Décharge EOD',
+                description: 'Fin de journée VAN → Dépôt : scan QR, décompte physique, approbation',
+                route: '/magasinier/decharge-reconciliation',
+                icon: ScanLine,
+                actions: [
+                    { id: 'drr-confirm',  label: 'Nouvelle réconciliation', route: '/magasinier/decharge-reconciliation', icon: ScanLine     },
+                    { id: 'drr-approve',  label: 'Approuver retour stock',  route: '/magasinier/decharge-reconciliation', icon: CheckCircle2 },
+                ],
+            },
+            {
+                id: 'decharges-magasinier',
+                label: 'Décharges Van → Dépôt',
+                description: 'Libérer le stock des marchandises non livrées retournées par le livreur',
+                route: '/magasinier/decharges',
+                icon: PackageCheck,
+                actions: [
+                    { id: 'decharge-pending', label: 'Décharges en attente', route: '/magasinier/decharges', icon: Clock        },
+                    { id: 'decharge-approve', label: 'Approuver décharge',   route: '/magasinier/decharges', icon: CheckCircle2 },
+                ],
+            },
+            {
+                id: 'returns-magasinier',
+                label: 'Retours Partenaires',
+                description: 'Réceptionner et clôturer les retours collectés par le livreur',
+                route: '/magasinier/returns',
+                icon: RotateCcw,
+                actions: [
+                    { id: 'returns-collected', label: 'Retours à réceptionner', route: '/magasinier/returns', icon: Package    },
+                    { id: 'returns-close',     label: 'Clôturer un retour',     route: '/magasinier/returns', icon: CheckCircle2 },
                 ],
             },
         ],
