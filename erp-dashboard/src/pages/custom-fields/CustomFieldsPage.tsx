@@ -40,6 +40,7 @@ import {
     useDeleteCustomField,
     useToggleCustomField,
     useReorderCustomFields,
+    useCreateFormMeta,
 } from '@/hooks/customFields/useCustomFields';
 
 import type {
@@ -80,13 +81,23 @@ const FIELD_TYPE_LABELS: Record<string, string> = {
 };
 
 const ENTITY_LABELS: Record<string, string> = {
-    partner: 'Partenaire',
-    product: 'Produit',
+    partner:          'Partenaire',
+    product:          'Produit',
+    order:            'Commande',
+    warehouse:        'Entrepôt',
+    delivery_note:    'Bon de livraison',
+    delivery_mission: 'Mission livraison',
+    visit_action:     'Action visite',
 };
 
 const ENTITY_COLORS: Record<string, { bg: string; text: string; border: string }> = {
-    partner: { bg: 'bg-violet-50', text: 'text-violet-700', border: 'border-violet-200' },
-    product: { bg: 'bg-sky-50', text: 'text-sky-700', border: 'border-sky-200' },
+    partner:          { bg: 'bg-violet-50',  text: 'text-violet-700',  border: 'border-violet-200'  },
+    product:          { bg: 'bg-sky-50',     text: 'text-sky-700',     border: 'border-sky-200'     },
+    order:            { bg: 'bg-amber-50',   text: 'text-amber-700',   border: 'border-amber-200'   },
+    warehouse:        { bg: 'bg-orange-50',  text: 'text-orange-700',  border: 'border-orange-200'  },
+    delivery_note:    { bg: 'bg-emerald-50', text: 'text-emerald-700', border: 'border-emerald-200' },
+    delivery_mission: { bg: 'bg-teal-50',    text: 'text-teal-700',    border: 'border-teal-200'    },
+    visit_action:     { bg: 'bg-rose-50',    text: 'text-rose-700',    border: 'border-rose-200'    },
 };
 
 // ─── Component ───────────────────────────────────────────────────────────────
@@ -112,6 +123,18 @@ export const CustomFieldsPage = () => {
     });
 
     // ── Data Hooks ────────────────────────────────────────────────────────────
+    const { data: createMeta } = useCreateFormMeta();
+    // Merge API response with the full known list so all 7 entities appear
+    // even if the backend hasn't deployed the extension yet.
+    const entityTypes: Record<string, string> = {
+        ...ENTITY_LABELS,           // all 7 known keys (French labels)
+        ...(createMeta?.entityTypes
+            ? Object.fromEntries(
+                Object.entries(createMeta.entityTypes).map(([k, v]) => [k, ENTITY_LABELS[k] ?? v])
+              )
+            : {}),
+    };
+
     const {
         data: listData,
         loading: listLoading,
@@ -158,10 +181,11 @@ export const CustomFieldsPage = () => {
 
     const handleCreate = () => {
         setEditingField(null);
+        const firstEntityType = Object.keys(entityTypes)[0] ?? 'partner';
         setForm({
             field_label: '',
             field_type: 'text',
-            entity_type: (filters.entity_type !== 'all' ? filters.entity_type : 'partner') as EntityType,
+            entity_type: (filters.entity_type !== 'all' ? filters.entity_type : firstEntityType) as EntityType,
             is_required: false,
             is_active: true,
             is_searchable: false,
@@ -408,24 +432,30 @@ export const CustomFieldsPage = () => {
                                 </span>
                             </div>
 
-                            {/* Entity type filter pills */}
-                            <div className="flex items-center gap-1 mb-2">
-                                {[
-                                    { value: 'all' as const, label: 'Tous', icon: Settings },
-                                    { value: 'partner' as const, label: 'Partenaires', icon: Users },
-                                    { value: 'product' as const, label: 'Produits', icon: Package },
-                                ].map(tab => (
+                            {/* Entity type filter pills — dynamic from API */}
+                            <div className="flex flex-wrap items-center gap-1 mb-2">
+                                <button
+                                    onClick={() => handleEntityFilter('all')}
+                                    className={`flex items-center gap-1 px-2 py-1 text-[10px] font-medium rounded-md transition-colors ${
+                                        filters.entity_type === 'all'
+                                            ? 'bg-blue-600 text-white shadow-sm'
+                                            : 'bg-gray-100 text-gray-500 hover:bg-gray-200'
+                                    }`}
+                                >
+                                    <Settings className="w-3 h-3" />
+                                    Tous
+                                </button>
+                                {Object.entries(entityTypes).map(([value, label]) => (
                                     <button
-                                        key={tab.value}
-                                        onClick={() => handleEntityFilter(tab.value)}
-                                        className={`flex items-center gap-1 px-2 py-1 text-[10px] font-medium rounded-md transition-colors ${
-                                            filters.entity_type === tab.value
+                                        key={value}
+                                        onClick={() => handleEntityFilter(value as any)}
+                                        className={`px-2 py-1 text-[10px] font-medium rounded-md transition-colors ${
+                                            filters.entity_type === value
                                                 ? 'bg-blue-600 text-white shadow-sm'
                                                 : 'bg-gray-100 text-gray-500 hover:bg-gray-200'
                                         }`}
                                     >
-                                        <tab.icon className="w-3 h-3" />
-                                        {tab.label}
+                                        {label}
                                     </button>
                                 ))}
                             </div>
@@ -754,6 +784,7 @@ export const CustomFieldsPage = () => {
                     editing={editingField}
                     form={form}
                     setForm={setForm}
+                    entityTypes={entityTypes}
                     onClose={() => setCreateEditOpen(false)}
                     onSubmit={handleSubmitCreateEdit}
                     loading={createLoading || updateLoading}

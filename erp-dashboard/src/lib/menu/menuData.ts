@@ -768,6 +768,7 @@ export const MENU_MODULES: MenuModule[] = [
           { id: 'admin:sys:monitoring', label: 'Monitoring', route: '/admin/monitoring', permission: 'admin.monitoring.view' },
           { id: 'admin:sys:parametres', label: 'Paramètres Généraux', route: '/settings', permission: 'admin.settings.view' },
           { id: 'admin:sys:config-dyn', label: 'Configuration Dynamique', route: '/settings/configuration', permission: 'admin.settings.view' },
+          { id: 'admin:sys:custom-fields', label: 'Champs Personnalisés', route: '/custom-fields', permission: 'admin.settings.view' },
         ],
       },
       {

@@ -4,7 +4,6 @@ import type {
     CustomField,
     CreateCustomFieldRequest,
     FieldType,
-    EntityType,
 } from '@/types/customFields.types';
 
 // ─── Shared modal primitives ─────────────────────────────────────────────────
@@ -62,10 +61,16 @@ const FIELD_TYPES: { value: FieldType; label: string }[] = [
     { value: 'file', label: 'Fichier' },
 ];
 
-const ENTITY_TYPES: { value: EntityType; label: string }[] = [
-    { value: 'partner', label: 'Partenaire' },
-    { value: 'product', label: 'Produit' },
-];
+
+const ENTITY_LABELS_FR: Record<string, string> = {
+    partner:          'Partenaire',
+    product:          'Produit',
+    visit_action:     'Action de visite',
+    order:            'Commande',
+    warehouse:        'Entrepôt',
+    delivery_note:    'Bon de livraison',
+    delivery_mission: 'Mission de livraison',
+};
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // Create / Edit Custom Field
@@ -75,12 +80,13 @@ interface ModalCreateEditProps {
     editing: CustomField | null;
     form: Partial<CreateCustomFieldRequest>;
     setForm: (f: any) => void;
+    entityTypes: Record<string, string>;
     onClose: () => void;
     onSubmit: () => void;
     loading: boolean;
 }
 
-export const ModalCreateEdit: React.FC<ModalCreateEditProps> = ({ editing, form, setForm, onClose, onSubmit, loading }) => {
+export const ModalCreateEdit: React.FC<ModalCreateEditProps> = ({ editing, form, setForm, entityTypes, onClose, onSubmit, loading }) => {
     const showOptions = form.field_type === 'select' || form.field_type === 'radio';
 
     return (
@@ -109,8 +115,10 @@ export const ModalCreateEdit: React.FC<ModalCreateEditProps> = ({ editing, form,
                             className={selectCls}
                         >
                             <option value="">-- Choisir --</option>
-                            {ENTITY_TYPES.map(et => (
-                                <option key={et.value} value={et.value}>{et.label}</option>
+                            {Object.keys(entityTypes).map(value => (
+                                <option key={value} value={value}>
+                                    {ENTITY_LABELS_FR[value] ?? entityTypes[value]}
+                                </option>
                             ))}
                         </select>
                     </Field>

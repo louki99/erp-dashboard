@@ -1,6 +1,13 @@
 // ─── Custom Fields Types ─────────────────────────────────────────────────────
 
-export type EntityType = 'partner' | 'product';
+export type EntityType =
+    | 'partner'
+    | 'product'
+    | 'order'
+    | 'warehouse'
+    | 'delivery_note'
+    | 'delivery_mission'
+    | 'visit_action';
 
 export type FieldType =
     | 'text'
