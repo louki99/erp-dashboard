@@ -395,6 +395,22 @@ export const BUSINESS_DOMAINS: BusinessDomain[] = [
                 ],
             },
             {
+                id: 'pricing-admin',
+                label: 'Pricing & Tarification',
+                description: 'Listes de prix, canaux de vente, chronologies et simulateur tarifaire',
+                route: '/pricing',
+                icon: DollarSign,
+                actions: [
+                    { id: 'pricing-hub',        label: 'Hub Pricing',           route: '/pricing',                  icon: BarChart3  },
+                    { id: 'price-lists',        label: 'Listes de Prix',        route: '/pricing/price-lists',      icon: LayoutList },
+                    { id: 'price-overrides',    label: 'Dérogations',           route: '/pricing/overrides',        icon: Shield     },
+                    { id: 'packaging-prices',   label: 'Prix Conditionnement',  route: '/pricing/packaging-prices', icon: Package    },
+                    { id: 'price-preview',      label: 'Simulateur de Prix',    route: '/pricing/preview',          icon: Calculator },
+                    { id: 'price-channels',     label: 'Canaux de Vente',       route: '/pricing/channels',         icon: Layers     },
+                    { id: 'price-chronologies', label: 'Chronologies',          route: '/pricing/chronologies',     icon: Clock      },
+                ],
+            },
+            {
                 id: 'finance-admin',
                 label: 'Finance & Trésorerie',
                 description: 'Journaux de paiement, transferts et grand livre',
