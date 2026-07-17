@@ -1,7 +1,7 @@
-import { useState } from 'react';
+import { useRef, useMemo, useState } from 'react';
 import toast from 'react-hot-toast';
 import { MasterLayout } from '@/components/layout/MasterLayout';
-import { ActionPanel } from '@/components/layout/ActionPanel';
+import { ActionPanel, type ActionItemProps } from '@/components/layout/ActionPanel';
 import { Button } from '@/components/ui/button';
 import {
     Dialog,
@@ -14,9 +14,8 @@ import {
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-
-import { TokenSeriesForm, TokenSeriesTable } from '@/components/token-series';
 import { DetailCard } from '@/components/common/DetailCard';
+import { TokenSeriesForm, TokenSeriesTable } from '@/components/token-series';
 import {
     useCreateTokenSerie,
     useDeleteTokenSerie,
@@ -32,29 +31,16 @@ import type {
     UpdateTokenSeriePayload,
 } from '@/types/tokenSeries.types';
 import {
-    Plus,
-    Hash,
-    AlertTriangle,
-    Edit2,
-    Trash2,
-    X,
-    RotateCcw,
-    Globe,
-    Building2,
-    Smartphone,
-    Settings2,
-    FileDigit,
+    Plus, Hash, AlertTriangle, Edit2, Trash2, X,
+    RotateCcw, Globe, Building2, Smartphone, Settings2,
+    FileDigit, Save, ArrowLeft,
 } from 'lucide-react';
 import { isAxiosError } from 'axios';
 import { getScopeLabel, NUMBERING_FIELDS } from '@/lib/tokenSeries';
 
 function getErrorMessage(error: unknown): string {
-    if (isAxiosError(error)) {
-        return error.response?.data?.message ?? error.message;
-    }
-    if (error instanceof Error) {
-        return error.message;
-    }
+    if (isAxiosError(error)) return error.response?.data?.message ?? error.message;
+    if (error instanceof Error) return error.message;
     return 'Une erreur est survenue.';
 }
 
@@ -64,45 +50,44 @@ function isConflictResponse(response: unknown): response is TokenSerieConflictRe
 
 const DEFAULT_FILTERS: TokenSerieFilters = { per_page: 50, page: 1 };
 
-function TokenSeriesDetail({
-    serie,
-    onBack,
-}: {
-    serie: TokenSerie;
-    onBack?: () => void;
-}) {
+// ─── Detail view ──────────────────────────────────────────────────────────────
+
+function TokenSeriesDetail({ serie }: { serie: TokenSerie }) {
     const ScopeIcon = serie.scope === 'global' ? Globe : serie.scope === 'branch' ? Building2 : Smartphone;
     const scopeAccent = serie.scope === 'global' ? 'blue' : serie.scope === 'branch' ? 'amber' : 'sage';
 
     return (
-        <div className="h-full bg-slate-50/60 flex flex-col">
-            <div className="flex items-center justify-between border-b border-gray-200 bg-white px-6 py-4">
-                <div className="flex items-center gap-3">
-                    <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-sage-100 text-sage-700">
-                        <Hash className="h-5 w-5" />
-                    </div>
-                    <div>
-                        <h1 className="text-xl font-bold text-gray-900">{serie.name}</h1>
-                        <p className="text-sm font-mono text-gray-500">{serie.code}</p>
-                    </div>
+        <div className="h-full bg-slate-50/60 flex flex-col overflow-hidden">
+            {/* Header */}
+            <div className="px-6 py-4 border-b border-gray-200 bg-white shrink-0 flex items-center gap-3">
+                <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-sage-500 to-sage-600 flex items-center justify-center text-white shadow-sm shrink-0">
+                    <Hash className="w-4 h-4" />
                 </div>
-                <div className="flex items-center gap-2">
-                    {serie.is_active ? (
-                        <Badge variant="success" className="text-[10px]">Actif</Badge>
-                    ) : (
-                        <Badge variant="secondary" className="text-[10px]">Inactif</Badge>
-                    )}
-                    {serie.is_default && <Badge variant="outline" className="text-[10px]">Défaut</Badge>}
-                    {onBack && (
-                        <Button variant="outline" size="sm" onClick={onBack} className="ml-2">
-                            <X className="mr-1.5 h-4 w-4" />
-                            Fermer
-                        </Button>
-                    )}
+                <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2 flex-wrap">
+                        <h1 className="text-sm font-bold text-gray-900">{serie.name}</h1>
+                        <span className="text-[10px] font-mono font-bold text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded-full border border-indigo-100">
+                            {serie.code}
+                        </span>
+                        <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full border ${
+                            serie.is_active
+                                ? 'text-emerald-700 bg-emerald-50 border-emerald-200'
+                                : 'text-gray-500 bg-gray-100 border-gray-200'
+                        }`}>
+                            {serie.is_active ? 'Actif' : 'Inactif'}
+                        </span>
+                        {serie.is_default && (
+                            <span className="text-[10px] font-semibold text-amber-700 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded-full">
+                                Défaut
+                            </span>
+                        )}
+                    </div>
+                    <p className="text-[11px] text-gray-400 mt-0.5">Série de numérotation documentaire</p>
                 </div>
             </div>
 
-            <div className="flex-1 overflow-y-auto p-6 space-y-6">
+            {/* Content */}
+            <div className="flex-1 overflow-y-auto p-6 space-y-4">
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <DetailCard title="Scope" icon={ScopeIcon} accent={scopeAccent}>
                         <div className="flex items-center gap-2">
@@ -111,7 +96,7 @@ function TokenSeriesDetail({
                         </div>
                         {serie.scope === 'branch' && serie.allowed_branches && (
                             <p className="text-sm text-muted-foreground mt-2">
-                                Branches autorisées : <span className="font-medium text-gray-700">{serie.allowed_branches.join(', ')}</span>
+                                Branches : <span className="font-medium text-gray-700">{serie.allowed_branches.join(', ')}</span>
                             </p>
                         )}
                     </DetailCard>
@@ -149,7 +134,7 @@ function TokenSeriesDetail({
                             return (
                                 <div key={field.key} className="rounded-lg border border-gray-100 bg-white p-3 shadow-sm">
                                     <p className="text-[10px] uppercase tracking-wide text-muted-foreground mb-1">{field.label}</p>
-                                    <p className="font-mono text-sm font-medium truncate">{prefix ?? '-'}</p>
+                                    <p className="font-mono text-sm font-medium truncate">{prefix ?? '—'}</p>
                                     <p className="text-xs text-muted-foreground mt-0.5">prochain : {counter}</p>
                                 </div>
                             );
@@ -161,45 +146,63 @@ function TokenSeriesDetail({
     );
 }
 
+// ─── Page ──────────────────────────────────────────────────────────────────────
+
 export function TokenSeriesPage() {
     const [filters, setFilters] = useState<TokenSerieFilters>(DEFAULT_FILTERS);
     const { data, isLoading, refetch } = useTokenSeries(filters);
 
-    const [selectedSerie, setSelectedSerie] = useState<TokenSerie | null>(null);
-    const [showDetailPanel, setShowDetailPanel] = useState(false);
-    const [editingSerie, setEditingSerie] = useState<TokenSerie | null | undefined>(undefined);
+    const [viewSelected, setViewSelected] = useState<TokenSerie | null>(null);
+    const [formMode, setFormMode] = useState<'view' | 'create' | 'edit'>('view');
+    const [editTarget, setEditTarget] = useState<TokenSerie | null>(null);
     const [serieToDelete, setSerieToDelete] = useState<TokenSerie | null>(null);
     const [conflictRefs, setConflictRefs] = useState<string[] | null>(null);
 
-    const { data: detailData } = useTokenSerie(serieToDelete?.code ?? null);
+    const formRef = useRef<HTMLFormElement>(null);
 
+    const { data: detailData } = useTokenSerie(serieToDelete?.code ?? null);
     const createSerie = useCreateTokenSerie();
-    const updateSerie = useUpdateTokenSerie(editingSerie?.code ?? '');
+    const updateSerie = useUpdateTokenSerie(editTarget?.code ?? '');
     const deleteSerie = useDeleteTokenSerie();
 
-    const handleSelect = (serie: TokenSerie) => {
-        setSelectedSerie(serie);
-        setShowDetailPanel(true);
+    // ── Form actions ──────────────────────────────────────────────────────────
+    const openCreate = () => {
+        setEditTarget(null);
+        setFormMode('create');
+    };
+
+    const openEdit = (serie: TokenSerie) => {
+        setEditTarget(serie);
+        setFormMode('edit');
+    };
+
+    const cancelForm = () => {
+        setEditTarget(null);
+        setFormMode('view');
     };
 
     const handleFormSubmit = async (payload: CreateTokenSeriePayload | UpdateTokenSeriePayload) => {
         try {
-            if (editingSerie) {
+            if (formMode === 'edit' && editTarget) {
                 await updateSerie.mutateAsync(payload as UpdateTokenSeriePayload);
                 toast.success('Série mise à jour.');
+                setViewSelected(prev => prev?.code === editTarget.code
+                    ? { ...prev, ...(payload as UpdateTokenSeriePayload) }
+                    : prev
+                );
             } else {
                 await createSerie.mutateAsync(payload as CreateTokenSeriePayload);
                 toast.success('Série créée.');
             }
-            setEditingSerie(undefined);
+            cancelForm();
         } catch (error) {
             toast.error(getErrorMessage(error));
         }
     };
 
+    // ── Delete ─────────────────────────────────────────────────────────────────
     const handleDelete = async () => {
         if (!serieToDelete) return;
-
         const usage = detailData?.usage;
         if (usage && (usage.device_keys_count > 0 || usage.pos_devices_count > 0)) {
             setConflictRefs([
@@ -208,19 +211,12 @@ export function TokenSeriesPage() {
             ]);
             return;
         }
-
         try {
             const result = await deleteSerie.mutateAsync(serieToDelete.code);
-            if (isConflictResponse(result)) {
-                setConflictRefs(result.references);
-                return;
-            }
+            if (isConflictResponse(result)) { setConflictRefs(result.references); return; }
             toast.success('Série supprimée.');
             setSerieToDelete(null);
-            if (selectedSerie?.code === serieToDelete.code) {
-                setSelectedSerie(null);
-                setShowDetailPanel(false);
-            }
+            if (viewSelected?.code === serieToDelete.code) setViewSelected(null);
         } catch (error) {
             if (isAxiosError(error) && error.response?.status === 409) {
                 setConflictRefs(error.response.data.references ?? []);
@@ -230,171 +226,196 @@ export function TokenSeriesPage() {
         }
     };
 
-    const handlePageChange = (page: number) => {
-        setFilters((prev) => ({ ...prev, page }));
-    };
-
-    const actionGroups = [
-        {
-            items: [
+    // ── Action panel ───────────────────────────────────────────────────────────
+    const actionGroups = useMemo((): { items: ActionItemProps[] }[] => {
+        if (formMode !== 'view') {
+            return [{ items: [
                 {
-                    icon: Plus,
-                    label: 'Nouvelle série',
+                    icon: Save,
+                    label: 'Sauvegarder',
                     variant: 'primary' as const,
-                    onClick: () => setEditingSerie(null),
+                    onClick: () => formRef.current?.requestSubmit(),
+                    disabled: createSerie.isPending || updateSerie.isPending,
                 },
-                {
-                    icon: RotateCcw,
-                    label: 'Rafraîchir',
-                    variant: 'default' as const,
-                    onClick: () => refetch(),
-                },
-            ],
-        },
-        ...(selectedSerie
-            ? [
-                {
-                    items: [
-                        {
-                            icon: Edit2,
-                            label: 'Éditer',
-                            variant: 'sage' as const,
-                            onClick: () => setEditingSerie(selectedSerie),
-                        },
-                        {
-                            icon: Trash2,
-                            label: 'Supprimer',
-                            variant: 'danger' as const,
-                            onClick: () => setSerieToDelete(selectedSerie),
-                        },
-                    ],
-                },
-            ]
-            : []),
-    ];
+                { icon: X, label: 'Annuler', variant: 'warning' as const, onClick: cancelForm },
+            ]}];
+        }
+        const base: ActionItemProps[] = [
+            { icon: Plus,      label: 'Nouvelle série', variant: 'primary' as const, onClick: openCreate },
+            { icon: RotateCcw, label: 'Rafraîchir',     onClick: () => refetch() },
+        ];
+        if (viewSelected) {
+            return [
+                { items: base },
+                { items: [
+                    { icon: Edit2,  label: 'Éditer',     variant: 'sage' as const,   onClick: () => openEdit(viewSelected) },
+                    { icon: Trash2, label: 'Supprimer',  variant: 'danger' as const, onClick: () => setSerieToDelete(viewSelected) },
+                ]},
+            ];
+        }
+        return [{ items: base }];
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [formMode, viewSelected, createSerie.isPending, updateSerie.isPending]);
 
+    // ─────────────────────────────────────────────────────────────────────────
     return (
-        <MasterLayout
-            leftContent={
-                <div className="h-full bg-white border-r border-gray-100 flex flex-col">
-                    <div className="p-4 border-b border-gray-100 shrink-0">
-                        <div className="flex items-center gap-2 mb-3">
-                            <Hash className="h-5 w-5 text-sage-600" />
-                            <h1 className="text-sm font-semibold text-gray-900">Séries de numérotation</h1>
-                        </div>
-                        <div className="space-y-2">
-                            <Input
-                                placeholder="Rechercher…"
-                                value={''}
-                                onChange={() => {}}
-                                className="h-8 text-xs"
-                            />
-                            <div className="flex items-center gap-2">
-                                <input
-                                    id="active-only"
-                                    type="checkbox"
-                                    checked={!!filters.active_only}
-                                    onChange={(e) => setFilters((prev) => ({ ...prev, active_only: e.target.checked, page: 1 }))}
+        <>
+            <MasterLayout
+                leftContent={
+                    <div className="h-full bg-white border-r border-gray-200 flex flex-col">
+                        <div className="px-4 pt-4 pb-3 border-b border-gray-100 shrink-0">
+                            <div className="flex items-center gap-2 mb-3">
+                                <Hash className="h-4 w-4 text-sage-600" />
+                                <h2 className="text-sm font-bold text-gray-900">Séries de numérotation</h2>
+                                {data?.meta?.total != null && (
+                                    <span className="px-2 py-0.5 text-[10px] font-semibold rounded-full bg-sage-50 text-sage-600 border border-sage-100">
+                                        {data.meta.total}
+                                    </span>
+                                )}
+                            </div>
+                            <div className="space-y-2">
+                                <Input
+                                    placeholder="Rechercher…"
+                                    className="h-8 text-xs"
+                                    onChange={() => {}}
                                 />
-                                <Label htmlFor="active-only" className="text-xs">Actives uniquement</Label>
+                                <div className="flex items-center gap-2">
+                                    <input
+                                        id="active-only"
+                                        type="checkbox"
+                                        checked={!!filters.active_only}
+                                        onChange={(e) => setFilters(prev => ({ ...prev, active_only: e.target.checked, page: 1 }))}
+                                        className="w-3.5 h-3.5"
+                                    />
+                                    <Label htmlFor="active-only" className="text-xs text-gray-600 cursor-pointer">Actives uniquement</Label>
+                                </div>
                             </div>
                         </div>
-                    </div>
-                    <div className="flex-1 min-h-0 p-2">
-                        <div className="bg-white rounded-lg border border-gray-200 shadow-sm h-full">
+                        <div className="flex-1 min-h-0">
                             <TokenSeriesTable
                                 response={data}
                                 loading={isLoading}
-                                selected={selectedSerie}
-                                onSelect={handleSelect}
-                                onPageChange={handlePageChange}
+                                selected={viewSelected}
+                                onSelect={serie => {
+                                    setViewSelected(serie);
+                                    if (formMode !== 'view') cancelForm();
+                                }}
+                                onPageChange={(page) => setFilters(prev => ({ ...prev, page }))}
                             />
                         </div>
                     </div>
-                </div>
-            }
-            mainContent={
-                <div className="h-full flex flex-col">
-                    <Dialog open={editingSerie !== undefined} onOpenChange={(open) => !open && setEditingSerie(undefined)}>
-                        <DialogContent className="max-w-3xl">
-                            <TokenSeriesForm
-                                key={editingSerie ? `edit-${editingSerie.code}` : 'create'}
-                                serie={editingSerie ?? null}
-                                onSubmit={handleFormSubmit}
-                                onCancel={() => setEditingSerie(undefined)}
-                                loading={createSerie.isPending || updateSerie.isPending}
-                            />
-                        </DialogContent>
-                    </Dialog>
-
-                    <Dialog open={!!serieToDelete} onOpenChange={(open) => !open && setSerieToDelete(null)}>
-                        <DialogContent className="max-w-md">
-                            <DialogHeader>
-                                <DialogTitle className="flex items-center gap-2 text-destructive">
-                                    <AlertTriangle className="h-5 w-5" />
-                                    Supprimer la série ?
-                                </DialogTitle>
-                                <DialogDescription>
-                                    {serieToDelete && (
-                                        <>
-                                            Vous allez supprimer la série{' '}
-                                            <Badge variant="outline">{serieToDelete.code}</Badge> :{' '}
-                                            <strong>{serieToDelete.name}</strong>.
-                                            <br />
-                                            <br />
-                                            Cette action est irréversible.
-                                        </>
-                                    )}
-                                </DialogDescription>
-                            </DialogHeader>
-                            <DialogFooter>
-                                <Button variant="outline" onClick={() => setSerieToDelete(null)}>
-                                    Annuler
+                }
+                mainContent={
+                    <div className="h-full flex flex-col overflow-hidden">
+                        {formMode !== 'view' ? (
+                            /* ── Inline form ── */
+                            <div className="h-full bg-slate-50/60 flex flex-col overflow-hidden">
+                                <div className="px-6 py-4 border-b border-gray-200 bg-white shrink-0 flex items-center gap-3">
+                                    <button
+                                        onClick={cancelForm}
+                                        className="flex items-center gap-1.5 text-xs text-gray-500 hover:text-gray-800 transition-colors mr-1"
+                                    >
+                                        <ArrowLeft className="w-3.5 h-3.5" />
+                                    </button>
+                                    <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-sage-500 to-sage-600 flex items-center justify-center text-white shadow-sm shrink-0">
+                                        <Hash className="w-4 h-4" />
+                                    </div>
+                                    <div>
+                                        <h1 className="text-sm font-bold text-gray-900">
+                                            {formMode === 'create' ? 'Nouvelle série' : `Modifier — ${editTarget?.name}`}
+                                        </h1>
+                                        <p className="text-[11px] text-gray-400">
+                                            {formMode === 'create' ? 'Série de numérotation documentaire' : editTarget?.code}
+                                        </p>
+                                    </div>
+                                    <span className="ml-auto text-[10px] font-semibold text-blue-700 bg-blue-50 border border-blue-200 px-2 py-0.5 rounded-full">
+                                        {formMode === 'create' ? 'Nouveau' : 'Édition'}
+                                    </span>
+                                </div>
+                                <div className="flex-1 overflow-y-auto p-6">
+                                    <TokenSeriesForm
+                                        key={formMode === 'edit' ? `edit-${editTarget?.code}` : 'create'}
+                                        serie={formMode === 'edit' ? editTarget : null}
+                                        onSubmit={handleFormSubmit}
+                                        onCancel={cancelForm}
+                                        loading={createSerie.isPending || updateSerie.isPending}
+                                        formRef={formRef}
+                                        hideFooter
+                                    />
+                                </div>
+                            </div>
+                        ) : viewSelected ? (
+                            /* ── Detail view ── */
+                            <TokenSeriesDetail serie={viewSelected} />
+                        ) : (
+                            /* ── Empty state ── */
+                            <div className="flex-1 flex flex-col items-center justify-center p-10 text-center bg-slate-50/60">
+                                <div className="w-20 h-20 rounded-2xl bg-white flex items-center justify-center shadow-md border border-gray-100 mb-4">
+                                    <Hash className="w-10 h-10 text-gray-200" />
+                                </div>
+                                <p className="text-sm font-semibold text-gray-700">Séries de numérotation</p>
+                                <p className="text-xs text-gray-400 mt-1 max-w-xs">
+                                    Sélectionnez une série pour voir ses détails, ou créez-en une nouvelle.
+                                </p>
+                                <Button size="sm" onClick={openCreate} className="mt-4 bg-sage-600 hover:bg-sage-700">
+                                    <Plus className="w-3.5 h-3.5 mr-1.5" /> Nouvelle série
                                 </Button>
-                                <Button variant="destructive" onClick={handleDelete} disabled={deleteSerie.isPending}>
-                                    Supprimer
-                                </Button>
-                            </DialogFooter>
-                        </DialogContent>
-                    </Dialog>
+                            </div>
+                        )}
+                    </div>
+                }
+                rightContent={<ActionPanel groups={actionGroups} />}
+            />
 
-                    <Dialog open={!!conflictRefs} onOpenChange={(open) => !open && setConflictRefs(null)}>
-                        <DialogContent className="max-w-md">
-                            <DialogHeader>
-                                <DialogTitle className="flex items-center gap-2">
-                                    <AlertTriangle className="h-5 w-5" />
-                                    Suppression impossible
-                                </DialogTitle>
-                                <DialogDescription>
-                                    Cette série est encore référencée. Réassignez ou supprimez d'abord :
-                                    <ul className="mt-2 list-disc pl-4 text-xs text-muted-foreground">
-                                        {conflictRefs?.map((ref, i) => <li key={i}>{ref}</li>)}
-                                    </ul>
-                                </DialogDescription>
-                            </DialogHeader>
-                            <DialogFooter>
-                                <Button onClick={() => setConflictRefs(null)}>Compris</Button>
-                            </DialogFooter>
-                        </DialogContent>
-                    </Dialog>
+            {/* Delete confirm */}
+            <Dialog open={!!serieToDelete} onOpenChange={(open) => !open && setSerieToDelete(null)}>
+                <DialogContent className="max-w-md">
+                    <DialogHeader>
+                        <DialogTitle className="flex items-center gap-2 text-destructive">
+                            <AlertTriangle className="h-5 w-5" />
+                            Supprimer la série ?
+                        </DialogTitle>
+                        <DialogDescription>
+                            {serieToDelete && (
+                                <>
+                                    Vous allez supprimer la série{' '}
+                                    <Badge variant="outline">{serieToDelete.code}</Badge> :{' '}
+                                    <strong>{serieToDelete.name}</strong>.
+                                    <br /><br />
+                                    Cette action est irréversible.
+                                </>
+                            )}
+                        </DialogDescription>
+                    </DialogHeader>
+                    <DialogFooter>
+                        <Button variant="outline" onClick={() => setSerieToDelete(null)}>Annuler</Button>
+                        <Button variant="destructive" onClick={handleDelete} disabled={deleteSerie.isPending}>
+                            Supprimer
+                        </Button>
+                    </DialogFooter>
+                </DialogContent>
+            </Dialog>
 
-                    {showDetailPanel && selectedSerie ? (
-                        <TokenSeriesDetail
-                            serie={selectedSerie}
-                            onBack={() => setShowDetailPanel(false)}
-                        />
-                    ) : (
-                        <div className="flex-1 flex flex-col items-center justify-center p-10 text-center">
-                            <Hash className="w-16 h-16 text-gray-300 mb-4" />
-                            <h3 className="text-lg font-semibold text-gray-700 mb-2">Séries de numérotation</h3>
-                            <p className="text-sm text-gray-500 max-w-md">
-                                Cliquez sur une série dans la liste pour voir ses détails et actions.
-                            </p>
-                        </div>
-                    )}
-                </div>
-            }
-            rightContent={<ActionPanel groups={actionGroups} />}
-        />
+            {/* Conflict dialog */}
+            <Dialog open={!!conflictRefs} onOpenChange={(open) => !open && setConflictRefs(null)}>
+                <DialogContent className="max-w-md">
+                    <DialogHeader>
+                        <DialogTitle className="flex items-center gap-2">
+                            <AlertTriangle className="h-5 w-5" />
+                            Suppression impossible
+                        </DialogTitle>
+                        <DialogDescription>
+                            Cette série est encore référencée. Réassignez ou supprimez d'abord :
+                            <ul className="mt-2 list-disc pl-4 text-xs text-muted-foreground">
+                                {conflictRefs?.map((ref, i) => <li key={i}>{ref}</li>)}
+                            </ul>
+                        </DialogDescription>
+                    </DialogHeader>
+                    <DialogFooter>
+                        <Button onClick={() => setConflictRefs(null)}>Compris</Button>
+                    </DialogFooter>
+                </DialogContent>
+            </Dialog>
+        </>
     );
 }

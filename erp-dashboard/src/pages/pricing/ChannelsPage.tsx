@@ -166,17 +166,16 @@ export function ChannelsPage() {
 
     const channelColumns = useMemo<import('ag-grid-community').ColDef[]>(() => [
         {
-            colId: 'status', headerName: '', width: 32,
-            sortable: false, filter: false, resizable: false,
+            colId: 'code', headerName: 'Code', width: 100,
+            sortable: true, resizable: false,
             cellRenderer: (p: any) => (
-                <div className="flex items-center justify-center h-full">
-                    <div style={{ width: 8, height: 8, borderRadius: '50%', backgroundColor: p.data?.is_active ? '#10b981' : '#d1d5db' }} />
+                <div className="flex items-center gap-1.5 h-full">
+                    <div style={{ width: 7, height: 7, borderRadius: '50%', flexShrink: 0, backgroundColor: p.data?.is_active ? '#10b981' : '#d1d5db' }} />
+                    <span style={{ fontFamily: 'monospace', fontSize: '11px', fontWeight: 700, color: '#4338ca' }}>
+                        {p.data?.code ?? '—'}
+                    </span>
                 </div>
             ),
-        },
-        {
-            field: 'code', headerName: 'Code', width: 90,
-            cellStyle: { fontFamily: 'monospace', fontSize: '11px', fontWeight: '700', color: '#4338ca' },
         },
         {
             field: 'name', headerName: 'Nom', flex: 1, minWidth: 120,

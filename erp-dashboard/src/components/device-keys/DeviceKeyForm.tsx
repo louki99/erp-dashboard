@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
 import { Input } from '@/components/ui/input';
@@ -22,6 +22,8 @@ interface DeviceKeyFormProps {
     onSubmit: (payload: CreateDeviceKeyPayload | UpdateDeviceKeyPayload) => void;
     onCancel: () => void;
     loading?: boolean;
+    formRef?: React.RefObject<HTMLFormElement>;
+    hideFooter?: boolean;
 }
 
 const DEVICE_TYPE_OPTIONS = [
@@ -84,7 +86,7 @@ function getInitialForm(device: DeviceKey | null | undefined): CreateDeviceKeyPa
     };
 }
 
-export function DeviceKeyForm({ device, onSubmit, onCancel, loading }: DeviceKeyFormProps) {
+export function DeviceKeyForm({ device, onSubmit, onCancel, loading, formRef, hideFooter }: DeviceKeyFormProps) {
     const [form, setForm] = useState<CreateDeviceKeyPayload>(() => getInitialForm(device));
     const [activeTab, setActiveTab] = useState<'general' | 'json' | 'key'>('general');
     const [peripheralsJson, setPeripheralsJson] = useState(() => safeJsonStringify(form.peripherals));
@@ -147,7 +149,7 @@ export function DeviceKeyForm({ device, onSubmit, onCancel, loading }: DeviceKey
                 <CardTitle>{isEdit ? 'Modifier le device' : 'Nouveau device key'}</CardTitle>
             </CardHeader>
             <CardContent>
-                <form onSubmit={handleSubmit} className="space-y-4">
+                <form ref={formRef} onSubmit={handleSubmit} className="space-y-4">
                     <div className="flex gap-2 border-b pb-2">
                         {(['general', 'json', 'key'] as const).map((tab) => (
                             <button
@@ -319,16 +321,18 @@ export function DeviceKeyForm({ device, onSubmit, onCancel, loading }: DeviceKey
                         </div>
                     )}
 
-                    <div className="flex justify-end gap-2 pt-2">
-                        <Button type="button" variant="outline" onClick={onCancel}>
-                            <X className="mr-1.5 h-4 w-4" />
-                            Annuler
-                        </Button>
-                        <Button type="submit" disabled={loading || !form.user_id}>
-                            <Save className="mr-1.5 h-4 w-4" />
-                            {isEdit ? 'Mettre à jour' : 'Créer'}
-                        </Button>
-                    </div>
+                    {!hideFooter && (
+                        <div className="flex justify-end gap-2 pt-2">
+                            <Button type="button" variant="outline" onClick={onCancel}>
+                                <X className="mr-1.5 h-4 w-4" />
+                                Annuler
+                            </Button>
+                            <Button type="submit" disabled={loading || !form.user_id}>
+                                <Save className="mr-1.5 h-4 w-4" />
+                                {isEdit ? 'Mettre à jour' : 'Créer'}
+                            </Button>
+                        </div>
+                    )}
                 </form>
             </CardContent>
         </Card>

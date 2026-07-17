@@ -12,6 +12,7 @@ import type {
     ProductPackagingListResponse,
     CreatePackagingRequest,
     UpdatePackagingRequest,
+    PackagingFormMetadata,
     ProductTranslationsResponse,
     ProductTranslation,
     ProductLogisticsResponse,
@@ -239,6 +240,11 @@ export const productsApi = {
 
     updateLogistics: async (productId: number, payload: ProductLogisticsProfile): Promise<ApiSuccessResponse> => {
         const response = await apiClient.put<ApiSuccessResponse>(`${PRODUCTS_BASE}/${productId}/logistics`, payload);
+        return response.data;
+    },
+
+    getPackagingFormMetadata: async (): Promise<PackagingFormMetadata> => {
+        const response = await apiClient.get<PackagingFormMetadata>('/api/backend/product-packagings/create');
         return response.data;
     },
 

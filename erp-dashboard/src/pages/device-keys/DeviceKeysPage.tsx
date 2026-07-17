@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import toast from 'react-hot-toast';
 import { MasterLayout } from '@/components/layout/MasterLayout';
 import { ActionPanel } from '@/components/layout/ActionPanel';
@@ -51,16 +51,18 @@ import {
     RotateCcw,
     Key,
     KeyRound,
-    X,
+    ArrowLeft,
+    SlidersHorizontal,
     User,
     Building2,
     Hash,
     Activity,
     ShieldCheck,
     Unlock,
+    Save,
+    X,
 } from 'lucide-react';
 import { isAxiosError } from 'axios';
-import { cn } from '@/lib/utils';
 
 function getErrorMessage(error: unknown): string {
     if (isAxiosError(error)) {
@@ -74,13 +76,7 @@ function getErrorMessage(error: unknown): string {
 
 const DEFAULT_FILTERS: DeviceKeyFilters = { per_page: 50, page: 1 };
 
-function DeviceKeyDetail({
-    device,
-    onBack,
-}: {
-    device: DeviceKey;
-    onBack?: () => void;
-}) {
+function DeviceKeyDetail({ device }: { device: DeviceKey }) {
     const isRevoked = !!device.revoked_at;
     const isLocked = !!device.locked_until && new Date(device.locked_until) > new Date();
     const statusAccent = isRevoked ? 'red' : isLocked ? 'amber' : device.activated_at ? 'green' : 'blue';
@@ -91,40 +87,28 @@ function DeviceKeyDetail({
         <div className="h-full bg-slate-50/60 flex flex-col">
             <div className="flex items-center justify-between border-b border-gray-200 bg-white px-6 py-4">
                 <div className="flex items-center gap-3">
-                    <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-sage-100 text-sage-700">
-                        <User className="h-5 w-5" />
+                    <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-gradient-to-br from-sage-500 to-sage-600">
+                        <User className="h-4 w-4 text-white" />
                     </div>
                     <div>
-                        <h1 className="text-xl font-bold text-gray-900">
+                        <h1 className="text-base font-bold text-gray-900">
                             {device.user?.name ?? `Utilisateur #${device.user_id}`}
                         </h1>
-                        <p className="text-sm text-gray-500">{device.user?.email}</p>
+                        <p className="text-xs text-gray-500">{device.user?.email}</p>
                     </div>
                 </div>
-                <div className="flex items-center gap-2">
-                    <div className={cn(
-                        'flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium',
-                        isRevoked ? 'bg-red-100 text-red-700' : isLocked ? 'bg-amber-100 text-amber-700' : device.activated_at ? 'bg-emerald-100 text-emerald-700' : 'bg-blue-100 text-blue-700'
-                    )}>
-                        <StatusIcon className="h-3.5 w-3.5" />
-                        {statusLabel}
-                    </div>
-                    {onBack && (
-                        <Button variant="outline" size="sm" onClick={onBack} className="ml-2">
-                            <X className="mr-1.5 h-4 w-4" />
-                            Fermer
-                        </Button>
-                    )}
+                <div className={[
+                    'flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium',
+                    isRevoked ? 'bg-red-100 text-red-700' : isLocked ? 'bg-amber-100 text-amber-700' : device.activated_at ? 'bg-emerald-100 text-emerald-700' : 'bg-blue-100 text-blue-700',
+                ].join(' ')}>
+                    <StatusIcon className="h-3.5 w-3.5" />
+                    {statusLabel}
                 </div>
             </div>
 
-            <div className="flex-1 overflow-y-auto p-6 space-y-6">
+            <div className="flex-1 overflow-y-auto p-6 space-y-4">
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <DetailCard title="Statut & Sécurité" icon={StatusIcon} accent={statusAccent}>
-                        <div className="flex items-center gap-2 mb-3">
-                            <StatusIcon className="h-5 w-5 text-gray-500" />
-                            <span className="font-semibold text-lg">{statusLabel}</span>
-                        </div>
                         <div className="space-y-2 text-sm">
                             <div className="flex justify-between">
                                 <span className="text-muted-foreground">Tentatives échouées</span>
@@ -217,11 +201,15 @@ function DeviceKeyDetail({
 
 export function DeviceKeysPage() {
     const [filters, setFilters] = useState<DeviceKeyFilters>(DEFAULT_FILTERS);
+    const [pendingFilters, setPendingFilters] = useState<DeviceKeyFilters>(DEFAULT_FILTERS);
     const { data, isLoading, refetch } = useDeviceKeys(filters);
 
-    const [selectedDevice, setSelectedDevice] = useState<DeviceKey | null>(null);
-    const [showDetailPanel, setShowDetailPanel] = useState(false);
-    const [editingDevice, setEditingDevice] = useState<DeviceKey | null | undefined>(undefined);
+    const [viewSelected, setViewSelected] = useState<DeviceKey | null>(null);
+    const [formMode, setFormMode] = useState<'view' | 'create' | 'edit'>('view');
+    const [editTarget, setEditTarget] = useState<DeviceKey | null>(null);
+    const formRef = useRef<HTMLFormElement>(null);
+
+    const [showFilters, setShowFilters] = useState(false);
     const [deviceToDelete, setDeviceToDelete] = useState<DeviceKey | null>(null);
     const [forceDelete, setForceDelete] = useState(false);
     const [pinDevice, setPinDevice] = useState<DeviceKey | null>(null);
@@ -232,7 +220,7 @@ export function DeviceKeysPage() {
     const { data: series = [] } = useTokenSeriesOptions();
 
     const createDevice = useCreateDeviceKey();
-    const updateDevice = useUpdateDeviceKey(editingDevice?.id ?? 0);
+    const updateDevice = useUpdateDeviceKey(editTarget?.id ?? 0);
     const deleteDevice = useDeleteDeviceKey();
     const revokeDevice = useRevokeDeviceKey();
     const restoreDevice = useRestoreDeviceKey();
@@ -240,14 +228,18 @@ export function DeviceKeysPage() {
     const resetDevicePin = useResetDevicePin();
     const setDevicePin = useSetDevicePin();
 
+    const openCreate = () => { setFormMode('create'); setEditTarget(null); };
+    const openEdit = (device: DeviceKey) => { setFormMode('edit'); setEditTarget(device); };
+    const cancelForm = () => setFormMode('view');
+
     const handleSelect = (device: DeviceKey) => {
-        setSelectedDevice(device);
-        setShowDetailPanel(true);
+        setViewSelected(device);
+        if (formMode === 'view') return;
     };
 
     const handleFormSubmit = async (payload: CreateDeviceKeyPayload | UpdateDeviceKeyPayload) => {
         try {
-            if (editingDevice) {
+            if (formMode === 'edit' && editTarget) {
                 await updateDevice.mutateAsync(payload as UpdateDeviceKeyPayload);
                 toast.success('Device mis à jour.');
             } else {
@@ -260,7 +252,7 @@ export function DeviceKeysPage() {
                     { duration: 8000 }
                 );
             }
-            setEditingDevice(undefined);
+            cancelForm();
         } catch (error) {
             toast.error(getErrorMessage(error));
         }
@@ -273,10 +265,7 @@ export function DeviceKeysPage() {
             toast.success('Device supprimé.');
             setDeviceToDelete(null);
             setForceDelete(false);
-            if (selectedDevice?.id === deviceToDelete.id) {
-                setSelectedDevice(null);
-                setShowDetailPanel(false);
-            }
+            if (viewSelected?.id === deviceToDelete.id) setViewSelected(null);
         } catch (error) {
             if (isAxiosError(error) && error.response?.status === 409) {
                 toast.error(error.response.data.message ?? 'Device actif. Cochez "Forcer" ou révoquez-le d\'abord.');
@@ -287,9 +276,9 @@ export function DeviceKeysPage() {
     };
 
     const handleRevoke = async () => {
-        if (!selectedDevice) return;
+        if (!viewSelected) return;
         try {
-            await revokeDevice.mutateAsync(selectedDevice.id);
+            await revokeDevice.mutateAsync(viewSelected.id);
             toast.success('Device révoqué.');
         } catch (error) {
             toast.error(getErrorMessage(error));
@@ -297,9 +286,9 @@ export function DeviceKeysPage() {
     };
 
     const handleRestore = async () => {
-        if (!selectedDevice) return;
+        if (!viewSelected) return;
         try {
-            await restoreDevice.mutateAsync(selectedDevice.id);
+            await restoreDevice.mutateAsync(viewSelected.id);
             toast.success('Device restauré.');
         } catch (error) {
             toast.error(getErrorMessage(error));
@@ -307,9 +296,9 @@ export function DeviceKeysPage() {
     };
 
     const handleRotate = async () => {
-        if (!selectedDevice) return;
+        if (!viewSelected) return;
         try {
-            const result = await rotateDevice.mutateAsync({ id: selectedDevice.id });
+            const result = await rotateDevice.mutateAsync({ id: viewSelected.id });
             toast.success(
                 <div className="space-y-1">
                     <p>Clé tournée.</p>
@@ -323,10 +312,10 @@ export function DeviceKeysPage() {
     };
 
     const handleResetPin = async () => {
-        if (!selectedDevice) return;
+        if (!viewSelected) return;
         try {
-            await resetDevicePin.mutateAsync(selectedDevice.id);
-            toast.success('PIN réinitialisé. L\'utilisateur doit définir un nouveau PIN.');
+            await resetDevicePin.mutateAsync(viewSelected.id);
+            toast.success('PIN réinitialisé.');
         } catch (error) {
             toast.error(getErrorMessage(error));
         }
@@ -347,132 +336,150 @@ export function DeviceKeysPage() {
         }
     };
 
-    const handlePageChange = (page: number) => {
-        setFilters((prev) => ({ ...prev, page }));
+    const handlePageChange = (page: number) => setFilters((prev) => ({ ...prev, page }));
+
+    const applyFilters = () => {
+        setFilters({ ...pendingFilters, page: 1 });
+        setShowFilters(false);
     };
+
+    const resetFilters = () => {
+        setPendingFilters(DEFAULT_FILTERS);
+        setFilters(DEFAULT_FILTERS);
+        setShowFilters(false);
+    };
+
+    const activeFilterCount = [filters.user_id, filters.branch_code, filters.token_series_code, filters.revoked]
+        .filter((v) => v !== undefined && v !== null && v !== '').length;
 
     const userOptions = users.map((u) => ({ value: u.value, label: u.label }));
     const branchOptions = branches.map((b) => ({ value: b.value, label: b.label }));
     const seriesOptions = series.map((s) => ({ value: s.value, label: s.label }));
 
-    const isRevoked = !!selectedDevice?.revoked_at;
+    const isRevoked = !!viewSelected?.revoked_at;
 
-    const actionGroups = [
-        {
-            items: [
-                {
-                    icon: Plus,
-                    label: 'Nouveau device',
-                    variant: 'primary' as const,
-                    onClick: () => setEditingDevice(null),
-                },
-                {
-                    icon: RotateCcw,
-                    label: 'Rafraîchir',
-                    variant: 'default' as const,
-                    onClick: () => refetch(),
-                },
-            ],
-        },
-        ...(selectedDevice
-            ? [
-                {
-                    items: [
-                        {
-                            icon: Edit2,
-                            label: 'Éditer',
-                            variant: 'default' as const,
-                            onClick: () => setEditingDevice(selectedDevice),
-                        },
-                        ...(isRevoked
-                            ? [{
-                                icon: RotateCcw,
-                                label: 'Restaurer',
-                                variant: 'success' as const,
-                                onClick: handleRestore,
-                            }]
-                            : [{
+    const actionGroups = formMode !== 'view'
+        ? [
+            {
+                items: [
+                    {
+                        icon: Save,
+                        label: 'Enregistrer',
+                        variant: 'primary' as const,
+                        onClick: () => formRef.current?.requestSubmit(),
+                    },
+                    {
+                        icon: X,
+                        label: 'Annuler',
+                        variant: 'default' as const,
+                        onClick: cancelForm,
+                    },
+                ],
+            },
+        ]
+        : [
+            {
+                items: [
+                    {
+                        icon: Plus,
+                        label: 'Nouveau device',
+                        variant: 'primary' as const,
+                        onClick: openCreate,
+                    },
+                    {
+                        icon: RotateCcw,
+                        label: 'Rafraîchir',
+                        variant: 'default' as const,
+                        onClick: () => refetch(),
+                    },
+                ],
+            },
+            ...(viewSelected
+                ? [
+                    {
+                        items: [
+                            {
+                                icon: Edit2,
+                                label: 'Éditer',
+                                variant: 'default' as const,
+                                onClick: () => openEdit(viewSelected),
+                            },
+                            ...(isRevoked
+                                ? [{
+                                    icon: RotateCcw,
+                                    label: 'Restaurer',
+                                    variant: 'success' as const,
+                                    onClick: handleRestore,
+                                }]
+                                : [{
+                                    icon: Lock,
+                                    label: 'Révoquer',
+                                    variant: 'warning' as const,
+                                    onClick: handleRevoke,
+                                }]),
+                            {
+                                icon: Key,
+                                label: 'Tourner la clé',
+                                variant: 'primary' as const,
+                                onClick: handleRotate,
+                            },
+                            {
+                                icon: KeyRound,
+                                label: 'Reset PIN',
+                                variant: 'default' as const,
+                                onClick: handleResetPin,
+                            },
+                            {
                                 icon: Lock,
-                                label: 'Révoquer',
-                                variant: 'warning' as const,
-                                onClick: handleRevoke,
-                            }]),
-                        {
-                            icon: Key,
-                            label: 'Tourner la clé',
-                            variant: 'primary' as const,
-                            onClick: handleRotate,
-                        },
-                        {
-                            icon: KeyRound,
-                            label: 'Reset PIN',
-                            variant: 'default' as const,
-                            onClick: handleResetPin,
-                        },
-                        {
-                            icon: Lock,
-                            label: 'Définir PIN',
-                            variant: 'sage' as const,
-                            onClick: () => setPinDevice(selectedDevice),
-                        },
-                        {
-                            icon: Trash2,
-                            label: 'Supprimer',
-                            variant: 'danger' as const,
-                            onClick: () => setDeviceToDelete(selectedDevice),
-                        },
-                    ],
-                },
-            ]
-            : []),
-    ];
+                                label: 'Définir PIN',
+                                variant: 'sage' as const,
+                                onClick: () => setPinDevice(viewSelected),
+                            },
+                            {
+                                icon: Trash2,
+                                label: 'Supprimer',
+                                variant: 'danger' as const,
+                                onClick: () => setDeviceToDelete(viewSelected),
+                            },
+                        ],
+                    },
+                ]
+                : []),
+        ];
 
     return (
         <MasterLayout
             leftContent={
                 <div className="h-full bg-white border-r border-gray-100 flex flex-col">
-                    <div className="p-4 border-b border-gray-100 shrink-0">
-                        <div className="flex items-center gap-2 mb-3">
-                            <Smartphone className="h-5 w-5 text-sage-600" />
+                    <div className="p-3 border-b border-gray-100 shrink-0 space-y-2">
+                        <div className="flex items-center gap-2">
+                            <Smartphone className="h-4 w-4 text-sage-600 shrink-0" />
                             <h1 className="text-sm font-semibold text-gray-900">Clés devices</h1>
+                            {data?.meta?.total !== undefined && (
+                                <span className="text-[10px] text-muted-foreground">({data.meta.total})</span>
+                            )}
                         </div>
-                        <div className="space-y-2">
-                            <SearchableSelect
-                                options={[{ value: '', label: 'Tous les utilisateurs' }, ...userOptions]}
-                                value={filters.user_id ?? ''}
-                                onChange={(value) => setFilters((prev) => ({ ...prev, user_id: value ? Number(value) : undefined, page: 1 }))}
-                                placeholder="Utilisateur"
-                            />
-                            <SearchableSelect
-                                options={[{ value: '', label: 'Toutes les branches' }, ...branchOptions]}
-                                value={filters.branch_code ?? ''}
-                                onChange={(value) => setFilters((prev) => ({ ...prev, branch_code: value ? String(value) : undefined, page: 1 }))}
-                                placeholder="Branche"
-                            />
-                            <SearchableSelect
-                                options={[{ value: '', label: 'Toutes les séries' }, ...seriesOptions]}
-                                value={filters.token_series_code ?? ''}
-                                onChange={(value) => setFilters((prev) => ({ ...prev, token_series_code: value ? String(value) : undefined, page: 1 }))}
-                                placeholder="Série"
-                            />
-                            <SearchableSelect
-                                options={[
-                                    { value: '', label: 'Tous les statuts' },
-                                    { value: 'true', label: 'Révoqués' },
-                                    { value: 'false', label: 'Actifs' },
-                                ]}
-                                value={filters.revoked === undefined ? '' : String(filters.revoked)}
-                                onChange={(value) => setFilters((prev) => ({ ...prev, revoked: value === '' ? undefined : value === 'true', page: 1 }))}
-                                placeholder="Statut"
-                            />
-                        </div>
+                        <button
+                            type="button"
+                            onClick={() => { setPendingFilters(filters); setShowFilters(true); }}
+                            className="relative flex w-full items-center justify-center gap-1.5 rounded-md border border-gray-200 px-2 py-1.5 text-xs text-gray-600 hover:bg-gray-50 transition-colors"
+                        >
+                            <SlidersHorizontal className="h-3 w-3" />
+                            Filtres
+                            {activeFilterCount > 0 && (
+                                <span className="absolute -top-1.5 -right-1.5 flex h-4 w-4 items-center justify-center rounded-full bg-sage-600 text-[9px] font-bold text-white">
+                                    {activeFilterCount}
+                                </span>
+                            )}
+                        </button>
                     </div>
+
                     <div className="flex-1 min-h-0 p-2">
                         <div className="bg-white rounded-lg border border-gray-200 shadow-sm h-full">
                             <DeviceKeysTable
                                 response={data}
                                 loading={isLoading}
-                                selected={selectedDevice}
+                                selected={viewSelected}
                                 onSelect={handleSelect}
                                 onPageChange={handlePageChange}
                             />
@@ -482,18 +489,65 @@ export function DeviceKeysPage() {
             }
             mainContent={
                 <div className="h-full flex flex-col">
-                    <Dialog open={editingDevice !== undefined} onOpenChange={(open) => !open && setEditingDevice(undefined)}>
-                        <DialogContent className="max-w-2xl">
-                            <DeviceKeyForm
-                                key={editingDevice ? `edit-${editingDevice.id}` : 'create'}
-                                device={editingDevice ?? null}
-                                onSubmit={handleFormSubmit}
-                                onCancel={() => setEditingDevice(undefined)}
-                                loading={createDevice.isPending || updateDevice.isPending}
-                            />
+                    {/* Filter modal */}
+                    <Dialog open={showFilters} onOpenChange={setShowFilters}>
+                        <DialogContent className="max-w-sm">
+                            <DialogHeader>
+                                <DialogTitle className="flex items-center gap-2">
+                                    <SlidersHorizontal className="h-4 w-4" />
+                                    Filtres
+                                </DialogTitle>
+                            </DialogHeader>
+                            <div className="space-y-3 py-2">
+                                <div className="space-y-1">
+                                    <Label className="text-xs">Utilisateur</Label>
+                                    <SearchableSelect
+                                        options={[{ value: '', label: 'Tous les utilisateurs' }, ...userOptions]}
+                                        value={pendingFilters.user_id ?? ''}
+                                        onChange={(value) => setPendingFilters((prev) => ({ ...prev, user_id: value ? Number(value) : undefined }))}
+                                        placeholder="Utilisateur"
+                                    />
+                                </div>
+                                <div className="space-y-1">
+                                    <Label className="text-xs">Branche</Label>
+                                    <SearchableSelect
+                                        options={[{ value: '', label: 'Toutes les branches' }, ...branchOptions]}
+                                        value={pendingFilters.branch_code ?? ''}
+                                        onChange={(value) => setPendingFilters((prev) => ({ ...prev, branch_code: value ? String(value) : undefined }))}
+                                        placeholder="Branche"
+                                    />
+                                </div>
+                                <div className="space-y-1">
+                                    <Label className="text-xs">Série</Label>
+                                    <SearchableSelect
+                                        options={[{ value: '', label: 'Toutes les séries' }, ...seriesOptions]}
+                                        value={pendingFilters.token_series_code ?? ''}
+                                        onChange={(value) => setPendingFilters((prev) => ({ ...prev, token_series_code: value ? String(value) : undefined }))}
+                                        placeholder="Série"
+                                    />
+                                </div>
+                                <div className="space-y-1">
+                                    <Label className="text-xs">Statut</Label>
+                                    <SearchableSelect
+                                        options={[
+                                            { value: '', label: 'Tous les statuts' },
+                                            { value: 'true', label: 'Révoqués' },
+                                            { value: 'false', label: 'Actifs' },
+                                        ]}
+                                        value={pendingFilters.revoked === undefined ? '' : String(pendingFilters.revoked)}
+                                        onChange={(value) => setPendingFilters((prev) => ({ ...prev, revoked: value === '' ? undefined : value === 'true' }))}
+                                        placeholder="Statut"
+                                    />
+                                </div>
+                            </div>
+                            <DialogFooter>
+                                <Button variant="outline" onClick={resetFilters}>Réinitialiser</Button>
+                                <Button onClick={applyFilters}>Appliquer</Button>
+                            </DialogFooter>
                         </DialogContent>
                     </Dialog>
 
+                    {/* Delete dialog */}
                     <Dialog open={!!deviceToDelete} onOpenChange={(open) => { if (!open) { setDeviceToDelete(null); setForceDelete(false); } }}>
                         <DialogContent className="max-w-md">
                             <DialogHeader>
@@ -507,8 +561,7 @@ export function DeviceKeysPage() {
                                             Vous allez supprimer le device{' '}
                                             <Badge variant="outline">#{deviceToDelete.id}</Badge> de{' '}
                                             <strong>{deviceToDelete.user?.name ?? `User #${deviceToDelete.user_id}`}</strong>.
-                                            <br />
-                                            <br />
+                                            <br /><br />
                                             {deviceToDelete.revoked_at ? (
                                                 'Cette action est irréversible.'
                                             ) : (
@@ -531,16 +584,13 @@ export function DeviceKeysPage() {
                                 </DialogDescription>
                             </DialogHeader>
                             <DialogFooter>
-                                <Button variant="outline" onClick={() => { setDeviceToDelete(null); setForceDelete(false); }}>
-                                    Annuler
-                                </Button>
-                                <Button variant="destructive" onClick={handleDelete} disabled={deleteDevice.isPending}>
-                                    Supprimer
-                                </Button>
+                                <Button variant="outline" onClick={() => { setDeviceToDelete(null); setForceDelete(false); }}>Annuler</Button>
+                                <Button variant="destructive" onClick={handleDelete} disabled={deleteDevice.isPending}>Supprimer</Button>
                             </DialogFooter>
                         </DialogContent>
                     </Dialog>
 
+                    {/* Set PIN dialog */}
                     <Dialog open={!!pinDevice} onOpenChange={(open) => { if (!open) { setPinDevice(null); setPinValue(''); } }}>
                         <DialogContent className="max-w-sm">
                             <DialogHeader>
@@ -565,28 +615,72 @@ export function DeviceKeysPage() {
                                 />
                             </div>
                             <DialogFooter>
-                                <Button variant="outline" onClick={() => { setPinDevice(null); setPinValue(''); }}>
-                                    Annuler
-                                </Button>
-                                <Button onClick={handleSetPin} disabled={setDevicePin.isPending}>
-                                    Définir
-                                </Button>
+                                <Button variant="outline" onClick={() => { setPinDevice(null); setPinValue(''); }}>Annuler</Button>
+                                <Button onClick={handleSetPin} disabled={setDevicePin.isPending}>Définir</Button>
                             </DialogFooter>
                         </DialogContent>
                     </Dialog>
 
-                    {showDetailPanel && selectedDevice ? (
-                        <DeviceKeyDetail
-                            device={selectedDevice}
-                            onBack={() => setShowDetailPanel(false)}
-                        />
+                    {/* Inline form */}
+                    {formMode !== 'view' ? (
+                        <div className="h-full flex flex-col">
+                            <div className="flex items-center gap-3 border-b border-gray-100 bg-white px-6 py-4 shrink-0">
+                                <button
+                                    type="button"
+                                    onClick={cancelForm}
+                                    className="flex h-7 w-7 items-center justify-center rounded-md text-gray-400 hover:bg-gray-100 hover:text-gray-700 transition-colors"
+                                >
+                                    <ArrowLeft className="h-4 w-4" />
+                                </button>
+                                <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-gradient-to-br from-sage-500 to-sage-600 shrink-0">
+                                    <Smartphone className="h-4 w-4 text-white" />
+                                </div>
+                                <div className="flex-1 min-w-0">
+                                    <h2 className="text-base font-bold text-gray-900 leading-tight">
+                                        {formMode === 'create' ? 'Nouveau device key' : 'Éditer le device'}
+                                    </h2>
+                                    {formMode === 'edit' && editTarget && (
+                                        <p className="text-xs text-gray-500 truncate">
+                                            {editTarget.user?.name ?? `User #${editTarget.user_id}`}
+                                        </p>
+                                    )}
+                                </div>
+                                <span className={[
+                                    'shrink-0 rounded-full px-2 py-0.5 text-[10px] font-semibold',
+                                    formMode === 'create'
+                                        ? 'bg-emerald-100 text-emerald-700'
+                                        : 'bg-amber-100 text-amber-700',
+                                ].join(' ')}>
+                                    {formMode === 'create' ? 'Nouveau' : 'Édition'}
+                                </span>
+                            </div>
+                            <div className="flex-1 overflow-y-auto p-6">
+                                <DeviceKeyForm
+                                    key={editTarget ? `edit-${editTarget.id}` : 'create'}
+                                    device={editTarget}
+                                    onSubmit={handleFormSubmit}
+                                    onCancel={cancelForm}
+                                    loading={createDevice.isPending || updateDevice.isPending}
+                                    formRef={formRef}
+                                    hideFooter
+                                />
+                            </div>
+                        </div>
+                    ) : viewSelected ? (
+                        <DeviceKeyDetail device={viewSelected} />
                     ) : (
                         <div className="flex-1 flex flex-col items-center justify-center p-10 text-center">
-                            <Smartphone className="w-16 h-16 text-gray-300 mb-4" />
+                            <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-gradient-to-br from-sage-100 to-sage-200 mb-4">
+                                <Smartphone className="w-8 h-8 text-sage-600" />
+                            </div>
                             <h3 className="text-lg font-semibold text-gray-700 mb-2">Clés devices</h3>
-                            <p className="text-sm text-gray-500 max-w-md">
-                                Cliquez sur un device dans la liste pour voir ses détails et actions.
+                            <p className="text-sm text-gray-500 max-w-md mb-4">
+                                Sélectionnez un device dans la liste pour voir ses détails et effectuer des actions.
                             </p>
+                            <Button variant="outline" size="sm" onClick={openCreate}>
+                                <Plus className="mr-1.5 h-4 w-4" />
+                                Nouveau device
+                            </Button>
                         </div>
                     )}
                 </div>

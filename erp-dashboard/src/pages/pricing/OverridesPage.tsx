@@ -417,9 +417,17 @@ export function OverridesPage() {
         {
             colId: 'partner_code',
             headerName: 'Code',
-            width: 95,
+            width: 105,
+            resizable: false,
             valueGetter: (p: any) => p.data?.partner?.code ?? `#${p.data?.partner_id}`,
-            cellStyle: { fontFamily: 'monospace', fontSize: '11px', fontWeight: '600', color: '#374151' },
+            cellRenderer: (p: any) => (
+                <div className="flex items-center gap-1.5 h-full">
+                    <div style={{ width: 7, height: 7, borderRadius: '50%', flexShrink: 0, backgroundColor: p.data?.active ? '#10b981' : '#d1d5db' }} />
+                    <span style={{ fontFamily: 'monospace', fontSize: '11px', fontWeight: 600, color: '#374151' }}>
+                        {p.data?.partner?.code ?? `#${p.data?.partner_id}`}
+                    </span>
+                </div>
+            ),
         },
         {
             colId: 'partner_name',
@@ -436,21 +444,6 @@ export function OverridesPage() {
             minWidth: 100,
             valueGetter: (p: any) => p.data?.product?.name ?? `#${p.data?.product_id}`,
             cellStyle: { color: '#6b7280', fontSize: '11px' },
-        },
-        {
-            field: 'active',
-            headerName: '',
-            width: 42,
-            sortable: false,
-            filter: false,
-            cellRenderer: (params: any) => {
-                const ov = params.data as PriceOverride;
-                return (
-                    <div className="flex items-center justify-center h-full">
-                        <span className={`w-2 h-2 rounded-full ${ov.active ? 'bg-emerald-500' : 'bg-gray-300'}`} />
-                    </div>
-                );
-            },
         },
     ], []);
 

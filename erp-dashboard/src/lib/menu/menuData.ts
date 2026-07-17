@@ -30,6 +30,7 @@ import {
   Truck,
   Users,
   Warehouse,
+  Box,
 } from 'lucide-react';
 
 export interface MenuItem {
@@ -674,6 +675,24 @@ export const MENU_MODULES: MenuModule[] = [
             icon: Database,
             description: 'Marques, catégories, unités, TVA, fournisseurs, groupes et pages',
             keywords: ['master data', 'marque', 'catégorie', 'unité', 'tva', 'fournisseur', 'groupe'],
+          },
+          {
+            id: 'base:art:logistics',
+            label: 'Profils Logistiques',
+            route: '/products/logistics',
+            permission: 'admin.master.products',
+            icon: Truck,
+            description: 'Saisir les dimensions et poids par niveau d\'emballage (UNIT / CARTON / PALLET)',
+            keywords: ['logistique', 'poids', 'dimensions', 'emballage', 'colisage', 'palette', 'carton', 'volume'],
+          },
+          {
+            id: 'base:art:packagings',
+            label: 'Colisage / Conditionnements',
+            route: '/products/packagings',
+            permission: 'admin.master.products',
+            icon: Box,
+            description: 'Gérer les unités de commande par produit (Carton x12, Palette x144…) et leurs poids théoriques',
+            keywords: ['colisage', 'conditionnement', 'carton', 'palette', 'unité', 'poids', 'packaging', 'has_colisage'],
           },
         ],
       },

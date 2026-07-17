@@ -1,9 +1,8 @@
 import { useMemo } from 'react';
 import { Button } from '@/components/ui/button';
-import { Badge } from '@/components/ui/badge';
 import { DataGrid } from '@/components/common/DataGrid';
 import type { TokenSerie, TokenSerieListResponse } from '@/types/tokenSeries.types';
-import { cn } from '@/lib/utils';
+import { Globe, Building2, Smartphone } from 'lucide-react';
 
 interface TokenSeriesTableProps {
     response?: TokenSerieListResponse;
@@ -11,34 +10,6 @@ interface TokenSeriesTableProps {
     selected?: TokenSerie | null;
     onSelect: (serie: TokenSerie) => void;
     onPageChange: (page: number) => void;
-}
-
-function ScopeCellRenderer({ value, data }: { value: TokenSerie['scope']; data: TokenSerie }) {
-    const label = value === 'global' ? 'Global' : value === 'branch' ? 'Branche' : 'Device';
-    return (
-        <div className="flex flex-col">
-            <span className="font-medium">{label}</span>
-            {value === 'branch' && data.allowed_branches && (
-                <span className="text-[10px] text-muted-foreground">
-                    {data.allowed_branches.join(', ')}
-                </span>
-            )}
-        </div>
-    );
-}
-
-function StatusCellRenderer({ data }: { data: TokenSerie }) {
-    return (
-        <div className="flex gap-1">
-            {data.is_active ? (
-                <Badge variant="success" className="text-[10px]">Actif</Badge>
-            ) : (
-                <Badge variant="secondary" className="text-[10px]">Inactif</Badge>
-            )}
-            {data.is_default && <Badge variant="outline" className="text-[10px]">Défaut</Badge>}
-            {data.auto_generated && <Badge variant="outline" className="text-[10px]">Auto</Badge>}
-        </div>
-    );
 }
 
 export function TokenSeriesTable({
@@ -54,36 +25,71 @@ export function TokenSeriesTable({
     const lastPage = meta?.last_page ?? 1;
     const total = meta?.total ?? 0;
 
-    const columnDefs = useMemo(
-        () => [
-            {
-                field: 'code',
-                headerName: 'Code',
-                width: 100,
-                cellClass: 'font-mono text-xs',
+    const columnDefs = useMemo(() => [
+        {
+            colId: 'code',
+            headerName: 'Code',
+            width: 120,
+            sortable: true,
+            resizable: false,
+            cellRenderer: (p: any) => (
+                <div className="flex items-center gap-1.5 h-full">
+                    <div
+                        className="shrink-0"
+                        style={{
+                            width: 7, height: 7, borderRadius: '50%',
+                            backgroundColor: p.data?.is_active ? '#10b981' : '#d1d5db',
+                        }}
+                    />
+                    <span style={{ fontFamily: 'monospace', fontSize: '11px', fontWeight: 600, color: '#4338ca' }}>
+                        {p.data?.code ?? '—'}
+                    </span>
+                </div>
+            ),
+        },
+        {
+            field: 'name',
+            headerName: 'Nom',
+            flex: 1,
+            minWidth: 120,
+            resizable: false,
+            cellRenderer: (p: any) => (
+                <div className="flex items-center gap-1.5 h-full min-w-0">
+                    <span style={{ fontSize: '12px', fontWeight: 500, color: '#111827' }} className="truncate">
+                        {p.data?.name}
+                    </span>
+                    {p.data?.is_default && (
+                        <span className="shrink-0 text-[10px] font-medium text-amber-700 bg-amber-50 border border-amber-200 rounded px-1">
+                            Défaut
+                        </span>
+                    )}
+                    {p.data?.auto_generated && (
+                        <span className="shrink-0 text-[10px] font-medium text-gray-500 bg-gray-100 border border-gray-200 rounded px-1">
+                            Auto
+                        </span>
+                    )}
+                </div>
+            ),
+        },
+        {
+            colId: 'scope',
+            headerName: 'Scope',
+            width: 90,
+            resizable: false,
+            cellRenderer: (p: any) => {
+                const scope = p.data?.scope;
+                const Icon = scope === 'global' ? Globe : scope === 'branch' ? Building2 : Smartphone;
+                const label = scope === 'global' ? 'Global' : scope === 'branch' ? 'Branche' : 'Device';
+                const color = scope === 'global' ? '#3b82f6' : scope === 'branch' ? '#f59e0b' : '#10b981';
+                return (
+                    <div className="flex items-center gap-1.5 h-full">
+                        <Icon style={{ width: 12, height: 12, color, flexShrink: 0 }} />
+                        <span style={{ fontSize: '11px', color: '#374151' }}>{label}</span>
+                    </div>
+                );
             },
-            {
-                field: 'name',
-                headerName: 'Nom',
-                minWidth: 140,
-                flex: 1,
-            },
-            {
-                field: 'scope',
-                headerName: 'Scope',
-                width: 120,
-                cellRenderer: ScopeCellRenderer,
-            },
-            {
-                headerName: 'Statut',
-                width: 110,
-                sortable: false,
-                filter: false,
-                cellRenderer: StatusCellRenderer,
-            },
-        ],
-        []
-    );
+        },
+    ], []);
 
     return (
         <div className="flex h-full flex-col">
@@ -94,43 +100,32 @@ export function TokenSeriesTable({
                     loading={loading}
                     pagination={false}
                     rowSelection="single"
-                    onRowSelected={onSelect}
-                    getRowClass={(params: { data: TokenSerie }) =>
-                        cn(params.data.code === selected?.code && 'bg-blue-50/80')
-                    }
+                    suppressAutoFit
+                    onRowClicked={(e: any) => { if (e.data) onSelect(e.data); }}
+                    defaultSelectedIds={(row: any) => row.code === selected?.code}
                 />
             </div>
 
             <div className="border-t p-2">
-                {lastPage > 1 && (
+                {lastPage > 1 ? (
                     <div className="flex items-center justify-between gap-2">
                         <Button
-                            variant="outline"
-                            size="sm"
+                            variant="outline" size="sm"
                             onClick={() => onPageChange(currentPage - 1)}
                             disabled={currentPage <= 1}
-                        >
-                            ‹
-                        </Button>
-                        <span className="text-[10px] text-muted-foreground">
-                            {currentPage} / {lastPage}
-                        </span>
+                        >‹</Button>
+                        <span className="text-[10px] text-muted-foreground">{currentPage} / {lastPage}</span>
                         <Button
-                            variant="outline"
-                            size="sm"
+                            variant="outline" size="sm"
                             onClick={() => onPageChange(currentPage + 1)}
                             disabled={currentPage >= lastPage}
-                        >
-                            ›
-                        </Button>
+                        >›</Button>
                     </div>
-                )}
-
-                {lastPage <= 1 && series.length > 0 && (
+                ) : series.length > 0 ? (
                     <div className="text-[10px] text-muted-foreground text-center">
                         {total} résultat{total > 1 ? 's' : ''}
                     </div>
-                )}
+                ) : null}
             </div>
         </div>
     );

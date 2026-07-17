@@ -336,12 +336,14 @@ export interface PackagingLevel {
 export interface ProductPackaging {
     id: number;
     product_id: number;
+    product?: { id: number; name: string; code: string };
     unit_id: number;
     unit?: Unit;
     quantity: number;
     is_default: boolean;
     packaging_level_id: number | null;
     packagingLevel?: PackagingLevel | null;
+    theoretical_weight?: number | null;
 }
 
 export interface ProductPackagingListResponse {
@@ -356,6 +358,7 @@ export interface CreatePackagingRequest {
     quantity: number;
     is_default?: boolean;
     packaging_level_id?: number | null;
+    theoretical_weight?: number | null;
 }
 
 export interface UpdatePackagingRequest {
@@ -363,6 +366,13 @@ export interface UpdatePackagingRequest {
     quantity?: number;
     is_default?: boolean;
     packaging_level_id?: number | null;
+    theoretical_weight?: number | null;
+}
+
+export interface PackagingFormMetadata {
+    success: boolean;
+    products?: Product[];
+    units?: Unit[];
 }
 
 export interface ProductTranslation {
@@ -383,6 +393,7 @@ export interface ProductLogisticsProfile {
     shipping_level?: 'UNIT' | 'CARTON' | 'PALLET' | string | null;
     stackable?: boolean;
     fragile?: boolean;
+    keep_upright?: boolean;
     temperature_controlled?: boolean;
     packaging_levels?: PackagingLevel[];
 }

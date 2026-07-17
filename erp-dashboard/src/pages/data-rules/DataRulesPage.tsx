@@ -389,27 +389,20 @@ export function DataRulesPage() {
 
     const columnDefs = useMemo<ColDef[]>(() => [
         {
-            colId: 'action_dot',
-            headerName: '',
-            width: 32,
-            sortable: false,
-            filter: false,
-            cellRenderer: (p: any) => {
-                const color = p.data?.action === 'allow' ? '#10b981' : '#ef4444';
-                return (
-                    <div className="flex items-center justify-center h-full">
-                        <div style={{ width: 7, height: 7, borderRadius: '50%', backgroundColor: color, flexShrink: 0 }} />
-                    </div>
-                );
-            },
-        },
-        {
             colId: 'model_type_label',
             headerName: 'Modèle',
             flex: 1,
             minWidth: 100,
             valueGetter: (p: any) => p.data?.model_type_label || getModelTypeLabel(p.data?.model_type ?? ''),
-            cellStyle: { fontSize: '11px', fontWeight: '600', color: '#111827' },
+            cellRenderer: (p: any) => {
+                const color = p.data?.action === 'allow' ? '#10b981' : '#ef4444';
+                return (
+                    <div className="flex items-center gap-2 h-full">
+                        <div style={{ width: 7, height: 7, borderRadius: '50%', backgroundColor: color, flexShrink: 0 }} />
+                        <span style={{ fontSize: '11px', fontWeight: 600, color: '#111827' }}>{p.value}</span>
+                    </div>
+                );
+            },
         },
         {
             colId: 'resource',

@@ -40,6 +40,8 @@ import { MagasinierDechargePage } from '@/pages/magasinier/MagasinierDechargePag
 import { MagasinierReturnsPage } from '@/pages/magasinier/MagasinierReturnsPage';
 import { ProductsPage } from '@/pages/products/ProductsPage';
 import { ProductMasterDataPage } from '@/pages/products/ProductMasterDataPage';
+import { ProductLogisticsPage } from '@/pages/products/ProductLogisticsPage';
+import { ProductPackagingsPage } from '@/pages/products/ProductPackagingsPage';
 import { ConfigurationSettingsPage } from '@/pages/settings/ConfigurationSettingsPage';
 import { PromotionsPage } from '@/pages/promotions/PromotionsPage';
 import { PromotionFormRedesigned } from '@/pages/promotions/components/PromotionFormRedesigned';
@@ -339,6 +341,17 @@ function AppRoutes() {
       <Route path="/products/master-data" element={
         <ProtectedRoute>
           <ProductMasterDataPage />
+        </ProtectedRoute>
+      } />
+
+      <Route path="/products/logistics" element={
+        <ProtectedRoute>
+          <ProductLogisticsPage />
+        </ProtectedRoute>
+      } />
+      <Route path="/products/packagings" element={
+        <ProtectedRoute>
+          <ProductPackagingsPage />
         </ProtectedRoute>
       } />
 

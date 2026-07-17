@@ -5,7 +5,7 @@ import {
     List, Clock, CheckCircle2, TrendingUp,
     UserPlus, FilePlus, PackageCheck, Banknote, Route, Layers,
     Target, AlertTriangle, Import, GitBranch,
-    Calculator, Globe, Cog, FileSearch, RotateCcw, ScanLine,
+    Calculator, Globe, Cog, FileSearch, RotateCcw, ScanLine, Box,
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 
@@ -390,6 +390,8 @@ export const BUSINESS_DOMAINS: BusinessDomain[] = [
                 actions: [
                     { id: 'products',          label: 'Catalogue Produits',  route: '/products',               icon: Package      },
                     { id: 'products-master',   label: 'Master Data Produits', route: '/products/master-data',  icon: Database     },
+                    { id: 'product-logistics',   label: 'Profils Logistiques',  route: '/products/logistics',   icon: Truck        },
+                    { id: 'product-packagings', label: 'Colisage / Cond.',     route: '/products/packagings',  icon: Box          },
                     { id: 'partners',          label: 'Partenaires',          route: '/partners',               icon: Users        },
                     { id: 'partner-balances',  label: 'Soldes Partenaires',   route: '/partners/balances',      icon: Calculator   },
                 ],

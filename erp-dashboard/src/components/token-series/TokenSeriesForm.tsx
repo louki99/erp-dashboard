@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
 import { Input } from '@/components/ui/input';
@@ -22,6 +22,8 @@ interface TokenSeriesFormProps {
     onSubmit: (payload: CreateTokenSeriePayload | UpdateTokenSeriePayload) => void;
     onCancel: () => void;
     loading?: boolean;
+    formRef?: React.RefObject<HTMLFormElement>;
+    hideFooter?: boolean;
 }
 
 const SCOPE_OPTIONS = TOKEN_SERIE_SCOPES.map((scope: TokenSerieScope) => ({ value: scope, label: SCOPE_LABELS[scope] }));
@@ -57,7 +59,7 @@ function getInitialForm(serie: TokenSerie | null | undefined): CreateTokenSerieP
     };
 }
 
-export function TokenSeriesForm({ serie, onSubmit, onCancel, loading }: TokenSeriesFormProps) {
+export function TokenSeriesForm({ serie, onSubmit, onCancel, loading, formRef, hideFooter }: TokenSeriesFormProps) {
     const [form, setForm] = useState<CreateTokenSeriePayload>(() => getInitialForm(serie));
     const [activeTab, setActiveTab] = useState<'general' | 'numbering'>('general');
     const isEdit = Boolean(serie);
@@ -115,7 +117,7 @@ export function TokenSeriesForm({ serie, onSubmit, onCancel, loading }: TokenSer
                 <CardTitle>{isEdit ? 'Modifier la série' : 'Nouvelle série de numérotation'}</CardTitle>
             </CardHeader>
             <CardContent>
-                <form onSubmit={handleSubmit} className="space-y-4">
+                <form ref={formRef} onSubmit={handleSubmit} className="space-y-4">
                     <div className="flex gap-2 border-b pb-2">
                         <button
                             type="button"
@@ -274,16 +276,18 @@ export function TokenSeriesForm({ serie, onSubmit, onCancel, loading }: TokenSer
                         </div>
                     )}
 
-                    <div className="flex justify-end gap-2 pt-2">
-                        <Button type="button" variant="outline" onClick={onCancel}>
-                            <X className="mr-1.5 h-4 w-4" />
-                            Annuler
-                        </Button>
-                        <Button type="submit" disabled={loading}>
-                            <Save className="mr-1.5 h-4 w-4" />
-                            {isEdit ? 'Mettre à jour' : 'Créer'}
-                        </Button>
-                    </div>
+                    {!hideFooter && (
+                        <div className="flex justify-end gap-2 pt-2">
+                            <Button type="button" variant="outline" onClick={onCancel}>
+                                <X className="mr-1.5 h-4 w-4" />
+                                Annuler
+                            </Button>
+                            <Button type="submit" disabled={loading}>
+                                <Save className="mr-1.5 h-4 w-4" />
+                                {isEdit ? 'Mettre à jour' : 'Créer'}
+                            </Button>
+                        </div>
+                    )}
                 </form>
             </CardContent>
         </Card>
