@@ -50,6 +50,8 @@ interface DataGridProps {
     defaultSelectedIds?: (row: any) => boolean;
     getRowId?: (data: any) => string;
     rowHeight?: number;
+    /** Override the header row height. Pass 0 to hide headers entirely. */
+    headerHeight?: number;
     /** When true, columns keep their explicit widths and AG Grid shows a horizontal scrollbar */
     suppressAutoFit?: boolean;
 }
@@ -73,6 +75,7 @@ export const DataGrid = forwardRef<AgGridReact, DataGridProps>(({
     defaultSelectedIds,
     getRowId,
     rowHeight: customRowHeight,
+    headerHeight: customHeaderHeight,
     suppressAutoFit = false,
 }, ref) => {
     const [gridApi, setGridApi] = useState<any>(null);
@@ -184,7 +187,8 @@ export const DataGrid = forwardRef<AgGridReact, DataGridProps>(({
                 onGridReady={onGridReady}
                 getRowId={getRowId}
                 animateRows={true}
-                headerHeight={40}
+                headerHeight={customHeaderHeight ?? 40}
+                floatingFiltersHeight={customHeaderHeight === 0 ? 0 : undefined}
                 rowHeight={customRowHeight ?? 36}
                 loading={loading}
                 paginationPageSize={paginationPageSize}
