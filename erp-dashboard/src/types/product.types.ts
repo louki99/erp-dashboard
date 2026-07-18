@@ -191,6 +191,7 @@ export interface Product {
     meta_title?: string;
     meta_description?: string;
     meta_keywords?: string[];
+    retail_price?: ProductRetailPrice | null;
 }
 
 export interface ProductsListResponse {
@@ -396,6 +397,7 @@ export interface ProductLogisticsProfile {
     keep_upright?: boolean;
     temperature_controlled?: boolean;
     packaging_levels?: PackagingLevel[];
+    transport_category?: string | null;
 }
 
 export interface ProductLogisticsResponse {

@@ -213,9 +213,10 @@ export const productsApi = {
         return response.data;
     },
 
-    getTranslations: async (productId: number): Promise<ProductTranslationsResponse> => {
-        const response = await apiClient.get<ProductTranslationsResponse>(`${PRODUCTS_BASE}/${productId}/translations`);
-        return response.data;
+    getTranslations: async (productId: number): Promise<any> => {
+        const response = await apiClient.get(`${PRODUCTS_BASE}/${productId}/translations`);
+        // Unwrap both { success, data: { translations } } and plain { translations }
+        return response.data?.data ?? response.data;
     },
 
     createTranslation: async (productId: number, payload: ProductTranslation): Promise<ApiSuccessResponse> => {
@@ -325,12 +326,111 @@ export const productsApi = {
     },
 
     getProductSalesGroups: async (params?: { active_only?: boolean; search?: string; paginate?: boolean }): Promise<ProductSalesGroupsResponse> => {
-        const response = await apiClient.get<ProductSalesGroupsResponse>('/api/backend/master-data/product-sales-groups', { params });
+        const response = await apiClient.get<ProductSalesGroupsResponse>('/api/backend/product-sales-groups', { params });
         return response.data;
     },
 
-    getProductPages: async (): Promise<ProductPagesResponse> => {
-        const response = await apiClient.get<ProductPagesResponse>('/api/backend/master-data/product-pages');
+    getProductPages: async (params?: { tree?: boolean }): Promise<ProductPagesResponse> => {
+        const response = await apiClient.get<ProductPagesResponse>('/api/backend/product-pages', { params });
+        return response.data;
+    },
+
+    // GET /categories — manage-products. Falls back to create bundle if primary is empty or errors.
+    getCategoriesList: async (): Promise<any> => {
+        const tryExtract = (body: any): any[] => {
+            if (Array.isArray(body)) return body;
+            if (Array.isArray(body?.data)) return body.data;
+            if (Array.isArray(body?.data?.data)) return body.data.data;
+            if (Array.isArray(body?.data?.categories)) return body.data.categories;
+            if (Array.isArray(body?.categories)) return body.categories;
+            return [];
+        };
+        try {
+            const res = await apiClient.get('/api/backend/categories');
+            const list = tryExtract(res.data);
+            if (list.length > 0) return res.data;
+            // empty → fall through to create-bundle fallback
+        } catch { /* fall through */ }
+        try {
+            const fallback = await apiClient.get('/api/backend/products/create');
+            const body = fallback.data?.data ?? fallback.data;
+            const cats = body?.categories ?? body?.data?.categories ?? [];
+            return { data: cats };
+        } catch {
+            return { data: [] };
+        }
+    },
+
+    // GET /subcategories — manage-products.
+    getSubcategoriesList: async (): Promise<any> => {
+        try {
+            const res = await apiClient.get('/api/backend/subcategories');
+            return res.data;
+        } catch {
+            return { data: [] };
+        }
+    },
+
+    // ─── Per-product classification facet endpoints (§7.1–§7.8) ──────────────
+
+    // GET /products/{id}/categories → { product_id, categories: [...] }
+    getProductCategories: async (productId: number): Promise<{ product_id: number; categories: any[] }> => {
+        const response = await apiClient.get<{ data: { product_id: number; categories: any[] } }>(`${PRODUCTS_BASE}/${productId}/categories`);
+        return response.data.data ?? (response.data as any);
+    },
+
+    updateProductCategories: async (productId: number, categoryIds: number[]): Promise<ApiSuccessResponse> => {
+        const response = await apiClient.put<ApiSuccessResponse>(`${PRODUCTS_BASE}/${productId}/categories`, { category_ids: categoryIds });
+        return response.data;
+    },
+
+    getProductSubcategories: async (productId: number): Promise<{ product_id: number; subcategories: any[] }> => {
+        const response = await apiClient.get<{ data: { product_id: number; subcategories: any[] } }>(`${PRODUCTS_BASE}/${productId}/subcategories`);
+        return response.data.data ?? (response.data as any);
+    },
+
+    updateProductSubcategories: async (productId: number, subcategoryIds: number[]): Promise<ApiSuccessResponse> => {
+        const response = await apiClient.put<ApiSuccessResponse>(`${PRODUCTS_BASE}/${productId}/subcategories`, { subcategory_ids: subcategoryIds });
+        return response.data;
+    },
+
+    getProductVatTaxesFacet: async (productId: number): Promise<{ product_id: number; vat_taxes: any[] }> => {
+        const response = await apiClient.get<{ data: { product_id: number; vat_taxes: any[] } }>(`${PRODUCTS_BASE}/${productId}/vat-taxes`);
+        return response.data.data ?? (response.data as any);
+    },
+
+    updateProductVatTaxesFacet: async (productId: number, vatTaxIds: number[]): Promise<ApiSuccessResponse> => {
+        const response = await apiClient.put<ApiSuccessResponse>(`${PRODUCTS_BASE}/${productId}/vat-taxes`, { vat_tax_ids: vatTaxIds });
+        return response.data;
+    },
+
+    getProductPageFacet: async (productId: number): Promise<{ product_id: number; product_page: any | null }> => {
+        const response = await apiClient.get<{ data: { product_id: number; product_page: any | null } }>(`${PRODUCTS_BASE}/${productId}/page`);
+        return response.data.data ?? (response.data as any);
+    },
+
+    updateProductPageFacet: async (productId: number, code: string | null): Promise<ApiSuccessResponse> => {
+        const response = await apiClient.put<ApiSuccessResponse>(`${PRODUCTS_BASE}/${productId}/page`, { code });
+        return response.data;
+    },
+
+    getProductSalesGroupFacet: async (productId: number): Promise<{ product_id: number; product_sales_group: any | null }> => {
+        const response = await apiClient.get<{ data: { product_id: number; product_sales_group: any | null } }>(`${PRODUCTS_BASE}/${productId}/sales-group`);
+        return response.data.data ?? (response.data as any);
+    },
+
+    updateProductSalesGroupFacet: async (productId: number, code: string | null): Promise<ApiSuccessResponse> => {
+        const response = await apiClient.put<ApiSuccessResponse>(`${PRODUCTS_BASE}/${productId}/sales-group`, { code });
+        return response.data;
+    },
+
+    updateProductBrand: async (productId: number, brandId: number | null): Promise<ApiSuccessResponse> => {
+        const response = await apiClient.put<ApiSuccessResponse>(`${PRODUCTS_BASE}/${productId}/brand`, { brand_id: brandId });
+        return response.data;
+    },
+
+    updateProductUnit: async (productId: number, unitId: number | null): Promise<ApiSuccessResponse> => {
+        const response = await apiClient.put<ApiSuccessResponse>(`${PRODUCTS_BASE}/${productId}/unit`, { unit_id: unitId });
         return response.data;
     },
 

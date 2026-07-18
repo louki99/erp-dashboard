@@ -55,6 +55,28 @@ import {
     useCreateProductSupplier,
     useUpdateProductSupplier,
     useDeleteProductSupplier,
+    useProductRetailPrice,
+    useUpdateRetailPrice,
+    useProductFlags,
+    useUpdateProductFlags,
+    useProductMarketing,
+    useUpdateProductMarketing,
+    useProductSalesGroups,
+    useProductPages,
+    useCategoriesList,
+    useSubcategoriesList,
+    useProductCategories,
+    useUpdateProductCategories,
+    useProductSubcategories,
+    useUpdateProductSubcategories,
+    useProductVatTaxesFacet,
+    useUpdateProductVatTaxes,
+    useProductPageFacet,
+    useUpdateProductPageFacet,
+    useProductSalesGroupFacet,
+    useUpdateProductSalesGroupFacet,
+    useUpdateProductBrand,
+    useUpdateProductUnit,
 } from '@/hooks/products/useProducts';
 import type { Product, ProductFilters } from '@/types/product.types';
 import { productsApi } from '@/services/api/productsApi';
@@ -73,16 +95,17 @@ export const ProductsPage = () => {
     const [showLightbox, setShowLightbox] = useState(false);
     const [openSections, setOpenSections] = useState<Record<string, boolean>>({
         info: true,
+        classification: true,
         pricing: true,
-        price_lists: true,
+        price_lists: false,
         stock: true,
         suppliers: true,
         media: true,
-        custom_fields: true,
-        flags: false,
-        categories: true,
+        custom_fields: false,
+        flags: true,
+        marketing: true,
         packagings: true,
-        translations: true,
+        translations: false,
         logistics: true,
     });
     const [packagingForm, setPackagingForm] = useState<any>({
@@ -95,11 +118,13 @@ export const ProductsPage = () => {
     const [editingPackagingId, setEditingPackagingId] = useState<number | null>(null);
     const [translationForm, setTranslationForm] = useState<any>({ lang: '', name: '', short_description: '', description: '' });
     const [editingTranslationLang, setEditingTranslationLang] = useState<string | null>(null);
+    const [isAddingTranslation, setIsAddingTranslation] = useState(false);
     const [logisticsForm, setLogisticsForm] = useState<any>({
         shipping_level: '',
         stackable: false,
         fragile: false,
         temperature_controlled: false,
+        transport_category: '',
     });
     const [isEditingLogistics, setIsEditingLogistics] = useState(false);
     const [supplierForm, setSupplierForm] = useState<any>({
@@ -113,6 +138,28 @@ export const ProductsPage = () => {
     const [uploadingMainImage, setUploadingMainImage] = useState(false);
     const [uploadingGalleryImages, setUploadingGalleryImages] = useState(false);
     const [deletingGalleryImage, setDeletingGalleryImage] = useState<number | null>(null);
+
+    // ── Per-facet inline edit states ─────────────────────────────────────────
+    const [editingCategoryIds, setEditingCategoryIds] = useState<number[]>([]);
+    const [isEditingCategories, setIsEditingCategories] = useState(false);
+    const [editingSubcategoryIds, setEditingSubcategoryIds] = useState<number[]>([]);
+    const [isEditingSubcategories, setIsEditingSubcategories] = useState(false);
+    const [editingVatTaxIds, setEditingVatTaxIds] = useState<number[]>([]);
+    const [isEditingVatTaxes, setIsEditingVatTaxes] = useState(false);
+    const [editingProductPageCode, setEditingProductPageCode] = useState<string>('');
+    const [isEditingProductPage, setIsEditingProductPage] = useState(false);
+    const [editingSalesGroupCode, setEditingSalesGroupCode] = useState<string>('');
+    const [isEditingSalesGroup, setIsEditingSalesGroup] = useState(false);
+    const [editingBrandId, setEditingBrandId] = useState<string>('');
+    const [isEditingBrand, setIsEditingBrand] = useState(false);
+    const [editingUnitId, setEditingUnitId] = useState<string>('');
+    const [isEditingUnit, setIsEditingUnit] = useState(false);
+    const [retailPriceForm, setRetailPriceForm] = useState({ price_ht: '', price_ttc: '', discount_price: '', ttc_pricing: false });
+    const [isEditingRetailPrice, setIsEditingRetailPrice] = useState(false);
+    const [flagsForm, setFlagsForm] = useState<Record<string, any>>({});
+    const [isEditingFlags, setIsEditingFlags] = useState(false);
+    const [marketingForm, setMarketingForm] = useState<Record<string, any>>({});
+    const [isEditingMarketing, setIsEditingMarketing] = useState(false);
 
     const sectionRefs = useRef<Record<string, HTMLDivElement | null>>({});
     const containerRef = useRef<HTMLDivElement>(null);
@@ -153,6 +200,30 @@ export const ProductsPage = () => {
     const { update: updateProductSupplier, loading: updatingSupplier } = useUpdateProductSupplier();
     const { deleteSupplier: deleteProductSupplier, loading: deletingSupplier } = useDeleteProductSupplier();
 
+    // ── Facet hooks ───────────────────────────────────────────────────────────
+    const { data: retailPriceData, refetch: refetchRetailPrice } = useProductRetailPrice(selected?.id ?? null);
+    const { update: updateRetailPrice, loading: updatingRetailPrice } = useUpdateRetailPrice();
+    const { data: flagsData, refetch: refetchFlags } = useProductFlags(selected?.id ?? null);
+    const { update: updateFlags, loading: updatingFlags } = useUpdateProductFlags();
+    const { data: marketingData, refetch: refetchMarketing } = useProductMarketing(selected?.id ?? null);
+    const { update: updateMarketing, loading: updatingMarketing } = useUpdateProductMarketing();
+    const { data: salesGroupsData } = useProductSalesGroups();
+    const { data: productPagesData } = useProductPages();
+    const { data: categoriesListData } = useCategoriesList();
+    const { data: subcategoriesListData } = useSubcategoriesList();
+    const { update: updateCategories, loading: updatingCategories } = useUpdateProductCategories();
+    const { data: productCategories, loading: categoriesLoadingFacet, refetch: refetchCategories } = useProductCategories(selected?.id ?? null);
+    const { data: productSubcategories, loading: subcategoriesLoading, refetch: refetchSubcategories } = useProductSubcategories(selected?.id ?? null);
+    const { update: updateSubcategories, loading: updatingSubcategories } = useUpdateProductSubcategories();
+    const { data: productVatTaxesFacet, loading: vatTaxesFacetLoading, refetch: refetchVatTaxesFacet } = useProductVatTaxesFacet(selected?.id ?? null);
+    const { update: updateVatTaxesFacet, loading: updatingVatTaxesFacet } = useUpdateProductVatTaxes();
+    const { data: productPageFacet, loading: productPageFacetLoading, refetch: refetchProductPage } = useProductPageFacet(selected?.id ?? null);
+    const { update: updateProductPage, loading: updatingProductPage } = useUpdateProductPageFacet();
+    const { data: salesGroupFacet, loading: salesGroupFacetLoading, refetch: refetchSalesGroup } = useProductSalesGroupFacet(selected?.id ?? null);
+    const { update: updateSalesGroup, loading: updatingSalesGroup } = useUpdateProductSalesGroupFacet();
+    const { update: updateBrand, loading: updatingBrand } = useUpdateProductBrand();
+    const { update: updateUnit, loading: updatingUnit } = useUpdateProductUnit();
+
     const productSuppliers = suppliersData?.suppliers ?? suppliersData?.data ?? [];
 
     const details = detailData?.data?.product || selected;
@@ -160,11 +231,37 @@ export const ProductsPage = () => {
     const stockSummary = stockData?.data || detailData?.data?.stock_summary;
     const stocksByBranch = (stockSummary as any)?.stocks_by_branch || (stockSummary as any)?.by_branch || details?.stocks || [];
 
-    const brands = metadata?.data?.brands || [];
-    const units = metadata?.data?.units || [];
-    const categories = metadata?.data?.categories || [];
-    const vatTaxes = metadata?.data?.vat_taxes || [];
-    const suppliers = metadata?.data?.suppliers || [];
+    // Retail price comes from the dedicated retail_price object (§5 — products.price was dropped)
+    const retailPriceObj = (retailPriceData as any)?.data?.retail_price
+        ?? (retailPriceData as any)?.retail_price
+        ?? details?.retail_price
+        ?? null;
+    const currentPriceHt = retailPriceObj?.price_ht ?? retailPriceObj?.price_ttc ?? null;
+    const currentFlags = (flagsData as any)?.data?.flags ?? (flagsData as any)?.flags ?? details?.flags ?? null;
+    const currentMarketing = (marketingData as any)?.data?.marketing ?? (marketingData as any)?.marketing ?? details?.marketing ?? null;
+
+    const allSalesGroups: any[] = (salesGroupsData as any)?.data ?? (salesGroupsData as any)?.product_sales_groups ?? [];
+    const allProductPages: any[] = (productPagesData as any)?.data ?? (productPagesData as any)?.product_pages ?? [];
+
+    const meta = metadata as any;
+    const brands: any[]    = meta?.data?.brands    || meta?.brands    || [];
+    const units: any[]     = meta?.data?.units     || meta?.units     || [];
+    const vatTaxes: any[]  = meta?.data?.vat_taxes || meta?.vat_taxes || [];
+    const suppliers: any[] = meta?.data?.suppliers || meta?.suppliers || [];
+
+    // Categories picker: dedicated endpoint first, then create-bundle fallback, then metadata direct
+    const metaBundleCategories: any[] =
+        meta?.data?.categories    ||   // { success, data: { categories } }
+        meta?.categories          ||   // { categories } no envelope
+        meta?.data?.data?.categories|| // doubly nested
+        [];
+    // Final fallback: if the list endpoints returned nothing, use the product's own assigned categories
+    // so the user can at least see (and deselect) what is currently assigned.
+    const allCategories: any[] =
+        categoriesListData.length > 0 ? categoriesListData :
+        metaBundleCategories.length > 0 ? metaBundleCategories :
+        (productCategories.length > 0 ? productCategories : []);
+    const allSubcategories: any[] = subcategoriesListData.length > 0 ? subcategoriesListData : [];
     const packagings = packagingsData?.packagings ?? packagingsData?.data ?? [];
     const translations = translationsData?.translations ?? translationsData?.data ?? [];
     const logistics = logisticsData?.logistics ?? logisticsData?.data ?? null;
@@ -197,27 +294,30 @@ export const ProductsPage = () => {
                 valueGetter: (params: any) => params.data?.brand?.name || '-'
             },
             {
-                field: 'price',
-                headerName: 'Prix',
-                width: 120,
-                valueFormatter: (params: any) => `${parseFloat(params.value || 0).toFixed(2)} MAD`
+                headerName: 'Prix B2C HT',
+                width: 130,
+                valueGetter: (params: any) => {
+                    const rp = params.data?.retail_price;
+                    const val = rp?.price_ht ?? rp?.price_ttc ?? null;
+                    return val !== null ? `${parseFloat(val).toFixed(2)} MAD` : '-';
+                },
             },
             {
-                field: 'discount_price',
-                headerName: 'Prix promo',
-                width: 120,
-                valueFormatter: (params: any) => params.value ? `${parseFloat(params.value).toFixed(2)} MAD` : '-'
-            },
-            {
-                field: 'quantity',
-                headerName: 'Stock',
-                width: 100,
+                headerName: 'Stock dispo',
+                width: 110,
+                valueGetter: (params: any) => {
+                    const s = params.data?.stock_summary ?? params.data;
+                    const qty = s?.available_stock ?? s?.available_quantity ?? null;
+                    return qty !== null ? qty : '-';
+                },
                 cellStyle: (params: any) => {
-                    const qty = params.value || 0;
+                    const s = params.data?.stock_summary ?? params.data;
+                    const qty = s?.available_stock ?? s?.available_quantity ?? null;
+                    if (qty === null) return null;
                     if (qty === 0) return { color: '#dc2626' };
                     if (qty < 10) return { color: '#f59e0b' };
                     return { color: '#059669' };
-                }
+                },
             },
             {
                 field: 'is_active',
@@ -232,17 +332,18 @@ export const ProductsPage = () => {
     const tabs: TabItem[] = useMemo(
         () => [
             { id: 'info', label: 'Informations', icon: Package },
-            { id: 'pricing', label: 'Prix', icon: DollarSign },
-            { id: 'price_lists', label: 'Listes de prix', icon: DollarSign },
+            { id: 'classification', label: 'Classification', icon: Tag },
+            { id: 'pricing', label: 'Prix B2C', icon: DollarSign },
+            { id: 'price_lists', label: 'Listes de prix B2B', icon: DollarSign },
             { id: 'stock', label: 'Stock', icon: Box },
             { id: 'suppliers', label: 'Fournisseurs', icon: Package },
             { id: 'packagings', label: 'Colisage', icon: Layers },
             { id: 'logistics', label: 'Logistique', icon: Truck },
+            { id: 'flags', label: 'Options inventaire', icon: CheckCircle2 },
+            { id: 'marketing', label: 'Marketing', icon: BarChart3 },
             { id: 'translations', label: 'Traductions', icon: Globe },
             { id: 'media', label: 'Médias', icon: ImageIcon },
             { id: 'custom_fields', label: 'Champs personnalisés', icon: Tag },
-            { id: 'flags', label: 'Options & Marketing', icon: CheckCircle2 },
-            { id: 'categories', label: 'Catégories', icon: Tag },
         ],
         []
     );
@@ -325,11 +426,11 @@ export const ProductsPage = () => {
             barcode: details?.barcode || '',
             productpage_code: details?.productpage_code || '',
 
-            // Pricing & Inventory
-            price: details?.price || 0,
-            discount_price: details?.discount_price || 0,
+            // Pricing — retail_price (products.price/discount_price were dropped, §1)
+            price: parseFloat(retailPriceObj?.price_ht ?? '0') || 0,
+            discount_price: parseFloat(retailPriceObj?.discount_price ?? '0') || 0,
+            ttc_pricing: retailPriceObj?.ttc_pricing ?? false,
             buy_price: details?.buy_price || 0,
-            quantity: details?.quantity || 0,
             min_order_quantity: details?.min_order_quantity || 1,
             has_colisage: details?.has_colisage || false,
 
@@ -404,12 +505,12 @@ export const ProductsPage = () => {
             return;
         }
 
-        if (!formData.price || formData.price <= 0) {
+        if (isCreateMode && (!formData.price || formData.price <= 0)) {
             toast.error('Le prix doit être supérieur à 0');
             return;
         }
 
-        if (formData.discount_price && formData.discount_price >= formData.price) {
+        if (formData.price > 0 && formData.discount_price && formData.discount_price >= formData.price) {
             toast.error('Le prix promotionnel doit être inférieur au prix normal');
             return;
         }
@@ -631,6 +732,7 @@ export const ProductsPage = () => {
     const resetTranslationForm = () => {
         setTranslationForm({ lang: '', name: '', short_description: '', description: '' });
         setEditingTranslationLang(null);
+        setIsAddingTranslation(false);
     };
 
     const handleSaveTranslation = async () => {
@@ -669,6 +771,7 @@ export const ProductsPage = () => {
 
     const handleEditTranslation = (t: any) => {
         setEditingTranslationLang(t.lang);
+        setIsAddingTranslation(true);
         setTranslationForm({
             lang: t.lang,
             name: t.name,
@@ -704,6 +807,7 @@ export const ProductsPage = () => {
             stackable: logistics?.stackable ?? false,
             fragile: logistics?.fragile ?? false,
             temperature_controlled: logistics?.temperature_controlled ?? false,
+            transport_category: logistics?.transport_category || '',
         });
     };
 
@@ -711,12 +815,18 @@ export const ProductsPage = () => {
         if (!selected?.id) return;
         const toastId = toast.loading('Mise à jour...');
         try {
+            const VALID_SHIPPING_LEVELS = ['UNIT', 'CARTON', 'PALLET'];
             const payload: any = {
                 stackable: !!logisticsForm.stackable,
                 fragile: !!logisticsForm.fragile,
                 temperature_controlled: !!logisticsForm.temperature_controlled,
             };
-            if (logisticsForm.shipping_level) payload.shipping_level = logisticsForm.shipping_level;
+            if (logisticsForm.shipping_level && VALID_SHIPPING_LEVELS.includes(logisticsForm.shipping_level)) {
+                payload.shipping_level = logisticsForm.shipping_level;
+            }
+            if (logisticsForm.transport_category?.trim()) {
+                payload.transport_category = logisticsForm.transport_category.trim();
+            }
             const res = await updateLogistics(selected.id, payload);
             toast.dismiss(toastId);
             if (res.success) {
@@ -803,6 +913,122 @@ export const ProductsPage = () => {
             toast.dismiss(toastId);
             toast.error(e?.response?.data?.message || e.message || 'Erreur');
         }
+    };
+
+    // ── Facet save handlers ───────────────────────────────────────────────────
+
+    const handleSaveCategories = async () => {
+        if (!selected?.id) return;
+        const tid = toast.loading('Mise à jour des catégories...');
+        try {
+            const res = await updateCategories(selected.id, editingCategoryIds);
+            toast.dismiss(tid);
+            if (res.success) { toast.success('Catégories mises à jour'); setIsEditingCategories(false); await refetchCategories(); await refetchDetail(); }
+            else toast.error(res.message || 'Erreur');
+        } catch (e: any) { toast.dismiss(tid); toast.error(e?.response?.data?.message || e.message || 'Erreur'); }
+    };
+
+    const handleSaveSubcategories = async () => {
+        if (!selected?.id) return;
+        const tid = toast.loading('Mise à jour des sous-catégories...');
+        try {
+            const res = await updateSubcategories(selected.id, editingSubcategoryIds);
+            toast.dismiss(tid);
+            if (res.success) { toast.success('Sous-catégories mises à jour'); setIsEditingSubcategories(false); await refetchSubcategories(); await refetchDetail(); }
+            else toast.error(res.message || 'Erreur');
+        } catch (e: any) { toast.dismiss(tid); toast.error(e?.response?.data?.message || e.message || 'Erreur'); }
+    };
+
+    const handleSaveVatTaxes = async () => {
+        if (!selected?.id) return;
+        const tid = toast.loading('Mise à jour de la TVA...');
+        try {
+            const res = await updateVatTaxesFacet(selected.id, editingVatTaxIds);
+            toast.dismiss(tid);
+            if (res.success) { toast.success('TVA mise à jour'); setIsEditingVatTaxes(false); await refetchVatTaxesFacet(); await refetchDetail(); }
+            else toast.error(res.message || 'Erreur');
+        } catch (e: any) { toast.dismiss(tid); toast.error(e?.response?.data?.message || e.message || 'Erreur'); }
+    };
+
+    const handleSaveProductPage = async () => {
+        if (!selected?.id) return;
+        const tid = toast.loading('Mise à jour de la page produit...');
+        try {
+            const res = await updateProductPage(selected.id, editingProductPageCode || null);
+            toast.dismiss(tid);
+            if (res.success) { toast.success('Page produit mise à jour'); setIsEditingProductPage(false); await refetchProductPage(); await refetchDetail(); }
+            else toast.error(res.message || 'Erreur');
+        } catch (e: any) { toast.dismiss(tid); toast.error(e?.response?.data?.message || e.message || 'Erreur'); }
+    };
+
+    const handleSaveSalesGroup = async () => {
+        if (!selected?.id) return;
+        const tid = toast.loading('Mise à jour du groupe vente...');
+        try {
+            const res = await updateSalesGroup(selected.id, editingSalesGroupCode || null);
+            toast.dismiss(tid);
+            if (res.success) { toast.success('Groupe vente mis à jour'); setIsEditingSalesGroup(false); await refetchSalesGroup(); await refetchDetail(); }
+            else toast.error(res.message || 'Erreur');
+        } catch (e: any) { toast.dismiss(tid); toast.error(e?.response?.data?.message || e.message || 'Erreur'); }
+    };
+
+    const handleSaveBrand = async () => {
+        if (!selected?.id) return;
+        const tid = toast.loading('Mise à jour de la marque...');
+        try {
+            const res = await updateBrand(selected.id, editingBrandId ? parseInt(editingBrandId) : null);
+            toast.dismiss(tid);
+            if (res.success) { toast.success('Marque mise à jour'); setIsEditingBrand(false); await refetchDetail(); }
+            else toast.error(res.message || 'Erreur');
+        } catch (e: any) { toast.dismiss(tid); toast.error(e?.response?.data?.message || e.message || 'Erreur'); }
+    };
+
+    const handleSaveUnit = async () => {
+        if (!selected?.id) return;
+        const tid = toast.loading('Mise à jour de l\'unité...');
+        try {
+            const res = await updateUnit(selected.id, editingUnitId ? parseInt(editingUnitId) : null);
+            toast.dismiss(tid);
+            if (res.success) { toast.success('Unité mise à jour'); setIsEditingUnit(false); await refetchDetail(); }
+            else toast.error(res.message || 'Erreur');
+        } catch (e: any) { toast.dismiss(tid); toast.error(e?.response?.data?.message || e.message || 'Erreur'); }
+    };
+
+    const handleSaveRetailPrice = async () => {
+        if (!selected?.id) return;
+        const tid = toast.loading('Mise à jour du prix B2C...');
+        try {
+            const payload: any = { ttc_pricing: retailPriceForm.ttc_pricing };
+            if (retailPriceForm.price_ht) payload.price_ht = parseFloat(retailPriceForm.price_ht);
+            if (retailPriceForm.price_ttc) payload.price_ttc = parseFloat(retailPriceForm.price_ttc);
+            if (retailPriceForm.discount_price) payload.discount_price = parseFloat(retailPriceForm.discount_price);
+            const res = await updateRetailPrice(selected.id, payload);
+            toast.dismiss(tid);
+            if (res.success) { toast.success('Prix B2C mis à jour'); setIsEditingRetailPrice(false); await refetchRetailPrice(); await refetchDetail(); }
+            else toast.error(res.message || 'Erreur');
+        } catch (e: any) { toast.dismiss(tid); toast.error(e?.response?.data?.message || e.message || 'Erreur'); }
+    };
+
+    const handleSaveFlags = async () => {
+        if (!selected?.id) return;
+        const tid = toast.loading('Mise à jour des options...');
+        try {
+            const res = await updateFlags(selected.id, flagsForm);
+            toast.dismiss(tid);
+            if (res.success) { toast.success('Options mises à jour'); setIsEditingFlags(false); await refetchFlags(); await refetchDetail(); }
+            else toast.error(res.message || 'Erreur');
+        } catch (e: any) { toast.dismiss(tid); toast.error(e?.response?.data?.message || e.message || 'Erreur'); }
+    };
+
+    const handleSaveMarketing = async () => {
+        if (!selected?.id) return;
+        const tid = toast.loading('Mise à jour marketing...');
+        try {
+            const res = await updateMarketing(selected.id, marketingForm);
+            toast.dismiss(tid);
+            if (res.success) { toast.success('Marketing mis à jour'); setIsEditingMarketing(false); await refetchMarketing(); await refetchDetail(); }
+            else toast.error(res.message || 'Erreur');
+        } catch (e: any) { toast.dismiss(tid); toast.error(e?.response?.data?.message || e.message || 'Erreur'); }
     };
 
     const handleMainImageChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -1008,7 +1234,7 @@ export const ProductsPage = () => {
                                         <div className="text-right shrink-0">
                                             {!isCreateMode && (
                                                 <div className="text-xl sm:text-2xl font-bold text-sage-600 whitespace-nowrap">
-                                                    {details?.price ? parseFloat(details.price.toString()).toFixed(2) : '0.00'} <span className="text-xs sm:text-sm font-normal text-gray-400">MAD</span>
+                                                    {currentPriceHt !== null ? parseFloat(currentPriceHt.toString()).toFixed(2) : '—'} <span className="text-xs sm:text-sm font-normal text-gray-400">MAD HT</span>
                                                 </div>
                                             )}
                                             {(detailLoading) && (
@@ -1098,10 +1324,10 @@ export const ProductsPage = () => {
                                                     <div>
                                                         <label className="block text-xs text-gray-500 mb-1">Catégories</label>
                                                         <div className="border border-gray-300 rounded-md p-2 max-h-32 overflow-y-auto bg-white">
-                                                            {categories.length === 0 ? (
+                                                            {allCategories.length === 0 ? (
                                                                 <span className="text-xs text-gray-400">Aucune catégorie disponible</span>
                                                             ) : (
-                                                                categories.map((cat: any) => (
+                                                                allCategories.map((cat: any) => (
                                                                     <label key={cat.id} className="flex items-center gap-2 text-sm py-1">
                                                                         <input
                                                                             type="checkbox"
@@ -1144,89 +1370,6 @@ export const ProductsPage = () => {
                                                                         <span>{tax.name} ({tax.percentage}%)</span>
                                                                     </label>
                                                                 ))
-                                                            )}
-                                                        </div>
-                                                    </div>
-
-                                                    {/* Suppliers */}
-                                                    <div>
-                                                        <label className="block text-xs text-gray-500 mb-1">Fournisseurs</label>
-                                                        <div className="border border-gray-300 rounded-md p-2 max-h-48 overflow-y-auto bg-white">
-                                                            {suppliers.length === 0 ? (
-                                                                <span className="text-xs text-gray-400">Aucun fournisseur disponible</span>
-                                                            ) : (
-                                                                suppliers.map((supplier: any) => {
-                                                                    const isSelected = (formData.supplier_ids || []).includes(supplier.id);
-                                                                    const pivot = formData.supplier_pivots?.[supplier.id] || {};
-                                                                    return (
-                                                                        <div key={supplier.id} className="py-1.5 border-b border-gray-100 last:border-0">
-                                                                            <label className="flex items-center gap-2 text-sm">
-                                                                                <input
-                                                                                    type="checkbox"
-                                                                                    checked={isSelected}
-                                                                                    onChange={(e) => {
-                                                                                        const ids = new Set(formData.supplier_ids || []);
-                                                                                        const pivots = { ...(formData.supplier_pivots || {}) };
-                                                                                        if (e.target.checked) {
-                                                                                            ids.add(supplier.id);
-                                                                                            if (!pivots[supplier.id]) pivots[supplier.id] = { cost_price: 0, min_order_qty: 0, lead_time_days: 0, preferred: false };
-                                                                                        } else {
-                                                                                            ids.delete(supplier.id);
-                                                                                            delete pivots[supplier.id];
-                                                                                        }
-                                                                                        setFormData({ ...formData, supplier_ids: Array.from(ids), supplier_pivots: pivots });
-                                                                                    }}
-                                                                                    className="w-4 h-4 text-sage-600 border-gray-300 rounded focus:ring-sage-500"
-                                                                                />
-                                                                                <span className="font-medium">{supplier.name}</span>
-                                                                            </label>
-                                                                            {isSelected && (
-                                                                                <div className="grid grid-cols-3 gap-2 mt-2 ml-6">
-                                                                                    <input
-                                                                                        type="number"
-                                                                                        step="0.01"
-                                                                                        value={pivot.cost_price || ''}
-                                                                                        onChange={(e) => setFormData({
-                                                                                            ...formData,
-                                                                                            supplier_pivots: {
-                                                                                                ...(formData.supplier_pivots || {}),
-                                                                                                [supplier.id]: { ...pivot, cost_price: parseFloat(e.target.value) || 0 }
-                                                                                            }
-                                                                                        })}
-                                                                                        placeholder="Coût"
-                                                                                        className="w-full px-2 py-1 text-xs border border-gray-300 rounded"
-                                                                                    />
-                                                                                    <input
-                                                                                        type="number"
-                                                                                        value={pivot.min_order_qty || ''}
-                                                                                        onChange={(e) => setFormData({
-                                                                                            ...formData,
-                                                                                            supplier_pivots: {
-                                                                                                ...(formData.supplier_pivots || {}),
-                                                                                                [supplier.id]: { ...pivot, min_order_qty: parseInt(e.target.value) || 0 }
-                                                                                            }
-                                                                                        })}
-                                                                                        placeholder="Qté min"
-                                                                                        className="w-full px-2 py-1 text-xs border border-gray-300 rounded"
-                                                                                    />
-                                                                                    <input
-                                                                                        type="number"
-                                                                                        value={pivot.lead_time_days || ''}
-                                                                                        onChange={(e) => setFormData({
-                                                                                            ...formData,
-                                                                                            supplier_pivots: {
-                                                                                                ...(formData.supplier_pivots || {}),
-                                                                                                [supplier.id]: { ...pivot, lead_time_days: parseInt(e.target.value) || 0 }
-                                                                                            }
-                                                                                        })}
-                                                                                        placeholder="Délai (j)"
-                                                                                        className="w-full px-2 py-1 text-xs border border-gray-300 rounded"
-                                                                                    />
-                                                                                </div>
-                                                                            )}
-                                                                        </div>
-                                                                    );
-                                                                })
                                                             )}
                                                         </div>
                                                     </div>
@@ -1371,27 +1514,51 @@ export const ProductsPage = () => {
                                                     </div>
                                                 </div>
                                             ) : (
-                                                <div className="grid grid-cols-2 gap-3">
-                                                    <div className="p-3 rounded border border-gray-100 bg-gray-50">
-                                                        <div className="text-xs text-gray-500">Prix de vente</div>
-                                                        <div className="font-semibold text-gray-900">{parseFloat(details?.price?.toString() || '0').toFixed(2)} MAD</div>
-                                                    </div>
-                                                    <div className="p-3 rounded border border-gray-100 bg-gray-50">
-                                                        <div className="text-xs text-gray-500">Prix promotionnel</div>
-                                                        <div className="font-semibold text-gray-900">
-                                                            {details?.discount_price ? `${parseFloat(details.discount_price.toString()).toFixed(2)} MAD` : '-'}
+                                                <div className="space-y-3">
+                                                    <div className="grid grid-cols-2 gap-3">
+                                                        <div className="p-3 rounded border border-gray-100 bg-gray-50">
+                                                            <div className="text-xs text-gray-500">Prix HT (B2C)</div>
+                                                            <div className="font-semibold text-gray-900">
+                                                                {retailPriceObj?.price_ht ? `${parseFloat(retailPriceObj.price_ht).toFixed(2)} MAD` : <span className="text-gray-400 text-sm">—</span>}
+                                                            </div>
+                                                        </div>
+                                                        <div className="p-3 rounded border border-gray-100 bg-gray-50">
+                                                            <div className="text-xs text-gray-500">Prix TTC (B2C)</div>
+                                                            <div className="font-semibold text-gray-900">
+                                                                {retailPriceObj?.price_ttc ? `${parseFloat(retailPriceObj.price_ttc).toFixed(2)} MAD` : <span className="text-gray-400 text-sm">—</span>}
+                                                            </div>
+                                                        </div>
+                                                        <div className="p-3 rounded border border-gray-100 bg-gray-50">
+                                                            <div className="text-xs text-gray-500">Prix promo</div>
+                                                            <div className="font-semibold text-gray-900">
+                                                                {retailPriceObj?.discount_price ? `${parseFloat(retailPriceObj.discount_price).toFixed(2)} MAD` : <span className="text-gray-400 text-sm">—</span>}
+                                                            </div>
+                                                        </div>
+                                                        <div className="p-3 rounded border border-gray-100 bg-gray-50">
+                                                            <div className="text-xs text-gray-500">Référence prix</div>
+                                                            <div className="font-semibold text-gray-900">
+                                                                {retailPriceObj?.ttc_pricing ? 'TTC' : 'HT'}
+                                                            </div>
                                                         </div>
                                                     </div>
-                                                    <div className="p-3 rounded border border-gray-100 bg-gray-50">
-                                                        <div className="text-xs text-gray-500">Prix d'achat</div>
-                                                        <div className="font-semibold text-gray-900">
-                                                            {details?.buy_price ? `${parseFloat(details.buy_price.toString()).toFixed(2)} MAD` : '-'}
+                                                    {!isEditMode && (
+                                                        <div className="flex justify-end">
+                                                            <button
+                                                                onClick={() => {
+                                                                    setRetailPriceForm({
+                                                                        price_ht: retailPriceObj?.price_ht ?? '',
+                                                                        price_ttc: retailPriceObj?.price_ttc ?? '',
+                                                                        discount_price: retailPriceObj?.discount_price ?? '',
+                                                                        ttc_pricing: retailPriceObj?.ttc_pricing ?? false,
+                                                                    });
+                                                                    setIsEditingRetailPrice(true);
+                                                                }}
+                                                                className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-sage-700 bg-sage-50 hover:bg-sage-100 rounded-lg transition-colors"
+                                                            >
+                                                                <Edit className="w-3.5 h-3.5" /> Modifier le prix B2C
+                                                            </button>
                                                         </div>
-                                                    </div>
-                                                    <div className="p-3 rounded border border-gray-100 bg-gray-50">
-                                                        <div className="text-xs text-gray-500">Qté min. commande</div>
-                                                        <div className="font-semibold text-gray-900">{details?.min_order_quantity || 1}</div>
-                                                    </div>
+                                                    )}
                                                 </div>
                                             )}
                                         </SageCollapsible>
@@ -1878,27 +2045,26 @@ export const ProductsPage = () => {
                                                     <Loader2 className="w-5 h-5 animate-spin mr-2" /> Chargement...
                                                 </div>
                                             ) : (
-                                                <div className="space-y-4">
-                                                    {translations.length === 0 ? (
-                                                        <div className="text-center py-8 text-gray-500 text-sm bg-gray-50 rounded-lg border border-dashed border-gray-200">
-                                                            Aucune traduction définie pour ce produit.
+                                                <div className="space-y-3">
+                                                    {/* Table of existing translations */}
+                                                    {translations.length === 0 && !isAddingTranslation ? (
+                                                        <div className="text-center py-6 text-gray-400 text-sm bg-gray-50 rounded-xl border border-dashed border-gray-200">
+                                                            Aucune traduction définie.
                                                         </div>
-                                                    ) : (
+                                                    ) : translations.length > 0 && (
                                                         <div className="bg-white border border-gray-200 rounded-xl overflow-hidden shadow-sm">
                                                             <table className="w-full border-collapse">
                                                                 <thead>
                                                                     <tr className="bg-gray-50/80 border-b border-gray-200">
-                                                                        <th className="text-left text-[11px] font-semibold text-gray-500 uppercase tracking-wider px-4 py-2.5 w-24">Langue</th>
+                                                                        <th className="text-left text-[11px] font-semibold text-gray-500 uppercase tracking-wider px-4 py-2.5 w-20">Langue</th>
                                                                         <th className="text-left text-[11px] font-semibold text-gray-500 uppercase tracking-wider px-4 py-2.5">Nom</th>
-                                                                        <th className="text-left text-[11px] font-semibold text-gray-500 uppercase tracking-wider px-4 py-2.5">Description courte</th>
-                                                                        {isEditMode && (
-                                                                            <th className="text-center text-[11px] font-semibold text-gray-500 uppercase tracking-wider px-4 py-2.5 w-24">Actions</th>
-                                                                        )}
+                                                                        <th className="text-left text-[11px] font-semibold text-gray-500 uppercase tracking-wider px-4 py-2.5 hidden sm:table-cell">Description courte</th>
+                                                                        <th className="w-20 px-4 py-2.5"></th>
                                                                     </tr>
                                                                 </thead>
                                                                 <tbody>
                                                                     {translations.map((t: any) => (
-                                                                        <tr key={t.lang} className="border-b border-gray-100 last:border-b-0 hover:bg-gray-50/60 transition-colors">
+                                                                        <tr key={t.lang} className={`border-b border-gray-100 last:border-b-0 transition-colors ${editingTranslationLang === t.lang ? 'bg-sage-50/60' : 'hover:bg-gray-50/60'}`}>
                                                                             <td className="px-4 py-3">
                                                                                 <span className="inline-flex items-center px-2 py-0.5 rounded text-[11px] font-bold bg-slate-100 text-slate-700 border border-slate-200 uppercase">
                                                                                     {t.lang}
@@ -1907,33 +2073,31 @@ export const ProductsPage = () => {
                                                                             <td className="px-4 py-3">
                                                                                 <div className="text-sm font-semibold text-gray-900">{t.name}</div>
                                                                                 {t.description && (
-                                                                                    <div className="text-xs text-gray-500 mt-1 line-clamp-2">{t.description}</div>
+                                                                                    <div className="text-xs text-gray-500 mt-0.5 line-clamp-1">{t.description}</div>
                                                                                 )}
                                                                             </td>
-                                                                            <td className="px-4 py-3 text-sm text-gray-700">
+                                                                            <td className="px-4 py-3 text-sm text-gray-600 hidden sm:table-cell">
                                                                                 {t.short_description || <span className="text-xs text-gray-400 italic">—</span>}
                                                                             </td>
-                                                                            {isEditMode && (
-                                                                                <td className="px-4 py-3 text-center">
-                                                                                    <div className="flex items-center justify-center gap-1">
-                                                                                        <button
-                                                                                            onClick={() => handleEditTranslation(t)}
-                                                                                            className="p-1.5 text-gray-400 hover:text-sage-600 hover:bg-sage-50 rounded-lg transition-colors"
-                                                                                            title="Modifier"
-                                                                                        >
-                                                                                            <Edit className="w-3.5 h-3.5" />
-                                                                                        </button>
-                                                                                        <button
-                                                                                            onClick={() => handleDeleteTranslationItem(t.lang)}
-                                                                                            disabled={deletingTranslation}
-                                                                                            className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors disabled:opacity-50"
-                                                                                            title="Supprimer"
-                                                                                        >
-                                                                                            <Trash2 className="w-3.5 h-3.5" />
-                                                                                        </button>
-                                                                                    </div>
-                                                                                </td>
-                                                                            )}
+                                                                            <td className="px-4 py-3">
+                                                                                <div className="flex items-center justify-end gap-1">
+                                                                                    <button
+                                                                                        onClick={() => handleEditTranslation(t)}
+                                                                                        className="p-1.5 text-gray-400 hover:text-sage-600 hover:bg-sage-50 rounded-lg transition-colors"
+                                                                                        title="Modifier"
+                                                                                    >
+                                                                                        <Edit className="w-3.5 h-3.5" />
+                                                                                    </button>
+                                                                                    <button
+                                                                                        onClick={() => handleDeleteTranslationItem(t.lang)}
+                                                                                        disabled={deletingTranslation}
+                                                                                        className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors disabled:opacity-50"
+                                                                                        title="Supprimer"
+                                                                                    >
+                                                                                        <Trash2 className="w-3.5 h-3.5" />
+                                                                                    </button>
+                                                                                </div>
+                                                                            </td>
                                                                         </tr>
                                                                     ))}
                                                                 </tbody>
@@ -1941,15 +2105,21 @@ export const ProductsPage = () => {
                                                         </div>
                                                     )}
 
-                                                    {isEditMode && (
-                                                        <div className="bg-slate-50 border border-gray-200 rounded-xl p-4">
-                                                            <div className="flex items-center gap-2 mb-3">
-                                                                <div className="w-7 h-7 rounded-lg bg-sage-100 flex items-center justify-center">
-                                                                    <Globe className="w-3.5 h-3.5 text-sage-600" />
+                                                    {/* Add / Edit form */}
+                                                    {isAddingTranslation ? (
+                                                        <div className="bg-slate-50 border border-sage-200 rounded-xl p-4">
+                                                            <div className="flex items-center justify-between mb-3">
+                                                                <div className="flex items-center gap-2">
+                                                                    <div className="w-7 h-7 rounded-lg bg-sage-100 flex items-center justify-center">
+                                                                        <Globe className="w-3.5 h-3.5 text-sage-600" />
+                                                                    </div>
+                                                                    <span className="text-sm font-semibold text-gray-800">
+                                                                        {editingTranslationLang ? `Modifier — ${editingTranslationLang.toUpperCase()}` : 'Nouvelle traduction'}
+                                                                    </span>
                                                                 </div>
-                                                                <div className="text-sm font-semibold text-gray-800">
-                                                                    {editingTranslationLang ? 'Modifier la traduction' : 'Ajouter une traduction'}
-                                                                </div>
+                                                                <button onClick={resetTranslationForm} className="p-1 text-gray-400 hover:text-gray-600 rounded-lg">
+                                                                    <X className="w-4 h-4" />
+                                                                </button>
                                                             </div>
                                                             <div className="grid grid-cols-1 sm:grid-cols-4 gap-3 mb-3">
                                                                 <div>
@@ -1961,11 +2131,13 @@ export const ProductsPage = () => {
                                                                         className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-sage-500 disabled:bg-gray-100 disabled:text-gray-500"
                                                                     >
                                                                         <option value="">Choisir...</option>
-                                                                        <option value="fr">Français</option>
-                                                                        <option value="en">English</option>
-                                                                        <option value="ar">العربية</option>
-                                                                        <option value="es">Español</option>
-                                                                        <option value="de">Deutsch</option>
+                                                                        <option value="fr">🇫🇷 Français</option>
+                                                                        <option value="en">🇬🇧 English</option>
+                                                                        <option value="ar">🇸🇦 العربية</option>
+                                                                        <option value="es">🇪🇸 Español</option>
+                                                                        <option value="de">🇩🇪 Deutsch</option>
+                                                                        <option value="pt">🇵🇹 Português</option>
+                                                                        <option value="it">🇮🇹 Italiano</option>
                                                                     </select>
                                                                 </div>
                                                                 <div className="sm:col-span-3">
@@ -2003,22 +2175,23 @@ export const ProductsPage = () => {
                                                                 <button
                                                                     onClick={handleSaveTranslation}
                                                                     disabled={creatingTranslation || updatingTranslation}
-                                                                    className="inline-flex items-center gap-1.5 px-4 py-2 bg-sage-600 text-white text-xs font-semibold rounded-lg hover:bg-sage-700 disabled:opacity-50 transition-colors shadow-sm"
+                                                                    className="inline-flex items-center gap-1.5 px-4 py-2 bg-sage-600 text-white text-xs font-semibold rounded-lg hover:bg-sage-700 disabled:opacity-50 transition-colors"
                                                                 >
-                                                                    {creatingTranslation || updatingTranslation ? (
-                                                                        <Loader2 className="w-3 h-3 animate-spin" />
-                                                                    ) : editingTranslationLang ? 'Mettre à jour' : 'Ajouter'}
+                                                                    {(creatingTranslation || updatingTranslation) && <Loader2 className="w-3 h-3 animate-spin" />}
+                                                                    {editingTranslationLang ? 'Mettre à jour' : 'Ajouter'}
                                                                 </button>
-                                                                {editingTranslationLang && (
-                                                                    <button
-                                                                        onClick={resetTranslationForm}
-                                                                        className="px-4 py-2 text-gray-600 text-xs font-semibold hover:bg-gray-200/60 rounded-lg transition-colors"
-                                                                    >
-                                                                        Annuler
-                                                                    </button>
-                                                                )}
+                                                                <button onClick={resetTranslationForm} className="px-4 py-2 text-gray-600 text-xs font-semibold hover:bg-gray-200/60 rounded-lg transition-colors">
+                                                                    Annuler
+                                                                </button>
                                                             </div>
                                                         </div>
+                                                    ) : (
+                                                        <button
+                                                            onClick={() => { resetTranslationForm(); setIsAddingTranslation(true); }}
+                                                            className="w-full py-2.5 border border-dashed border-sage-300 text-sage-600 text-xs font-semibold rounded-xl hover:bg-sage-50 transition-colors flex items-center justify-center gap-1.5"
+                                                        >
+                                                            <Plus className="w-3.5 h-3.5" /> Ajouter une traduction
+                                                        </button>
                                                     )}
                                                 </div>
                                             )}
@@ -2048,12 +2221,22 @@ export const ProductsPage = () => {
                                                                         onChange={(e) => setLogisticsForm({ ...logisticsForm, shipping_level: e.target.value })}
                                                                         className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-sage-500"
                                                                     >
-                                                                        <option value="">—</option>
-                                                                        <option value="standard">Standard</option>
-                                                                        <option value="express">Express</option>
-                                                                        <option value="freight">Fret</option>
-                                                                        <option value="dangerous">Matières dangereuses</option>
+                                                                        <option value="">— auto-inféré —</option>
+                                                                        <option value="UNIT">UNIT — Unité</option>
+                                                                        <option value="CARTON">CARTON — Carton</option>
+                                                                        <option value="PALLET">PALLET — Palette</option>
                                                                     </select>
+                                                                </div>
+                                                                <div>
+                                                                    <label className="block text-[11px] font-medium text-gray-500 mb-1">Catégorie transport <span className="text-gray-400">(libre)</span></label>
+                                                                    <input
+                                                                        type="text"
+                                                                        maxLength={50}
+                                                                        value={logisticsForm.transport_category}
+                                                                        onChange={(e) => setLogisticsForm({ ...logisticsForm, transport_category: e.target.value })}
+                                                                        className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-sage-500"
+                                                                        placeholder="ex: DANGEROUS, PHARMA…"
+                                                                    />
                                                                 </div>
                                                             </div>
                                                             <div className="flex flex-wrap gap-4 mb-4">
@@ -2141,6 +2324,14 @@ export const ProductsPage = () => {
                                                                             </div>
                                                                         </div>
                                                                     </div>
+                                                                    {logistics.transport_category && (
+                                                                        <div className="pt-3 border-t border-gray-100">
+                                                                            <span className="text-xs font-medium text-gray-500">Catégorie transport : </span>
+                                                                            <span className="inline-flex items-center px-2 py-0.5 rounded text-[11px] font-semibold bg-orange-50 text-orange-700 border border-orange-100 font-mono">
+                                                                                {logistics.transport_category}
+                                                                            </span>
+                                                                        </div>
+                                                                    )}
                                                                 </div>
                                                             )}
                                                             {isEditMode && (
@@ -2458,12 +2649,12 @@ export const ProductsPage = () => {
                                         </SageCollapsible>
                                     </div>
 
-                                    {/* Flags & Marketing Section */}
-                                    <div ref={el => { sectionRefs.current['flags'] = el; }}>
+                                    {/* [legacy flags+marketing merged section — replaced by dedicated sections below] */}
+                                    <div ref={el => { sectionRefs.current['_flags_legacy'] = el; }} style={{ display: 'none' }}>
                                         <SageCollapsible
                                             title="Options & Marketing"
-                                            isOpen={openSections['flags'] ?? false}
-                                            onOpenChange={(open) => toggleSection('flags', open)}
+                                            isOpen={false}
+                                            onOpenChange={() => {}}
                                         >
                                             {isEditMode ? (
                                                 <div className="space-y-4">
@@ -2698,23 +2889,460 @@ export const ProductsPage = () => {
                                         </SageCollapsible>
                                     </div>
 
-                                    {/* Categories Section */}
-                                    <div ref={el => { sectionRefs.current['categories'] = el; }}>
+                                    {/* ── Classification Section (§7.1–7.6) ───────────────────────── */}
+                                    <div ref={el => { sectionRefs.current['classification'] = el; }}>
                                         <SageCollapsible
-                                            title="Catégories"
-                                            isOpen={openSections['categories']}
-                                            onOpenChange={(open) => toggleSection('categories', open)}
+                                            title="Classification"
+                                            isOpen={openSections['classification']}
+                                            onOpenChange={(open) => toggleSection('classification', open)}
                                         >
-                                            {details?.categories && details.categories.length > 0 ? (
-                                                <div className="flex flex-wrap gap-2">
-                                                    {details.categories.map((cat: any) => (
-                                                        <span key={cat.id} className="px-3 py-1 bg-sage-100 text-sage-700 rounded-full text-sm">
-                                                            {cat.name}
-                                                        </span>
-                                                    ))}
+                                            <div className="space-y-4">
+                                                {/* Brand */}
+                                                <div className="flex items-center justify-between p-3 rounded-lg border border-gray-100 bg-gray-50">
+                                                    <div>
+                                                        <div className="text-xs text-gray-500 mb-0.5">Marque</div>
+                                                        {isEditingBrand ? (
+                                                            <div className="flex items-center gap-2">
+                                                                <select value={editingBrandId} onChange={e => setEditingBrandId(e.target.value)}
+                                                                    className="px-2 py-1 text-sm border border-gray-300 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-sage-500">
+                                                                    <option value="">— aucune —</option>
+                                                                    {brands.map((b: any) => <option key={b.id} value={b.id}>{b.name}</option>)}
+                                                                </select>
+                                                                <button onClick={handleSaveBrand} disabled={updatingBrand}
+                                                                    className="px-2.5 py-1 bg-sage-600 text-white text-xs font-semibold rounded-lg hover:bg-sage-700 disabled:opacity-50">
+                                                                    {updatingBrand ? <Loader2 className="w-3 h-3 animate-spin" /> : 'OK'}
+                                                                </button>
+                                                                <button onClick={() => setIsEditingBrand(false)} className="px-2.5 py-1 text-gray-500 text-xs hover:bg-gray-200 rounded-lg">✕</button>
+                                                            </div>
+                                                        ) : (
+                                                            <div className="font-semibold text-gray-900">{details?.brand?.name || <span className="text-gray-400 text-sm italic">—</span>}</div>
+                                                        )}
+                                                    </div>
+                                                    {!isEditingBrand && !isEditMode && (
+                                                        <button onClick={() => { setEditingBrandId(String(details?.brand_id ?? '')); setIsEditingBrand(true); }}
+                                                            className="p-1.5 text-gray-400 hover:text-sage-600 hover:bg-sage-50 rounded-lg transition-colors"><Edit className="w-3.5 h-3.5" /></button>
+                                                    )}
+                                                </div>
+
+                                                {/* Unit */}
+                                                <div className="flex items-center justify-between p-3 rounded-lg border border-gray-100 bg-gray-50">
+                                                    <div>
+                                                        <div className="text-xs text-gray-500 mb-0.5">Unité de base</div>
+                                                        {isEditingUnit ? (
+                                                            <div className="flex items-center gap-2">
+                                                                <select value={editingUnitId} onChange={e => setEditingUnitId(e.target.value)}
+                                                                    className="px-2 py-1 text-sm border border-gray-300 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-sage-500">
+                                                                    <option value="">— aucune —</option>
+                                                                    {units.map((u: any) => <option key={u.id} value={u.id}>{u.name}</option>)}
+                                                                </select>
+                                                                <button onClick={handleSaveUnit} disabled={updatingUnit}
+                                                                    className="px-2.5 py-1 bg-sage-600 text-white text-xs font-semibold rounded-lg hover:bg-sage-700 disabled:opacity-50">
+                                                                    {updatingUnit ? <Loader2 className="w-3 h-3 animate-spin" /> : 'OK'}
+                                                                </button>
+                                                                <button onClick={() => setIsEditingUnit(false)} className="px-2.5 py-1 text-gray-500 text-xs hover:bg-gray-200 rounded-lg">✕</button>
+                                                            </div>
+                                                        ) : (
+                                                            <div className="font-semibold text-gray-900">{details?.unit?.name || <span className="text-gray-400 text-sm italic">—</span>}</div>
+                                                        )}
+                                                    </div>
+                                                    {!isEditingUnit && !isEditMode && (
+                                                        <button onClick={() => { setEditingUnitId(String(details?.unit_id ?? '')); setIsEditingUnit(true); }}
+                                                            className="p-1.5 text-gray-400 hover:text-sage-600 hover:bg-sage-50 rounded-lg transition-colors"><Edit className="w-3.5 h-3.5" /></button>
+                                                    )}
+                                                </div>
+
+                                                {/* Categories */}
+                                                <div className="p-3 rounded-lg border border-gray-100 bg-gray-50">
+                                                    <div className="flex items-center justify-between mb-2">
+                                                        <div className="text-xs text-gray-500">Catégories</div>
+                                                        {!isEditingCategories && !isEditMode && (
+                                                            <button onClick={() => { setEditingCategoryIds(productCategories.map((c: any) => c.id)); setIsEditingCategories(true); }}
+                                                                className="p-1.5 text-gray-400 hover:text-sage-600 hover:bg-sage-50 rounded-lg transition-colors"><Edit className="w-3.5 h-3.5" /></button>
+                                                        )}
+                                                    </div>
+                                                    {isEditingCategories ? (
+                                                        <div>
+                                                            <div className="border border-gray-300 rounded-lg p-2 max-h-36 overflow-y-auto bg-white mb-2">
+                                                                {allCategories.map((cat: any) => (
+                                                                    <label key={cat.id} className="flex items-center gap-2 text-sm py-1 cursor-pointer">
+                                                                        <input type="checkbox" checked={editingCategoryIds.includes(cat.id)}
+                                                                            onChange={e => { const s = new Set(editingCategoryIds); e.target.checked ? s.add(cat.id) : s.delete(cat.id); setEditingCategoryIds(Array.from(s)); }}
+                                                                            className="w-4 h-4 text-sage-600 border-gray-300 rounded" />
+                                                                        <span>{cat.name}</span>
+                                                                    </label>
+                                                                ))}
+                                                                {allCategories.length === 0 && <span className="text-xs text-gray-400">Aucune catégorie disponible</span>}
+                                                            </div>
+                                                            <div className="flex gap-2">
+                                                                <button onClick={handleSaveCategories} disabled={updatingCategories}
+                                                                    className="px-3 py-1.5 bg-sage-600 text-white text-xs font-semibold rounded-lg hover:bg-sage-700 disabled:opacity-50">
+                                                                    {updatingCategories ? <Loader2 className="w-3 h-3 animate-spin inline" /> : 'Enregistrer'}
+                                                                </button>
+                                                                <button onClick={() => setIsEditingCategories(false)} className="px-3 py-1.5 text-gray-600 text-xs hover:bg-gray-200 rounded-lg">Annuler</button>
+                                                            </div>
+                                                        </div>
+                                                    ) : categoriesLoadingFacet ? (
+                                                        <Loader2 className="w-4 h-4 animate-spin text-gray-400" />
+                                                    ) : (
+                                                        <div className="flex flex-wrap gap-1.5">
+                                                            {productCategories.length > 0
+                                                                ? productCategories.map((c: any) => <span key={c.id} className="px-2 py-0.5 bg-sage-100 text-sage-700 rounded-full text-xs font-medium">{c.name}</span>)
+                                                                : <span className="text-xs text-gray-400 italic">Aucune</span>}
+                                                        </div>
+                                                    )}
+                                                </div>
+
+                                                {/* Subcategories */}
+                                                <div className="p-3 rounded-lg border border-gray-100 bg-gray-50">
+                                                    <div className="flex items-center justify-between mb-2">
+                                                        <div className="text-xs text-gray-500">Sous-catégories</div>
+                                                        {!isEditingSubcategories && !isEditMode && (
+                                                            <button onClick={() => { setEditingSubcategoryIds(productSubcategories.map((s: any) => s.id)); setIsEditingSubcategories(true); }}
+                                                                className="p-1.5 text-gray-400 hover:text-sage-600 hover:bg-sage-50 rounded-lg transition-colors"><Edit className="w-3.5 h-3.5" /></button>
+                                                        )}
+                                                    </div>
+                                                    {isEditingSubcategories ? (
+                                                        <div>
+                                                            <div className="border border-gray-300 rounded-lg p-2 max-h-36 overflow-y-auto bg-white mb-2">
+                                                                {allSubcategories.map((sc: any) => (
+                                                                    <label key={sc.id} className="flex items-center gap-2 text-sm py-1 cursor-pointer">
+                                                                        <input type="checkbox" checked={editingSubcategoryIds.includes(sc.id)}
+                                                                            onChange={e => { const s = new Set(editingSubcategoryIds); e.target.checked ? s.add(sc.id) : s.delete(sc.id); setEditingSubcategoryIds(Array.from(s)); }}
+                                                                            className="w-4 h-4 text-sage-600 border-gray-300 rounded" />
+                                                                        <span>{sc.name}</span>
+                                                                    </label>
+                                                                ))}
+                                                                {allSubcategories.length === 0 && <span className="text-xs text-gray-400">Aucune sous-catégorie disponible</span>}
+                                                            </div>
+                                                            <div className="flex gap-2">
+                                                                <button onClick={handleSaveSubcategories} disabled={updatingSubcategories}
+                                                                    className="px-3 py-1.5 bg-sage-600 text-white text-xs font-semibold rounded-lg hover:bg-sage-700 disabled:opacity-50">
+                                                                    {updatingSubcategories ? <Loader2 className="w-3 h-3 animate-spin inline" /> : 'Enregistrer'}
+                                                                </button>
+                                                                <button onClick={() => setIsEditingSubcategories(false)} className="px-3 py-1.5 text-gray-600 text-xs hover:bg-gray-200 rounded-lg">Annuler</button>
+                                                            </div>
+                                                        </div>
+                                                    ) : subcategoriesLoading ? (
+                                                        <Loader2 className="w-4 h-4 animate-spin text-gray-400" />
+                                                    ) : (
+                                                        <div className="flex flex-wrap gap-1.5">
+                                                            {productSubcategories.length > 0
+                                                                ? productSubcategories.map((sc: any) => <span key={sc.id} className="px-2 py-0.5 bg-indigo-100 text-indigo-700 rounded-full text-xs font-medium">{sc.name}</span>)
+                                                                : <span className="text-xs text-gray-400 italic">Aucune</span>}
+                                                        </div>
+                                                    )}
+                                                </div>
+
+                                                {/* VAT Taxes */}
+                                                <div className="p-3 rounded-lg border border-gray-100 bg-gray-50">
+                                                    <div className="flex items-center justify-between mb-2">
+                                                        <div className="text-xs text-gray-500">Taxes TVA <span className="text-gray-400">(seule la 1ère est utilisée pour le calcul des prix)</span></div>
+                                                        {!isEditingVatTaxes && !isEditMode && (
+                                                            <button onClick={() => { setEditingVatTaxIds(productVatTaxesFacet.map((t: any) => t.id)); setIsEditingVatTaxes(true); }}
+                                                                className="p-1.5 text-gray-400 hover:text-sage-600 hover:bg-sage-50 rounded-lg transition-colors"><Edit className="w-3.5 h-3.5" /></button>
+                                                        )}
+                                                    </div>
+                                                    {isEditingVatTaxes ? (
+                                                        <div>
+                                                            <div className="border border-gray-300 rounded-lg p-2 max-h-36 overflow-y-auto bg-white mb-2">
+                                                                {vatTaxes.map((t: any) => (
+                                                                    <label key={t.id} className="flex items-center gap-2 text-sm py-1 cursor-pointer">
+                                                                        <input type="checkbox" checked={editingVatTaxIds.includes(t.id)}
+                                                                            onChange={e => { const s = new Set(editingVatTaxIds); e.target.checked ? s.add(t.id) : s.delete(t.id); setEditingVatTaxIds(Array.from(s)); }}
+                                                                            className="w-4 h-4 text-sage-600 border-gray-300 rounded" />
+                                                                        <span>{t.name} ({t.percentage ?? t.rate}%)</span>
+                                                                    </label>
+                                                                ))}
+                                                            </div>
+                                                            <div className="flex gap-2">
+                                                                <button onClick={handleSaveVatTaxes} disabled={updatingVatTaxesFacet}
+                                                                    className="px-3 py-1.5 bg-sage-600 text-white text-xs font-semibold rounded-lg hover:bg-sage-700 disabled:opacity-50">
+                                                                    {updatingVatTaxesFacet ? <Loader2 className="w-3 h-3 animate-spin inline" /> : 'Enregistrer'}
+                                                                </button>
+                                                                <button onClick={() => setIsEditingVatTaxes(false)} className="px-3 py-1.5 text-gray-600 text-xs hover:bg-gray-200 rounded-lg">Annuler</button>
+                                                            </div>
+                                                        </div>
+                                                    ) : vatTaxesFacetLoading ? (
+                                                        <Loader2 className="w-4 h-4 animate-spin text-gray-400" />
+                                                    ) : (
+                                                        <div className="flex flex-wrap gap-1.5">
+                                                            {productVatTaxesFacet.length > 0
+                                                                ? productVatTaxesFacet.map((t: any, i: number) => (
+                                                                    <span key={t.id} className={`px-2 py-0.5 rounded-full text-xs font-medium ${i === 0 ? 'bg-purple-100 text-purple-700 ring-1 ring-purple-400' : 'bg-gray-100 text-gray-600'}`}>
+                                                                        {t.name} ({t.percentage ?? t.rate}%) {i === 0 ? '✓' : ''}
+                                                                    </span>
+                                                                ))
+                                                                : <span className="text-xs text-gray-400 italic">Aucune TVA</span>}
+                                                        </div>
+                                                    )}
+                                                </div>
+
+                                                {/* Product Page */}
+                                                <div className="flex items-center justify-between p-3 rounded-lg border border-gray-100 bg-gray-50">
+                                                    <div className="flex-1 min-w-0">
+                                                        <div className="text-xs text-gray-500 mb-0.5">Page produit (classification X3)</div>
+                                                        {isEditingProductPage ? (
+                                                            <div className="flex items-center gap-2 mt-1">
+                                                                <select value={editingProductPageCode} onChange={e => setEditingProductPageCode(e.target.value)}
+                                                                    className="flex-1 px-2 py-1 text-sm border border-gray-300 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-sage-500">
+                                                                    <option value="">— aucune —</option>
+                                                                    {allProductPages.map((p: any) => <option key={p.code} value={p.code}>{p.code} — {p.name}</option>)}
+                                                                </select>
+                                                                <button onClick={handleSaveProductPage} disabled={updatingProductPage}
+                                                                    className="px-2.5 py-1 bg-sage-600 text-white text-xs font-semibold rounded-lg hover:bg-sage-700 disabled:opacity-50">
+                                                                    {updatingProductPage ? <Loader2 className="w-3 h-3 animate-spin" /> : 'OK'}
+                                                                </button>
+                                                                <button onClick={() => setIsEditingProductPage(false)} className="px-2.5 py-1 text-gray-500 text-xs hover:bg-gray-200 rounded-lg">✕</button>
+                                                            </div>
+                                                        ) : productPageFacetLoading ? (
+                                                            <Loader2 className="w-4 h-4 animate-spin text-gray-400" />
+                                                        ) : productPageFacet ? (
+                                                            <div>
+                                                                <div className="font-semibold text-gray-900 text-sm">{productPageFacet.name}</div>
+                                                                <div className="text-xs text-gray-400 font-mono">{productPageFacet.code}</div>
+                                                            </div>
+                                                        ) : (
+                                                            <span className="text-gray-400 text-sm italic">—</span>
+                                                        )}
+                                                    </div>
+                                                    {!isEditingProductPage && !isEditMode && (
+                                                        <button onClick={() => { setEditingProductPageCode(productPageFacet?.code ?? ''); setIsEditingProductPage(true); }}
+                                                            className="p-1.5 text-gray-400 hover:text-sage-600 hover:bg-sage-50 rounded-lg transition-colors shrink-0 ml-2"><Edit className="w-3.5 h-3.5" /></button>
+                                                    )}
+                                                </div>
+
+                                                {/* Sales Group */}
+                                                <div className="flex items-center justify-between p-3 rounded-lg border border-gray-100 bg-gray-50">
+                                                    <div className="flex-1 min-w-0">
+                                                        <div className="text-xs text-gray-500 mb-0.5">Groupe vente</div>
+                                                        {isEditingSalesGroup ? (
+                                                            <div className="flex items-center gap-2 mt-1">
+                                                                <select value={editingSalesGroupCode} onChange={e => setEditingSalesGroupCode(e.target.value)}
+                                                                    className="flex-1 px-2 py-1 text-sm border border-gray-300 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-sage-500">
+                                                                    <option value="">— aucun —</option>
+                                                                    {allSalesGroups.map((sg: any) => <option key={sg.code} value={sg.code}>{sg.code} — {sg.name}</option>)}
+                                                                </select>
+                                                                <button onClick={handleSaveSalesGroup} disabled={updatingSalesGroup}
+                                                                    className="px-2.5 py-1 bg-sage-600 text-white text-xs font-semibold rounded-lg hover:bg-sage-700 disabled:opacity-50">
+                                                                    {updatingSalesGroup ? <Loader2 className="w-3 h-3 animate-spin" /> : 'OK'}
+                                                                </button>
+                                                                <button onClick={() => setIsEditingSalesGroup(false)} className="px-2.5 py-1 text-gray-500 text-xs hover:bg-gray-200 rounded-lg">✕</button>
+                                                            </div>
+                                                        ) : salesGroupFacetLoading ? (
+                                                            <Loader2 className="w-4 h-4 animate-spin text-gray-400" />
+                                                        ) : salesGroupFacet ? (
+                                                            <div>
+                                                                <div className="font-semibold text-gray-900 text-sm">{salesGroupFacet.name}</div>
+                                                                <div className="text-xs text-gray-400 font-mono">{salesGroupFacet.code}</div>
+                                                            </div>
+                                                        ) : (
+                                                            <span className="text-gray-400 text-sm italic">—</span>
+                                                        )}
+                                                    </div>
+                                                    {!isEditingSalesGroup && !isEditMode && (
+                                                        <button onClick={() => { setEditingSalesGroupCode(salesGroupFacet?.code ?? ''); setIsEditingSalesGroup(true); }}
+                                                            className="p-1.5 text-gray-400 hover:text-sage-600 hover:bg-sage-50 rounded-lg transition-colors shrink-0 ml-2"><Edit className="w-3.5 h-3.5" /></button>
+                                                    )}
+                                                </div>
+                                            </div>
+                                        </SageCollapsible>
+                                    </div>
+
+                                    {/* ── Retail Price Modal ────────────────────────────────────────── */}
+                                    {isEditingRetailPrice && (
+                                        <div className="fixed inset-0 z-[500] flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm" onClick={() => setIsEditingRetailPrice(false)}>
+                                            <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md p-6" onClick={e => e.stopPropagation()}>
+                                                <div className="flex items-center gap-3 mb-5">
+                                                    <div className="w-9 h-9 rounded-xl bg-sage-50 flex items-center justify-center"><DollarSign className="w-5 h-5 text-sage-600" /></div>
+                                                    <div>
+                                                        <h3 className="text-sm font-bold text-gray-900">Prix B2C / Rayon</h3>
+                                                        <p className="text-xs text-gray-400">Pas le prix B2B — géré via les listes de prix</p>
+                                                    </div>
+                                                    <button onClick={() => setIsEditingRetailPrice(false)} className="ml-auto p-1.5 text-gray-400 hover:text-gray-600 rounded-lg"><X className="w-4 h-4" /></button>
+                                                </div>
+                                                <div className="space-y-3">
+                                                    <div className="grid grid-cols-2 gap-3">
+                                                        <div>
+                                                            <label className="block text-xs font-medium text-gray-500 mb-1">Prix HT (MAD)</label>
+                                                            <input type="number" step="0.01" value={retailPriceForm.price_ht}
+                                                                onChange={e => setRetailPriceForm(f => ({ ...f, price_ht: e.target.value }))}
+                                                                className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-sage-500" placeholder="0.00" />
+                                                        </div>
+                                                        <div>
+                                                            <label className="block text-xs font-medium text-gray-500 mb-1">Prix TTC (MAD)</label>
+                                                            <input type="number" step="0.01" value={retailPriceForm.price_ttc}
+                                                                onChange={e => setRetailPriceForm(f => ({ ...f, price_ttc: e.target.value }))}
+                                                                className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-sage-500" placeholder="0.00" />
+                                                        </div>
+                                                    </div>
+                                                    <div>
+                                                        <label className="block text-xs font-medium text-gray-500 mb-1">Prix promotionnel HT (MAD)</label>
+                                                        <input type="number" step="0.01" value={retailPriceForm.discount_price}
+                                                            onChange={e => setRetailPriceForm(f => ({ ...f, discount_price: e.target.value }))}
+                                                            className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-sage-500" placeholder="0.00" />
+                                                    </div>
+                                                    <label className="flex items-center gap-2 text-sm cursor-pointer">
+                                                        <input type="checkbox" checked={retailPriceForm.ttc_pricing}
+                                                            onChange={e => setRetailPriceForm(f => ({ ...f, ttc_pricing: e.target.checked }))}
+                                                            className="w-4 h-4 text-sage-600 border-gray-300 rounded" />
+                                                        <span className="text-gray-700">Référence TTC (le prix TTC fait foi)</span>
+                                                    </label>
+                                                </div>
+                                                <div className="flex gap-2 mt-5">
+                                                    <button onClick={handleSaveRetailPrice} disabled={updatingRetailPrice}
+                                                        className="flex-1 py-2.5 bg-sage-600 text-white text-sm font-semibold rounded-xl hover:bg-sage-700 disabled:opacity-50 inline-flex items-center justify-center gap-2">
+                                                        {updatingRetailPrice ? <Loader2 className="w-4 h-4 animate-spin" /> : null} Enregistrer
+                                                    </button>
+                                                    <button onClick={() => setIsEditingRetailPrice(false)} className="px-4 py-2.5 text-gray-600 text-sm font-medium hover:bg-gray-100 rounded-xl">Annuler</button>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    )}
+
+                                    {/* ── Flags Section (§7.9) ──────────────────────────────────────── */}
+                                    <div ref={el => { sectionRefs.current['flags'] = el; }}>
+                                        <SageCollapsible
+                                            title="Options d'inventaire"
+                                            isOpen={openSections['flags']}
+                                            onOpenChange={(open) => toggleSection('flags', open)}
+                                        >
+                                            {isEditingFlags ? (
+                                                <div className="space-y-4">
+                                                    <div className="grid grid-cols-2 gap-x-6 gap-y-3">
+                                                        {([
+                                                            ['is_salable', 'Vendable'],
+                                                            ['is_returnable', 'Retournable'],
+                                                            ['is_discountable', 'Remisable'],
+                                                            ['is_backorder_allowed', 'Commande en rupture'],
+                                                            ['is_batch_managed', 'Gestion par lot'],
+                                                            ['is_expirable', 'Périssable / DLC'],
+                                                            ['is_serialized', 'Sérialisé (N/S)'],
+                                                            ['is_weight_managed', 'Géré par poids'],
+                                                            ['is_consignment', 'Consignation'],
+                                                            ['decimal_quantity_allowed', 'Qté décimale'],
+                                                            ['requires_preparation', 'Préparation requise'],
+                                                            ['allow_partial_delivery', 'Livraison partielle'],
+                                                        ] as [string, string][]).map(([key, label]) => (
+                                                            <label key={key} className="flex items-center gap-2 text-sm cursor-pointer">
+                                                                <input type="checkbox" checked={!!flagsForm[key]}
+                                                                    onChange={e => setFlagsForm(f => ({ ...f, [key]: e.target.checked }))}
+                                                                    className="w-4 h-4 text-sage-600 border-gray-300 rounded focus:ring-sage-500" />
+                                                                <span>{label}</span>
+                                                            </label>
+                                                        ))}
+                                                    </div>
+                                                    <div className="flex gap-2 pt-2 border-t border-gray-100">
+                                                        <button onClick={handleSaveFlags} disabled={updatingFlags}
+                                                            className="px-4 py-2 bg-sage-600 text-white text-xs font-semibold rounded-lg hover:bg-sage-700 disabled:opacity-50 inline-flex items-center gap-1.5">
+                                                            {updatingFlags ? <Loader2 className="w-3 h-3 animate-spin" /> : null} Enregistrer
+                                                        </button>
+                                                        <button onClick={() => setIsEditingFlags(false)} className="px-4 py-2 text-gray-600 text-xs font-semibold hover:bg-gray-200/60 rounded-lg">Annuler</button>
+                                                    </div>
                                                 </div>
                                             ) : (
-                                                <div className="text-center py-4 text-gray-500 text-sm">Aucune catégorie assignée</div>
+                                                <div className="space-y-3">
+                                                    {currentFlags ? (
+                                                        <div className="grid grid-cols-2 gap-2">
+                                                            {([
+                                                                ['is_salable', 'Vendable'],
+                                                                ['is_returnable', 'Retournable'],
+                                                                ['is_discountable', 'Remisable'],
+                                                                ['is_backorder_allowed', 'Commande en rupture'],
+                                                                ['is_batch_managed', 'Gestion par lot'],
+                                                                ['is_expirable', 'Périssable / DLC'],
+                                                                ['is_serialized', 'Sérialisé'],
+                                                                ['is_weight_managed', 'Par poids'],
+                                                                ['is_consignment', 'Consignation'],
+                                                                ['decimal_quantity_allowed', 'Qté décimale'],
+                                                                ['requires_preparation', 'Préparation'],
+                                                                ['allow_partial_delivery', 'Livraison partielle'],
+                                                            ] as [string, string][]).map(([key, label]) => (
+                                                                <div key={key} className="flex items-center gap-2 text-sm">
+                                                                    {currentFlags[key]
+                                                                        ? <CheckCircle2 className="w-4 h-4 text-green-500 shrink-0" />
+                                                                        : <XCircle className="w-4 h-4 text-gray-200 shrink-0" />}
+                                                                    <span className={currentFlags[key] ? 'text-gray-800' : 'text-gray-400'}>{label}</span>
+                                                                </div>
+                                                            ))}
+                                                        </div>
+                                                    ) : <div className="text-center py-4 text-gray-400 text-sm">Aucune option définie</div>}
+                                                    <div className="flex justify-end pt-2 border-t border-gray-100">
+                                                        <button onClick={() => { setFlagsForm({ ...currentFlags }); setIsEditingFlags(true); }}
+                                                            className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-sage-700 bg-sage-50 hover:bg-sage-100 rounded-lg transition-colors">
+                                                            <Edit className="w-3.5 h-3.5" /> Modifier
+                                                        </button>
+                                                    </div>
+                                                </div>
+                                            )}
+                                        </SageCollapsible>
+                                    </div>
+
+                                    {/* ── Marketing Section (§7.10) ─────────────────────────────────── */}
+                                    <div ref={el => { sectionRefs.current['marketing'] = el; }}>
+                                        <SageCollapsible
+                                            title="Marketing & Visibilité"
+                                            isOpen={openSections['marketing']}
+                                            onOpenChange={(open) => toggleSection('marketing', open)}
+                                        >
+                                            {isEditingMarketing ? (
+                                                <div className="space-y-3">
+                                                    <div className="grid grid-cols-2 gap-x-6 gap-y-3">
+                                                        {([
+                                                            ['is_featured', 'Produit vedette'],
+                                                            ['is_free_good', 'Produit gratuit (offert)'],
+                                                            ['is_quotation_required', 'Devis requis'],
+                                                            ['is_visible_individually', 'Visible individuellement'],
+                                                            ['is_ideal_orderable', 'Commandable en ligne'],
+                                                            ['is_slow_moving', 'Rotation lente'],
+                                                            ['is_sold_separately', 'Vendu séparément'],
+                                                            ['requires_login_to_view', 'Connexion requise pour voir'],
+                                                        ] as [string, string][]).map(([key, label]) => (
+                                                            <label key={key} className="flex items-center gap-2 text-sm cursor-pointer">
+                                                                <input type="checkbox" checked={!!marketingForm[key]}
+                                                                    onChange={e => setMarketingForm(f => ({ ...f, [key]: e.target.checked }))}
+                                                                    className="w-4 h-4 text-sage-600 border-gray-300 rounded focus:ring-sage-500" />
+                                                                <span>{label}</span>
+                                                            </label>
+                                                        ))}
+                                                    </div>
+                                                    <div className="flex gap-2 pt-2 border-t border-gray-100">
+                                                        <button onClick={handleSaveMarketing} disabled={updatingMarketing}
+                                                            className="px-4 py-2 bg-sage-600 text-white text-xs font-semibold rounded-lg hover:bg-sage-700 disabled:opacity-50 inline-flex items-center gap-1.5">
+                                                            {updatingMarketing ? <Loader2 className="w-3 h-3 animate-spin" /> : null} Enregistrer
+                                                        </button>
+                                                        <button onClick={() => setIsEditingMarketing(false)} className="px-4 py-2 text-gray-600 text-xs font-semibold hover:bg-gray-200/60 rounded-lg">Annuler</button>
+                                                    </div>
+                                                </div>
+                                            ) : (
+                                                <div className="space-y-3">
+                                                    {currentMarketing ? (
+                                                        <div className="grid grid-cols-2 gap-2">
+                                                            {([
+                                                                ['is_featured', 'En vedette'],
+                                                                ['is_free_good', 'Produit offert'],
+                                                                ['is_quotation_required', 'Devis requis'],
+                                                                ['is_visible_individually', 'Visible indiv.'],
+                                                                ['is_ideal_orderable', 'Commandable'],
+                                                                ['is_slow_moving', 'Rotation lente'],
+                                                                ['is_sold_separately', 'Vendu séparément'],
+                                                                ['requires_login_to_view', 'Login requis'],
+                                                            ] as [string, string][]).map(([key, label]) => (
+                                                                <div key={key} className="flex items-center gap-2 text-sm">
+                                                                    {currentMarketing[key]
+                                                                        ? <CheckCircle2 className="w-4 h-4 text-sage-500 shrink-0" />
+                                                                        : <XCircle className="w-4 h-4 text-gray-200 shrink-0" />}
+                                                                    <span className={currentMarketing[key] ? 'text-gray-800' : 'text-gray-400'}>{label}</span>
+                                                                </div>
+                                                            ))}
+                                                        </div>
+                                                    ) : <div className="text-center py-4 text-gray-400 text-sm">Aucune option marketing</div>}
+                                                    <div className="flex justify-end pt-2 border-t border-gray-100">
+                                                        <button onClick={() => { setMarketingForm({ ...currentMarketing }); setIsEditingMarketing(true); }}
+                                                            className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-sage-700 bg-sage-50 hover:bg-sage-100 rounded-lg transition-colors">
+                                                            <Edit className="w-3.5 h-3.5" /> Modifier
+                                                        </button>
+                                                    </div>
+                                                </div>
                                             )}
                                         </SageCollapsible>
                                     </div>

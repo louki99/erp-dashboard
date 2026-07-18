@@ -796,3 +796,255 @@ export const useProductPages = () => {
 
     return { data, loading, error, refetch: fetchPages };
 };
+
+// ─── Subcategories dropdown list ─────────────────────────────────────────────
+
+// Handles all common Laravel list response shapes:
+// 1. [...] direct array
+// 2. { data: [...] }  plain envelope
+// 3. { data: { data: [...] } }  paginated inside envelope
+// 4. { current_page, data: [...] }  raw Laravel paginator (no envelope)
+const extractList = (body: any): any[] => {
+    if (Array.isArray(body)) return body;                                    // [...] direct
+    if (Array.isArray(body?.data)) return body.data;                        // { data: [...] }
+    if (Array.isArray(body?.data?.data)) return body.data.data;             // { data: { data: [...] } } paginated
+    if (Array.isArray(body?.data?.categories)) return body.data.categories; // { data: { categories: [...] } } ← THE MISSING CASE
+    if (Array.isArray(body?.data?.subcategories)) return body.data.subcategories;
+    if (Array.isArray(body?.categories)) return body.categories;            // { categories: [...] }
+    if (Array.isArray(body?.subcategories)) return body.subcategories;
+    if (Array.isArray(body?.items)) return body.items;
+    return [];
+};
+
+export const useCategoriesList = () => {
+    const [data, setData] = useState<any[]>([]);
+    const [loading, setLoading] = useState(false);
+
+    useEffect(() => {
+        setLoading(true);
+
+        // Primary: master-data/categories endpoint (paginate=false to get full list)
+        productsApi.getCategories({ paginate: false })
+            .then(res => {
+                // getCategories returns { success, data?: Category[] }
+                const list = extractList(res);
+                console.debug('[useCategoriesList] master-data/categories raw:', res, '→ extracted:', list.length);
+                if (list.length > 0) {
+                    setData(list);
+                    return;
+                }
+                // Fallback: legacy /categories endpoint
+                return productsApi.getCategoriesList().then(fallbackRes => {
+                    const fallbackList = extractList(fallbackRes);
+                    console.debug('[useCategoriesList] /categories fallback raw:', fallbackRes, '→ extracted:', fallbackList.length);
+                    setData(fallbackList);
+                });
+            })
+            .catch((err) => {
+                console.error('[useCategoriesList] failed:', err?.response?.status, err?.message);
+                // Last resort: legacy /categories endpoint
+                productsApi.getCategoriesList()
+                    .then(res => setData(extractList(res)))
+                    .catch(() => setData([]));
+            })
+            .finally(() => setLoading(false));
+    }, []);
+
+    return { data, loading };
+};
+
+export const useSubcategoriesList = () => {
+    const [data, setData] = useState<any[]>([]);
+    const [loading, setLoading] = useState(false);
+
+    useEffect(() => {
+        setLoading(true);
+        // Primary: master-data/sub-categories endpoint
+        productsApi.getSubcategories({ paginate: false })
+            .then(res => {
+                const list = extractList(res);
+                console.debug('[useSubcategoriesList] master-data/sub-categories raw:', res, '→ extracted:', list.length);
+                if (list.length > 0) {
+                    setData(list);
+                    return;
+                }
+                // Fallback: legacy /subcategories endpoint
+                return productsApi.getSubcategoriesList().then(fallbackRes => {
+                    const fallbackList = extractList(fallbackRes);
+                    console.debug('[useSubcategoriesList] /subcategories fallback raw:', fallbackRes, '→ extracted:', fallbackList.length);
+                    setData(fallbackList);
+                });
+            })
+            .catch((err) => {
+                console.error('[useSubcategoriesList] failed:', err?.response?.status, err?.message);
+                productsApi.getSubcategoriesList()
+                    .then(res => setData(extractList(res)))
+                    .catch(() => setData([]));
+            })
+            .finally(() => setLoading(false));
+    }, []);
+
+    return { data, loading };
+};
+
+// ─── Per-product facet hooks (§7.1–§7.8) ─────────────────────────────────────
+
+export const useProductCategories = (productId: number | null) => {
+    const [data, setData] = useState<any[]>([]);
+    const [loading, setLoading] = useState(false);
+
+    const fetch = async () => {
+        if (!productId) { setData([]); return; }
+        setLoading(true);
+        try {
+            const res = await productsApi.getProductCategories(productId);
+            setData(res.categories ?? []);
+        } catch { setData([]); }
+        finally { setLoading(false); }
+    };
+
+    useEffect(() => { fetch(); }, [productId]);
+    return { data, loading, refetch: fetch };
+};
+
+export const useUpdateProductCategories = () => {
+    const [loading, setLoading] = useState(false);
+    const update = async (productId: number, categoryIds: number[]): Promise<ApiSuccessResponse> => {
+        setLoading(true);
+        try { return await productsApi.updateProductCategories(productId, categoryIds); }
+        finally { setLoading(false); }
+    };
+    return { update, loading };
+};
+
+export const useProductSubcategories = (productId: number | null) => {
+    const [data, setData] = useState<any[]>([]);
+    const [loading, setLoading] = useState(false);
+
+    const fetch = async () => {
+        if (!productId) { setData([]); return; }
+        setLoading(true);
+        try {
+            const res = await productsApi.getProductSubcategories(productId);
+            setData(res.subcategories ?? []);
+        } catch { setData([]); }
+        finally { setLoading(false); }
+    };
+
+    useEffect(() => { fetch(); }, [productId]);
+    return { data, loading, refetch: fetch };
+};
+
+export const useUpdateProductSubcategories = () => {
+    const [loading, setLoading] = useState(false);
+    const update = async (productId: number, ids: number[]): Promise<ApiSuccessResponse> => {
+        setLoading(true);
+        try { return await productsApi.updateProductSubcategories(productId, ids); }
+        finally { setLoading(false); }
+    };
+    return { update, loading };
+};
+
+export const useProductVatTaxesFacet = (productId: number | null) => {
+    const [data, setData] = useState<any[]>([]);
+    const [loading, setLoading] = useState(false);
+
+    const fetch = async () => {
+        if (!productId) { setData([]); return; }
+        setLoading(true);
+        try {
+            const res = await productsApi.getProductVatTaxesFacet(productId);
+            setData(res.vat_taxes ?? []);
+        } catch { setData([]); }
+        finally { setLoading(false); }
+    };
+
+    useEffect(() => { fetch(); }, [productId]);
+    return { data, loading, refetch: fetch };
+};
+
+export const useUpdateProductVatTaxes = () => {
+    const [loading, setLoading] = useState(false);
+    const update = async (productId: number, vatTaxIds: number[]): Promise<ApiSuccessResponse> => {
+        setLoading(true);
+        try { return await productsApi.updateProductVatTaxesFacet(productId, vatTaxIds); }
+        finally { setLoading(false); }
+    };
+    return { update, loading };
+};
+
+export const useProductPageFacet = (productId: number | null) => {
+    const [data, setData] = useState<any | null>(null);
+    const [loading, setLoading] = useState(false);
+
+    const fetch = async () => {
+        if (!productId) { setData(null); return; }
+        setLoading(true);
+        try {
+            const res = await productsApi.getProductPageFacet(productId);
+            setData(res.product_page ?? null);
+        } catch { setData(null); }
+        finally { setLoading(false); }
+    };
+
+    useEffect(() => { fetch(); }, [productId]);
+    return { data, loading, refetch: fetch };
+};
+
+export const useUpdateProductPageFacet = () => {
+    const [loading, setLoading] = useState(false);
+    const update = async (productId: number, code: string | null): Promise<ApiSuccessResponse> => {
+        setLoading(true);
+        try { return await productsApi.updateProductPageFacet(productId, code); }
+        finally { setLoading(false); }
+    };
+    return { update, loading };
+};
+
+export const useProductSalesGroupFacet = (productId: number | null) => {
+    const [data, setData] = useState<any | null>(null);
+    const [loading, setLoading] = useState(false);
+
+    const fetch = async () => {
+        if (!productId) { setData(null); return; }
+        setLoading(true);
+        try {
+            const res = await productsApi.getProductSalesGroupFacet(productId);
+            setData(res.product_sales_group ?? null);
+        } catch { setData(null); }
+        finally { setLoading(false); }
+    };
+
+    useEffect(() => { fetch(); }, [productId]);
+    return { data, loading, refetch: fetch };
+};
+
+export const useUpdateProductSalesGroupFacet = () => {
+    const [loading, setLoading] = useState(false);
+    const update = async (productId: number, code: string | null): Promise<ApiSuccessResponse> => {
+        setLoading(true);
+        try { return await productsApi.updateProductSalesGroupFacet(productId, code); }
+        finally { setLoading(false); }
+    };
+    return { update, loading };
+};
+
+export const useUpdateProductBrand = () => {
+    const [loading, setLoading] = useState(false);
+    const update = async (productId: number, brandId: number | null): Promise<ApiSuccessResponse> => {
+        setLoading(true);
+        try { return await productsApi.updateProductBrand(productId, brandId); }
+        finally { setLoading(false); }
+    };
+    return { update, loading };
+};
+
+export const useUpdateProductUnit = () => {
+    const [loading, setLoading] = useState(false);
+    const update = async (productId: number, unitId: number | null): Promise<ApiSuccessResponse> => {
+        setLoading(true);
+        try { return await productsApi.updateProductUnit(productId, unitId); }
+        finally { setLoading(false); }
+    };
+    return { update, loading };
+};
