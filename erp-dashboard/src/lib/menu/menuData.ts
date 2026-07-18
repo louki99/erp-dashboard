@@ -23,6 +23,7 @@ import {
   ScanLine,
   Settings,
   Shield,
+  ShieldAlert,
   ShoppingCart,
   Sliders,
   Star,
@@ -808,7 +809,7 @@ export const MENU_MODULES: MenuModule[] = [
           { id: 'admin:sec:gouvernance', label: 'Gouvernance', route: '/data-rules', permission: 'admin.access-control.data-rules.manage' },
           { id: 'admin:sec:token-series', label: 'Séries de numérotation', route: '/token-series', permission: 'admin.access-control.token-series.manage' },
           { id: 'admin:sec:device-keys', label: 'Clés devices', route: '/device-keys', permission: 'admin.access-control.device-keys.manage' },
-          { id: 'admin:sec:audit', label: 'Audit', route: '/settings', permission: 'admin.audit.view' },
+          { id: 'admin:sec:audit', label: 'Audit Trail', route: '/audit', permission: 'browse-audit-logs', icon: ShieldAlert, description: 'Journal d\'activité, anomalies, export et purge des logs' },
         ],
       },
       {

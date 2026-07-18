@@ -99,6 +99,7 @@ import { PermissionMatrixPage } from '@/pages/rbac/PermissionMatrixPage';
 import { UsersAccessPage } from '@/pages/rbac/UsersAccessPage';
 import { AccessProfilesPage } from '@/pages/rbac/AccessProfilesPage';
 import { TranslationsPage } from '@/pages/translations/TranslationsPage';
+import { AuditPage } from '@/pages/audit/AuditPage';
 
 
 // Simple Navigation Wrapper to show active route in DevSwitcher style (optional, but let's stick to MegaMenu for now)
@@ -360,6 +361,13 @@ function AppRoutes() {
       <Route path="/settings/configuration" element={
         <ProtectedRoute requiredPermission={PERMISSIONS.SETTINGS.GENERAL}>
           <ConfigurationSettingsPage />
+        </ProtectedRoute>
+      } />
+
+      {/* Audit Trail */}
+      <Route path="/audit" element={
+        <ProtectedRoute requiredPermission={PERMISSIONS.AUDIT.VIEW}>
+          <AuditPage />
         </ProtectedRoute>
       } />
 

@@ -72,6 +72,22 @@ class YourModel extends Model
 }
 ```
 
+### 3.3 Coverage — nearly every model (2026-07-18, commit `2245a12d`)
+
+Only 17 of ~316 models were audited before this pass. `Auditable` is now applied to ~262 of them — every real business/domain entity (products, orders, treasury, WMS, workflow engine, targets, partners, promotions, line-items/details). **37 are deliberately excluded**, in 5 categories:
+
+| Category | Examples | Why |
+|---|---|---|
+| Audit/log infrastructure itself (22) | `AiInteraction`, `SystemAnomaly`, `WmsAuditLog`, `*Log`/`*History`-named tables (`BatchLog`, `DrawerOpenLog`, `TaskExecutionLog`, `PaymentTransferHistory`, ...) | These tables **are themselves** change-logs — auditing a log is noise, not signal |
+| Pivot/junction tables (6) | `BranchUserPivot`, `ProductSupplier`, `BusinessChronologible` | No standalone identity; Eloquent events rarely fire meaningfully on plain `attach()`/`sync()` |
+| Media/attachment infra (2) | `Media`, `SpatieMedia` | Every upload/conversion would spam a log row |
+| Ephemeral security tokens (4) | `VerifyOtp`, `VerifyManage`, `PosOtpCode`, `DeviceKey` | One row per login/OTP attempt — no audit value in the row's own lifecycle |
+| Not actual models (3) | `app/Models/Scopes/*` | Implement `Illuminate\Database\Eloquent\Scope`, not `Model` |
+
+If a new model is added and doesn't obviously belong to one of those 5 exclusion categories, add `use Auditable;` per §3.2 — that's now the default expectation for this codebase, not an opt-in.
+
+**Verification method for a change at this scale**: after mechanically inserting the trait, every modified class was force-resolved via `class_exists($class, true)` to surface any trait-method-name collision at class-definition time (none found — `php -l` alone would NOT have caught this, since trait conflicts are a compile-time/class-loading error, not a syntax error). Followed by a functional smoke test (create/update/delete on two models) confirming rows are written with no side effects on existing business logic.
+
 That's it — `created`/`updated`/`deleted`/`restored` are automatically wired via the trait's boot method.
 
 ## 4. Auth-failure logging
@@ -243,3 +259,32 @@ No AI-assisted client-side features are deployed yet. Leave empty until that Fro
 Candidate write site: `sfa/omni360_mobile`'s offline-first sync engine, once its mobile sync workers are stabilized (next sprint per Idris, not yet scheduled). Schema/model are final; do not wire until asked.
 
 `diff` is empty when the event has no `changed_attributes` (e.g. a `standard`-level delete, or a `medium`-level update where old/new weren't captured).
+
+## 8. Guaranteed deletion tracing — `logs.db_deletion_log` (2026-07-18, migration `2026_07_31_100000`)
+
+**The gap this closes**: `Auditable` only fires on Eloquent instance `delete()` calls. It is blind to two things that happen entirely inside the database, below anything Laravel can see:
+
+1. **`ON DELETE CASCADE`** — deleting a parent row silently cascade-deletes children at the Postgres engine level. As of 2026-07-18 this schema has **~230 `ON DELETE CASCADE` foreign keys**. Before this migration, deleting e.g. a `Partner` would trace the partner's own deletion (once §7's bulk-delete sweep fixed the app-level bypasses — see the memory/commit history for `961cb4f4`/`9f22ff81`) but every cascaded child row (financial instruments, price overrides, itinerary links, ...) vanished with zero trace.
+2. **Raw SQL** — `DB::table(...)->delete()`, migrations, or a direct `psql` session bypass Eloquent (and its events) entirely, not just the ORM's convenience layer.
+
+**The only way to close both is a database-level mechanism** — no amount of PHP-side discipline can see a cascade or a raw `DELETE`. This migration adds:
+
+- **`logs.db_deletion_log`** — `table_name` (schema-qualified, e.g. `public.partners`), `record_id`, `deleted_row` (full `to_jsonb(OLD)` snapshot, GIN-indexed), `deleted_by_user_id`, `correlation_id`, `db_transaction_id`, `created_at`. Append-only, no FKs (must never block a delete).
+- **`logs.fn_log_deletion()`** — a generic `SECURITY DEFINER` trigger function, `AFTER DELETE FOR EACH ROW`, that inserts one row per deletion regardless of what caused it.
+- **257 triggers** (`trg_audit_deletion`), one per table backing a currently-`Auditable` model, across `public`/`pos`/`routings` schemas. 19 audited models resolved to tables that don't exist in this DB at all (dead/legacy classes — `BonRetour`, `ReturnOrder`, `Shipment`, `ProductReturn`, and others — or unfinished features) and were silently skipped via an existence guard; the full skip list is in the migration's `up()` output the one time it ran.
+
+**Attribution — "who deleted it"**: Postgres has no concept of a Laravel-authenticated user, so a new middleware, `App\Http\Middleware\SetAuditDbSessionContext`, sets two session variables (`app.current_user_id`, `app.current_correlation_id` — via `set_config()`, **not** `SET x = $1`, which is a Postgres syntax error with bind parameters) on **every single request**, registered in the **global** middleware stack in `Kernel.php`. The trigger function reads them via `current_setting(..., true)` (the `true` = don't error if unset — console/queue/migration-driven deletes correctly get `NULL` attribution, same limitation `Auditable`'s own `Auth::user()` already has outside HTTP context).
+
+**Why global middleware, always-set, never skipped**: this app has `laravel/octane` installed — a DB connection can outlive a single request in a long-running worker. If the middleware skipped setting the variable when unauthenticated, a *previous* request's `user_id` could leak into a *later* unauthenticated request's deletions on a reused connection. It unconditionally calls `set_config()` with an empty string when there's no user, overwriting any stale value every time.
+
+**Unified correlation id**: `Auditable::getAuditCorrelationId()` now prefers the `request_id` attribute `App\Http\Middleware\EnsureRequestId` already sets globally on every request, instead of maintaining its own separate id. One id now threads through HTTP request logs (`RequestContextService`), `logs.activity_logs.correlation_id`, and `logs.db_deletion_log.correlation_id` — verified end-to-end: deleting a row via the real HTTP kernel produced matching `correlation_id` values in both tables.
+
+**Tracing a cascade**: every row deleted in one Postgres transaction shares one `db_transaction_id` (`txid_current()`) — a cascading parent delete and everything it took with it all land in the same transaction, so `GET /admin/logs/db-deletions/transaction/{txnId}` returns the parent plus every child in one call. Verified for real: deleted a `Partner` via raw SQL (`DB::statement('DELETE FROM partners WHERE id = ?', ...)`, completely bypassing Eloquent) and confirmed both the partner row and its cascaded `partner_price_overrides` child landed in `logs.db_deletion_log` with the same `db_transaction_id` and correct user/correlation attribution.
+
+### 8.1 Admin API — `GET /admin/logs/db-deletions`, `GET /admin/logs/db-deletions/transaction/{txnId}`
+
+Same `browse-audit-logs` permission as the rest of the console. Filters: `table_name` (partial), `correlation_id`, `db_transaction_id`, `date_from`/`date_to`, `per_page` (capped at 100). Deliberately a **separate endpoint/table from `activity_logs`**, not a unified feed — a raw SQL trigger can't produce Eloquent-shaped rows (no `event`/`auditable_type`/old-new diff), and conflating "the ORM told us" with "the database engine told us" would blur a real provenance distinction worth keeping visible.
+
+### 8.2 Maintenance — adding a new audited model
+
+Attaching a table to this system is **not automatic** when a model adopts `Auditable` — the trigger list in `2026_07_31_100000_create_db_deletion_log_trigger_system.php` is a hardcoded snapshot, deliberately not re-derived from the filesystem at migrate time (so this migration's behavior stays reproducible). A new model added later needs a follow-up migration that runs the same `CREATE TRIGGER ... EXECUTE FUNCTION logs.fn_log_deletion()` against its table — same category of step as any other schema change, not optional.

@@ -330,6 +330,13 @@ export const PERMISSIONS = {
         NOTIFICATIONS: 'admin.settings.notifications',
     },
 
+    // Audit Trail
+    AUDIT: {
+        VIEW: 'browse-audit-logs',
+        MANAGE_SETTINGS: 'manage-audit-settings',
+        PURGE: 'purge-audit-logs',
+    },
+
     // Task Workflow Management
     TASKS: {
         DASHBOARD: 'admin.tasks.dashboard',
