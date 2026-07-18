@@ -6,6 +6,7 @@ import {
     UserPlus, FilePlus, PackageCheck, Banknote, Route, Layers,
     Target, AlertTriangle, Import, GitBranch,
     Calculator, Globe, Cog, FileSearch, RotateCcw, ScanLine, Box,
+    Activity, ShieldAlert, HardDrive, Trash2,
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 
@@ -369,16 +370,31 @@ export const BUSINESS_DOMAINS: BusinessDomain[] = [
                 ],
             },
             {
-                id: 'audit-logs',
-                label: 'Logs d\'Audit & Traçabilité',
-                description: 'Historique complet des actions système',
-                route: '/settings',
-                icon: FileText,
+                id: 'audit-trail',
+                label: 'Audit Trail',
+                description: 'Journal d\'activité, anomalies, export et purge des logs',
+                route: '/audit',
+                icon: ShieldAlert,
+                permission: 'browse-audit-logs',
                 actions: [
-                    { id: 'token-series',  label: 'Séries de Tokens', route: '/token-series', icon: Target    },
-                    { id: 'device-keys',   label: 'Clés Appareils',   route: '/device-keys',  icon: Shield    },
-                    { id: 'translations',  label: 'Traductions',      route: '/translations', icon: Globe     },
-                    { id: 'reporting',     label: 'Reporting Admin',  route: '/reporting/admin', icon: BarChart3},
+                    { id: 'audit-journal',   label: 'Journal d\'activité', route: '/audit', icon: Activity      },
+                    { id: 'audit-anomalies', label: 'Anomalies',           route: '/audit', icon: AlertTriangle  },
+                    { id: 'audit-deletions', label: 'Suppressions DB',     route: '/audit', icon: Database       },
+                    { id: 'audit-settings',  label: 'Réglages',            route: '/audit', icon: Cog            },
+                    { id: 'audit-purge',     label: 'Purge des logs',      route: '/audit', icon: Trash2         },
+                ],
+            },
+            {
+                id: 'backup',
+                label: 'Backup & Restore',
+                description: 'Sauvegardes planifiées et restauration de la base de données',
+                route: '/backup',
+                icon: HardDrive,
+                permission: 'browse-backups',
+                actions: [
+                    { id: 'backup-schedules', label: 'Sauvegardes planifiées', route: '/backup?tab=schedules', icon: Database   },
+                    { id: 'backup-restore',   label: 'Restaurer',              route: '/backup?tab=backups',   icon: RotateCcw  },
+                    { id: 'backup-history',   label: 'Historique backups',     route: '/backup?tab=backups',   icon: Clock      },
                 ],
             },
             {

@@ -141,6 +141,8 @@ export function getActiveDomainFromPath(pathname: string): string | null {
         '/token-series':             'administration',
         '/device-keys':              'administration',
         '/translations':             'administration',
+        '/audit':                    'administration',
+        '/backup':                   'administration',
     };
 
     for (const [prefix, domain] of Object.entries(map)) {

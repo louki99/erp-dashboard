@@ -6,6 +6,7 @@ import { AuthProvider } from '@/context/AuthContext';
 import { ThemeProvider } from '@/context/ThemeContext';
 import { LanguageProvider } from '@/context/LanguageContext';
 import { ProtectedRoute } from '@/components/rbac';
+import { MaintenanceBanner } from '@/components/layout/MaintenanceBanner';
 import { PERMISSIONS } from '@/lib/rbac/permissions';
 import { Login } from '@/pages/Login';
 import { PartnerManagementPage } from '@/pages/partners/PartnerManagementPage';
@@ -100,6 +101,7 @@ import { UsersAccessPage } from '@/pages/rbac/UsersAccessPage';
 import { AccessProfilesPage } from '@/pages/rbac/AccessProfilesPage';
 import { TranslationsPage } from '@/pages/translations/TranslationsPage';
 import { AuditPage } from '@/pages/audit/AuditPage';
+import { BackupPage } from '@/pages/backup/BackupPage';
 
 
 // Simple Navigation Wrapper to show active route in DevSwitcher style (optional, but let's stick to MegaMenu for now)
@@ -368,6 +370,13 @@ function AppRoutes() {
       <Route path="/audit" element={
         <ProtectedRoute requiredPermission={PERMISSIONS.AUDIT.VIEW}>
           <AuditPage />
+        </ProtectedRoute>
+      } />
+
+      {/* Backup & Restore */}
+      <Route path="/backup" element={
+        <ProtectedRoute requiredPermission={PERMISSIONS.BACKUP.BROWSE}>
+          <BackupPage />
         </ProtectedRoute>
       } />
 
@@ -723,6 +732,7 @@ function App() {
             <LanguageProvider>
               <AppRoutes />
               <Toaster position="top-right" />
+              <MaintenanceBanner />
             </LanguageProvider>
           </ThemeProvider>
         </AuthProvider>

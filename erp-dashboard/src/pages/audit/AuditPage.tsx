@@ -350,38 +350,121 @@ function ExportModal({ onClose }: { onClose: () => void }) {
     );
 }
 
-// ─── Editor Log Viewer ────────────────────────────────────────────────────────
+// ─── GitHub Diff Viewer ───────────────────────────────────────────────────────
 
-// VS Code Dark+ color palette
-const C = {
-    key:     '#9cdcfe',  // property name (blue)
-    str:     '#ce9178',  // string value (orange)
-    num:     '#b5cea8',  // number (light green)
-    kw:      '#569cd6',  // keyword: null/true/false (blue)
-    punct:   '#d4d4d4',  // braces, colons (light gray)
-    comment: '#6a9955',  // comments (green)
-    uuid:    '#c586c0',  // uuid/id (purple)
-    date:    '#4ec9b0',  // dates (teal)
-    dimRm:   '#f14c4c',  // diff remove (red)
-    dimAdd:  '#23d18b',  // diff add (green)
+const GH = {
+    bg:       '#0d1117',
+    border:   '#21262d',
+    fileBg:   '#161b22',
+    hunkBg:   'rgba(88,166,255,0.1)',
+    hunkFg:   '#6e9ef5',
+    ctxFg:    '#e6edf3',
+    mutedFg:  '#8b949e',
+    numFg:    '#636e7b',
+    rmBg:     'rgba(255,129,130,0.15)',
+    rmNumBg:  'rgba(255,129,130,0.22)',
+    rmFg:     '#ff8182',
+    rmPfx:    '#f85149',
+    addBg:    'rgba(63,185,80,0.15)',
+    addNumBg: 'rgba(63,185,80,0.22)',
+    addFg:    '#3fb950',
+    addPfx:   '#3fb950',
+    uuid:     '#c586c0',
+    date:     '#4ec9b0',
 };
 
-const Str  = ({ v }: { v: string }) => <span style={{ color: C.str }}>"{v}"</span>;
-const Num  = ({ v }: { v: number }) => <span style={{ color: C.num }}>{v}</span>;
-const Kw   = ({ v }: { v: string }) => <span style={{ color: C.kw }}>{v}</span>;
-const Key  = ({ v }: { v: string }) => <><span style={{ color: C.key }}>"{v}"</span><span style={{ color: C.punct }}>: </span></>;
-const P    = ({ v }: { v: string }) => <span style={{ color: C.punct }}>{v}</span>;
+type GHLineType = 'hunk' | 'context' | 'remove' | 'add' | 'spacer';
+interface GHLine { type: GHLineType; content?: React.ReactNode; }
 
-function Val({ v }: { v: any }) {
-    if (v === null || v === undefined) return <Kw v="null" />;
-    if (typeof v === 'boolean') return <Kw v={String(v)} />;
-    if (typeof v === 'number') return <Num v={v} />;
-    const s = String(v);
-    // ISO date
-    if (/^\d{4}-\d{2}-\d{2}T/.test(s)) return <><span style={{ color: C.date }}>"{s}"</span></>;
-    // UUID
-    if (/^[0-9a-f]{8}-[0-9a-f]{4}-/.test(s)) return <><span style={{ color: C.uuid }}>"{s}"</span></>;
-    return <Str v={s} />;
+function GitHubDiff({
+    filename, lines, addCount = 0, rmCount = 0, headerRight,
+}: {
+    filename: string;
+    lines: GHLine[];
+    addCount?: number;
+    rmCount?: number;
+    headerRight?: React.ReactNode;
+}) {
+    let seq = 0;
+    return (
+        <div className="h-full flex flex-col select-text overflow-hidden"
+            style={{ background: GH.bg, fontFamily: 'ui-monospace,SFMono-Regular,"SF Mono",Menlo,Consolas,monospace' }}>
+            {/* File header */}
+            <div className="shrink-0 flex items-center gap-2.5 px-4 py-2 border-b"
+                style={{ background: GH.fileBg, borderColor: GH.border }}>
+                <FileText className="w-3.5 h-3.5 shrink-0" style={{ color: GH.mutedFg }} />
+                <span className="text-[12px] font-semibold flex-1 truncate" style={{ color: GH.ctxFg }}>
+                    {filename}
+                </span>
+                {(addCount > 0 || rmCount > 0) && (
+                    <div className="flex items-center gap-2 shrink-0">
+                        {addCount > 0 && <span className="text-[11px] font-bold" style={{ color: GH.addFg }}>+{addCount}</span>}
+                        {rmCount > 0 && <span className="text-[11px] font-bold" style={{ color: GH.rmFg }}>−{rmCount}</span>}
+                    </div>
+                )}
+                {headerRight && <div className="shrink-0 flex items-center gap-1.5">{headerRight}</div>}
+            </div>
+            {/* Diff lines */}
+            <div className="flex-1 overflow-y-auto">
+                {lines.map((line, i) => {
+                    if (line.type === 'spacer') {
+                        return <div key={i} style={{ height: 6, background: GH.bg, borderTop: `1px solid ${GH.border}30` }} />;
+                    }
+                    if (line.type === 'hunk') {
+                        return (
+                            <div key={i} className="flex items-center gap-3 px-3 py-1"
+                                style={{ background: GH.hunkBg, borderTop: `1px solid ${GH.border}50`, borderBottom: `1px solid ${GH.border}50` }}>
+                                <span className="text-[11px] font-extrabold shrink-0" style={{ color: GH.hunkFg }}>@@</span>
+                                <span className="text-[11px] font-semibold" style={{ color: GH.hunkFg }}>{line.content}</span>
+                            </div>
+                        );
+                    }
+                    const n = ++seq;
+                    const isRm = line.type === 'remove';
+                    const isAdd = line.type === 'add';
+                    return (
+                        <div key={i} className="flex items-start min-h-[22px]"
+                            style={{ background: isRm ? GH.rmBg : isAdd ? GH.addBg : 'transparent' }}>
+                            {/* Line number */}
+                            <span className="w-10 shrink-0 text-right pr-2 py-0.5 text-[11px] select-none border-r"
+                                style={{ background: isRm ? GH.rmNumBg : isAdd ? GH.addNumBg : 'transparent', color: GH.numFg, borderColor: GH.border }}>
+                                {n}
+                            </span>
+                            {/* +/- prefix */}
+                            <span className="w-5 shrink-0 text-center py-0.5 text-[12px] font-bold select-none"
+                                style={{ color: isRm ? GH.rmPfx : isAdd ? GH.addPfx : 'transparent' }}>
+                                {isRm ? '−' : isAdd ? '+' : ''}
+                            </span>
+                            {/* Content */}
+                            <span className="flex-1 py-0.5 pr-4 text-[12px] break-all whitespace-pre-wrap leading-[22px]"
+                                style={{ color: isRm ? GH.rmFg : isAdd ? GH.addFg : GH.ctxFg }}>
+                                {line.content}
+                            </span>
+                        </div>
+                    );
+                })}
+            </div>
+        </div>
+    );
+}
+
+// Helper to build a "key: value" context line
+function ghCtx(label: string, value: React.ReactNode): GHLine {
+    return {
+        type: 'context',
+        content: (
+            <>
+                <span style={{ color: GH.mutedFg }}>{label}</span>
+                <span style={{ color: GH.numFg }}>: </span>
+                {value}
+            </>
+        ),
+    };
+}
+
+// Helper to build a "key: value" remove or add line
+function ghDiff(label: string, value: string, type: 'remove' | 'add'): GHLine {
+    return { type, content: <><span style={{ color: type === 'remove' ? '#ff8182cc' : '#3fb950cc' }}>{label}</span><span style={{ color: '#6e7681' }}>: </span>{value}</> };
 }
 
 // ─── Formatting utilities ─────────────────────────────────────────────────────
@@ -428,7 +511,7 @@ function modelRoute(auditableType: string | null, auditableId: number | string |
     return map[model] ?? null;
 }
 
-// ─── Structured detail helpers ────────────────────────────────────────────────
+// ─── Event badge (used in diff context lines) ─────────────────────────────────
 
 function eventBadge(event: string) {
     const e = event.toLowerCase();
@@ -443,126 +526,29 @@ function eventBadge(event: string) {
         ? 'bg-blue-500/15 text-blue-400 ring-1 ring-blue-500/30'
         : 'bg-gray-500/15 text-gray-400 ring-1 ring-gray-500/30';
     return (
-        <span className={`inline-flex items-center px-2.5 py-1 rounded-md text-[11px] font-mono font-bold uppercase tracking-wide ${cls}`}>
+        <span className={`inline-flex items-center px-2 py-0.5 rounded text-[11px] font-mono font-bold uppercase tracking-wide ${cls}`}>
             {event}
         </span>
     );
 }
 
-function SectionLabel({ label, extra }: { label: string; extra?: React.ReactNode }) {
-    return (
-        <div className="flex items-center justify-between px-4 py-2 border-b border-[#3c3c3c]">
-            <span className="text-[10px] uppercase tracking-widest font-semibold text-[#6b7280]">{label}</span>
-            {extra}
-        </div>
-    );
-}
-
-function KVRow({ label, children }: { label: string; children: React.ReactNode }) {
-    return (
-        <div className="flex items-start gap-4 px-4 py-2 hover:bg-white/[0.025] transition-colors">
-            <span className="w-28 shrink-0 text-[11px] text-[#6b7280] pt-px font-medium">{label}</span>
-            <div className="flex-1 flex items-center flex-wrap gap-1.5 text-[12px] text-[#cccccc] font-mono">{children}</div>
-        </div>
-    );
-}
-
 function formatDiffValue(v: any): string {
     if (v === null || v === undefined) return 'null';
+    if (typeof v === 'object') return JSON.stringify(v);
     const s = String(v);
-    // ISO datetime
     if (/^\d{4}-\d{2}-\d{2}T/.test(s)) return fmtDatetime(s);
-    // Decimal number string (e.g. "5.000000")
     if (/^-?\d+\.\d+$/.test(s)) return fmtNum(s);
     return s;
 }
 
-function DiffTable({ diff }: { diff: ActivityDiffEntry[] }) {
-    if (diff.length === 0) {
-        return (
-            <div className="flex flex-col items-center justify-center py-10 px-4 gap-3">
-                <div className="w-9 h-9 rounded-full bg-[#2d2d2d] flex items-center justify-center">
-                    <GitBranch className="w-4 h-4 text-[#6b7280]" />
-                </div>
-                <p className="text-[11px] text-[#6b7280] text-center leading-relaxed max-w-xs">
-                    Aucune modification de champ enregistrée pour ce niveau d'audit
-                </p>
-            </div>
-        );
+function parseDeletedRow(raw: any): Record<string, any> {
+    if (typeof raw === 'string') {
+        try { return JSON.parse(raw); } catch { return { raw } ; }
     }
-    return (
-        <div className="overflow-x-auto">
-            <table className="w-full text-[11px] font-mono border-collapse">
-                <thead>
-                    <tr className="border-b border-[#3c3c3c]">
-                        <th className="text-left px-4 py-2 text-[10px] uppercase tracking-widest text-[#6b7280] font-semibold w-36">Champ</th>
-                        <th className="text-left px-4 py-2 text-[10px] uppercase tracking-widest text-[#6b7280] font-semibold">
-                            <span className="flex items-center gap-1.5">
-                                <span className="w-2 h-2 rounded-full bg-red-500/60 inline-block" />
-                                Avant
-                            </span>
-                        </th>
-                        <th className="text-left px-4 py-2 text-[10px] uppercase tracking-widest text-[#6b7280] font-semibold">
-                            <span className="flex items-center gap-1.5">
-                                <span className="w-2 h-2 rounded-full bg-emerald-500/60 inline-block" />
-                                Après
-                            </span>
-                        </th>
-                    </tr>
-                </thead>
-                <tbody>
-                    {diff.map((entry, i) => (
-                        <tr key={i} className="border-b border-[#3c3c3c]/40 hover:bg-white/[0.025]">
-                            <td className="px-4 py-2.5 text-[#9cdcfe]">{entry.attribute}</td>
-                            <td className="px-4 py-2.5">
-                                <span className="inline-flex items-center px-2 py-0.5 rounded bg-red-500/20 text-red-400 line-through decoration-red-500/60 decoration-1">
-                                    {formatDiffValue(entry.old)}
-                                </span>
-                            </td>
-                            <td className="px-4 py-2.5">
-                                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-emerald-500/15 text-emerald-400 ring-1 ring-emerald-500/25 font-semibold">
-                                    {formatDiffValue(entry.new)}
-                                </span>
-                            </td>
-                        </tr>
-                    ))}
-                </tbody>
-            </table>
-        </div>
-    );
+    return raw ?? {};
 }
 
-// ─── Editor Log Viewer (used by DbDeletionDetail) ─────────────────────────────
-
-interface EditorLine {
-    content: React.ReactNode;
-    type?: 'normal' | 'comment' | 'diff-remove' | 'diff-add';
-}
-
-function EditorContent({ lines }: { lines: EditorLine[] }) {
-    return (
-        <div className="py-2 select-text">
-            {lines.map((line, i) => {
-                const bg =
-                    line.type === 'diff-remove' ? 'bg-[#ff000020]' :
-                    line.type === 'diff-add'    ? 'bg-[#00ff0012]' :
-                    '';
-                const hover = line.type ? '' : 'hover:bg-white/[0.03]';
-                return (
-                    <div key={i} className={`flex items-start min-h-[20px] leading-5 ${bg} ${hover}`}>
-                        <span className="w-10 shrink-0 text-right pr-4 text-[11px] select-none py-px font-mono"
-                            style={{ color: '#4e4e4e' }}>
-                            {i + 1}
-                        </span>
-                        <span className="flex-1 text-[11px] py-px pr-4 font-mono break-all whitespace-pre-wrap">
-                            {line.content}
-                        </span>
-                    </div>
-                );
-            })}
-        </div>
-    );
-}
+// ─── Activity Detail ─────────────────────────────────────────────────────────
 
 interface ActivityDetailProps {
     log: ActivityLog;
@@ -573,280 +559,211 @@ interface ActivityDetailProps {
 
 function ActivityDetail({ log, diff, loading, onTraceCorrelation }: ActivityDetailProps) {
     if (loading) return (
-        <div className="h-full flex flex-col bg-[#1e1e2e]">
-            <div className="shrink-0 h-9 bg-[#252526] border-b border-[#3c3c3c]" />
-            <div className="flex-1 flex items-center justify-center">
-                <span className="text-[#858585] text-sm font-mono">Chargement...</span>
-            </div>
+        <div className="h-full flex items-center justify-center" style={{ background: GH.bg }}>
+            <span className="text-[13px] font-mono" style={{ color: GH.numFg }}>Chargement…</span>
         </div>
     );
 
+    const lines: GHLine[] = [];
+
+    // ── Hunk: Événement ──
+    lines.push({ type: 'hunk', content: 'Événement' });
+    lines.push(ghCtx('event', eventBadge(log.event)));
+    lines.push(ghCtx('id', <span style={{ color: GH.mutedFg }}>#{log.id}</span>));
+    lines.push(ghCtx('audit_level', <AuditLevelBadge level={log.audit_level} />));
+    if (log.action_intent && log.action_intent !== log.event) {
+        lines.push(ghCtx('action_intent', <span style={{ color: GH.ctxFg }}>{log.action_intent}</span>));
+    }
+    lines.push(ghCtx('created_at', <span style={{ color: GH.date }}>{fmtDatetime(log.created_at)}</span>));
+
+    // ── Hunk: Acteur & Cible ──
+    lines.push({ type: 'hunk', content: 'Acteur & Cible' });
+    if (log.user?.name) {
+        lines.push(ghCtx('utilisateur', (
+            <span style={{ color: GH.ctxFg }}>
+                {log.user.name}
+                {log.user.email && <span style={{ color: GH.numFg }}> &lt;{log.user.email}&gt;</span>}
+            </span>
+        )));
+    } else if (log.user_id) {
+        lines.push(ghCtx('user_id', <span style={{ color: GH.ctxFg }}>{log.user_id}</span>));
+    }
+    if (log.user_role) {
+        lines.push(ghCtx('rôle', <span style={{ color: GH.addFg }}>{log.user_role}</span>));
+    }
+    if (log.auditable_type) {
+        const route = modelRoute(log.auditable_type, log.auditable_id);
+        lines.push(ghCtx('modèle', (
+            <span className="inline-flex items-center gap-2">
+                <span style={{ color: '#a5d6ff' }}>{shortType(log.auditable_type)}</span>
+                {log.auditable_id && (route ? (
+                    <a href={route} target="_blank" rel="noopener noreferrer"
+                        className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-bold hover:opacity-80 transition-opacity"
+                        style={{ color: GH.uuid, background: `${GH.uuid}18` }}
+                        title={`Ouvrir ${shortType(log.auditable_type)} #${log.auditable_id}`}>
+                        <ArrowRight className="w-2.5 h-2.5" />
+                        #{log.auditable_id}
+                    </a>
+                ) : (
+                    <span style={{ color: GH.numFg }}>#{log.auditable_id}</span>
+                ))}
+            </span>
+        )));
+    }
+
+    // ── Hunk: Contexte ──
+    if (log.ip_address || log.description || log.correlation_id) {
+        lines.push({ type: 'hunk', content: 'Contexte' });
+        if (log.ip_address) {
+            lines.push(ghCtx('ip_address', <span style={{ color: GH.ctxFg }}>{log.ip_address}</span>));
+        }
+        if (log.description) {
+            lines.push(ghCtx('description', <span style={{ color: GH.ctxFg }}>{log.description}</span>));
+        }
+        if (log.correlation_id) {
+            lines.push(ghCtx('correlation_id', (
+                <span className="inline-flex items-center gap-2">
+                    <span style={{ color: GH.uuid }}>{log.correlation_id}</span>
+                    <button
+                        onClick={() => onTraceCorrelation(log.correlation_id!)}
+                        className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] font-bold hover:opacity-80 transition-opacity"
+                        style={{ background: '#4c5cf630', color: '#818cf8' }}
+                    >
+                        <Link2 className="w-2.5 h-2.5" /> Trace
+                    </button>
+                </span>
+            )));
+        }
+    }
+
+    // ── Hunk: Modifications ──
+    const diffLabel = diff.length > 0
+        ? `Modifications — ${diff.length} champ${diff.length > 1 ? 's' : ''}`
+        : 'Modifications';
+    lines.push({ type: 'hunk', content: diffLabel });
+
+    if (diff.length > 0) {
+        diff.forEach(entry => {
+            lines.push(ghDiff(entry.attribute, formatDiffValue(entry.old), 'remove'));
+            lines.push(ghDiff(entry.attribute, formatDiffValue(entry.new), 'add'));
+            lines.push({ type: 'spacer' });
+        });
+    } else {
+        lines.push({
+            type: 'context',
+            content: <span style={{ color: GH.numFg, fontStyle: 'italic' }}>
+                Aucune modification enregistrée pour ce niveau d'audit
+            </span>,
+        });
+    }
+
     return (
-        <div className="h-full flex flex-col" style={{ background: '#1e1e2e' }}>
-            {/* Tab bar */}
-            <div className="shrink-0 flex items-center h-9 border-b" style={{ background: '#252526', borderColor: '#3c3c3c' }}>
-                <div className="flex items-center gap-1.5 h-full px-4 border-r border-t-2" style={{ background: '#1e1e2e', borderColor: '#3c3c3c', borderTopColor: '#7c6af7' }}>
-                    <FileText className="w-3 h-3" style={{ color: '#519aba' }} />
-                    <span className="text-[11px] font-mono" style={{ color: '#cccccc' }}>activity_{log.id}</span>
-                </div>
-                <div className="ml-auto flex items-center gap-2 px-3">
-                    <AuditLevelBadge level={log.audit_level} />
-                    {log.user_role && <RoleBadge role={log.user_role} />}
-                </div>
-            </div>
-
-            {/* Body — structured sections */}
-            <div className="flex-1 overflow-y-auto divide-y divide-[#3c3c3c]">
-
-                {/* Event hero row */}
-                <div className="flex items-center gap-3 px-4 py-4">
-                    {eventBadge(log.event)}
-                    <span className="text-[11px] font-mono text-[#6b7280]">#{log.id}</span>
-                    {log.action_intent && log.action_intent !== log.event && (
-                        <span className="text-[11px] font-mono text-[#6b7280]">· {log.action_intent}</span>
-                    )}
-                    <span className="ml-auto text-[11px] font-sans" style={{ color: C.date }}>
-                        {fmtDatetime(log.created_at)}
-                    </span>
-                </div>
-
-                {/* Acteur & Cible */}
-                <div>
-                    <SectionLabel label="Acteur & Cible" />
-                    {log.user?.name && (
-                        <KVRow label="Utilisateur">
-                            <span className="text-[#cccccc]">{log.user.name}</span>
-                            {log.user.email && <span className="text-[#6b7280]">({log.user.email})</span>}
-                        </KVRow>
-                    )}
-                    {!log.user?.name && log.user_id && (
-                        <KVRow label="User ID">
-                            <span style={{ color: C.num }}>{log.user_id}</span>
-                        </KVRow>
-                    )}
-                    {log.user_role && (
-                        <KVRow label="Rôle">
-                            <span style={{ color: C.str }}>{log.user_role}</span>
-                        </KVRow>
-                    )}
-                    {log.auditable_type && (() => {
-                        const route = modelRoute(log.auditable_type, log.auditable_id);
-                        return (
-                            <KVRow label="Modèle">
-                                <span style={{ color: C.key }}>{shortType(log.auditable_type)}</span>
-                                {log.auditable_id && (
-                                    route ? (
-                                        <a
-                                            href={route}
-                                            target="_blank"
-                                            rel="noopener noreferrer"
-                                            className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-bold transition-colors"
-                                            style={{ color: C.uuid, background: '#c586c015' }}
-                                            title={`Ouvrir ${shortType(log.auditable_type)} #${log.auditable_id}`}
-                                        >
-                                            <ArrowRight className="w-2.5 h-2.5" />
-                                            #{log.auditable_id}
-                                        </a>
-                                    ) : (
-                                        <span className="text-[#6b7280]">· #{log.auditable_id}</span>
-                                    )
-                                )}
-                            </KVRow>
-                        );
-                    })()}
-                </div>
-
-                {/* Contexte */}
-                <div>
-                    <SectionLabel label="Contexte" />
-                    {log.ip_address && (
-                        <KVRow label="IP Address">
-                            <span style={{ color: C.num }}>{log.ip_address}</span>
-                        </KVRow>
-                    )}
-                    {log.description && (
-                        <KVRow label="Description">
-                            <span className="font-sans text-[#cccccc] text-[11px]">{log.description}</span>
-                        </KVRow>
-                    )}
-                    {log.correlation_id && (
-                        <KVRow label="Corrélation">
-                            <span style={{ color: C.uuid }}>{log.correlation_id}</span>
-                            <button
-                                onClick={() => onTraceCorrelation(log.correlation_id!)}
-                                className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-indigo-600 text-white text-[9px] font-bold hover:bg-indigo-500 transition-colors"
-                            >
-                                <Link2 className="w-2.5 h-2.5" /> Trace
-                            </button>
-                        </KVRow>
-                    )}
-                </div>
-
-                {/* Diff */}
-                <div>
-                    <SectionLabel
-                        label={diff.length > 0
-                            ? `Diff — ${diff.length} champ${diff.length > 1 ? 's' : ''} modifié${diff.length > 1 ? 's' : ''}`
-                            : 'Diff'}
-                    />
-                    <DiffTable diff={diff} />
-                </div>
-            </div>
-        </div>
+        <GitHubDiff
+            filename={`activity_${log.id}.diff`}
+            lines={lines}
+            addCount={diff.length}
+            rmCount={diff.length}
+            headerRight={<>
+                <AuditLevelBadge level={log.audit_level} />
+                {log.user_role && <RoleBadge role={log.user_role} />}
+            </>}
+        />
     );
 }
 
 // ─── Anomaly Detail ───────────────────────────────────────────────────────────
 
 function AnomalyDetail({ log }: { log: AnomalyLog }) {
-    const sevColor = log.error_severity === 'CRITICAL' ? '#ef4444' : '#f59e0b';
-    const sevTopBorder = log.error_severity === 'CRITICAL' ? '#ef4444' : '#f59e0b';
+    const lines: GHLine[] = [];
+    const isCritical = log.error_severity === 'CRITICAL';
+
+    // ── Hunk: Anomalie ──
+    lines.push({ type: 'hunk', content: 'Anomalie' });
+    lines.push(ghCtx('severity', (
+        <span className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-[11px] font-bold uppercase ${isCritical ? 'text-red-400' : 'text-amber-400'}`}
+            style={{ background: isCritical ? 'rgba(239,68,68,0.15)' : 'rgba(245,158,11,0.15)' }}>
+            {isCritical ? <AlertTriangle className="w-3 h-3" /> : <AlertCircle className="w-3 h-3" />}
+            {log.error_severity}
+        </span>
+    )));
+    lines.push(ghCtx('error_code', <span style={{ color: '#a5d6ff' }}>{log.error_code}</span>));
+    lines.push(ghCtx('source', <span style={{ color: GH.addFg }}>{log.source}</span>));
+    if (log.user_id) {
+        lines.push(ghCtx('user_id', <span style={{ color: GH.ctxFg }}>{log.user_id}</span>));
+    }
+    lines.push(ghCtx('created_at', <span style={{ color: GH.date }}>{fmtDatetime(log.created_at)}</span>));
+
+    // ── Hunk: Référence ──
+    if (log.reference_type) {
+        lines.push({ type: 'hunk', content: 'Référence' });
+        lines.push(ghCtx('reference_type', <span style={{ color: '#a5d6ff' }}>{shortType(log.reference_type)}</span>));
+        lines.push(ghCtx('reference_id', <span style={{ color: GH.ctxFg }}>#{log.reference_id}</span>));
+    }
+
+    // ── Hunk: Context Payload ──
+    lines.push({ type: 'hunk', content: 'Context Payload' });
+    if (log.context_payload) {
+        JSON.stringify(log.context_payload, null, 2).split('\n').forEach(l => {
+            lines.push({ type: 'context', content: <span style={{ color: '#a5d6ff' }}>{l}</span> });
+        });
+    } else {
+        lines.push({ type: 'context', content: <span style={{ color: GH.numFg, fontStyle: 'italic' }}>null</span> });
+    }
 
     return (
-        <div className="h-full flex flex-col" style={{ background: '#1e1e2e' }}>
-            {/* Tab bar */}
-            <div className="shrink-0 flex items-center h-9 border-b" style={{ background: '#252526', borderColor: '#3c3c3c' }}>
-                <div className="flex items-center gap-1.5 h-full px-4 border-r border-t-2" style={{ background: '#1e1e2e', borderColor: '#3c3c3c', borderTopColor: sevTopBorder }}>
-                    <AlertTriangle className="w-3 h-3" style={{ color: sevColor }} />
-                    <span className="text-[11px] font-mono" style={{ color: '#cccccc' }}>anomaly_{log.id}</span>
-                </div>
-                <div className="ml-auto px-3">
-                    {severityBadge(log.error_severity)}
-                </div>
-            </div>
-
-            {/* Body — structured sections */}
-            <div className="flex-1 overflow-y-auto divide-y divide-[#3c3c3c]">
-
-                {/* Severity hero row */}
-                <div className="flex items-center gap-3 px-4 py-4">
-                    <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-[11px] font-mono font-bold uppercase tracking-wide ${log.error_severity === 'CRITICAL' ? 'bg-red-500/15 text-red-400 ring-1 ring-red-500/30' : 'bg-amber-500/15 text-amber-400 ring-1 ring-amber-500/30'}`}>
-                        {log.error_severity === 'CRITICAL' ? <AlertTriangle className="w-3 h-3" /> : <AlertCircle className="w-3 h-3" />}
-                        {log.error_severity}
-                    </span>
-                    <span className="text-[12px] font-mono" style={{ color: C.key }}>{log.error_code}</span>
-                    <span className="ml-auto text-[11px] font-sans" style={{ color: C.date }}>
-                        {fmtDatetime(log.created_at)}
-                    </span>
-                </div>
-
-                {/* Error details */}
-                <div>
-                    <SectionLabel label="Anomalie" />
-                    <KVRow label="Source">
-                        <span style={{ color: C.str }}>{log.source}</span>
-                    </KVRow>
-                    <KVRow label="Code erreur">
-                        <span style={{ color: C.key }}>{log.error_code}</span>
-                    </KVRow>
-                    {log.user_id && (
-                        <KVRow label="User ID">
-                            <span style={{ color: C.num }}>{log.user_id}</span>
-                        </KVRow>
-                    )}
-                </div>
-
-                {/* Reference */}
-                {log.reference_type && (
-                    <div>
-                        <SectionLabel label="Référence" />
-                        <KVRow label="Type">
-                            <span style={{ color: C.key }}>{shortType(log.reference_type)}</span>
-                        </KVRow>
-                        <KVRow label="ID">
-                            <span style={{ color: C.num }}>#{log.reference_id}</span>
-                        </KVRow>
-                    </div>
-                )}
-
-                {/* Context payload */}
-                <div>
-                    <SectionLabel label="Context Payload" />
-                    {log.context_payload ? (
-                        <div className="px-4 py-3">
-                            <pre className="text-[11px] font-mono leading-5 whitespace-pre-wrap break-all select-text" style={{ color: C.punct }}>
-                                {JSON.stringify(log.context_payload, null, 2)}
-                            </pre>
-                        </div>
-                    ) : (
-                        <div className="flex items-center gap-2 px-4 py-6 text-[#6b7280]">
-                            <span className="text-[11px]">Aucun payload de contexte</span>
-                        </div>
-                    )}
-                </div>
-            </div>
-        </div>
+        <GitHubDiff
+            filename={`anomaly_${log.id}.diff`}
+            lines={lines}
+            headerRight={severityBadge(log.error_severity)}
+        />
     );
 }
 
 // ─── DB Deletion Detail ───────────────────────────────────────────────────────
 
-function buildDeletionEditorLines(
+function buildDeletionGHLines(
     entry: DbDeletion,
     index: number,
     total: number,
-    onTraceCorrelation: (id: string) => void,
-): EditorLine[] {
-    const rows: EditorLine[] = [];
-    const c = (s: string) => <span style={{ color: C.comment }}>{s}</span>;
+    onTraceToJournal: (id: string) => void,
+): GHLine[] {
+    const rows: GHLine[] = [];
     const tableShort = entry.table_name.split('.').pop() ?? entry.table_name;
 
-    if (total > 1) {
-        rows.push({ content: <>{c(`// ─── [${index + 1}/${total}] ${entry.table_name}  #${entry.record_id}`)}</>, type: 'comment' });
-    }
+    // Hunk header — table name + record
     rows.push({
-        content: (
-            <div className="flex items-center gap-2">
-                <P v="{" />
-                <span className="text-[10px] font-mono" style={{ color: '#4e4e4e' }}>
-                    — {tableShort} #{entry.record_id} · txn {entry.db_transaction_id}
-                </span>
-            </div>
-        ),
+        type: 'hunk',
+        content: total > 1
+            ? `[${index + 1}/${total}] ${tableShort} · #${entry.record_id}`
+            : `${tableShort} · #${entry.record_id}`,
     });
 
-    rows.push({ content: <>{c('  // ─── Attribution')}</>, type: 'comment' });
-    rows.push({ content: <><span style={{ color: C.punct }}>{'  '}</span><Key v="deleted_by_user_id" /><Val v={entry.deleted_by_user_id} /><P v="," /></> });
-    rows.push({ content: <><span style={{ color: C.punct }}>{'  '}</span><Key v="db_transaction_id" /><Num v={entry.db_transaction_id} /><P v="," /></> });
-    rows.push({ content: <><span style={{ color: C.punct }}>{'  '}</span><Key v="created_at" /><span style={{ color: C.date }}>"{entry.created_at}"</span><P v="," /></> });
-
+    // Attribution — context lines
+    rows.push(ghCtx('deleted_by_user_id', <span style={{ color: GH.ctxFg }}>{entry.deleted_by_user_id ?? 'null'}</span>));
+    rows.push(ghCtx('db_transaction_id', <span style={{ color: GH.ctxFg }}>{entry.db_transaction_id}</span>));
+    rows.push(ghCtx('created_at', <span style={{ color: GH.date }}>{fmtDatetime(entry.created_at)}</span>));
     if (entry.correlation_id) {
-        rows.push({
-            content: (
-                <div className="flex items-center gap-2">
-                    <span style={{ color: C.punct }}>{'  '}</span>
-                    <Key v="correlation_id" />
-                    <span style={{ color: C.uuid }}>"{entry.correlation_id}"</span>
-                    <P v="," />
-                    <button
-                        onClick={() => onTraceCorrelation(entry.correlation_id!)}
-                        className="ml-1 inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-indigo-600 text-white text-[9px] font-bold hover:bg-indigo-500 transition-colors"
-                    >
-                        <Activity className="w-2.5 h-2.5" /> Journal
-                    </button>
-                </div>
-            ),
-        });
+        rows.push(ghCtx('correlation_id', (
+            <span className="inline-flex items-center gap-2">
+                <span style={{ color: GH.uuid }}>{entry.correlation_id}</span>
+                <button
+                    onClick={() => onTraceToJournal(entry.correlation_id!)}
+                    className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] font-bold hover:opacity-80 transition-opacity"
+                    style={{ background: '#4c5cf630', color: '#818cf8' }}
+                >
+                    <Activity className="w-2.5 h-2.5" /> Journal
+                </button>
+            </span>
+        )));
     }
 
-    rows.push({ content: <></>, type: 'comment' });
-    rows.push({ content: <>{c('  // ─── Snapshot complet (deleted_row)')}</>, type: 'comment' });
-
-    // Render each field of deleted_row as a diff-remove line (everything is gone)
-    Object.entries(entry.deleted_row).forEach(([k, v]) => {
-        rows.push({
-            type: 'diff-remove',
-            content: (
-                <>
-                    <span style={{ color: C.dimRm }}>−{'  '}</span>
-                    <Key v={k} />
-                    <Val v={v} />
-                </>
-            ),
-        });
+    // Snapshot hunk — all fields as remove lines (everything was deleted)
+    const deletedRow = parseDeletedRow(entry.deleted_row);
+    rows.push({ type: 'hunk', content: `deleted_row — ${Object.keys(deletedRow).length} champs` });
+    Object.entries(deletedRow).forEach(([k, v]) => {
+        rows.push({ type: 'remove', content: <><span style={{ color: `${GH.rmFg}bb` }}>{k}</span><span style={{ color: '#6e7681' }}>: </span>{formatDiffValue(v)}</> });
     });
 
-    rows.push({ content: <P v="}" /> });
     return rows;
 }
 
@@ -861,52 +778,41 @@ interface DbDeletionDetailProps {
 function DbDeletionDetail({ entry, cascade, cascadeLoading, onLoadCascade, onTraceToJournal }: DbDeletionDetailProps) {
     const displayList = cascade ?? [entry];
     const isCascadeView = cascade !== null && cascade.length > 1;
+    const totalRm = displayList.reduce((s, d) => s + Object.keys(d.deleted_row).length, 0);
 
-    const lines = useMemo((): EditorLine[] => {
-        const rows: EditorLine[] = [];
+    const lines = useMemo((): GHLine[] => {
+        const rows: GHLine[] = [];
         displayList.forEach((d, i) => {
-            if (i > 0) {
-                rows.push({ content: <></> });
-                rows.push({ content: <></> });
-            }
-            rows.push(...buildDeletionEditorLines(d, i, displayList.length, onTraceToJournal));
+            if (i > 0) rows.push({ type: 'spacer' });
+            rows.push(...buildDeletionGHLines(d, i, displayList.length, onTraceToJournal));
         });
         return rows;
     }, [displayList, onTraceToJournal]);
 
     return (
-        <div className="h-full flex flex-col" style={{ background: '#1e1e2e' }}>
-            {/* Tab bar */}
-            <div className="shrink-0 flex items-center h-9 border-b" style={{ background: '#252526', borderColor: '#3c3c3c' }}>
-                <div className="flex items-center gap-1.5 h-full px-4 border-r border-t-2" style={{ background: '#1e1e2e', borderColor: '#3c3c3c', borderTopColor: '#ef4444' }}>
-                    <Database className="w-3 h-3" style={{ color: '#ef4444' }} />
-                    <span className="text-[11px] font-mono" style={{ color: '#cccccc' }}>
-                        {isCascadeView ? `txn_${entry.db_transaction_id}.log` : `deletion_${entry.id}.log`}
+        <GitHubDiff
+            filename={isCascadeView ? `txn_${entry.db_transaction_id}.diff` : `deletion_${entry.id}.diff`}
+            lines={lines}
+            rmCount={totalRm}
+            headerRight={
+                isCascadeView ? (
+                    <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-[10px] font-semibold"
+                        style={{ background: 'rgba(239,68,68,0.12)', color: '#fca5a5' }}>
+                        <GitBranch className="w-3 h-3" /> {displayList.length} suppressions · même txn
                     </span>
-                </div>
-                {/* Cascade button */}
-                {!isCascadeView && (
+                ) : (
                     <button
                         onClick={() => onLoadCascade(entry.db_transaction_id)}
                         disabled={cascadeLoading}
-                        className="ml-3 inline-flex items-center gap-1 px-2 py-1 rounded bg-red-900/50 border border-red-700/50 text-[10px] font-semibold hover:bg-red-800/60 transition-colors disabled:opacity-50"
-                        style={{ color: '#f87171' }}
+                        className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-[10px] font-semibold disabled:opacity-50 hover:opacity-80 transition-opacity"
+                        style={{ background: 'rgba(239,68,68,0.12)', color: '#f87171' }}
                     >
                         <GitBranch className="w-3 h-3" />
-                        {cascadeLoading ? 'Chargement...' : `Voir cascade txn #${entry.db_transaction_id}`}
+                        {cascadeLoading ? 'Chargement…' : `Voir cascade txn #${entry.db_transaction_id}`}
                     </button>
-                )}
-                {isCascadeView && (
-                    <span className="ml-3 inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-semibold bg-red-900/30 border border-red-700/30" style={{ color: '#fca5a5' }}>
-                        <GitBranch className="w-3 h-3" /> {displayList.length} suppressions · même transaction
-                    </span>
-                )}
-            </div>
-            {/* Editor content */}
-            <div className="flex-1 overflow-y-auto">
-                <EditorContent lines={lines} />
-            </div>
-        </div>
+                )
+            }
+        />
     );
 }
 
@@ -1318,38 +1224,48 @@ export function AuditPage() {
 
     const leftContent = (
         <div className="flex flex-col h-full overflow-hidden">
-            {/* Header */}
-            <div className="px-3 pt-3 pb-3 border-b border-gray-100 shrink-0">
+            {/* Header + compact icon tab strip */}
+            <div className="px-3 pt-3 pb-2 border-b border-gray-100 shrink-0 space-y-2">
                 <div className="flex items-center gap-2">
                     <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-indigo-500 to-indigo-600 flex items-center justify-center shrink-0">
                         <ShieldAlert className="w-3.5 h-3.5 text-white" />
                     </div>
-                    <div>
+                    <div className="flex-1 min-w-0">
                         <h1 className="text-sm font-bold text-gray-900 leading-tight">Audit Trail</h1>
                         <p className="text-[10px] text-gray-400">Console de supervision</p>
                     </div>
                 </div>
-            </div>
 
-            {/* Tab nav */}
-            <div className="px-2 pt-2 shrink-0 flex flex-col gap-0.5">
-                {TAB_CONFIG.filter(t => {
-                    if (t.id === 'purge' && !isRoot) return false;
-                    if (t.id === 'settings' && !canManageSettings) return false;
-                    return true;
-                }).map(({ id, label, icon: Icon }) => (
-                    <button key={id} onClick={() => setActiveTab(id)}
-                        className={`flex items-center gap-2.5 w-full px-2.5 py-2 rounded-lg text-left transition-colors text-[12px] font-semibold ${activeTab === id ? 'bg-indigo-50 text-indigo-700' : 'text-gray-600 hover:bg-gray-50'}`}>
-                        <Icon className="w-3.5 h-3.5 shrink-0" />
-                        <span>{label}</span>
-                        {id === 'anomalies' && (anomalies?.data ?? []).some(a => a.error_severity === 'CRITICAL') && (
-                            <span className="ml-auto w-1.5 h-1.5 rounded-full bg-red-500" />
-                        )}
-                    </button>
-                ))}
-            </div>
+                {/* Icon-only tab strip */}
+                <div className="flex items-center gap-0.5 bg-gray-100 dark:bg-gray-800 rounded-xl p-1">
+                    {TAB_CONFIG.filter(t => {
+                        if (t.id === 'purge' && !isRoot) return false;
+                        if (t.id === 'settings' && !canManageSettings) return false;
+                        return true;
+                    }).map(({ id, label, icon: Icon }) => (
+                        <button
+                            key={id}
+                            onClick={() => setActiveTab(id)}
+                            title={label}
+                            className={`relative flex-1 flex items-center justify-center py-1.5 rounded-lg transition-all ${
+                                activeTab === id
+                                    ? 'bg-white dark:bg-gray-700 shadow-sm text-indigo-600 dark:text-indigo-400'
+                                    : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200'
+                            }`}
+                        >
+                            <Icon className="w-3.5 h-3.5" />
+                            {id === 'anomalies' && (anomalies?.data ?? []).some(a => a.error_severity === 'CRITICAL') && (
+                                <span className="absolute top-1 right-1.5 w-1.5 h-1.5 rounded-full bg-red-500" />
+                            )}
+                        </button>
+                    ))}
+                </div>
 
-            <div className="h-px bg-gray-100 mx-3 my-2 shrink-0" />
+                {/* Active tab label */}
+                <p className="text-[10px] font-semibold text-indigo-600 dark:text-indigo-400 px-0.5">
+                    {TAB_CONFIG.find(t => t.id === activeTab)?.label}
+                </p>
+            </div>
 
             {/* Tab content */}
             <div className="flex-1 overflow-hidden flex flex-col min-h-0">

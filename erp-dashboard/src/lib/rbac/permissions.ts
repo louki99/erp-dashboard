@@ -337,6 +337,15 @@ export const PERMISSIONS = {
         PURGE: 'purge-audit-logs',
     },
 
+    // Backup & Restore
+    BACKUP: {
+        BROWSE: 'browse-backups',
+        CREATE: 'create-backups',
+        DELETE: 'delete-backups',
+        RESTORE: 'restore-backups',
+        MANAGE_SCHEDULE: 'manage-backup-schedule',
+    },
+
     // Task Workflow Management
     TASKS: {
         DASHBOARD: 'admin.tasks.dashboard',

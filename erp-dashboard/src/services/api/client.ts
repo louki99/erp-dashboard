@@ -41,6 +41,8 @@ apiClient.interceptors.request.use(
 // Response interceptor - Handle errors globally
 apiClient.interceptors.response.use(
     (response: AxiosResponse) => {
+        // Clear any active maintenance banner on a successful response
+        window.dispatchEvent(new CustomEvent('app:maintenance:clear'));
         return response;
     },
     (error: AxiosError) => {
@@ -72,6 +74,21 @@ apiClient.interceptors.response.use(
                 case 500:
                     toast.error(data?.message || i18n.t('errors.serverError'));
                     break;
+
+                case 503: {
+                    // App is in maintenance mode (e.g. a DB restore is running).
+                    // The backup-operations polling endpoint is explicitly excluded by the
+                    // backend from maintenance mode and will keep returning 200, so we
+                    // won't see 503 from there. All other endpoints may return 503.
+                    // Show a global banner instead of a toast; the banner handles retry UX.
+                    const retryAfter = Number(
+                        (error.response.headers as Record<string, string>)['retry-after'] ?? 15,
+                    );
+                    window.dispatchEvent(
+                        new CustomEvent('app:maintenance', { detail: { retryAfter } }),
+                    );
+                    break;
+                }
 
                 default:
                     toast.error(data?.message || i18n.t('errors.generic'));

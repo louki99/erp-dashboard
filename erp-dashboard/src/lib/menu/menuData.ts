@@ -820,6 +820,7 @@ export const MENU_MODULES: MenuModule[] = [
           { id: 'admin:sys:parametres', label: 'Paramètres Généraux', route: '/settings', permission: 'admin.settings.view' },
           { id: 'admin:sys:config-dyn', label: 'Configuration Dynamique', route: '/settings/configuration', permission: 'admin.settings.view' },
           { id: 'admin:sys:custom-fields', label: 'Champs Personnalisés', route: '/custom-fields', permission: 'admin.settings.view' },
+          { id: 'admin:sys:backup', label: 'Backup & Restore', route: '/backup', permission: 'browse-backups', icon: Database, description: 'Gestion des sauvegardes et restauration de la base de données' },
         ],
       },
       {
