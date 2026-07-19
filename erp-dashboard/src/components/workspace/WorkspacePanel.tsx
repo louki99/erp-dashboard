@@ -1,7 +1,7 @@
 import { useState, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
-import { X, Zap, Grid3x3, Clock, ChevronRight, Sparkles, ChevronLeft } from 'lucide-react';
+import { X, Zap, Grid3x3, Clock, ChevronRight, Sparkles, ChevronLeft, Star } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import {
     DOMAIN_COLOR_MAP,
@@ -10,45 +10,66 @@ import {
     type HubAction,
 } from '@/lib/hub/hubData';
 import { trackRecentPage, useRecentPages } from '@/hooks/useRecentPages';
+import { makeMenuKey } from '@/hooks/useWorkspaceFavorites';
+import type { WorkspaceFavorite } from '@/hooks/useWorkspaceFavorites';
 
 interface WorkspacePanelProps {
     domain: BusinessDomain;
     onClose: () => void;
     onBack?: () => void;
+    favorites?: WorkspaceFavorite[];
+    onToggleFavorite?: (item: WorkspaceFavorite) => void;
 }
 
-// ─── Workspace Quick Action Card ──────────────────────────────────────────────
+// ─── Quick Action Card ─────────────────────────────────────────────────────────
 
 interface QuickActionCardProps {
     action: HubAction;
     colors: typeof DOMAIN_COLOR_MAP[keyof typeof DOMAIN_COLOR_MAP];
     onClick: () => void;
+    starred?: boolean;
+    onStar?: () => void;
 }
 
-const QuickActionCard = ({ action, colors, onClick }: QuickActionCardProps) => {
+const QuickActionCard = ({ action, colors, onClick, starred, onStar }: QuickActionCardProps) => {
     const Icon = action.icon;
     return (
-        <button
-            onClick={onClick}
-            className={cn(
-                'flex flex-col items-center gap-3 p-4 rounded-2xl text-center',
-                'bg-white dark:bg-gray-800/70 border-2 border-transparent',
-                'hover:border-gray-200 dark:hover:border-gray-600',
-                'hover:shadow-lg shadow-sm transition-all duration-200 group',
-                'focus:outline-none focus:ring-2 focus:ring-offset-2',
+        <div className="relative group/qa">
+            <button
+                onClick={onClick}
+                className={cn(
+                    'flex flex-col items-center gap-3 p-4 rounded-2xl text-center w-full',
+                    'bg-white dark:bg-gray-800/70 border-2 border-transparent',
+                    'hover:border-gray-200 dark:hover:border-gray-600',
+                    'hover:shadow-lg shadow-sm transition-all duration-200 group',
+                    'focus:outline-none focus:ring-2 focus:ring-offset-2',
+                )}
+            >
+                <div className={cn(
+                    'w-11 h-11 rounded-xl flex items-center justify-center shrink-0',
+                    'group-hover:scale-110 transition-transform duration-200',
+                    colors.iconBg,
+                )}>
+                    <Icon className={cn('w-5 h-5', colors.text)} />
+                </div>
+                <span className="text-[11px] font-bold text-gray-700 dark:text-gray-200 leading-tight line-clamp-2 w-full">
+                    {action.label}
+                </span>
+            </button>
+            {onStar && (
+                <button
+                    onClick={(e) => { e.stopPropagation(); onStar(); }}
+                    title={starred ? 'Retirer des favoris' : 'Ajouter aux favoris'}
+                    className={cn(
+                        'absolute top-1.5 right-1.5 w-5 h-5 rounded-full flex items-center justify-center',
+                        'opacity-0 group-hover/qa:opacity-100 transition-opacity duration-150',
+                        'hover:bg-gray-100 dark:hover:bg-gray-700',
+                    )}
+                >
+                    <Star className={cn('w-3 h-3', starred ? 'fill-yellow-400 text-yellow-400' : 'text-gray-400')} />
+                </button>
             )}
-        >
-            <div className={cn(
-                'w-11 h-11 rounded-xl flex items-center justify-center shrink-0',
-                'group-hover:scale-110 transition-transform duration-200',
-                colors.iconBg,
-            )}>
-                <Icon className={cn('w-5 h-5', colors.text)} />
-            </div>
-            <span className="text-[11px] font-bold text-gray-700 dark:text-gray-200 leading-tight line-clamp-2 w-full">
-                {action.label}
-            </span>
-        </button>
+        </div>
     );
 };
 
@@ -58,9 +79,14 @@ interface ProcessCardProps {
     process: HubProcess;
     colors: typeof DOMAIN_COLOR_MAP[keyof typeof DOMAIN_COLOR_MAP];
     onNavigate: (route: string, label: string) => void;
+    domainId: string;
+    domainLabel: string;
+    domainColor: string;
+    favorites?: WorkspaceFavorite[];
+    onToggleFavorite?: (item: WorkspaceFavorite) => void;
 }
 
-const ProcessCard = ({ process, colors, onNavigate }: ProcessCardProps) => {
+const ProcessCard = ({ process, colors, onNavigate, domainId, domainLabel, domainColor, favorites, onToggleFavorite }: ProcessCardProps) => {
     const ProcessIcon = process.icon;
     const [expanded, setExpanded] = useState(false);
     const chipsRef = useRef<HTMLDivElement>(null);
@@ -71,11 +97,13 @@ const ProcessCard = ({ process, colors, onNavigate }: ProcessCardProps) => {
     const handleExpand = (e: React.MouseEvent) => {
         e.stopPropagation();
         setExpanded(true);
-        // Scroll the chips into view after the DOM updates
         requestAnimationFrame(() => {
             chipsRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
         });
     };
+
+    const isFav = (action: HubAction) =>
+        !!favorites?.some(f => f.id === action.id && f.route === action.route);
 
     return (
         <div className={cn(
@@ -84,7 +112,6 @@ const ProcessCard = ({ process, colors, onNavigate }: ProcessCardProps) => {
             'hover:border-gray-200 dark:hover:border-gray-600 hover:shadow-md',
             'transition-all duration-200 flex flex-col gap-3',
         )}>
-            {/* Card header — navigates to main process route */}
             <button
                 onClick={() => onNavigate(process.route, process.label)}
                 className="flex items-start gap-3 text-left group/header"
@@ -109,27 +136,51 @@ const ProcessCard = ({ process, colors, onNavigate }: ProcessCardProps) => {
                 <ChevronRight className="w-4 h-4 text-gray-300 dark:text-gray-600 shrink-0 mt-1 group-hover/header:text-gray-500 transition-colors" />
             </button>
 
-            {/* Action chips */}
             {process.actions.length > 0 && (
                 <div ref={chipsRef} className="flex flex-wrap gap-1.5 pt-2.5 border-t border-gray-100 dark:border-gray-700/50">
                     {visibleActions.map(action => {
                         const ActionIcon = action.icon;
+                        const starred = isFav(action);
+                        const favItem: WorkspaceFavorite = {
+                            menuKey: makeMenuKey(domainId, action.id),
+                            id: action.id,
+                            label: action.label,
+                            route: action.route,
+                            domainId,
+                            domainLabel,
+                            domainColor,
+                        };
                         return (
-                            <button
-                                key={action.id}
-                                onClick={(e) => { e.stopPropagation(); onNavigate(action.route, action.label); }}
-                                className={cn(
-                                    'inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full',
-                                    'text-[10px] font-semibold transition-all duration-150',
-                                    'bg-gray-50 dark:bg-gray-700/60 text-gray-600 dark:text-gray-300',
-                                    'border border-gray-200 dark:border-gray-600/50',
-                                    'hover:bg-gray-100 dark:hover:bg-gray-700 hover:text-gray-900 dark:hover:text-white',
-                                    'hover:border-gray-300 dark:hover:border-gray-500',
+                            <div key={action.id} className="relative group/chip inline-flex items-center">
+                                <button
+                                    onClick={(e) => { e.stopPropagation(); onNavigate(action.route, action.label); }}
+                                    className={cn(
+                                        'inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full',
+                                        'text-[10px] font-semibold transition-all duration-150',
+                                        'bg-gray-50 dark:bg-gray-700/60 text-gray-600 dark:text-gray-300',
+                                        'border border-gray-200 dark:border-gray-600/50',
+                                        'hover:bg-gray-100 dark:hover:bg-gray-700 hover:text-gray-900 dark:hover:text-white',
+                                        'hover:border-gray-300 dark:hover:border-gray-500',
+                                        starred && 'border-yellow-300 dark:border-yellow-600/50',
+                                    )}
+                                >
+                                    <ActionIcon className="w-2.5 h-2.5 shrink-0" />
+                                    {action.label}
+                                </button>
+                                {onToggleFavorite && (
+                                    <button
+                                        onClick={(e) => { e.stopPropagation(); onToggleFavorite(favItem); }}
+                                        title={starred ? 'Retirer des favoris' : 'Ajouter aux favoris'}
+                                        className={cn(
+                                            'ml-0.5 p-0.5 rounded-full flex-shrink-0',
+                                            'opacity-0 group-hover/chip:opacity-100 transition-opacity duration-150',
+                                            'hover:bg-gray-100 dark:hover:bg-gray-700',
+                                        )}
+                                    >
+                                        <Star className={cn('w-2.5 h-2.5', starred ? 'fill-yellow-400 text-yellow-400' : 'text-gray-300')} />
+                                    </button>
                                 )}
-                            >
-                                <ActionIcon className="w-2.5 h-2.5 shrink-0" />
-                                {action.label}
-                            </button>
+                            </div>
                         );
                     })}
                     {!expanded && hiddenCount > 0 && (
@@ -175,8 +226,6 @@ const AI_SUGGESTIONS: Record<string, string[]> = {
     'administration': ['Utilisateurs actifs', 'Audit des accès', 'Configuration système'],
 };
 
-// ─── Section label ─────────────────────────────────────────────────────────────
-
 const SectionLabel = ({ icon: Icon, label }: { icon: React.ElementType; label: string }) => (
     <div className="flex items-center gap-2 mb-4">
         <Icon className="w-3.5 h-3.5 text-gray-400" />
@@ -185,8 +234,6 @@ const SectionLabel = ({ icon: Icon, label }: { icon: React.ElementType; label: s
         </span>
     </div>
 );
-
-// ─── Main Panel ───────────────────────────────────────────────────────────────
 
 const stagger = {
     hidden: {},
@@ -197,7 +244,9 @@ const fadeUp = {
     show:   { opacity: 1, y: 0, transition: { duration: 0.2 } },
 };
 
-export const WorkspacePanel = ({ domain, onClose, onBack }: WorkspacePanelProps) => {
+// ─── Main Panel ───────────────────────────────────────────────────────────────
+
+export const WorkspacePanel = ({ domain, onClose, onBack, favorites, onToggleFavorite }: WorkspacePanelProps) => {
     const navigate = useNavigate();
     const colors = DOMAIN_COLOR_MAP[domain.color];
     const recentPages = useRecentPages();
@@ -209,20 +258,21 @@ export const WorkspacePanel = ({ domain, onClose, onBack }: WorkspacePanelProps)
         onClose();
     };
 
-    // Primary actions: first action from each process (max 5)
     const quickActions: HubAction[] = domain.processes
         .map(p => p.actions[0])
         .filter(Boolean)
         .slice(0, 5);
 
     const aiSuggestions = AI_SUGGESTIONS[domain.id] ?? ['Aide', 'Rechercher'];
-
     const totalActions = domain.processes.reduce((sum, p) => sum + p.actions.length, 0);
+
+    const isFav = (action: HubAction) =>
+        !!favorites?.some(f => f.id === action.id && f.route === action.route);
 
     return (
         <div className="flex flex-col h-full select-none">
 
-            {/* ── Header ────────────────────────────────────────────────── */}
+            {/* ── Header ───────────────────────────────────────────────── */}
             <div className={cn('shrink-0 px-7 py-5 flex items-center gap-4 border-b border-gray-100 dark:border-gray-800/60', colors.bg)}>
                 <div className={cn('w-12 h-12 rounded-2xl flex items-center justify-center shadow-sm shrink-0', colors.iconBg)}>
                     <DomainIcon className={cn('w-6 h-6', colors.text)} />
@@ -273,7 +323,7 @@ export const WorkspacePanel = ({ domain, onClose, onBack }: WorkspacePanelProps)
                     className="px-7 py-6 space-y-7"
                 >
 
-                    {/* ── Quick Actions ────────────────────────────────── */}
+                    {/* ── Quick Actions ─────────────────────────────────── */}
                     {quickActions.length > 0 && (
                         <motion.section variants={fadeUp}>
                             <SectionLabel icon={Zap} label="Actions Rapides" />
@@ -287,6 +337,16 @@ export const WorkspacePanel = ({ domain, onClose, onBack }: WorkspacePanelProps)
                                         action={action}
                                         colors={colors}
                                         onClick={() => go(action.route, action.label)}
+                                        starred={isFav(action)}
+                                        onStar={onToggleFavorite ? () => onToggleFavorite({
+                                            menuKey: makeMenuKey(domain.id, action.id),
+                                            id: action.id,
+                                            label: action.label,
+                                            route: action.route,
+                                            domainId: domain.id,
+                                            domainLabel: domain.label,
+                                            domainColor: domain.color,
+                                        }) : undefined}
                                     />
                                 ))}
                             </div>
@@ -305,6 +365,11 @@ export const WorkspacePanel = ({ domain, onClose, onBack }: WorkspacePanelProps)
                                     process={process}
                                     colors={colors}
                                     onNavigate={go}
+                                    domainId={domain.id}
+                                    domainLabel={domain.label}
+                                    domainColor={domain.color}
+                                    favorites={favorites}
+                                    onToggleFavorite={onToggleFavorite}
                                 />
                             ))}
                         </div>
@@ -312,16 +377,12 @@ export const WorkspacePanel = ({ domain, onClose, onBack }: WorkspacePanelProps)
 
                     <div className="h-px bg-gray-100 dark:bg-gray-800" />
 
-                    {/* ── Bottom: Recent + Stats ────────────────────────── */}
+                    {/* ── Bottom: Recent + Stats ─────────────────────────── */}
                     <motion.div variants={fadeUp} className="grid grid-cols-2 gap-5">
-
-                        {/* Continue Working */}
                         <section>
                             <SectionLabel icon={Clock} label="Reprendre" />
                             {recentPages.length === 0 ? (
-                                <p className="text-xs text-gray-400 italic py-2">
-                                    Aucun historique récent
-                                </p>
+                                <p className="text-xs text-gray-400 italic py-2">Aucun historique récent</p>
                             ) : (
                                 <div className="space-y-0.5">
                                     {recentPages.slice(0, 4).map(page => (
@@ -341,7 +402,6 @@ export const WorkspacePanel = ({ domain, onClose, onBack }: WorkspacePanelProps)
                             )}
                         </section>
 
-                        {/* Domain Stats */}
                         <section>
                             <SectionLabel icon={Grid3x3} label="Statistiques" />
                             <div className="grid grid-cols-2 gap-2.5">
@@ -365,13 +425,9 @@ export const WorkspacePanel = ({ domain, onClose, onBack }: WorkspacePanelProps)
                         </section>
                     </motion.div>
 
-                    {/* ── AI Assistant ─────────────────────────────────── */}
+                    {/* ── AI Assistant ──────────────────────────────────── */}
                     <motion.section variants={fadeUp}>
-                        <div className={cn(
-                            'rounded-2xl p-5 border',
-                            colors.bg,
-                            colors.border,
-                        )}>
+                        <div className={cn('rounded-2xl p-5 border', colors.bg, colors.border)}>
                             <div className="flex items-center gap-2 mb-3">
                                 <Sparkles className="w-4 h-4 text-violet-500" />
                                 <span className="text-xs font-bold text-gray-700 dark:text-gray-200">

@@ -411,6 +411,69 @@ function ItinerariesDashboard({ itineraries }: { itineraries: Itinerary[] }) {
     );
 }
 
+// ─── Form panel (inline, replaces modal) ─────────────────────────────────────
+
+function ItineraryFormPanel({
+    itinerary,
+    itineraryTypes,
+    branches,
+    geoAreas,
+    riders,
+    onSubmit,
+    onCancel,
+    loading,
+}: {
+    itinerary: Itinerary | null;
+    itineraryTypes: any[];
+    branches: any[];
+    geoAreas: any[];
+    riders: any[];
+    onSubmit: (payload: CreateItineraryPayload | UpdateItineraryPayload) => Promise<void>;
+    onCancel: () => void;
+    loading: boolean;
+}) {
+    return (
+        <div className="h-full bg-slate-50/60 flex flex-col">
+            <div className="border-b border-gray-200 bg-white px-6 py-4 shrink-0">
+                <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-3">
+                        <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-sage-50 border border-sage-100 text-sage-700">
+                            {itinerary ? <Edit2 className="h-5 w-5" /> : <Plus className="h-5 w-5" />}
+                        </div>
+                        <div>
+                            <h1 className="text-lg font-bold text-gray-900">
+                                {itinerary ? 'Modifier la tournée' : 'Nouvelle tournée'}
+                            </h1>
+                            {itinerary && (
+                                <p className="text-xs text-gray-400 font-mono mt-0.5">{itinerary.code} · {itinerary.name}</p>
+                            )}
+                            {!itinerary && (
+                                <p className="text-xs text-gray-400 mt-0.5">Configuration : type, secteur, vendeur et période</p>
+                            )}
+                        </div>
+                    </div>
+                    <Button variant="ghost" size="sm" onClick={onCancel} className="h-8 w-8 p-0">
+                        <X className="h-4 w-4" />
+                    </Button>
+                </div>
+            </div>
+            <div className="flex-1 overflow-y-auto p-6">
+                <ItineraryForm
+                    key={itinerary ? `edit-${itinerary.id}` : 'create'}
+                    itinerary={itinerary}
+                    itineraryTypes={itineraryTypes}
+                    branches={branches}
+                    geoAreas={geoAreas}
+                    riders={riders}
+                    onSubmit={onSubmit}
+                    onCancel={onCancel}
+                    loading={loading}
+                />
+            </div>
+        </div>
+    );
+}
+
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
 export function ItinerariesPage() {
@@ -443,11 +506,14 @@ export function ItinerariesPage() {
             if (editingItinerary) {
                 await updateItinerary.mutateAsync(payload);
                 toast.success('Tournée mise à jour.');
+                // Return to detail panel for the same itinerary
+                setEditingItinerary(undefined);
+                setShowDetailPanel(true);
             } else {
                 await createItinerary.mutateAsync(payload as CreateItineraryPayload);
                 toast.success('Tournée créée.');
+                setEditingItinerary(undefined);
             }
-            setEditingItinerary(undefined);
         } catch (error) {
             toast.error(getErrorMessage(error));
         }
@@ -500,9 +566,9 @@ export function ItinerariesPage() {
             flex: 0.7,
             cellRenderer: (params: { value: boolean }) =>
                 params.value ? (
-                    <Badge variant="success" className="text-[10px]">Active</Badge>
+                    <span className="text-xs font-semibold text-emerald-600">Active</span>
                 ) : (
-                    <Badge variant="secondary" className="text-[10px]">Inactive</Badge>
+                    <span className="text-xs font-semibold text-gray-400">Inactive</span>
                 ),
         },
     ];
@@ -619,28 +685,6 @@ export function ItinerariesPage() {
             }
             mainContent={
                 <div className="h-full flex flex-col">
-                    <Dialog open={editingItinerary !== undefined} onOpenChange={(open) => !open && setEditingItinerary(undefined)}>
-                        <DialogContent className="max-w-3xl">
-                            <DialogHeader>
-                                <DialogTitle>{editingItinerary ? 'Modifier la tournée' : 'Nouvelle tournée'}</DialogTitle>
-                                <DialogDescription>
-                                    Configuration de la tournée : type, secteur, vendeur titulaire et période.
-                                </DialogDescription>
-                            </DialogHeader>
-                            <ItineraryForm
-                                key={editingItinerary ? `edit-${editingItinerary.id}` : 'create'}
-                                itinerary={editingItinerary ?? null}
-                                itineraryTypes={itineraryTypesData?.data?.data ?? []}
-                                branches={data?.branches ?? []}
-                                geoAreas={data?.geoAreas ?? []}
-                                riders={data?.riders ?? []}
-                                onSubmit={handleFormSubmit}
-                                onCancel={() => setEditingItinerary(undefined)}
-                                loading={createItinerary.isPending || updateItinerary.isPending}
-                            />
-                        </DialogContent>
-                    </Dialog>
-
                     <Dialog open={!!itineraryToDelete} onOpenChange={(open) => !open && setItineraryToDelete(null)}>
                         <DialogContent className="max-w-md">
                             <DialogHeader>
@@ -763,7 +807,18 @@ export function ItinerariesPage() {
                         </DialogContent>
                     </Dialog>
 
-                    {showDetailPanel && selectedItinerary ? (
+                    {editingItinerary !== undefined ? (
+                        <ItineraryFormPanel
+                            itinerary={editingItinerary}
+                            itineraryTypes={itineraryTypesData?.data?.data ?? []}
+                            branches={data?.branches ?? []}
+                            geoAreas={data?.geoAreas ?? []}
+                            riders={data?.riders ?? []}
+                            onSubmit={handleFormSubmit}
+                            onCancel={() => setEditingItinerary(undefined)}
+                            loading={createItinerary.isPending || updateItinerary.isPending}
+                        />
+                    ) : showDetailPanel && selectedItinerary ? (
                         <ItineraryDetail
                             itinerary={selectedItinerary}
                             onBack={() => setShowDetailPanel(false)}

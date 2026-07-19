@@ -2,7 +2,6 @@ import React, { useState, useEffect, useMemo } from 'react';
 import Split from 'react-split';
 import { cn } from '@/lib/utils';
 import { Search, Star, ChevronDown, ChevronLeft, ChevronRight, Maximize2, Minimize2, Bell, Moon, Sun, LayoutGrid } from 'lucide-react';
-import { MegaMenu } from './MegaMenu';
 import { CommandMenu } from './CommandMenu';
 import { AppLauncher } from './AppLauncher';
 import { ConfirmationModal } from '@/components/common/ConfirmationModal';
@@ -10,8 +9,8 @@ import { ConfirmationModal } from '@/components/common/ConfirmationModal';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '@/context/AuthContext';
 import { LanguageSwitcher } from '@/components/common/LanguageSwitcher';
-import { useFilteredMenu } from '@/lib/menu/menuUtils';
-import { useMenuFavorites } from '@/hooks/menu/useMenuFavorites';
+import { useWorkspaceFavorites } from '@/hooks/useWorkspaceFavorites';
+import { trackRecentPage } from '@/hooks/useRecentPages';
 
 interface MasterLayoutProps {
     children?: React.ReactNode;
@@ -37,7 +36,6 @@ export const MasterLayout: React.FC<MasterLayoutProps> = ({
     const [isMobile, setIsMobile] = useState(false);
 
     const [mode, setMode] = useState<LayoutMode>('split');
-    const [isMegaMenuOpen, setIsMegaMenuOpen] = useState(false);
     const [isLauncherOpen, setIsLauncherOpen] = useState(false);
     const [isCommandMenuOpen, setIsCommandMenuOpen] = useState(false);
     const [showUserMenu, setShowUserMenu] = useState(false);
@@ -49,8 +47,7 @@ export const MasterLayout: React.FC<MasterLayoutProps> = ({
     const userPermissions = useMemo(() => user?.permissions?.effective || [], [user?.permissions?.effective]);
     const userRoles = useMemo(() => user?.roles?.details?.map(r => r.name) || [], [user?.roles?.details]);
 
-    const { items: menuItems } = useFilteredMenu(userPermissions, userRoles);
-    const { favorites } = useMenuFavorites(menuItems, user?.id?.toString());
+    const { favorites, remove: removeFavorite } = useWorkspaceFavorites();
 
     // Check Screen Size
     useEffect(() => {
@@ -114,27 +111,14 @@ export const MasterLayout: React.FC<MasterLayoutProps> = ({
         setIsCommandMenuOpen(true);
     };
 
-    const handleFavoriteNavigation = (route: string) => {
+    const handleFavoriteNavigation = (route: string, label: string) => {
         setShowFavoritesMenu(false);
+        trackRecentPage(route, label);
         navigate(route);
     };
 
     return (
         <div className={cn("h-screen w-full flex flex-col bg-background overflow-hidden font-sans", className)}>
-            {/* Mega Menu Overlay */}
-            <MegaMenu
-                isOpen={isMegaMenuOpen}
-                onClose={() => {
-                    setIsMegaMenuOpen(false);
-                    setSearchQuery('');
-                }}
-                initialSearchQuery={searchQuery}
-                onSearchQueryChange={setSearchQuery}
-                userId={user?.id?.toString()}
-                userPermissions={userPermissions}
-                userRoles={userRoles}
-            />
-
             {/* Command Palette Overlay */}
             <CommandMenu
                 isOpen={isCommandMenuOpen}
@@ -227,19 +211,20 @@ export const MasterLayout: React.FC<MasterLayoutProps> = ({
                                         {favorites.length === 0 ? (
                                             <div className="px-4 py-6 text-center text-sm text-gray-500 dark:text-gray-400">
                                                 <Star className="w-8 h-8 mx-auto mb-2 text-gray-300 dark:text-gray-600" />
-                                                No favorites yet
-                                                <p className="text-xs mt-1">Add items from the menu</p>
+                                                <p>Aucun favori</p>
+                                                <p className="text-xs mt-1">Étoilez des actions dans le workspace</p>
                                             </div>
                                         ) : (
                                             <div className="max-h-64 overflow-y-auto">
                                                 {favorites.map((item) => (
                                                     <button
-                                                        key={item.id}
-                                                        onClick={() => handleFavoriteNavigation(item.route)}
+                                                        key={`${item.id}-${item.route}`}
+                                                        onClick={() => handleFavoriteNavigation(item.route, item.label)}
                                                         className="w-full text-left px-4 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-sage-50 dark:hover:bg-gray-700 hover:text-sage-600 transition-colors flex items-center gap-2"
                                                     >
-                                                        <Star className="w-3 h-3 text-yellow-500 fill-yellow-500" />
-                                                        {item.label}
+                                                        <Star className="w-3 h-3 text-yellow-500 fill-yellow-500 shrink-0" />
+                                                        <span className="truncate">{item.label}</span>
+                                                        <span className="ml-auto text-[10px] text-gray-400 shrink-0">{item.domainLabel}</span>
                                                     </button>
                                                 ))}
                                             </div>
@@ -248,11 +233,11 @@ export const MasterLayout: React.FC<MasterLayoutProps> = ({
                                             <button
                                                 onClick={() => {
                                                     setShowFavoritesMenu(false);
-                                                    setIsMegaMenuOpen(true);
+                                                    setIsLauncherOpen(true);
                                                 }}
                                                 className="text-xs text-sage-600 dark:text-sage-400 hover:text-sage-700 dark:hover:text-sage-300"
                                             >
-                                                View all in menu →
+                                                Ouvrir le workspace →
                                             </button>
                                         </div>
                                     </div>

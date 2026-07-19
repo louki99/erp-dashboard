@@ -344,7 +344,6 @@ export const ProductsPage = () => {
             { id: 'flags', label: 'Options inventaire', icon: CheckCircle2 },
             { id: 'marketing', label: 'Marketing', icon: BarChart3 },
             { id: 'translations', label: 'Traductions', icon: Globe },
-            { id: 'media', label: 'Médias', icon: ImageIcon },
             { id: 'custom_fields', label: 'Champs personnalisés', icon: Tag },
         ],
         []
@@ -1227,6 +1226,41 @@ export const ProductsPage = () => {
                                             >
                                                 <X className="w-5 h-5 text-gray-600" />
                                             </button>
+                                            <div className="shrink-0 relative group">
+                                                {(() => {
+                                                    const mainImage = isCreateMode 
+                                                        ? (formData.thumbnail ? URL.createObjectURL(formData.thumbnail as any) : null) 
+                                                        : (detailData?.data?.thumbnail || details?.thumbnail);
+                                                    const src = (mainImage as any)?.url || mainImage;
+                                                    return (
+                                                        <label className="block w-12 h-12 rounded-lg bg-gray-50 border border-gray-200 overflow-hidden cursor-pointer hover:ring-2 hover:ring-sage-500 hover:ring-offset-1 transition-all" title="Changer l'image principale">
+                                                            {src ? (
+                                                                <img src={src} alt="thumbnail" className="w-full h-full object-contain bg-white" />
+                                                            ) : (
+                                                                <div className="w-full h-full flex items-center justify-center bg-gray-50">
+                                                                    <ImageIcon className="w-5 h-5 text-gray-300" />
+                                                                </div>
+                                                            )}
+                                                            <input 
+                                                                type="file" 
+                                                                className="hidden" 
+                                                                accept="image/*" 
+                                                                onChange={(e) => {
+                                                                    if (isCreateMode) {
+                                                                        if (e.target.files?.[0]) setFormData({ ...formData, thumbnail: e.target.files[0] });
+                                                                    } else {
+                                                                        handleMainImageChange(e);
+                                                                    }
+                                                                }} 
+                                                                disabled={uploadingMainImage} 
+                                                            />
+                                                            <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity">
+                                                                {uploadingMainImage ? <Loader2 className="w-4 h-4 text-white animate-spin" /> : <Upload className="w-4 h-4 text-white" />}
+                                                            </div>
+                                                        </label>
+                                                    );
+                                                })()}
+                                            </div>
                                             <div className="min-w-0 flex-1">
                                                 <div className="flex items-center gap-2 flex-wrap">
                                                     <h1 className="text-lg sm:text-xl font-bold text-gray-900 truncate">
@@ -1881,7 +1915,7 @@ export const ProductsPage = () => {
                                                                         value={supplierForm.supplier_id}
                                                                         onChange={(e) => setSupplierForm({ ...supplierForm, supplier_id: e.target.value })}
                                                                         disabled={!!editingSupplierId}
-                                                                        className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-sage-500 disabled:bg-gray-100 disabled:text-gray-500"
+                                                                        className="w-full h-[38px] px-3 py-2 text-sm border border-gray-300 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-sage-500 disabled:bg-gray-100 disabled:text-gray-500"
                                                                     >
                                                                         <option value="">Choisir...</option>
                                                                         {suppliers
@@ -1898,7 +1932,7 @@ export const ProductsPage = () => {
                                                                         step="0.01"
                                                                         value={supplierForm.cost_price}
                                                                         onChange={(e) => setSupplierForm({ ...supplierForm, cost_price: e.target.value })}
-                                                                        className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-sage-500"
+                                                                        className="w-full h-[38px] px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-sage-500"
                                                                         placeholder="0.00"
                                                                     />
                                                                 </div>
@@ -1909,7 +1943,7 @@ export const ProductsPage = () => {
                                                                         min="0"
                                                                         value={supplierForm.min_order_qty}
                                                                         onChange={(e) => setSupplierForm({ ...supplierForm, min_order_qty: e.target.value })}
-                                                                        className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-sage-500"
+                                                                        className="w-full h-[38px] px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-sage-500"
                                                                         placeholder="0"
                                                                     />
                                                                 </div>
@@ -1920,7 +1954,7 @@ export const ProductsPage = () => {
                                                                         min="0"
                                                                         value={supplierForm.lead_time_days}
                                                                         onChange={(e) => setSupplierForm({ ...supplierForm, lead_time_days: e.target.value })}
-                                                                        className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-sage-500"
+                                                                        className="w-full h-[38px] px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-sage-500"
                                                                         placeholder="0"
                                                                     />
                                                                 </div>
@@ -2072,7 +2106,7 @@ export const ProductsPage = () => {
                                                                     <select
                                                                         value={packagingForm.unit_id}
                                                                         onChange={(e) => setPackagingForm({ ...packagingForm, unit_id: e.target.value })}
-                                                                        className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-sage-500"
+                                                                        className="w-full h-[38px] px-3 py-2 text-sm border border-gray-300 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-sage-500"
                                                                     >
                                                                         <option value="">Choisir...</option>
                                                                         {units.map((u: any) => (
@@ -2087,7 +2121,7 @@ export const ProductsPage = () => {
                                                                         min="1"
                                                                         value={packagingForm.quantity}
                                                                         onChange={(e) => setPackagingForm({ ...packagingForm, quantity: e.target.value })}
-                                                                        className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-sage-500"
+                                                                        className="w-full h-[38px] px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-sage-500"
                                                                         placeholder="Ex: 24"
                                                                     />
                                                                 </div>
@@ -2096,7 +2130,7 @@ export const ProductsPage = () => {
                                                                     <select
                                                                         value={packagingForm.packaging_level_id}
                                                                         onChange={(e) => setPackagingForm({ ...packagingForm, packaging_level_id: e.target.value })}
-                                                                        className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-sage-500"
+                                                                        className="w-full h-[38px] px-3 py-2 text-sm border border-gray-300 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-sage-500"
                                                                     >
                                                                         <option value="">Auto</option>
                                                                         <option value="1">UNIT</option>
@@ -2237,7 +2271,7 @@ export const ProductsPage = () => {
                                                                         value={translationForm.lang}
                                                                         onChange={(e) => setTranslationForm({ ...translationForm, lang: e.target.value })}
                                                                         disabled={!!editingTranslationLang}
-                                                                        className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-sage-500 disabled:bg-gray-100 disabled:text-gray-500"
+                                                                        className="w-full h-[38px] px-3 py-2 text-sm border border-gray-300 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-sage-500 disabled:bg-gray-100 disabled:text-gray-500"
                                                                     >
                                                                         <option value="">Choisir...</option>
                                                                         <option value="fr">🇫🇷 Français</option>
@@ -2255,7 +2289,7 @@ export const ProductsPage = () => {
                                                                         type="text"
                                                                         value={translationForm.name}
                                                                         onChange={(e) => setTranslationForm({ ...translationForm, name: e.target.value })}
-                                                                        className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-sage-500"
+                                                                        className="w-full h-[38px] px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-sage-500"
                                                                         placeholder="Nom du produit dans cette langue"
                                                                     />
                                                                 </div>
@@ -2265,7 +2299,7 @@ export const ProductsPage = () => {
                                                                         type="text"
                                                                         value={translationForm.short_description}
                                                                         onChange={(e) => setTranslationForm({ ...translationForm, short_description: e.target.value })}
-                                                                        className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-sage-500"
+                                                                        className="w-full h-[38px] px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-sage-500"
                                                                         placeholder="Sous-titre / accroche"
                                                                     />
                                                                 </div>
@@ -2595,224 +2629,6 @@ export const ProductsPage = () => {
                                         </SageCollapsible>
                                     </div>
 
-                                    {/* Media Section */}
-                                    <div ref={el => { sectionRefs.current['media'] = el; }}>
-                                        <SageCollapsible
-                                            title="Médias"
-                                            isOpen={openSections['media']}
-                                            onOpenChange={(open) => toggleSection('media', open)}
-                                        >
-                                            {(() => {
-                                                const mainImage = detailData?.data?.thumbnail || details?.thumbnail;
-                                                const galleryImages = detailData?.data?.medias
-                                                    ?? detailData?.data?.thumbnails
-                                                    ?? detailData?.data?.additional_thumbnails
-                                                    ?? [];
-
-                                                const renderImage = (src: string, alt: string, className?: string) => (
-                                                    <img
-                                                        src={src}
-                                                        alt={alt}
-                                                        className={className}
-                                                        onError={(e) => {
-                                                            (e.target as HTMLImageElement).src = 'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" width="200" height="200"%3E%3Crect fill="%23f0f0f0" width="200" height="200"/%3E%3Ctext fill="%23999" x="50%25" y="50%25" text-anchor="middle" dy=".3em"%3ENo Image%3C/text%3E%3C/svg%3E';
-                                                        }}
-                                                    />
-                                                );
-
-                                                if (isCreateMode) {
-                                                    return (
-                                                        <div className="space-y-4">
-                                                            <FileUpload
-                                                                label="Image principale"
-                                                                value={formData.thumbnail || null}
-                                                                onChange={(file) => setFormData({ ...formData, thumbnail: file })}
-                                                                accept="image/*"
-                                                                multiple={false}
-                                                                maxSize={2}
-                                                                showPreview={true}
-                                                                currentImages={mainImage ? [{ id: (mainImage as any).id ?? 0, url: (mainImage as any).url || mainImage, name: 'Image principale' }] : []}
-                                                                helperText="PNG, JPG, JPEG ou WEBP (max 2MB)"
-                                                            />
-                                                            <FileUpload
-                                                                label="Images supplémentaires"
-                                                                value={formData.additionThumbnail || null}
-                                                                onChange={(files) => setFormData({ ...formData, additionThumbnail: files })}
-                                                                accept="image/*"
-                                                                multiple={true}
-                                                                maxSize={2}
-                                                                maxFiles={10}
-                                                                showPreview={true}
-                                                                currentImages={galleryImages.map((thumb: any, idx: number) => ({ id: thumb.id, url: thumb.url || thumb.thumbnail, name: `Image ${idx + 1}` }))}
-                                                                helperText="Vous pouvez télécharger jusqu'à 10 images supplémentaires"
-                                                            />
-                                                        </div>
-                                                    );
-                                                }
-
-                                                if (isEditMode) {
-                                                    return (
-                                                        <div className="space-y-6">
-                                                            {/* Main image */}
-                                                            <div>
-                                                                <h4 className="text-sm font-semibold text-gray-900 mb-3">Image principale</h4>
-                                                                {mainImage ? (
-                                                                    <div className="relative w-full h-80 bg-gradient-to-br from-gray-50 to-gray-100 rounded-xl overflow-hidden border-2 border-gray-200 shadow-sm group">
-                                                                        {renderImage((mainImage as any).url || mainImage as string, details?.name || 'Image principale', 'w-full h-full object-contain p-4')}
-                                                                        <div className="absolute bottom-4 right-4">
-                                                                            <label className="inline-flex items-center gap-1.5 px-4 py-2 bg-white/90 backdrop-blur-sm text-gray-700 text-xs font-semibold rounded-lg shadow-sm cursor-pointer hover:bg-white transition-colors">
-                                                                                <input
-                                                                                    type="file"
-                                                                                    accept="image/*"
-                                                                                    className="hidden"
-                                                                                    onChange={handleMainImageChange}
-                                                                                    disabled={uploadingMainImage}
-                                                                                />
-                                                                                {uploadingMainImage ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Upload className="w-3.5 h-3.5" />}
-                                                                                Remplacer
-                                                                            </label>
-                                                                        </div>
-                                                                    </div>
-                                                                ) : (
-                                                                    <label className="flex flex-col items-center justify-center w-full h-48 border-2 border-dashed border-gray-300 rounded-xl cursor-pointer hover:bg-gray-50 transition-colors">
-                                                                        <input
-                                                                            type="file"
-                                                                            accept="image/*"
-                                                                            className="hidden"
-                                                                            onChange={handleMainImageChange}
-                                                                            disabled={uploadingMainImage}
-                                                                        />
-                                                                        {uploadingMainImage ? <Loader2 className="w-10 h-10 text-gray-300 mb-2 animate-spin" /> : <ImageIcon className="w-10 h-10 text-gray-300 mb-2" />}
-                                                                        <span className="text-sm text-gray-500">{uploadingMainImage ? 'Téléversement...' : 'Ajouter une image principale'}</span>
-                                                                    </label>
-                                                                )}
-                                                            </div>
-
-                                                            {/* Gallery */}
-                                                            <div>
-                                                                <div className="flex items-center justify-between mb-3">
-                                                                    <h4 className="text-sm font-semibold text-gray-900">Galerie</h4>
-                                                                    <label className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-sage-600 text-white text-xs font-semibold rounded-lg cursor-pointer hover:bg-sage-700 transition-colors shadow-sm">
-                                                                        <input
-                                                                            type="file"
-                                                                            accept="image/*"
-                                                                            multiple
-                                                                            className="hidden"
-                                                                            onChange={handleGalleryUpload}
-                                                                            disabled={uploadingGalleryImages}
-                                                                        />
-                                                                        {uploadingGalleryImages ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Plus className="w-3.5 h-3.5" />}
-                                                                        Ajouter des images
-                                                                    </label>
-                                                                </div>
-                                                                {galleryImages.length > 0 ? (
-                                                                    <div className="grid grid-cols-4 gap-3">
-                                                                        {galleryImages.map((thumb: any, index: number) => (
-                                                                            <div
-                                                                                key={thumb.id || index}
-                                                                                className="relative aspect-square bg-gradient-to-br from-gray-50 to-gray-100 rounded-lg border-2 border-gray-200 overflow-hidden group hover:border-sage-400 hover:shadow-lg transition-all duration-200"
-                                                                            >
-                                                                                <img
-                                                                                    src={thumb.thumbnail || thumb.url}
-                                                                                    alt={`Image ${index + 1}`}
-                                                                                    className="w-full h-full object-cover cursor-pointer transition-transform duration-200 group-hover:scale-110"
-                                                                                    onClick={() => {
-                                                                                        setSelectedImage(thumb.thumbnail || thumb.url);
-                                                                                        setShowLightbox(true);
-                                                                                    }}
-                                                                                    onError={(e) => {
-                                                                                        (e.target as HTMLImageElement).src = 'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" width="100" height="100"%3E%3Crect fill="%23f0f0f0" width="100" height="100"/%3E%3C/svg%3E';
-                                                                                    }}
-                                                                                />
-                                                                                <button
-                                                                                    onClick={() => handleDeleteGalleryImage(thumb.id)}
-                                                                                    disabled={deletingGalleryImage === thumb.id}
-                                                                                    className="absolute top-1.5 right-1.5 p-1.5 bg-white/90 backdrop-blur-sm rounded-full text-red-600 hover:bg-red-50 hover:text-red-700 transition-colors shadow-sm disabled:opacity-50"
-                                                                                    title="Supprimer"
-                                                                                >
-                                                                                    {deletingGalleryImage === thumb.id ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Trash2 className="w-3.5 h-3.5" />}
-                                                                                </button>
-                                                                            </div>
-                                                                        ))}
-                                                                    </div>
-                                                                ) : (
-                                                                    <div className="text-center py-8 text-gray-400 text-sm bg-gray-50 rounded-xl border border-dashed border-gray-200">
-                                                                        Aucune image en galerie.
-                                                                    </div>
-                                                                )}
-                                                            </div>
-                                                        </div>
-                                                    );
-                                                }
-
-                                                // Read-only view
-                                                return (mainImage || galleryImages.length > 0) ? (
-                                                    <div className="space-y-6">
-                                                        {mainImage && (
-                                                            <div>
-                                                                <div className="flex items-center justify-between mb-3">
-                                                                    <h4 className="text-sm font-semibold text-gray-900">Image principale</h4>
-                                                                </div>
-                                                                <div
-                                                                    className="relative w-full h-80 bg-gradient-to-br from-gray-50 to-gray-100 rounded-xl overflow-hidden border-2 border-gray-200 shadow-sm hover:shadow-md transition-all duration-200 cursor-pointer group"
-                                                                    onClick={() => {
-                                                                        setSelectedImage((mainImage as any).url || mainImage);
-                                                                        setShowLightbox(true);
-                                                                    }}
-                                                                >
-                                                                    {renderImage((mainImage as any).url || mainImage as string, details?.name || 'Image principale', 'w-full h-full object-contain p-4 transition-transform duration-200 group-hover:scale-105')}
-                                                                    <div className="absolute inset-0 bg-black/0 group-hover:bg-black/10 transition-colors duration-200 flex items-center justify-center">
-                                                                        <div className="opacity-0 group-hover:opacity-100 transition-opacity duration-200 bg-white/90 backdrop-blur-sm rounded-full p-3 shadow-lg">
-                                                                            <ZoomIn className="w-6 h-6 text-gray-700" />
-                                                                        </div>
-                                                                    </div>
-                                                                </div>
-                                                            </div>
-                                                        )}
-                                                        {galleryImages.length > 0 && (
-                                                            <div>
-                                                                <div className="flex items-center justify-between mb-3">
-                                                                    <h4 className="text-sm font-semibold text-gray-900">Galerie</h4>
-                                                                    <span className="text-xs text-gray-500 bg-gray-100 px-2.5 py-1 rounded-full font-medium">{galleryImages.length} {galleryImages.length > 1 ? 'images' : 'image'}</span>
-                                                                </div>
-                                                                <div className="grid grid-cols-4 gap-3">
-                                                                    {galleryImages.map((thumb: any, index: number) => (
-                                                                        <div
-                                                                            key={thumb.id || index}
-                                                                            className="relative aspect-square bg-gradient-to-br from-gray-50 to-gray-100 rounded-lg border-2 border-gray-200 overflow-hidden cursor-pointer group hover:border-sage-400 hover:shadow-lg transition-all duration-200"
-                                                                            onClick={() => {
-                                                                                setSelectedImage(thumb.thumbnail || thumb.url);
-                                                                                setShowLightbox(true);
-                                                                            }}
-                                                                        >
-                                                                            <img
-                                                                                src={thumb.thumbnail || thumb.url}
-                                                                                alt={`Image ${index + 1}`}
-                                                                                className="w-full h-full object-cover transition-transform duration-200 group-hover:scale-110"
-                                                                                onError={(e) => {
-                                                                                    (e.target as HTMLImageElement).src = 'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" width="100" height="100"%3E%3Crect fill="%23f0f0f0" width="100" height="100"/%3E%3C/svg%3E';
-                                                                                }}
-                                                                            />
-                                                                            <div className="absolute inset-0 bg-black/0 group-hover:bg-black/20 transition-colors duration-200 flex items-center justify-center">
-                                                                                <div className="opacity-0 group-hover:opacity-100 transition-opacity duration-200">
-                                                                                    <Maximize2 className="w-5 h-5 text-white drop-shadow-lg" />
-                                                                                </div>
-                                                                            </div>
-                                                                        </div>
-                                                                    ))}
-                                                                </div>
-                                                            </div>
-                                                        )}
-                                                    </div>
-                                                ) : (
-                                                    <div className="text-center py-8 text-gray-400">
-                                                        <ImageIcon className="w-12 h-12 mx-auto mb-2 opacity-50" />
-                                                        <p className="text-sm">Aucune image disponible</p>
-                                                    </div>
-                                                );
-                                            })()}
-                                        </SageCollapsible>
-                                    </div>
 
                                     {/* Custom Fields Section */}
                                     <div ref={el => { sectionRefs.current['custom_fields'] = el; }}>
