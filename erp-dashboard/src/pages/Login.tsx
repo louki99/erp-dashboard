@@ -38,9 +38,9 @@ export const Login = () => {
                 <div className="flex justify-center mb-8">
                     <div className="flex flex-col items-center">
                         <div className="flex items-center gap-1">
-                            <div className="w-8 h-8 bg-sage-600 rounded-sm flex items-center justify-center text-white font-bold text-lg">S</div>
+                            <div className="w-8 h-8 bg-sage-600 rounded-sm flex items-center justify-center text-white font-bold text-lg">O</div>
                             <span className="text-2xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-sage-700 to-gray-800">
-                                FoodSolutions
+                                OMNI360
                             </span>
                         </div>
                         <span className="text-xs text-gray-400 mt-1 uppercase tracking-widest font-semibold">{t('auth.loginSubtitle')}</span>
@@ -105,7 +105,10 @@ export const Login = () => {
                 </form>
 
                 <div className="mt-6 text-center text-xs text-gray-400">
-                    &copy; 2024 Sage Global Services Ltd. All rights reserved.
+                    &copy; 2026 OMNI360. All rights reserved.
+                </div>
+                <div className="mt-2 text-center text-xs text-gray-400">
+                    <a href="#" className="text-sage-600 hover:text-sage-700 font-medium">Contact Support</a>
                 </div>
             </div>
         </div>

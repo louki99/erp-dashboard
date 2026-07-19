@@ -205,15 +205,12 @@ export interface Itinerary {
     name_ar: string | null;
     itinerary_type_id: number;
     itinerary_type?: ItineraryType;
-    branch_code: string | null;
-    branch?: { code: string; name: string };
-    geo_area_code: string | null;
+    branch_id: number | null;
+    branch?: { id: number; code: string; name: string };
+    geo_area_id: number | null;
     geo_area?: Pick<GeoArea, 'id' | 'code' | 'name'>;
     rider_id: number | null;
     rider?: { id: number; name: string };
-    security_level: number;
-    trend: number;
-    days_before_next_visit: number;
     is_active: boolean;
     start_date: string | null;
     end_date: string | null;
@@ -286,12 +283,9 @@ export interface CreateItineraryPayload {
     name: string;
     name_ar?: string | null;
     itinerary_type_id: number;
-    branch_code?: string | null;
-    geo_area_code?: string | null;
+    branch_id?: number | null;
+    geo_area_id?: number | null;
     rider_id?: number | null;
-    days_before_next_visit?: number;
-    trend?: number;
-    security_level?: number;
     is_active?: boolean;
     start_date?: string | null;
     end_date?: string | null;
@@ -311,8 +305,8 @@ export interface ItineraryListResponse {
     itineraries: {
         data: Itinerary[];
     } & ItineraryListMeta;
-    branches: Array<{ code: string; name: string }>;
-    geoAreas: Array<Pick<GeoArea, 'code' | 'name'>>;
+    branches: Array<{ id: number; code: string; name: string }>;
+    geoAreas: Array<Pick<GeoArea, 'id' | 'code' | 'name'>>;
     riders: Array<{ id: number; name: string }>;
 }
 
@@ -323,9 +317,9 @@ export interface ItineraryDetailResponse {
 }
 
 export interface ItineraryFilters {
-    branch_code?: string;
+    branch_id?: number;
     rider_id?: number;
-    geo_area_code?: string;
+    geo_area_id?: number;
     itinerary_type_id?: number;
     is_active?: boolean;
     search?: string;
@@ -392,13 +386,45 @@ export interface ItineraryUserEntry {
     user_id: number;
     is_active?: boolean;
     display_order?: number;
-    starts_at?: string | null;
-    expires_at?: string | null;
-    is_temporary?: boolean;
 }
 
 export interface SyncItineraryUsersRichPayload {
     users: ItineraryUserEntry[];
+}
+
+// ─── Itinerary Master Data (GET /api/backend/masterdata/itineraries) ─────────
+
+export interface ItineraryMasterDataResponse {
+    branches: Array<{ id: number; code: string; name: string }>;
+    geo_areas: Array<{ id: number; code: string; name: string }>;
+    riders: Array<{ id: number; name: string; email?: string }>;
+    itinerary_types: Array<{ id: number; code: string; name: string }>;
+}
+
+// ─── Partner → Itinerary lookup (GET /api/backend/partners/{id}/itinerary) ──
+
+export interface PartnerItineraryResponse {
+    itinerary: Itinerary | null;
+    message?: string;
+}
+
+// ─── SDUI / Mobile screen responses (GET /api/screens/itineraries[/{id}/partners]) ──
+// The screens API returns server-driven UI component trees for the SFA mobile app.
+// Shape is opaque from the dashboard perspective — typed as a passthrough.
+
+export interface SduiComponent {
+    type: string;
+    [key: string]: unknown;
+}
+
+export interface ScreenItinerariesResponse {
+    components?: SduiComponent[];
+    [key: string]: unknown;
+}
+
+export interface ScreenItineraryPartnersResponse {
+    components?: SduiComponent[];
+    [key: string]: unknown;
 }
 
 // ─── Planning users (GET /itinerary-planning/users) ─────────────────────────

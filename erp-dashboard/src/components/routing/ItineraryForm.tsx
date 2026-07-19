@@ -9,8 +9,8 @@ import type { CreateItineraryPayload, Itinerary, ItineraryType } from '@/types/r
 interface ItineraryFormProps {
     itinerary?: Itinerary | null;
     itineraryTypes: ItineraryType[];
-    branches: Array<{ code: string; name: string }>;
-    geoAreas: Array<{ code: string; name: string }>;
+    branches: Array<{ id: number; code: string; name: string }>;
+    geoAreas: Array<{ id: number; code: string; name: string }>;
     riders: Array<{ id: number; name: string }>;
     onSubmit: (payload: CreateItineraryPayload | Partial<CreateItineraryPayload>) => void;
     onCancel: () => void;
@@ -24,12 +24,9 @@ function getInitialForm(itinerary?: Itinerary | null): CreateItineraryPayload {
             name: itinerary.name,
             name_ar: itinerary.name_ar ?? '',
             itinerary_type_id: itinerary.itinerary_type_id,
-            branch_code: itinerary.branch_code,
-            geo_area_code: itinerary.geo_area_code,
+            branch_id: itinerary.branch_id,
+            geo_area_id: itinerary.geo_area_id,
             rider_id: itinerary.rider_id,
-            days_before_next_visit: itinerary.days_before_next_visit,
-            trend: itinerary.trend,
-            security_level: itinerary.security_level,
             is_active: itinerary.is_active,
             start_date: itinerary.start_date,
             end_date: itinerary.end_date,
@@ -41,12 +38,9 @@ function getInitialForm(itinerary?: Itinerary | null): CreateItineraryPayload {
         name: '',
         name_ar: '',
         itinerary_type_id: 0,
-        branch_code: null,
-        geo_area_code: null,
+        branch_id: null,
+        geo_area_id: null,
         rider_id: null,
-        days_before_next_visit: 7,
-        trend: 1,
-        security_level: 0,
         is_active: true,
         start_date: null,
         end_date: null,
@@ -67,26 +61,17 @@ export function ItineraryForm({
     const [form, setForm] = useState<CreateItineraryPayload>(() => getInitialForm(itinerary));
 
     const typeOptions = itineraryTypes.map((t) => ({ value: t.id, label: `${t.name} (${t.code})` }));
-    const branchOptions = [
-        { value: '', label: '— Aucune branche —' },
-        ...branches.map((b) => ({ value: b.code, label: `${b.name} (${b.code})` })),
-    ];
-    const geoAreaOptions = [
-        { value: '', label: '— Aucune zone —' },
-        ...geoAreas.map((g) => ({ value: g.code, label: `${g.name} (${g.code})` })),
-    ];
-    const riderOptions = [
-        { value: '', label: '— Aucun vendeur —' },
-        ...riders.map((r) => ({ value: r.id, label: r.name })),
-    ];
+    const branchOptions = branches.map((b) => ({ value: b.id, label: `${b.name} (${b.code})` }));
+    const geoAreaOptions = geoAreas.map((g) => ({ value: g.id, label: `${g.name} (${g.code})` }));
+    const riderOptions = riders.map((r) => ({ value: r.id, label: r.name }));
 
     const handleSubmit = (e: React.FormEvent) => {
         e.preventDefault();
         onSubmit({
             ...form,
             name_ar: form.name_ar || null,
-            branch_code: form.branch_code || null,
-            geo_area_code: form.geo_area_code || null,
+            branch_id: form.branch_id || null,
+            geo_area_id: form.geo_area_id || null,
             rider_id: form.rider_id || null,
             start_date: form.start_date || null,
             end_date: form.end_date || null,
@@ -141,8 +126,8 @@ export function ItineraryForm({
                     <Label>Branche</Label>
                     <SearchableSelect
                         options={branchOptions}
-                        value={form.branch_code || ''}
-                        onChange={(v) => setForm((f) => ({ ...f, branch_code: v ? String(v) : null }))}
+                        value={form.branch_id ?? undefined}
+                        onChange={(v) => setForm((f) => ({ ...f, branch_id: v ? Number(v) : null }))}
                         placeholder="— Branche —"
                         clearable
                     />
@@ -151,8 +136,8 @@ export function ItineraryForm({
                     <Label>Zone géographique</Label>
                     <SearchableSelect
                         options={geoAreaOptions}
-                        value={form.geo_area_code || ''}
-                        onChange={(v) => setForm((f) => ({ ...f, geo_area_code: v ? String(v) : null }))}
+                        value={form.geo_area_id ?? undefined}
+                        onChange={(v) => setForm((f) => ({ ...f, geo_area_id: v ? Number(v) : null }))}
                         placeholder="— Zone —"
                         clearable
                     />
@@ -163,42 +148,11 @@ export function ItineraryForm({
                 <Label>Vendeur assigné</Label>
                 <SearchableSelect
                     options={riderOptions}
-                    value={form.rider_id || ''}
+                    value={form.rider_id ?? undefined}
                     onChange={(v) => setForm((f) => ({ ...f, rider_id: v ? Number(v) : null }))}
                     placeholder="— Vendeur —"
                     clearable
                 />
-            </div>
-
-            <div className="grid grid-cols-3 gap-4">
-                <div className="space-y-2">
-                    <Label htmlFor="days_before_next_visit">Jours avant prochaine visite</Label>
-                    <Input
-                        id="days_before_next_visit"
-                        type="number"
-                        value={form.days_before_next_visit}
-                        onChange={(e) => setForm((f) => ({ ...f, days_before_next_visit: Number(e.target.value) }))}
-                    />
-                </div>
-                <div className="space-y-2">
-                    <Label htmlFor="trend">Trend</Label>
-                    <Input
-                        id="trend"
-                        type="number"
-                        step="any"
-                        value={form.trend}
-                        onChange={(e) => setForm((f) => ({ ...f, trend: Number(e.target.value) }))}
-                    />
-                </div>
-                <div className="space-y-2">
-                    <Label htmlFor="security_level">Niveau sécurité</Label>
-                    <Input
-                        id="security_level"
-                        type="number"
-                        value={form.security_level}
-                        onChange={(e) => setForm((f) => ({ ...f, security_level: Number(e.target.value) }))}
-                    />
-                </div>
             </div>
 
             <div className="grid grid-cols-2 gap-4">

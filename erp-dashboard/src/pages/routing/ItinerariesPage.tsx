@@ -53,11 +53,13 @@ import {
     useDeleteItinerary,
     useItineraries,
     useItinerary,
+    useItineraryMasterData,
     useItineraryTypes,
     useSyncItineraryPartners,
     useSyncItineraryUsers,
     useUpdateItinerary,
 } from '@/hooks/routing/useRouting';
+import { useVendeurs } from '@/hooks/rbac/useRbac';
 import type {
     CreateItineraryPayload,
     Itinerary,
@@ -230,16 +232,8 @@ function ItineraryDetail({
                                         <span className="font-medium">{detail.itinerary_type?.name ?? detail.itinerary_type_id}</span>
                                     </div>
                                     <div className="flex justify-between">
-                                        <span className="text-muted-foreground">Fréquence de visite</span>
-                                        <span className="font-mono">{detail.days_before_next_visit} j</span>
-                                    </div>
-                                    <div className="flex justify-between">
-                                        <span className="text-muted-foreground">Trend</span>
-                                        <span className="font-mono">{detail.trend}</span>
-                                    </div>
-                                    <div className="flex justify-between">
-                                        <span className="text-muted-foreground">Niveau sécurité</span>
-                                        <span className="font-mono">{detail.security_level}</span>
+                                        <span className="text-muted-foreground">Ordre</span>
+                                        <span className="font-mono">{detail.sort_order}</span>
                                     </div>
                                 </div>
                             </DetailCard>
@@ -248,12 +242,12 @@ function ItineraryDetail({
                                 <div className="space-y-2 text-sm">
                                     <div className="flex justify-between">
                                         <span className="text-muted-foreground">Branche</span>
-                                        <span className="font-medium">{detail.branch?.name ?? detail.branch_code ?? '—'}</span>
+                                        <span className="font-medium">{detail.branch?.name ?? '—'}</span>
                                     </div>
                                     <div className="flex justify-between">
                                         <span className="text-muted-foreground">Secteur</span>
                                         <span className="font-medium">
-                                            {detail.geo_area ? `${detail.geo_area.name} (${detail.geo_area.code})` : detail.geo_area_code ?? '—'}
+                                            {detail.geo_area ? `${detail.geo_area.name} (${detail.geo_area.code})` : '—'}
                                         </span>
                                     </div>
                                     <div className="flex justify-between">
@@ -265,7 +259,7 @@ function ItineraryDetail({
                         </div>
 
                         <DetailCard title="Période de validité" icon={Building2} accent="amber">
-                            <div className="grid grid-cols-3 gap-4 text-sm">
+                            <div className="grid grid-cols-2 gap-4 text-sm">
                                 <div>
                                     <p className="text-muted-foreground text-xs mb-0.5">Début</p>
                                     <p className="font-medium">{detail.start_date ?? '—'}</p>
@@ -273,10 +267,6 @@ function ItineraryDetail({
                                 <div>
                                     <p className="text-muted-foreground text-xs mb-0.5">Fin</p>
                                     <p className="font-medium">{detail.end_date ?? '—'}</p>
-                                </div>
-                                <div>
-                                    <p className="text-muted-foreground text-xs mb-0.5">Ordre</p>
-                                    <p className="font-mono">{detail.sort_order}</p>
                                 </div>
                             </div>
                         </DetailCard>
@@ -480,6 +470,7 @@ export function ItinerariesPage() {
     const [filters, setFilters] = useState<ItineraryFilters>(DEFAULT_FILTERS);
     const { data, isLoading, refetch } = useItineraries(filters);
     const { data: itineraryTypesData } = useItineraryTypes({ per_page: 500 });
+    const { data: vendeursData } = useVendeurs();
 
     const [selectedItinerary, setSelectedItinerary] = useState<Itinerary | null>(null);
     const [showDetailPanel, setShowDetailPanel] = useState(false);
@@ -573,15 +564,26 @@ export function ItinerariesPage() {
         },
     ];
 
-    const branchOptions = data?.branches.map((b) => ({ value: b.code, label: `${b.name} (${b.code})` })) ?? [];
-    const geoAreaOptions = data?.geoAreas.map((g) => ({ value: g.code, label: `${g.name} (${g.code})` })) ?? [];
-    const riderOptions = data?.riders.map((r) => ({ value: r.id, label: r.name })) ?? [];
+    const { data: masterData } = useItineraryMasterData();
+
+    // Filter panel options (from list response — already scoped to visible data)
+    const branchOptions = data?.branches.map((b) => ({ value: b.id, label: `${b.name} (${b.code})` })) ?? [];
+    const geoAreaOptions = data?.geoAreas.map((g) => ({ value: g.id, label: `${g.name} (${g.code})` })) ?? [];
+    const riderOptions = (vendeursData?.data ?? data?.riders ?? []).map((r) => ({ value: r.id, label: r.name }));
     const typeOptions =
         itineraryTypesData?.data?.data.map((t) => ({ value: t.id, label: `${t.name} (${t.code})` })) ?? [];
 
+    // Form options — branches/geoAreas from masterdata, riders from RBAC users (role=vendeur)
+    const formBranches = masterData?.branches ?? data?.branches ?? [];
+    const formGeoAreas = masterData?.geo_areas ?? data?.geoAreas ?? [];
+    const formRiders = (vendeursData?.data ?? masterData?.riders ?? data?.riders ?? []).map((u) => ({
+        id: u.id,
+        name: u.name,
+    }));
+
     const activeFilterCount = [
-        filters.branch_code,
-        filters.geo_area_code,
+        filters.branch_id,
+        filters.geo_area_id,
         filters.rider_id,
         filters.itinerary_type_id,
         filters.is_active,
@@ -734,8 +736,8 @@ export function ItinerariesPage() {
                                     <Label className="text-xs font-medium text-gray-700">Branche</Label>
                                     <SearchableSelect
                                         options={branchOptions}
-                                        value={draftFilters.branch_code ?? undefined}
-                                        onChange={(v) => setDraftFilters((prev) => ({ ...prev, branch_code: v ? String(v) : undefined }))}
+                                        value={draftFilters.branch_id ?? undefined}
+                                        onChange={(v) => setDraftFilters((prev) => ({ ...prev, branch_id: v ? Number(v) : undefined }))}
                                         placeholder="— Toutes les branches —"
                                         clearable
                                     />
@@ -744,8 +746,8 @@ export function ItinerariesPage() {
                                     <Label className="text-xs font-medium text-gray-700">Zone géographique</Label>
                                     <SearchableSelect
                                         options={geoAreaOptions}
-                                        value={draftFilters.geo_area_code ?? undefined}
-                                        onChange={(v) => setDraftFilters((prev) => ({ ...prev, geo_area_code: v ? String(v) : undefined }))}
+                                        value={draftFilters.geo_area_id ?? undefined}
+                                        onChange={(v) => setDraftFilters((prev) => ({ ...prev, geo_area_id: v ? Number(v) : undefined }))}
                                         placeholder="— Toutes les zones —"
                                         clearable
                                     />
@@ -811,9 +813,9 @@ export function ItinerariesPage() {
                         <ItineraryFormPanel
                             itinerary={editingItinerary}
                             itineraryTypes={itineraryTypesData?.data?.data ?? []}
-                            branches={data?.branches ?? []}
-                            geoAreas={data?.geoAreas ?? []}
-                            riders={data?.riders ?? []}
+                            branches={formBranches}
+                            geoAreas={formGeoAreas}
+                            riders={formRiders}
                             onSubmit={handleFormSubmit}
                             onCancel={() => setEditingItinerary(undefined)}
                             loading={createItinerary.isPending || updateItinerary.isPending}

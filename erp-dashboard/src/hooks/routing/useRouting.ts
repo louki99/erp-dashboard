@@ -4,6 +4,8 @@ import * as routingApi from '@/services/api/routingApi';
 import type {
     AssignDaysPayload,
     AssignDaysResponse,
+    AssignPartnerPayload,
+    AssignUserPayload,
     BulkAssignPartnersPayload,
     BulkAssignPartnersResult,
     CreateBusinessNaturePayload,
@@ -20,6 +22,7 @@ import type {
     ItineraryBusinessNature,
     ItineraryFilters,
     ItineraryListResponse,
+    ItineraryMasterDataResponse,
     ItineraryMessageResponse,
     ItineraryPartner,
     ItineraryPlanning,
@@ -28,12 +31,15 @@ import type {
     ItineraryTypeFilters,
     ItineraryTypeListResponse,
     MapLayersParams,
+    PartnerItineraryResponse,
     PlanningDailyFilters,
     PlanningFilters,
     PlanningUser,
     PlanningUsersFilters,
     PlanningUsersResponse,
     PlanningSummaryResponse,
+    ScreenItinerariesResponse,
+    ScreenItineraryPartnersResponse,
     UpdatePlanningDayPayload,
     UpdatePlanningDayResponse,
     SyncItineraryUsersPayload,
@@ -55,6 +61,7 @@ const ROUTING_BASE_KEY = ['routing'] as const;
 
 export const routingKeys = {
     all: ROUTING_BASE_KEY,
+    itineraryMasterData: () => [...ROUTING_BASE_KEY, 'itineraries', 'masterdata'] as const,
     geoAreas: () => [...ROUTING_BASE_KEY, 'geo-areas'] as const,
     geoAreaList: (filters: GeoAreaFilters) => [...routingKeys.geoAreas(), 'list', filters] as const,
     geoAreaDetail: (id: number) => [...routingKeys.geoAreas(), 'detail', id] as const,
@@ -234,6 +241,16 @@ export function useDeleteItineraryType() {
     });
 }
 
+// ─── Itinerary Master Data ───────────────────────────────────────────────────
+
+export function useItineraryMasterData() {
+    return useQuery<ItineraryMasterDataResponse, AxiosError>({
+        queryKey: routingKeys.itineraryMasterData(),
+        queryFn: () => routingApi.getItineraryMasterData(),
+        staleTime: 5 * 60 * 1000,
+    });
+}
+
 // ─── Itineraries ────────────────────────────────────────────────────────────
 
 export function useItineraries(filters: ItineraryFilters = {}) {
@@ -309,6 +326,79 @@ export function useSyncItineraryLocalites(id: number) {
         onSuccess: () => {
             queryClient.invalidateQueries({ queryKey: routingKeys.itineraryDetail(id) });
         },
+    });
+}
+
+export function useAssignItineraryPartner(itineraryId: number) {
+    const queryClient = useQueryClient();
+    return useMutation<ItineraryPartner, AxiosError, AssignPartnerPayload>({
+        mutationFn: (payload) => routingApi.assignItineraryPartner(itineraryId, payload),
+        onSuccess: () => {
+            queryClient.invalidateQueries({ queryKey: routingKeys.itineraryDetail(itineraryId) });
+        },
+    });
+}
+
+export function useRemoveItineraryPartner(itineraryId: number) {
+    const queryClient = useQueryClient();
+    return useMutation<ItineraryMessageResponse, AxiosError, number>({
+        mutationFn: (partnerId) => routingApi.removeItineraryPartner(itineraryId, partnerId),
+        onSuccess: () => {
+            queryClient.invalidateQueries({ queryKey: routingKeys.itineraryDetail(itineraryId) });
+        },
+    });
+}
+
+export function useAssignItineraryUser(itineraryId: number) {
+    const queryClient = useQueryClient();
+    return useMutation<ItineraryMessageResponse, AxiosError, AssignUserPayload>({
+        mutationFn: (payload) => routingApi.assignItineraryUser(itineraryId, payload),
+        onSuccess: () => {
+            queryClient.invalidateQueries({ queryKey: routingKeys.itineraryDetail(itineraryId) });
+        },
+    });
+}
+
+export function useRemoveItineraryUser(itineraryId: number) {
+    const queryClient = useQueryClient();
+    return useMutation<ItineraryMessageResponse, AxiosError, number>({
+        mutationFn: (userId) => routingApi.removeItineraryUser(itineraryId, userId),
+        onSuccess: () => {
+            queryClient.invalidateQueries({ queryKey: routingKeys.itineraryDetail(itineraryId) });
+        },
+    });
+}
+
+// ─── Partner → Itinerary lookup ──────────────────────────────────────────────
+
+export function usePartnerItinerary(partnerId: number | null) {
+    return useQuery<PartnerItineraryResponse, AxiosError>({
+        queryKey: partnerId
+            ? [...routingKeys.itineraries(), 'partner-lookup', partnerId]
+            : ['itinerary', 'partner-lookup', 'noop'],
+        queryFn: () => routingApi.getPartnerItinerary(partnerId as number),
+        enabled: partnerId !== null && partnerId > 0,
+    });
+}
+
+// ─── SDUI / Mobile screen hooks ───────────────────────────────────────────────
+
+export function useScreenItineraries() {
+    return useQuery<ScreenItinerariesResponse, AxiosError>({
+        queryKey: [...routingKeys.itineraries(), 'screen', 'list'],
+        queryFn: () => routingApi.getScreenItineraries(),
+        staleTime: 60 * 1000,
+    });
+}
+
+export function useScreenItineraryPartners(itineraryId: number | null) {
+    return useQuery<ScreenItineraryPartnersResponse, AxiosError>({
+        queryKey: itineraryId
+            ? [...routingKeys.itineraryDetail(itineraryId), 'screen', 'partners']
+            : ['itinerary', 'screen', 'partners', 'noop'],
+        queryFn: () => routingApi.getScreenItineraryPartners(itineraryId as number),
+        enabled: itineraryId !== null && itineraryId > 0,
+        staleTime: 60 * 1000,
     });
 }
 

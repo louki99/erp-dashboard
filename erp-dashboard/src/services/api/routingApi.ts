@@ -25,6 +25,7 @@ import type {
     ItineraryDetailResponse,
     ItineraryFilters,
     ItineraryListResponse,
+    ItineraryMasterDataResponse,
     ItineraryMessageResponse,
     ItineraryPartner,
     ItineraryPlanning,
@@ -35,6 +36,7 @@ import type {
     ItineraryTypeFilters,
     ItineraryTypeListResponse,
     MapLayersParams,
+    PartnerItineraryResponse,
     PlanningDailyFilters,
     PlanningDailyListResponse,
     PlanningFilters,
@@ -42,6 +44,8 @@ import type {
     PlanningUsersFilters,
     PlanningUsersResponse,
     PlanningSummaryResponse,
+    ScreenItinerariesResponse,
+    ScreenItineraryPartnersResponse,
     UpdatePlanningDayPayload,
     UpdatePlanningDayResponse,
     SyncItineraryUsersPayload,
@@ -245,6 +249,34 @@ export const removeItineraryUser = async (id: number, userId: number): Promise<I
 
 export const syncItineraryLocalites = async (id: number, payload: SyncLocalitesPayload): Promise<SyncLocalitesResponse> => {
     const response = await apiClient.post<SyncLocalitesResponse>(`${ITINERARIES_BASE}/${id}/sync-localites`, payload);
+    return response.data;
+};
+
+export const getItineraryMasterData = async (): Promise<ItineraryMasterDataResponse> => {
+    const response = await apiClient.get<{ data: ItineraryMasterDataResponse }>('/api/backend/masterdata/itineraries');
+    return response.data?.data ?? response.data;
+};
+
+// ─── Partner → Itinerary lookup ──────────────────────────────────────────────
+
+export const getPartnerItinerary = async (partnerId: number): Promise<PartnerItineraryResponse> => {
+    const response = await apiClient.get<PartnerItineraryResponse>(`/api/backend/partners/${partnerId}/itinerary`);
+    return response.data;
+};
+
+// ─── SDUI / Mobile screen endpoints ─────────────────────────────────────────
+
+const SCREENS_BASE = '/api/screens';
+
+export const getScreenItineraries = async (): Promise<ScreenItinerariesResponse> => {
+    const response = await apiClient.get<ScreenItinerariesResponse>(`${SCREENS_BASE}/itineraries`);
+    return response.data;
+};
+
+export const getScreenItineraryPartners = async (itineraryId: number): Promise<ScreenItineraryPartnersResponse> => {
+    const response = await apiClient.get<ScreenItineraryPartnersResponse>(
+        `${SCREENS_BASE}/itineraries/${itineraryId}/partners`
+    );
     return response.data;
 };
 
