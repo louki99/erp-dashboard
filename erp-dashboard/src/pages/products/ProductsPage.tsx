@@ -123,8 +123,10 @@ export const ProductsPage = () => {
         shipping_level: '',
         stackable: false,
         fragile: false,
+        keep_upright: false,
         temperature_controlled: false,
         transport_category: '',
+        packaging_levels: [] as any[],
     });
     const [isEditingLogistics, setIsEditingLogistics] = useState(false);
     const [supplierForm, setSupplierForm] = useState<any>({
@@ -387,6 +389,7 @@ export const ProductsPage = () => {
             description: '',
             buy_price: 0,
             category_ids: [],
+            subcategory_ids: [],
             vat_tax_ids: [],
             supplier_ids: [],
             supplier_pivots: {},
@@ -438,6 +441,7 @@ export const ProductsPage = () => {
             brand_id: details?.brand_id || '',
             unit_id: details?.unit_id || '',
             category_ids: details?.categories?.map((c: any) => c.id) || [],
+            subcategory_ids: details?.subcategories?.map((s: any) => s.id) || [],
             vat_tax_ids: details?.vat_taxes?.map((v: any) => v.id) || details?.vatTaxes?.map((v: any) => v.id) || [],
             supplier_ids: details?.suppliers?.map((s: any) => s.id) || [],
             supplier_pivots: supplierPivots,
@@ -522,7 +526,7 @@ export const ProductsPage = () => {
             const apiData: any = { ...formData };
 
             // Ensure relationship arrays are clean arrays of numbers
-            ['category_ids', 'vat_tax_ids', 'supplier_ids'].forEach((key) => {
+            ['category_ids', 'subcategory_ids', 'vat_tax_ids', 'supplier_ids'].forEach((key) => {
                 if (!Array.isArray(apiData[key])) apiData[key] = [];
                 apiData[key] = apiData[key].map((v: any) => typeof v === 'string' ? parseInt(v) : v).filter(Boolean);
             });
@@ -806,8 +810,18 @@ export const ProductsPage = () => {
             shipping_level: logistics?.shipping_level || '',
             stackable: logistics?.stackable ?? false,
             fragile: logistics?.fragile ?? false,
+            keep_upright: logistics?.keep_upright ?? false,
             temperature_controlled: logistics?.temperature_controlled ?? false,
             transport_category: logistics?.transport_category || '',
+            packaging_levels: (logistics?.packaging_levels || []).map((pl: any) => ({
+                packaging_level: pl.packaging_level || '',
+                units_per_package: pl.units_per_package ?? '',
+                gross_weight_kg: pl.gross_weight_kg ?? '',
+                net_weight_kg: pl.net_weight_kg ?? '',
+                length_m: pl.length_m ?? '',
+                width_m: pl.width_m ?? '',
+                height_m: pl.height_m ?? '',
+            })),
         });
     };
 
@@ -819,6 +833,7 @@ export const ProductsPage = () => {
             const payload: any = {
                 stackable: !!logisticsForm.stackable,
                 fragile: !!logisticsForm.fragile,
+                keep_upright: !!logisticsForm.keep_upright,
                 temperature_controlled: !!logisticsForm.temperature_controlled,
             };
             if (logisticsForm.shipping_level && VALID_SHIPPING_LEVELS.includes(logisticsForm.shipping_level)) {
@@ -826,6 +841,19 @@ export const ProductsPage = () => {
             }
             if (logisticsForm.transport_category?.trim()) {
                 payload.transport_category = logisticsForm.transport_category.trim();
+            }
+            if (logisticsForm.packaging_levels && logisticsForm.packaging_levels.length > 0) {
+                payload.packaging_levels = logisticsForm.packaging_levels
+                    .filter((pl: any) => pl.packaging_level && pl.units_per_package !== '' && pl.units_per_package !== null)
+                    .map((pl: any) => ({
+                        packaging_level: pl.packaging_level,
+                        units_per_package: parseInt(String(pl.units_per_package)) || 1,
+                        gross_weight_kg: pl.gross_weight_kg !== '' ? parseFloat(pl.gross_weight_kg) : null,
+                        net_weight_kg: pl.net_weight_kg !== '' ? parseFloat(pl.net_weight_kg) : null,
+                        length_m: pl.length_m !== '' ? parseFloat(pl.length_m) : null,
+                        width_m: pl.width_m !== '' ? parseFloat(pl.width_m) : null,
+                        height_m: pl.height_m !== '' ? parseFloat(pl.height_m) : null,
+                    }));
             }
             const res = await updateLogistics(selected.id, payload);
             toast.dismiss(toastId);
@@ -1347,6 +1375,33 @@ export const ProductsPage = () => {
                                                         </div>
                                                     </div>
 
+                                                    {/* Subcategories */}
+                                                    <div>
+                                                        <label className="block text-xs text-gray-500 mb-1">Sous-catégories</label>
+                                                        <div className="border border-gray-300 rounded-md p-2 max-h-32 overflow-y-auto bg-white">
+                                                            {allSubcategories.length === 0 ? (
+                                                                <span className="text-xs text-gray-400">Aucune sous-catégorie disponible</span>
+                                                            ) : (
+                                                                allSubcategories.map((sc: any) => (
+                                                                    <label key={sc.id} className="flex items-center gap-2 text-sm py-1">
+                                                                        <input
+                                                                            type="checkbox"
+                                                                            checked={(formData.subcategory_ids || []).includes(sc.id)}
+                                                                            onChange={(e) => {
+                                                                                const ids = new Set(formData.subcategory_ids || []);
+                                                                                if (e.target.checked) ids.add(sc.id);
+                                                                                else ids.delete(sc.id);
+                                                                                setFormData({ ...formData, subcategory_ids: Array.from(ids) });
+                                                                            }}
+                                                                            className="w-4 h-4 text-sage-600 border-gray-300 rounded focus:ring-sage-500"
+                                                                        />
+                                                                        <span>{sc.name}</span>
+                                                                    </label>
+                                                                ))
+                                                            )}
+                                                        </div>
+                                                    </div>
+
                                                     {/* VAT Taxes */}
                                                     <div>
                                                         <label className="block text-xs text-gray-500 mb-1">Taxes TVA</label>
@@ -1413,6 +1468,12 @@ export const ProductsPage = () => {
                                                             <div className="text-xs text-gray-500">Unité</div>
                                                             <div className="font-semibold text-gray-900">{details?.unit?.name || '-'}</div>
                                                         </div>
+                                                        {details?.barcode && (
+                                                            <div className="p-3 rounded border border-gray-100 bg-gray-50 col-span-2">
+                                                                <div className="text-xs text-gray-500">Code-barres</div>
+                                                                <div className="font-semibold text-gray-900 font-mono tracking-widest">{details.barcode}</div>
+                                                            </div>
+                                                        )}
                                                     </div>
                                                     {details?.units && details.units.length > 0 && (
                                                         <div className="mt-3 p-3 rounded border border-gray-100 bg-gray-50">
@@ -1540,6 +1601,18 @@ export const ProductsPage = () => {
                                                                 {retailPriceObj?.ttc_pricing ? 'TTC' : 'HT'}
                                                             </div>
                                                         </div>
+                                                        {details?.buy_price ? (
+                                                            <div className="p-3 rounded border border-blue-100 bg-blue-50">
+                                                                <div className="text-xs text-gray-500">Prix d'achat</div>
+                                                                <div className="font-semibold text-blue-700">{parseFloat(String(details.buy_price)).toFixed(2)} MAD</div>
+                                                            </div>
+                                                        ) : null}
+                                                        {details?.has_colisage ? (
+                                                            <div className="p-3 rounded border border-gray-100 bg-gray-50">
+                                                                <div className="text-xs text-gray-500">Colisage</div>
+                                                                <div className="font-semibold text-green-700">Activé</div>
+                                                            </div>
+                                                        ) : null}
                                                     </div>
                                                     {!isEditMode && (
                                                         <div className="flex justify-end">
@@ -1603,6 +1676,42 @@ export const ProductsPage = () => {
                                                             )}
                                                         </div>
                                                     ))}
+                                                </div>
+                                            </SageCollapsible>
+                                        </div>
+                                    )}
+
+                                    {/* Pricing Tiers (B2B) Section */}
+                                    {!isEditMode && ((detailData?.data as any)?.product?.pricing_tiers?.length > 0) && (
+                                        <div ref={el => { sectionRefs.current['pricing_tiers'] = el; }}>
+                                            <SageCollapsible
+                                                title="Paliers de prix B2B"
+                                                isOpen={openSections['pricing_tiers'] ?? false}
+                                                onOpenChange={(open) => toggleSection('pricing_tiers', open)}
+                                            >
+                                                <div className="overflow-x-auto">
+                                                    <table className="w-full text-sm border-collapse">
+                                                        <thead>
+                                                            <tr className="bg-gray-50 border-b border-gray-200">
+                                                                <th className="text-left px-3 py-2 text-[11px] font-semibold text-gray-500 uppercase">Liste de prix</th>
+                                                                <th className="text-center px-3 py-2 text-[11px] font-semibold text-gray-500 uppercase">Qté min</th>
+                                                                <th className="text-center px-3 py-2 text-[11px] font-semibold text-gray-500 uppercase">Qté max</th>
+                                                                <th className="text-right px-3 py-2 text-[11px] font-semibold text-gray-500 uppercase">Prix palier</th>
+                                                            </tr>
+                                                        </thead>
+                                                        <tbody>
+                                                            {((detailData?.data as any)?.product?.pricing_tiers || []).map((tier: any, idx: number) => (
+                                                                <tr key={idx} className="border-b border-gray-100 last:border-b-0 hover:bg-gray-50/60">
+                                                                    <td className="px-3 py-2">
+                                                                        <span className="text-xs font-semibold text-gray-700">{tier.price_list?.name || tier.price_list?.code || '—'}</span>
+                                                                    </td>
+                                                                    <td className="px-3 py-2 text-center font-mono text-gray-700">{parseFloat(tier.min_qty).toFixed(3)}</td>
+                                                                    <td className="px-3 py-2 text-center font-mono text-gray-700">{tier.max_qty ? parseFloat(tier.max_qty).toFixed(3) : '∞'}</td>
+                                                                    <td className="px-3 py-2 text-right font-semibold text-sage-700">{parseFloat(tier.tier_price).toFixed(2)} MAD</td>
+                                                                </tr>
+                                                            ))}
+                                                        </tbody>
+                                                    </table>
                                                 </div>
                                             </SageCollapsible>
                                         </div>
@@ -2261,6 +2370,15 @@ export const ProductsPage = () => {
                                                                 <label className="flex items-center gap-2 text-sm cursor-pointer">
                                                                     <input
                                                                         type="checkbox"
+                                                                        checked={logisticsForm.keep_upright}
+                                                                        onChange={(e) => setLogisticsForm({ ...logisticsForm, keep_upright: e.target.checked })}
+                                                                        className="w-4 h-4 text-sage-600 border-gray-300 rounded focus:ring-sage-500"
+                                                                    />
+                                                                    <span className="text-sm text-gray-700">Maintenir vertical</span>
+                                                                </label>
+                                                                <label className="flex items-center gap-2 text-sm cursor-pointer">
+                                                                    <input
+                                                                        type="checkbox"
                                                                         checked={logisticsForm.temperature_controlled}
                                                                         onChange={(e) => setLogisticsForm({ ...logisticsForm, temperature_controlled: e.target.checked })}
                                                                         className="w-4 h-4 text-sage-600 border-gray-300 rounded focus:ring-sage-500"
@@ -2268,6 +2386,89 @@ export const ProductsPage = () => {
                                                                     <span className="text-sm text-gray-700">Température contrôlée</span>
                                                                 </label>
                                                             </div>
+                                                            {/* Packaging Levels Editor */}
+                                                            <div className="border-t border-gray-100 pt-3">
+                                                                <div className="flex items-center justify-between mb-2">
+                                                                    <span className="text-xs font-semibold text-gray-700">Niveaux de conditionnement</span>
+                                                                    <button
+                                                                        type="button"
+                                                                        onClick={() => setLogisticsForm((f: any) => ({
+                                                                            ...f,
+                                                                            packaging_levels: [
+                                                                                ...f.packaging_levels,
+                                                                                { packaging_level: 'UNIT', units_per_package: 1, gross_weight_kg: '', net_weight_kg: '', length_m: '', width_m: '', height_m: '' }
+                                                                            ]
+                                                                        }))}
+                                                                        className="inline-flex items-center gap-1 px-2 py-1 text-[11px] font-semibold text-sage-700 bg-sage-50 hover:bg-sage-100 rounded-lg transition-colors"
+                                                                    >
+                                                                        <Plus className="w-3 h-3" /> Ajouter un niveau
+                                                                    </button>
+                                                                </div>
+                                                                {logisticsForm.packaging_levels.length === 0 ? (
+                                                                    <div className="text-xs text-gray-400 italic py-2 text-center">Aucun niveau défini — cliquer « Ajouter » pour UNIT, CARTON ou PALLET.</div>
+                                                                ) : (
+                                                                    <div className="space-y-2">
+                                                                        {logisticsForm.packaging_levels.map((pl: any, i: number) => (
+                                                                            <div key={i} className="bg-white border border-gray-200 rounded-lg p-3 space-y-2">
+                                                                                <div className="flex items-center justify-between">
+                                                                                    <select
+                                                                                        value={pl.packaging_level}
+                                                                                        onChange={e => {
+                                                                                            const lvls = [...logisticsForm.packaging_levels];
+                                                                                            lvls[i] = { ...lvls[i], packaging_level: e.target.value };
+                                                                                            setLogisticsForm((f: any) => ({ ...f, packaging_levels: lvls }));
+                                                                                        }}
+                                                                                        className="px-2 py-1 text-xs font-bold border border-blue-200 rounded-lg bg-blue-50 text-blue-700 focus:outline-none focus:ring-1 focus:ring-sage-500"
+                                                                                    >
+                                                                                        <option value="UNIT">UNIT</option>
+                                                                                        <option value="CARTON">CARTON</option>
+                                                                                        <option value="PALLET">PALLET</option>
+                                                                                    </select>
+                                                                                    <button
+                                                                                        type="button"
+                                                                                        onClick={() => {
+                                                                                            const lvls = logisticsForm.packaging_levels.filter((_: any, idx: number) => idx !== i);
+                                                                                            setLogisticsForm((f: any) => ({ ...f, packaging_levels: lvls }));
+                                                                                        }}
+                                                                                        className="p-1 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                                                                                    >
+                                                                                        <Trash2 className="w-3 h-3" />
+                                                                                    </button>
+                                                                                </div>
+                                                                                <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                                                                                    {([
+                                                                                        { key: 'units_per_package', label: 'Unités/colis', step: '1', placeholder: '1' },
+                                                                                        { key: 'gross_weight_kg', label: 'Poids brut (kg)', step: '0.001', placeholder: '0.000' },
+                                                                                        { key: 'net_weight_kg', label: 'Poids net (kg)', step: '0.001', placeholder: '0.000' },
+                                                                                        { key: 'length_m', label: 'Longueur (m)', step: '0.001', placeholder: '0.000' },
+                                                                                        { key: 'width_m', label: 'Largeur (m)', step: '0.001', placeholder: '0.000' },
+                                                                                        { key: 'height_m', label: 'Hauteur (m)', step: '0.001', placeholder: '0.000' },
+                                                                                    ] as { key: string; label: string; step: string; placeholder: string }[]).map(({ key, label, step, placeholder }) => (
+                                                                                        <div key={key}>
+                                                                                            <label className="block text-[10px] font-medium text-gray-500 mb-0.5">{label}</label>
+                                                                                            <input
+                                                                                                type="number"
+                                                                                                step={step}
+                                                                                                min="0"
+                                                                                                value={pl[key] ?? ''}
+                                                                                                onChange={e => {
+                                                                                                    const lvls = [...logisticsForm.packaging_levels];
+                                                                                                    lvls[i] = { ...lvls[i], [key]: e.target.value };
+                                                                                                    setLogisticsForm((f: any) => ({ ...f, packaging_levels: lvls }));
+                                                                                                }}
+                                                                                                className="w-full px-2 py-1 text-xs border border-gray-300 rounded-lg focus:outline-none focus:ring-1 focus:ring-sage-500"
+                                                                                                placeholder={placeholder}
+                                                                                            />
+                                                                                        </div>
+                                                                                    ))}
+                                                                                </div>
+                                                                                <div className="text-[10px] text-gray-400 italic">Volume m³ = calculé automatiquement par le serveur</div>
+                                                                            </div>
+                                                                        ))}
+                                                                    </div>
+                                                                )}
+                                                            </div>
+
                                                             <div className="flex items-center gap-2">
                                                                 <button
                                                                     onClick={handleSaveLogistics}
@@ -2304,7 +2505,7 @@ export const ProductsPage = () => {
                                                                             )}
                                                                         </span>
                                                                     </div>
-                                                                    <div className="grid grid-cols-3 gap-3 pt-3 border-t border-gray-100">
+                                                                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 pt-3 border-t border-gray-100">
                                                                         <div className={`p-3 rounded-lg border ${logistics.stackable ? 'bg-green-50 border-green-100' : 'bg-gray-50 border-gray-100'}`}>
                                                                             <div className="text-[11px] font-medium text-gray-500 mb-1">Empilable</div>
                                                                             <div className={`text-sm font-semibold ${logistics.stackable ? 'text-green-700' : 'text-gray-400'}`}>
@@ -2315,6 +2516,12 @@ export const ProductsPage = () => {
                                                                             <div className="text-[11px] font-medium text-gray-500 mb-1">Fragile</div>
                                                                             <div className={`text-sm font-semibold ${logistics.fragile ? 'text-red-700' : 'text-gray-400'}`}>
                                                                                 {logistics.fragile ? 'Oui' : 'Non'}
+                                                                            </div>
+                                                                        </div>
+                                                                        <div className={`p-3 rounded-lg border ${logistics.keep_upright ? 'bg-blue-50 border-blue-100' : 'bg-gray-50 border-gray-100'}`}>
+                                                                            <div className="text-[11px] font-medium text-gray-500 mb-1">Maintenir vertical</div>
+                                                                            <div className={`text-sm font-semibold ${logistics.keep_upright ? 'text-blue-700' : 'text-gray-400'}`}>
+                                                                                {logistics.keep_upright ? 'Oui' : 'Non'}
                                                                             </div>
                                                                         </div>
                                                                         <div className={`p-3 rounded-lg border ${logistics.temperature_controlled ? 'bg-amber-50 border-amber-100' : 'bg-gray-50 border-gray-100'}`}>
@@ -2330,6 +2537,43 @@ export const ProductsPage = () => {
                                                                             <span className="inline-flex items-center px-2 py-0.5 rounded text-[11px] font-semibold bg-orange-50 text-orange-700 border border-orange-100 font-mono">
                                                                                 {logistics.transport_category}
                                                                             </span>
+                                                                        </div>
+                                                                    )}
+                                                                    {logistics.packaging_levels && logistics.packaging_levels.length > 0 && (
+                                                                        <div className="pt-3 border-t border-gray-100">
+                                                                            <div className="text-xs font-semibold text-gray-700 mb-2">Niveaux de conditionnement</div>
+                                                                            <div className="overflow-x-auto">
+                                                                                <table className="w-full text-xs border-collapse">
+                                                                                    <thead>
+                                                                                        <tr className="bg-gray-50 border-b border-gray-200">
+                                                                                            <th className="text-left px-2 py-1.5 font-semibold text-gray-500">Niveau</th>
+                                                                                            <th className="text-center px-2 py-1.5 font-semibold text-gray-500">Unités/colis</th>
+                                                                                            <th className="text-center px-2 py-1.5 font-semibold text-gray-500">Poids brut (kg)</th>
+                                                                                            <th className="text-center px-2 py-1.5 font-semibold text-gray-500">L × l × H (m)</th>
+                                                                                            <th className="text-center px-2 py-1.5 font-semibold text-gray-500">Volume (m³)</th>
+                                                                                        </tr>
+                                                                                    </thead>
+                                                                                    <tbody>
+                                                                                        {logistics.packaging_levels.map((pl: any, i: number) => (
+                                                                                            <tr key={i} className="border-b border-gray-100 last:border-b-0">
+                                                                                                <td className="px-2 py-1.5">
+                                                                                                    <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold bg-blue-50 text-blue-700 border border-blue-100">
+                                                                                                        {pl.packaging_level}
+                                                                                                    </span>
+                                                                                                </td>
+                                                                                                <td className="px-2 py-1.5 text-center font-semibold text-gray-900">{pl.units_per_package ?? '—'}</td>
+                                                                                                <td className="px-2 py-1.5 text-center text-gray-700">{pl.gross_weight_kg ?? '—'}</td>
+                                                                                                <td className="px-2 py-1.5 text-center text-gray-700">
+                                                                                                    {(pl.length_m || pl.width_m || pl.height_m)
+                                                                                                        ? `${pl.length_m ?? '?'} × ${pl.width_m ?? '?'} × ${pl.height_m ?? '?'}`
+                                                                                                        : '—'}
+                                                                                                </td>
+                                                                                                <td className="px-2 py-1.5 text-center text-gray-700">{pl.volume_m3 ?? '—'}</td>
+                                                                                            </tr>
+                                                                                        ))}
+                                                                                    </tbody>
+                                                                                </table>
+                                                                            </div>
                                                                         </div>
                                                                     )}
                                                                 </div>
@@ -3222,6 +3466,7 @@ export const ProductsPage = () => {
                                                             ['decimal_quantity_allowed', 'Qté décimale'],
                                                             ['requires_preparation', 'Préparation requise'],
                                                             ['allow_partial_delivery', 'Livraison partielle'],
+                                                            ['requires_refrigeration', 'Réfrigération requise'],
                                                         ] as [string, string][]).map(([key, label]) => (
                                                             <label key={key} className="flex items-center gap-2 text-sm cursor-pointer">
                                                                 <input type="checkbox" checked={!!flagsForm[key]}
@@ -3230,6 +3475,41 @@ export const ProductsPage = () => {
                                                                 <span>{label}</span>
                                                             </label>
                                                         ))}
+                                                    </div>
+                                                    {/* Numeric / text fields */}
+                                                    <div className="grid grid-cols-2 gap-3 pt-3 border-t border-gray-100">
+                                                        <div>
+                                                            <label className="block text-[11px] font-medium text-gray-500 mb-1">Qté min. commande</label>
+                                                            <input type="number" step="0.001" min="0"
+                                                                value={flagsForm.min_quantity_order ?? ''}
+                                                                onChange={e => setFlagsForm(f => ({ ...f, min_quantity_order: e.target.value }))}
+                                                                className="w-full px-2 py-1.5 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-sage-500"
+                                                                placeholder="1.000" />
+                                                        </div>
+                                                        <div>
+                                                            <label className="block text-[11px] font-medium text-gray-500 mb-1">Précision décimale</label>
+                                                            <input type="number" step="1" min="0" max="6"
+                                                                value={flagsForm.decimal_precision ?? ''}
+                                                                onChange={e => setFlagsForm(f => ({ ...f, decimal_precision: e.target.value }))}
+                                                                className="w-full px-2 py-1.5 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-sage-500"
+                                                                placeholder="0" />
+                                                        </div>
+                                                        <div>
+                                                            <label className="block text-[11px] font-medium text-gray-500 mb-1">Pas décimal (step)</label>
+                                                            <input type="text"
+                                                                value={flagsForm.decimal_step ?? ''}
+                                                                onChange={e => setFlagsForm(f => ({ ...f, decimal_step: e.target.value }))}
+                                                                className="w-full px-2 py-1.5 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-sage-500"
+                                                                placeholder="1.0000" />
+                                                        </div>
+                                                        <div>
+                                                            <label className="block text-[11px] font-medium text-gray-500 mb-1">Unité de livraison</label>
+                                                            <input type="text"
+                                                                value={flagsForm.delivery_unit ?? ''}
+                                                                onChange={e => setFlagsForm(f => ({ ...f, delivery_unit: e.target.value || null }))}
+                                                                className="w-full px-2 py-1.5 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-sage-500"
+                                                                placeholder="ex: CARTON" />
+                                                        </div>
                                                     </div>
                                                     <div className="flex gap-2 pt-2 border-t border-gray-100">
                                                         <button onClick={handleSaveFlags} disabled={updatingFlags}
@@ -3256,6 +3536,7 @@ export const ProductsPage = () => {
                                                                 ['decimal_quantity_allowed', 'Qté décimale'],
                                                                 ['requires_preparation', 'Préparation'],
                                                                 ['allow_partial_delivery', 'Livraison partielle'],
+                                                                ['requires_refrigeration', 'Réfrigération'],
                                                             ] as [string, string][]).map(([key, label]) => (
                                                                 <div key={key} className="flex items-center gap-2 text-sm">
                                                                     {currentFlags[key]

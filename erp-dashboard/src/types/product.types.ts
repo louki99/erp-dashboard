@@ -69,6 +69,7 @@ export interface ProductFlags {
     requires_preparation?: boolean;
     delivery_unit?: string | null;
     allow_partial_delivery?: boolean;
+    requires_refrigeration?: boolean;
 }
 
 export interface ProductMarketing {
