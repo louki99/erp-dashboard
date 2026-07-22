@@ -6,6 +6,12 @@ import { Checkbox } from '@/components/ui/checkbox';
 import SearchableSelect from '@/components/common/SearchableSelect';
 import type { CreateGeoAreaPayload, GeoArea, GeoAreaType } from '@/types/routing.types';
 
+function toCoord(v: string | number | null | undefined): number | null {
+    if (v == null || v === '') return null;
+    const n = typeof v === 'number' ? v : parseFloat(String(v));
+    return Number.isFinite(n) ? n : null;
+}
+
 interface GeoAreaFormProps {
     geoArea?: GeoArea | null;
     geoAreaTypes: GeoAreaType[];
@@ -24,8 +30,8 @@ function getInitialForm(geoArea?: GeoArea | null, defaultParentCode?: string): C
             name_ar: geoArea.name_ar ?? '',
             geo_area_type_id: geoArea.geo_area_type_id,
             parent_code: geoArea.parent_code,
-            latitude: geoArea.latitude,
-            longitude: geoArea.longitude,
+            latitude: toCoord(geoArea.latitude),
+            longitude: toCoord(geoArea.longitude),
             description: geoArea.description ?? '',
             is_active: geoArea.is_active,
             sort_order: geoArea.sort_order,

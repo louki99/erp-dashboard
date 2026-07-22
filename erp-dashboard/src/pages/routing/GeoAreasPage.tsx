@@ -55,7 +55,7 @@ import {
     useToggleGeoArea,
     useUpdateGeoArea,
 } from '@/hooks/routing/useRouting';
-import { useUsersOptions } from '@/hooks/tokenSeries/useEntitySelectors';
+import { useRbacUsers } from '@/hooks/rbac/useRbac';
 import type {
     CreateGeoAreaPayload,
     GeoArea,
@@ -249,12 +249,12 @@ function GeoAreaSuperviseurs({ areaId }: { areaId: number }) {
     const { data: usersData, isLoading } = useGeoAreaUsers(areaId);
     const assignUser = useAssignGeoAreaUser(areaId);
     const removeUser = useRemoveGeoAreaUser(areaId);
-    const { data: userOptions } = useUsersOptions();
+    const { data: cdzData } = useRbacUsers({ role: 'cdz', per_page: 500 });
 
     const assignedIds = usersData?.users.map((u) => u.id) ?? [];
-    const availableOptions = (userOptions ?? [])
-        .filter((u) => !assignedIds.includes(u.value as number))
-        .map((u) => ({ value: u.value, label: u.label }));
+    const availableOptions = (cdzData?.data ?? [])
+        .filter((u) => !assignedIds.includes(u.id))
+        .map((u) => ({ value: u.id, label: u.name }));
 
     const handleAssign = async (v: string | number | undefined) => {
         if (!v) return;
