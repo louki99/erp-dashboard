@@ -2,7 +2,8 @@ import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { Toaster } from 'react-hot-toast';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import '@/i18n';
-import { AuthProvider } from '@/context/AuthContext';
+import { AuthProvider, useAuth } from '@/context/AuthContext';
+import { getDefaultRoute } from '@/lib/rbac/defaultRoute';
 import { ThemeProvider } from '@/context/ThemeContext';
 import { LanguageProvider } from '@/context/LanguageContext';
 import { ProtectedRoute } from '@/components/rbac';
@@ -39,6 +40,18 @@ import { MagasinierConventionalLoadingPage } from '@/pages/magasinier/Magasinier
 import { MagasinierDechargeReconciliationPage } from '@/pages/magasinier/MagasinierDechargeReconciliationPage';
 import { MagasinierDechargePage } from '@/pages/magasinier/MagasinierDechargePage';
 import { MagasinierReturnsPage } from '@/pages/magasinier/MagasinierReturnsPage';
+import { TelesalesSchedulesPage } from '@/pages/telesales/TelesalesSchedulesPage';
+import { TelesalesAssignmentsPage } from '@/pages/telesales/TelesalesAssignmentsPage';
+import { TelesalesMonitoringPage } from '@/pages/telesales/TelesalesMonitoringPage';
+import { TelesalesAgentDashboardPage } from '@/pages/telesales/TelesalesAgentDashboardPage';
+import { TelesalesPlanningPage } from '@/pages/telesales/TelesalesPlanningPage';
+import { TelesalesVisitPage } from '@/pages/telesales/TelesalesVisitPage';
+import { TelesalesCatalogPage } from '@/pages/telesales/TelesalesCatalogPage';
+import { TelesalesOrderPage } from '@/pages/telesales/TelesalesOrderPage';
+import { TelesalesDevisListPage } from '@/pages/telesales/TelesalesDevisListPage';
+import { TelesalesDevisDetailPage } from '@/pages/telesales/TelesalesDevisDetailPage';
+import { TelesalesPortfolioPage } from '@/pages/telesales/TelesalesPortfolioPage';
+import { TelesalesReturnsPage } from '@/pages/telesales/TelesalesReturnsPage';
 import { ProductsPage } from '@/pages/products/ProductsPage';
 import { ProductMasterDataPage } from '@/pages/products/ProductMasterDataPage';
 import { ProductLogisticsPage } from '@/pages/products/ProductLogisticsPage';
@@ -121,13 +134,21 @@ const DashboardPage = () => {
   );
 };
 
+// Role-aware landing for "/" and any unmatched route — most roles land on the
+// generic /dashboard, but roles without PERMISSIONS.DASHBOARD.VIEW (e.g. télévendeur)
+// need their own home or they hit "Accès Refusé" every time they land here.
+function DefaultRedirect() {
+  const { user } = useAuth();
+  return <Navigate to={getDefaultRoute(user)} replace />;
+}
+
 function AppRoutes() {
   return (
     <Routes>
       <Route path="/login" element={<Login />} />
 
       {/* Protected Routes */}
-      <Route path="/" element={<ProtectedRoute><Navigate to="/dashboard" replace /></ProtectedRoute>} />
+      <Route path="/" element={<ProtectedRoute><DefaultRedirect /></ProtectedRoute>} />
 
       <Route path="/dashboard" element={
         <ProtectedRoute requiredPermission={PERMISSIONS.DASHBOARD.VIEW}>
@@ -331,6 +352,88 @@ function AppRoutes() {
       <Route path="/magasinier/returns" element={
         <ProtectedRoute requiredRole={['admin', 'root', 'magasinier']}>
           <MagasinierReturnsPage />
+        </ProtectedRoute>
+      } />
+
+      {/* Télévendeur — Admin/Superviseur (Lot 1). Base URL /api/backend/admin/telesales/...,
+          role admin|root ONLY — never granted to `televendeur` (confirmed 403 in spec §7). */}
+      <Route path="/telesales/admin/schedules" element={
+        <ProtectedRoute requiredRole={['admin', 'root']}>
+          <TelesalesSchedulesPage />
+        </ProtectedRoute>
+      } />
+
+      <Route path="/telesales/admin/assignments" element={
+        <ProtectedRoute requiredRole={['admin', 'root']}>
+          <TelesalesAssignmentsPage />
+        </ProtectedRoute>
+      } />
+
+      <Route path="/telesales/admin/monitoring" element={
+        <ProtectedRoute requiredRole={['admin', 'root']}>
+          <TelesalesMonitoringPage />
+        </ProtectedRoute>
+      } />
+
+      {/* Télévendeur — Agent (Lot 2). Base URL /api/backend/telesales/...,
+          role televendeur|admin|root — distinct from the admin-only routes above. */}
+      <Route path="/telesales/dashboard" element={
+        <ProtectedRoute requiredRole={['televendeur', 'admin', 'root']}>
+          <TelesalesAgentDashboardPage />
+        </ProtectedRoute>
+      } />
+
+      <Route path="/telesales/planning" element={
+        <ProtectedRoute requiredRole={['televendeur', 'admin', 'root']}>
+          <TelesalesPlanningPage />
+        </ProtectedRoute>
+      } />
+
+      <Route path="/telesales/visits/:id" element={
+        <ProtectedRoute requiredRole={['televendeur', 'admin', 'root']}>
+          <TelesalesVisitPage />
+        </ProtectedRoute>
+      } />
+
+      <Route path="/telesales/catalog" element={
+        <ProtectedRoute requiredRole={['televendeur', 'admin', 'root']}>
+          <TelesalesCatalogPage />
+        </ProtectedRoute>
+      } />
+
+      <Route path="/telesales/orders/new" element={
+        <ProtectedRoute requiredRole={['televendeur', 'admin', 'root']}>
+          <TelesalesOrderPage />
+        </ProtectedRoute>
+      } />
+
+      <Route path="/telesales/orders/:id" element={
+        <ProtectedRoute requiredRole={['televendeur', 'admin', 'root']}>
+          <TelesalesOrderPage />
+        </ProtectedRoute>
+      } />
+
+      <Route path="/telesales/devis" element={
+        <ProtectedRoute requiredRole={['televendeur', 'admin', 'root']}>
+          <TelesalesDevisListPage />
+        </ProtectedRoute>
+      } />
+
+      <Route path="/telesales/devis/:id" element={
+        <ProtectedRoute requiredRole={['televendeur', 'admin', 'root']}>
+          <TelesalesDevisDetailPage />
+        </ProtectedRoute>
+      } />
+
+      <Route path="/telesales/portfolio" element={
+        <ProtectedRoute requiredRole={['televendeur', 'admin', 'root']}>
+          <TelesalesPortfolioPage />
+        </ProtectedRoute>
+      } />
+
+      <Route path="/telesales/returns" element={
+        <ProtectedRoute requiredRole={['televendeur', 'admin', 'root']}>
+          <TelesalesReturnsPage />
         </ProtectedRoute>
       } />
 
@@ -708,7 +811,7 @@ function AppRoutes() {
       } />
 
       {/* Catch all */}
-      <Route path="*" element={<Navigate to="/dashboard" replace />} />
+      <Route path="*" element={<DefaultRedirect />} />
     </Routes>
   );
 }

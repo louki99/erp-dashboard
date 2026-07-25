@@ -43,7 +43,7 @@ export interface User {
 interface AuthContextType {
     user: User | null;
     isAuthenticated: boolean;
-    login: (email: string, password: string) => Promise<{ success: boolean; message?: string }>;
+    login: (email: string, password: string) => Promise<{ success: boolean; message?: string; user?: User }>;
     logout: () => void;
     loading: boolean;
 }
@@ -92,7 +92,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
                     // Token is automatically added by apiClient interceptor on next request
                 }
 
-                return { success: true };
+                return { success: true, user: userData };
             } else {
                 return { success: false, message: response.data.message || 'Login failed' };
             }

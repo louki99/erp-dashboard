@@ -3,6 +3,7 @@ import { useForm } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '@/context/AuthContext';
+import { getDefaultRoute } from '@/lib/rbac/defaultRoute';
 import { Loader2, Lock, Mail, Eye, EyeOff, Shield, BarChart3, Globe2, Boxes, Smartphone } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
@@ -61,14 +62,16 @@ export const Login = () => {
     const [showPassword, setShowPassword] = useState(false);
 
     const theme = useLoginTheme();
-    const from = (location.state as any)?.from?.pathname || "/dashboard";
+    // Only present when ProtectedRoute bounced the user here from a specific page —
+    // in that case always honor it over any role-based landing route below.
+    const explicitFrom = (location.state as any)?.from?.pathname as string | undefined;
 
     const onSubmit = async (data: any) => {
         setIsLoading(true);
         setLoginError(null);
         const result = await login(data.email, data.password);
         if (result.success) {
-            navigate(from, { replace: true });
+            navigate(explicitFrom || getDefaultRoute(result.user), { replace: true });
         } else {
             setLoginError(result.message || t('auth.loginError'));
         }

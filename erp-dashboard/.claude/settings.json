@@ -2,7 +2,13 @@
   "permissions": {
     "allow": [
       "Bash(node -e \"const p = require\\('./package.json'\\); Object.keys\\(p.dependencies\\).filter\\(k => k.includes\\('radix'\\)\\).forEach\\(k => console.log\\(k, p.dependencies[k]\\)\\)\")",
-      "Bash(node -e ' *)"
+      "Bash(node -e ' *)",
+      "Bash(npx eslint *)",
+      "Bash(awk -F'  ' '{print $1, $2}')",
+      "Read(//c/Users/louki/.claude/projects/d--project--avenir-omni360-omin360__mobile-erp-dashboard/memory/**)",
+      "Bash(ls \"C:\\\\Users\\\\louki\\\\.claude\\\\projects\\\\d--project--avenir-omni360-omin360__mobile-erp-dashboard\\\\memory\\\\\" 2>&1)",
+      "Read(//c/Users/louki/.claude/projects/d--project--avenir-omni360-omin360__mobile-erp-dashboard/**)",
+      "Bash(ls 'C:\\\\Users\\\\louki\\\\.claude\\\\projects\\\\d--project--avenir-omni360-omin360__mobile-erp-dashboard\\\\memory\\\\')"
     ]
   }
 }

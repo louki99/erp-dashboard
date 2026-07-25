@@ -32,6 +32,7 @@ import {
   Users,
   Warehouse,
   Box,
+  Headset,
 } from 'lucide-react';
 
 export interface MenuItem {
@@ -781,6 +782,62 @@ export const MENU_MODULES: MenuModule[] = [
           { id: 'routing:itineraries', label: 'Gestion des tournées', route: '/routing/itineraries', description: 'CRUD tournées, partenaires et vendeurs', keywords: ['tournée', 'itinéraire', 'partenaire', 'vendeur'] },
           { id: 'routing:designer', label: 'Visual Designer', route: '/routing/designer', description: 'Designer drag-and-drop avec carte Leaflet', keywords: ['designer', 'carte', 'map', 'drag', 'lasso', 'arrêts'] },
           { id: 'routing:planning', label: 'Planning', route: '/routing/planning', description: 'Planning hebdomadaire et overrides journaliers', keywords: ['planning', 'calendrier', 'jour', 'semaine', 'override'] },
+        ],
+      },
+    ],
+  },
+  {
+    id: 'telesales-admin',
+    label: 'Télévendeur (Admin)',
+    icon: Headset,
+    description: 'Semainier d\'équipe, distribution de portefeuille et monitoring live des télévendeurs',
+    // hasPermission() treats an undefined requiredPermission as "visible to everyone" —
+    // must set one even though admin/root already bypass via the role check inside it.
+    requiredPermission: 'telesales-admin.manage_schedules',
+    requiredRole: 'admin',
+    categories: [
+      {
+        id: 'planning',
+        title: 'Planning',
+        items: [
+          { id: 'tv-admin:schedules', label: 'Semainier d\'équipe', route: '/telesales/admin/schedules', description: 'Assigner des appels aux agents, import en masse', keywords: ['planning', 'appel', 'semainier', 'télévendeur'] },
+        ],
+      },
+      {
+        id: 'portefeuille',
+        title: 'Portefeuille',
+        items: [
+          { id: 'tv-admin:assignments', label: 'Distribution de portefeuille', route: '/telesales/admin/assignments', description: 'Attribuer des partenaires à un agent télévendeur', keywords: ['portefeuille', 'partenaire', 'assignation'] },
+        ],
+      },
+      {
+        id: 'monitoring',
+        title: 'Monitoring',
+        items: [
+          { id: 'tv-admin:monitoring', label: 'Suivi live & KPIs', route: '/telesales/admin/monitoring', description: 'Sessions en direct, taux de conversion, ventes par agent', keywords: ['monitoring', 'kpi', 'session', 'conversion'] },
+        ],
+      },
+    ],
+  },
+  {
+    id: 'telesales-agent',
+    label: 'Télévendeur',
+    icon: Headset,
+    description: 'Poste télévendeur — session, planning, prise de commande, devis',
+    // Same hasPermission() caveat as telesales-admin above — undefined permission = visible to all.
+    requiredPermission: 'televendeur.manage_session',
+    requiredRole: 'televendeur',
+    categories: [
+      {
+        id: 'poste',
+        title: 'Poste',
+        items: [
+          { id: 'tv-agent:dashboard', label: 'Poste Télévendeur', route: '/telesales/dashboard', description: 'Session (start/pause/resume/end) et vue d\'ensemble', keywords: ['session', 'dashboard', 'télévendeur', 'tableau de bord'] },
+          { id: 'tv-agent:planning', label: 'Semainier / Planning', route: '/telesales/planning', description: 'Appels planifiés, appel libre', keywords: ['planning', 'semainier', 'appel'] },
+          { id: 'tv-agent:catalog', label: 'Catalogue produits', route: '/telesales/catalog', description: 'Recherche produit, stock, prix négocié', keywords: ['catalogue', 'produit', 'stock', 'prix'] },
+          { id: 'tv-agent:devis', label: 'Mes devis', route: '/telesales/devis', description: 'Devis B2B — création, envoi, conversion en commande', keywords: ['devis', 'quote', 'b2b'] },
+          { id: 'tv-agent:portfolio', label: 'Mon portefeuille', route: '/telesales/portfolio', description: 'Partenaires assignés par le superviseur', keywords: ['portefeuille', 'partenaire', 'assignation'] },
+          { id: 'tv-agent:returns', label: 'Retours clients', route: '/telesales/returns', description: 'Retours commerciaux différés, approbation direction', keywords: ['retour', 'return', 'sav'] },
         ],
       },
     ],

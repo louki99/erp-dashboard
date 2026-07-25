@@ -128,6 +128,17 @@ export const PERMISSIONS = {
         STOCK_ADJUST: 'admin.magasinier.stock.adjust',
     },
 
+    // Télévendeur — Admin/Superviseur (Lot 1). Real Spatie slugs (not the
+    // `admin.*` convention used elsewhere) — confirmed 2026-08, granted to
+    // admin/root only, never to the `televendeur` role. Gate routes with
+    // requiredRole={['admin','root']} per the dispatcher/warehouse precedent;
+    // isAdminUser already bypasses these permission checks for admin/root.
+    TELESALES_ADMIN: {
+        MANAGE_SCHEDULES: 'telesales-admin.manage_schedules',
+        MANAGE_ASSIGNMENTS: 'telesales-admin.manage_assignments',
+        VIEW_MONITORING: 'telesales-admin.view_monitoring',
+    },
+
     // Bon de Commandes
     BON_COMMANDES: {
         INDEX: 'admin.bon-commandes.index',
