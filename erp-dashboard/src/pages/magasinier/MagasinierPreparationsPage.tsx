@@ -1,6 +1,6 @@
 import { useMemo, useState, useRef, useEffect } from 'react';
 import type { ColDef } from 'ag-grid-community';
-import { Loader2, RefreshCw, Play, CheckCircle2, XCircle, Package, Clock, AlertCircle, FileText, User, AlertTriangle, Wrench, Save, CheckCheck, Printer, Download, Search, Calendar } from 'lucide-react';
+import { Loader2, RefreshCw, Play, CheckCircle2, XCircle, Package, Clock, AlertCircle, FileText, User, AlertTriangle, Wrench, Save, CheckCheck, Check, Zap, Printer, Download, Search, Calendar } from 'lucide-react';
 import { openPdf, downloadPdf } from '@/utils/pdfUtils';
 import toast from 'react-hot-toast';
 
@@ -77,6 +77,25 @@ export const MagasinierPreparationsPage = () => {
     // GET /preparations/{id} also returns the BP flat, no wrapper (docs §6.2).
     const details = detailData;
     const items = details?.items ?? [];
+
+    // Shared cap: never let a prepared quantity exceed what was both requested and
+    // physically available — mirrors the server-side clamp so the UI never proposes
+    // a value the backend would reject.
+    const maxAcceptable = (item: any) => Math.min(item.requested_quantity ?? 0, item.available_quantity ?? item.requested_quantity ?? 0);
+
+    const isLineAccepted = (item: any) => {
+        const max = maxAcceptable(item);
+        if (max <= 0) return false;
+        const effective = preparedQuantities[item.id] ?? item.prepared_quantity ?? 0;
+        return effective >= max;
+    };
+
+    const acceptanceProgress = useMemo(() => {
+        const acceptable = items.filter((i: any) => maxAcceptable(i) > 0);
+        const accepted = acceptable.filter((i: any) => isLineAccepted(i));
+        return { accepted: accepted.length, total: acceptable.length };
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [items, preparedQuantities]);
 
     const { prepare, loading: preparing } = useMagasinierPrepare();
     const { updateItems, loading: savingProgress } = useMagasinierUpdateItems();
@@ -214,11 +233,12 @@ export const MagasinierPreparationsPage = () => {
                     setPreparedQuantities(prev => ({ ...prev, [params.data.id]: clampedValue }));
                     return true;
                 },
-                cellStyle: () => {
-                    if (details?.status === 'in_progress') {
-                        return { padding: '4px' };
-                    }
-                    return null;
+                cellStyle: (params: any) => {
+                    if (details?.status !== 'in_progress') return null;
+                    const accepted = isLineAccepted(params.data);
+                    return accepted
+                        ? { padding: '4px', backgroundColor: '#ecfdf5', fontWeight: '700', color: '#047857' }
+                        : { padding: '4px' };
                 },
                 cellEditor: 'agNumberCellEditor',
                 cellEditorParams: (params: any) => {
@@ -236,22 +256,36 @@ export const MagasinierPreparationsPage = () => {
             ...(details?.status === 'in_progress' ? [{
                 field: 'accept_all',
                 headerName: '',
-                width: 170,
+                width: 180,
                 sortable: false,
                 filter: false,
                 cellStyle: { display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '0', backgroundColor: 'transparent' },
                 cellRenderer: (params: any) => {
                     const item = params.data;
-                    const maxQty = Math.min(item.requested_quantity, item.available_quantity ?? item.requested_quantity);
+                    const maxQty = maxAcceptable(item);
+                    const accepted = isLineAccepted(item);
+                    if (maxQty <= 0) {
+                        return (
+                            <span className="flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-semibold text-red-500 bg-red-50 border border-red-100">
+                                <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
+                                Stock indisponible
+                            </span>
+                        );
+                    }
                     return (
                         <button
                             type="button"
-                            title="Accepter la quantité demandée"
+                            title={accepted ? 'Quantité demandée déjà appliquée' : 'Accepter la quantité demandée'}
                             onClick={() => setPreparedQuantities(prev => ({ ...prev, [item.id]: maxQty }))}
-                            className="flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium text-emerald-700 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 transition-colors"
+                            disabled={accepted}
+                            className={`flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-semibold border transition-all ${
+                                accepted
+                                    ? 'text-emerald-700 bg-emerald-100 border-emerald-300 cursor-default shadow-inner'
+                                    : 'text-emerald-700 bg-emerald-50 hover:bg-emerald-100 hover:shadow-sm hover:-translate-y-px border-emerald-200 active:translate-y-0'
+                            }`}
                         >
-                            <CheckCheck className="w-3.5 h-3.5 shrink-0" />
-                            Accepter même quantité
+                            {accepted ? <Check className="w-3.5 h-3.5 shrink-0" /> : <CheckCheck className="w-3.5 h-3.5 shrink-0" />}
+                            {accepted ? 'Quantité acceptée' : 'Accepter même quantité'}
                         </button>
                     );
                 },
@@ -312,6 +346,24 @@ export const MagasinierPreparationsPage = () => {
         setPreparedQuantities({});
         setShortageQuantities({});
         setAdditionalQuantities({});
+    };
+
+    // One-shot bulk accept — fills "Préparé" with the demanded quantity (capped to
+    // stock on hand) on every line at once, instead of clicking "Accepter" per row.
+    // Only touches lines that aren't already fully accepted, so it's safe to press
+    // again after a partial manual edit without clobbering deliberate overrides below max.
+    const handleAcceptAllQuantities = () => {
+        const acceptable = items.filter((i: any) => maxAcceptable(i) > 0 && !isLineAccepted(i));
+        if (acceptable.length === 0) {
+            toast.error('Aucune ligne à accepter — tout est déjà à quantité demandée ou en rupture totale');
+            return;
+        }
+        setPreparedQuantities((prev) => {
+            const next = { ...prev };
+            acceptable.forEach((item: any) => { next[item.id] = maxAcceptable(item); });
+            return next;
+        });
+        toast.success(`${acceptable.length} ligne${acceptable.length > 1 ? 's' : ''} acceptée${acceptable.length > 1 ? 's' : ''} à quantité demandée`);
     };
 
     const handlePrepareClick = () => {
@@ -893,15 +945,45 @@ export const MagasinierPreparationsPage = () => {
                         title={`Articles (${items.length})`}
                         isOpen={openSections['items']}
                         onOpenChange={(open) => toggleSection('items', open)}
+                        rightContent={
+                            details?.status === 'in_progress' && items.length > 0 ? (
+                                <div className="flex items-center gap-3" onClick={(e) => e.stopPropagation()}>
+                                    {acceptanceProgress.total > 0 && (
+                                        <div className="hidden sm:flex items-center gap-2">
+                                            <div className="w-20 h-1.5 bg-gray-100 rounded-full overflow-hidden">
+                                                <div
+                                                    className={`h-full rounded-full transition-all ${
+                                                        acceptanceProgress.accepted >= acceptanceProgress.total ? 'bg-emerald-500' : 'bg-sage-500'
+                                                    }`}
+                                                    style={{ width: `${(acceptanceProgress.accepted / acceptanceProgress.total) * 100}%` }}
+                                                />
+                                            </div>
+                                            <span className="text-[11px] font-bold text-gray-500 whitespace-nowrap">
+                                                {acceptanceProgress.accepted}/{acceptanceProgress.total} prêtes
+                                            </span>
+                                        </div>
+                                    )}
+                                    <button
+                                        type="button"
+                                        onClick={handleAcceptAllQuantities}
+                                        disabled={acceptanceProgress.accepted >= acceptanceProgress.total}
+                                        className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold text-white bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-600 hover:to-teal-700 shadow-sm hover:shadow disabled:opacity-40 disabled:cursor-not-allowed disabled:shadow-none transition-all"
+                                    >
+                                        <Zap className="w-3.5 h-3.5 shrink-0" />
+                                        Tout accepter
+                                    </button>
+                                </div>
+                            ) : undefined
+                        }
                     >
                         <div>
                             {items.length === 0 ? (
                                 <div className="text-sm text-gray-500 py-4">Aucun article</div>
                             ) : (
                                 <div className="h-64">
-                                    <DataGrid 
-                                        rowData={items} 
-                                        columnDefs={itemsColumnDefs} 
+                                    <DataGrid
+                                        rowData={items}
+                                        columnDefs={itemsColumnDefs}
                                         loading={false}
                                     />
                                 </div>
