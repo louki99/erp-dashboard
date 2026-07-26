@@ -8,7 +8,16 @@
       "Read(//c/Users/louki/.claude/projects/d--project--avenir-omni360-omin360__mobile-erp-dashboard/memory/**)",
       "Bash(ls \"C:\\\\Users\\\\louki\\\\.claude\\\\projects\\\\d--project--avenir-omni360-omin360__mobile-erp-dashboard\\\\memory\\\\\" 2>&1)",
       "Read(//c/Users/louki/.claude/projects/d--project--avenir-omni360-omin360__mobile-erp-dashboard/**)",
-      "Bash(ls 'C:\\\\Users\\\\louki\\\\.claude\\\\projects\\\\d--project--avenir-omni360-omin360__mobile-erp-dashboard\\\\memory\\\\')"
+      "Bash(ls 'C:\\\\Users\\\\louki\\\\.claude\\\\projects\\\\d--project--avenir-omni360-omin360__mobile-erp-dashboard\\\\memory\\\\')",
+      "WebFetch(domain:claude.ai)",
+      "Bash(npx tsc *)",
+      "Bash(rm -f tsc_final.txt)",
+      "Bash(rm -f tsc_hub.txt)",
+      "Bash(rm -f tsc_bp.txt)",
+      "Bash(rm -f tsc_bp2.txt)",
+      "Bash(rm -f tsc_bp3.txt)",
+      "Bash(rm -f tsc_bp4.txt)",
+      "Bash(rm -f tsc_bp5.txt)"
     ]
   }
 }

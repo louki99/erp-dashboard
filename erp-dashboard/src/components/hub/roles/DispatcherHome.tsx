@@ -2,7 +2,7 @@ import { useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import {
     Truck, Package, AlertTriangle, CheckCircle2,
-    Clock, Map, RefreshCw, ChevronRight, Route,
+    Clock, Map, RefreshCw, ChevronRight, Route, ClipboardList,
 } from 'lucide-react';
 import { KpiWidget, KpiWidgetSkeleton } from '../widgets/KpiWidget';
 import { useDispatcherDashboard } from '@/hooks/dispatcher/useDispatcherDashboard';
@@ -128,6 +128,7 @@ export const DispatcherHome = () => {
                             { label: 'Espace Missions', icon: Route, route: '/dispatcher/workspace/missions', color: 'text-sage-600' },
                             { label: 'Carte en Direct', icon: Map, route: '/dispatcher/workspace/map', color: 'text-blue-500' },
                             { label: 'Bons de Livraison', icon: Package, route: '/dispatcher/bons-livraisons', color: 'text-amber-500' },
+                            { label: 'Bons de Préparation', icon: ClipboardList, route: '/stock/preparation-bills', color: 'text-violet-500' },
                             { label: 'File des Pénuries', icon: AlertTriangle, route: '/dispatcher/shortage-queue', color: 'text-red-500' },
                             { label: 'Flotte & Livreurs', icon: Truck, route: '/dispatcher/fleet', color: 'text-indigo-500' },
                             { label: 'Planning Missions', icon: Clock, route: '/dispatcher/mission-planning', color: 'text-violet-500' },

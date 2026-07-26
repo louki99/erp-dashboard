@@ -24,11 +24,42 @@ export const TELE_VISIT_OUTCOME_LABELS: Record<TeleVisitOutcome, string> = {
     RESTOCK_NEEDED: 'Reconstitution de stock',
 };
 
+export interface TeleVisitPartnerAddress {
+    line1: string | null;
+    line2: string | null;
+    city: string | null;
+    region: string | null;
+    country: string | null;
+    postal_code: string | null;
+}
+
+export interface TeleVisitPartnerCredit {
+    limit: number;
+    used: number;
+    available: number;
+}
+
+// Aggregated snapshot only (counters already stored on the partner record) —
+// not a list. For an actual browsable order list, use GET /orders?partner_id=X.
+export interface TeleVisitPartnerOrderHistory {
+    total_orders_count: number;
+    total_orders_value: number;
+    average_order_value: number;
+    last_order_date: string | null;
+}
+
 export interface TeleVisitPartner {
     id: number;
     code: string;
     name: string;
     phone?: string | null;
+    status?: string;
+    // §correctif 2026-08 — GET /planning and GET /visits now embed these
+    // (previously silently null: a restrictive SQL select on the partner
+    // eager-load starved the Eloquent accessors of the columns they read).
+    address?: TeleVisitPartnerAddress;
+    credit?: TeleVisitPartnerCredit;
+    order_history?: TeleVisitPartnerOrderHistory;
 }
 
 export interface TeleVisit {

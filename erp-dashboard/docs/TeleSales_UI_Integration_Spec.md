@@ -78,6 +78,8 @@ Réponse `{ "success": true, "session": null }` si aucune session active/en paus
 | Qualifier le résultat | POST | `/visits/{id}/complete` | `televendeur.manage_visits` |
 
 ### Objet `visit`
+
+**Statut : `partner` enrichi et testé en HTTP réel (2026-08) — auparavant `phone` était le seul champ vraiment renseigné malgré une sélection SQL restrictive qui affichait `address_line1`/`city`/etc. à `null` même quand la donnée existait réellement en base (accesseurs Eloquent privés de la relation dont ils dépendent).**
 ```json
 {
   "id": 1,
@@ -91,9 +93,15 @@ Réponse `{ "success": true, "session": null }` si aucune session active/en paus
   "ended_at": null,
   "outcome": null,           // voir §3.4
   "notes": "Relance commande mensuelle",
-  "partner": { "id": 2, "code": "CL00002", "name": "EXTRA DINDE", "phone": null, ... }
+  "partner": {
+    "id": 2, "code": "CL00002", "name": "EXTRA DINDE", "phone": null, "status": "ACTIVE",
+    "address": { "line1": "N°41 AV COLONEL ALLAM QR", "line2": null, "city": null, "region": null, "country": "MA", "postal_code": null },
+    "credit": { "limit": 10000, "used": 0, "available": 10000 },
+    "order_history": { "total_orders_count": 0, "total_orders_value": 0, "average_order_value": 0, "last_order_date": null }
+  }
 }
 ```
+`address` : `city`/`region`/`postal_code` sont `null` chez certains partenaires — ce n'est **pas** un bug de l'API, c'est que l'adresse par défaut de ce partenaire (`default_address_id`) n'a pas ces champs renseignés en base (certaines fiches partenaire ont une adresse complète, d'autres non — trou de données, pas un trou de code). `credit` = crédit/encours en temps réel (mêmes chiffres que §5 `credit-status`). `order_history` = **instantané agrégé uniquement** (compteurs déjà stockés sur la fiche partenaire, pas de requête supplémentaire) — pour la vraie liste des commandes d'un partenaire, appeler `GET /orders?partner_id=X` (§5, filtre ajouté à ce même correctif).
 
 ### 3.1 `GET /planning?date=2026-07-24`
 Retourne les appels **planifiés et non qualifiés** (`outcome` encore null) pour la date donnée, triés par heure. Réponse : `{ "success": true, "date": "2026-07-24", "visits": [...] }`. `date` est optionnel — par défaut `now()`.
@@ -319,7 +327,7 @@ Ce prix de base est **reproductible fidèlement côté client** en respectant ce
 | Soumettre pour préparation | POST | `/orders/{id}/submit` | `televendeur.submit_for_preparation` |
 | **Demander dérogation crédit** | POST | `/orders/{id}/request-derogation` | `televendeur.request_derogation` |
 | Commandes programmées | GET | `/orders/scheduled?date=` | `televendeur.view_orders` |
-| Liste mes commandes | GET | `/orders?status=&date_from=&date_to=&search=` | `televendeur.view_orders` |
+| Liste mes commandes | GET | `/orders?status=&partner_id=&date_from=&date_to=&search=` | `televendeur.view_orders` |
 | Détail commande | GET | `/orders/{id}` | `televendeur.view_orders` |
 | **Mon portefeuille client** | GET | `/portfolio?search=&per_page=` | `televendeur.view_partner_info` |
 
@@ -770,3 +778,4 @@ Ne liste que les sessions `active`/`paused` (agents "en ligne" au sens large). `
 - **2026-08 (sync local-first)** : ajout §4.4 — `GET /catalog/sync`, `GET /catalog/tiers?price_list_id=`, `GET /partners/sync` pour peupler un cache IndexedDB côté UI. Correction de la demande initiale : `packagings`/`price_source` existaient déjà sur `GET /catalog/products` (non manquants) ; `tax_rate` était réellement absent, ajouté. "tier_id" ne correspond à aucun champ réel — les paliers sont des lignes quantité/produit/conditionnement dans `product_pricing_tiers`, exposées telles quelles via `/catalog/tiers`. `price_overrides` est une vraie table (`partner_price_overrides`, partenaire×produit), exposée par partenaire dans `/partners/sync`, pas comme un champ plat. ⚠️ Limitation structurelle documentée : les promotions à budget plafonné ou cumul mensuel dépendent d'un état serveur mutable (toutes commandes, tous canaux confondus) et ne peuvent pas être prédites de façon fiable hors-ligne — tout calcul client doit rester une estimation, confirmée par `GET /orders/{id}/summary` avant d'être présentée comme définitive à l'agent.
 - **2026-08 (enrichissement catalogue)** : `GET /catalog/products` et `GET /catalog/sync` renvoient désormais le même objet produit enrichi — `tax_rate`, `brand`, `short_description`, `barcode`, `marketing` (`is_new`/`is_featured`), `flags` métier (`is_salable`/`is_returnable`/`is_discountable`/`is_expirable`/`requires_refrigeration`/`decimal_quantity_allowed`/`min_quantity_order`, table `product_flags`), et `price_list` (id/code/name, uniquement quand `partner_id` est fourni sur `/catalog/products` et résolu). `buy_price` (coût d'achat) reste volontairement exclu — donnée de marge interne, pas destinée à un canal de vente.
 - **2026-08 (correctif — prix de base manquant)** : ajout `GET /catalog/price-list?price_list_id=` — expose `price_list_line_details` (les lignes de prix standard/override du partenaire), la source de prix la plus utilisée en pratique (228 lignes pour la liste C05 dans cet environnement, vs 0 tier). **Signalé par l'équipe UI** : sans cet endpoint, un client combinant seulement catalogue générique + `price_overrides` + tiers retombait systématiquement sur le prix générique dès que ni override ni tier n'existait — ce qui est le cas le plus fréquent, donnant des prix estimés totalement faux (ex: 23,50 affiché contre 17,03 réel pour un produit testé). Correction au passage de l'ordre de priorité documenté en §4.4 : `price_overrides` (partenaire) > tier > ligne override de la liste > **ligne standard de la liste (cas le plus fréquent, précédemment omis de la doc)** > repli linéaire. Vérifié produit par produit contre `PartnerProductPriceResolver::resolve()` réel (résultats identiques).
+- **2026-08 (correctif — fiche partenaire vide dans les visites)** : signalé par l'équipe UI — l'objet `partner` retourné par `GET /planning` et `GET /visits` (historique) n'affichait que `phone` correctement ; `address_line1`/`city`/etc. apparaissaient à `null` même quand la donnée existait réellement, à cause d'une sélection SQL restrictive (`partner:id,code,name,phone`) qui privait les accesseurs Eloquent (adresse, crédit) des colonnes/relations dont ils dépendent (`default_address_id`, `channel_id`). Corrigé : `TeleVisitService` eager-charge désormais `defaultAddress`/`channelRef`/`financialProfile`/`creditState`, et `partner` inclut en plus `status`, `credit` (limit/used/available) et `order_history` (instantané agrégé — compteurs déjà stockés sur la fiche partenaire). Ajout au passage du filtre `partner_id` sur `GET /orders` pour la vraie liste des commandes d'un partenaire (l'historique dans `visit.partner` n'est qu'un résumé chiffré, pas la liste).

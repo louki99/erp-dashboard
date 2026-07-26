@@ -293,7 +293,10 @@ export interface StockRowFilters {
 
 // ─── Preparation Bills ────────────────────────────────────────────────────────
 
-export type BPStatus = 'pending' | 'in_progress' | 'completed' | 'rejected';
+// Terminal states per backend spec (2026-08): a BP in any of completed,
+// completed_full, completed_partial, rejected or cancelled returns 422 on
+// PUT ("Cannot edit a <status> preparation bill.") — never send a mutation once reached.
+export type BPStatus = 'pending' | 'in_progress' | 'completed' | 'completed_full' | 'completed_partial' | 'rejected' | 'cancelled';
 
 export interface PreparationBillItem {
     id: number;
@@ -301,13 +304,16 @@ export interface PreparationBillItem {
     order_id: number;
     product_id: number;
     requested_quantity: string;
-    prepared_quantity: string;
-    shortage_quantity: string;
+    // Stock on hand at the time of the response — present on show/store/update,
+    // not to be confused with prepared_quantity (only set once picking starts).
+    available_quantity?: string;
+    prepared_quantity?: string;
+    shortage_quantity?: string;
     product?: {
         id: number;
-        reference: string;
+        code: string;
         name: string;
-        barcode: string | null;
+        barcode?: string | null;
     };
 }
 
@@ -315,7 +321,9 @@ export interface PreparationBill {
     id: number;
     bp_number: string;
     status: BPStatus;
-    priority_level: number;
+    // Write payload (POST/PUT) takes an int 1-5, but the API resource has been
+    // observed echoing it back as a label string (e.g. "normal") on read — accept both.
+    priority_level: number | string;
     deadline: string | null;
     estimated_completion: string | null;
     notes: string | null;
@@ -341,6 +349,20 @@ export interface PreparationBillListResponse {
 
 export interface PreparationBillDetailResponse {
     preparation_bill: PreparationBill;
+}
+
+// GET /stock/preparation-bills/magasiniers — dedicated picker source (2026-08),
+// replaces the generic /masterdata/users list for the magasinier_id field.
+export interface PreparationBillMagasinier {
+    id: number;
+    name: string;
+    email: string;
+    branch_id: number | null;
+}
+
+export interface PreparationBillMagasiniersResponse {
+    success: boolean;
+    magasiniers: PreparationBillMagasinier[];
 }
 
 export interface BPFilters {

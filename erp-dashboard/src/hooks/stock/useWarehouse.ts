@@ -13,6 +13,7 @@ import {
     getStockByLocation,
     getPreparationBills,
     getPreparationBill,
+    getPreparationBillMagasiniers,
     createPreparationBill,
     updatePreparationBill,
 } from '@/services/api/warehouseApi';
@@ -138,6 +139,13 @@ export const usePreparationBill = (id: number | null) =>
         queryFn: () => getPreparationBill(id!),
         enabled: id != null,
         staleTime: 15_000,
+    });
+
+export const usePreparationBillMagasiniers = (branchId?: number) =>
+    useQuery({
+        queryKey: ['preparation-bill-magasiniers', branchId],
+        queryFn: () => getPreparationBillMagasiniers(branchId),
+        staleTime: 60_000,
     });
 
 export const useCreatePreparationBill = () => {

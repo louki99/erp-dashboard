@@ -1,15 +1,16 @@
+import { Send, ArrowRightLeft, Loader2, FileText } from 'lucide-react';
 import { useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { ArrowLeft, Send, ArrowRightLeft, Loader2, FileText } from 'lucide-react';
 import toast from 'react-hot-toast';
 
 import { MasterLayout } from '@/components/layout/MasterLayout';
 import { ActionPanel } from '@/components/layout/ActionPanel';
 import { TelesalesSessionBanner } from '@/components/telesales/TelesalesSessionBanner';
 import { SessionRequiredNotice } from '@/components/telesales/SessionRequiredNotice';
-import { useDevisDetail, useSendDevis, useConvertDevis } from '@/hooks/telesales/useTelesalesDevis';
+import { ListPanel, DetailHeader, StatusPill } from '@/components/telesales/panels';
+import { useDevisList, useDevisDetail, useSendDevis, useConvertDevis } from '@/hooks/telesales/useTelesalesDevis';
 import { useSessionGate } from '@/hooks/telesales/useSessionGate';
-import type { DevisStatus } from '@/types/telesalesAgent.types';
+import type { Devis, DevisStatus } from '@/types/telesalesAgent.types';
 
 const STATUS_LABELS: Record<DevisStatus, string> = {
     draft: 'Brouillon',
@@ -18,12 +19,20 @@ const STATUS_LABELS: Record<DevisStatus, string> = {
     expired: 'Expiré',
 };
 
+const STATUS_ACCENT: Record<DevisStatus, 'gray' | 'blue' | 'emerald' | 'red'> = {
+    draft: 'gray',
+    sent: 'blue',
+    converted: 'emerald',
+    expired: 'red',
+};
+
 export const TelesalesDevisDetailPage = () => {
     const { id } = useParams<{ id: string }>();
     const navigate = useNavigate();
     const devisId = Number(id);
 
     const { devis, setDevis, loading } = useDevisDetail(devisId);
+    const { devis: allDevis, loading: loadingList } = useDevisList({});
     const { send, loading: sending } = useSendDevis();
     const { convert, loading: converting } = useConvertDevis();
     const { sessionActive } = useSessionGate();
@@ -66,19 +75,42 @@ export const TelesalesDevisDetailPage = () => {
         }
     };
 
-    const mainContent = (
-        <div className="h-full flex flex-col bg-gray-50/50">
-            <TelesalesSessionBanner />
-            <div className="p-6 border-b border-gray-200 bg-white/80 backdrop-blur-md shadow-sm z-10">
-                <button onClick={() => navigate('/telesales/devis')} className="flex items-center gap-1.5 text-sm text-gray-500 hover:text-gray-700 mb-3">
-                    <ArrowLeft className="w-4 h-4" /> Retour aux devis
-                </button>
-                <h2 className="text-2xl font-extrabold text-gray-900 tracking-tight">
-                    {devis ? devis.quote_number : 'Devis'}
-                </h2>
-            </div>
+    const leftContent = (
+        <ListPanel
+            icon={FileText}
+            title="Mes devis"
+            subtitle={`${allDevis.length} devis`}
+            accent="purple"
+            items={allDevis}
+            loading={loadingList}
+            emptyIcon={FileText}
+            emptyText="Aucun devis"
+            selectedId={devis?.id ?? devisId}
+            getId={(d) => d.id}
+            onSelect={(d) => navigate(`/telesales/devis/${d.id}`)}
+            renderRow={(d: Devis) => (
+                <div className="flex items-start justify-between gap-2">
+                    <div className="min-w-0">
+                        <p className="text-xs font-semibold text-gray-800 truncate">{d.quote_number}</p>
+                        <p className="text-[10px] text-gray-400 mt-0.5 truncate">{d.partner?.name ?? `#${d.partner_id}`}</p>
+                    </div>
+                    <StatusPill label={STATUS_LABELS[d.status]} accent={STATUS_ACCENT[d.status]} />
+                </div>
+            )}
+        />
+    );
 
-            <div className="flex-1 overflow-y-auto p-6">
+    const mainContent = (
+        <div className="h-full flex flex-col overflow-hidden bg-slate-50/50">
+            <DetailHeader
+                icon={FileText}
+                title={devis ? devis.quote_number : 'Devis'}
+                subtitle={devis?.partner?.name}
+                accent="purple"
+            />
+            <TelesalesSessionBanner />
+
+            <div className="flex-1 overflow-y-auto p-6 lg:p-8">
                 {loading ? (
                     <div className="flex items-center justify-center h-40">
                         <Loader2 className="w-6 h-6 animate-spin text-sage-500" />
@@ -169,10 +201,29 @@ export const TelesalesDevisDetailPage = () => {
         </div>
     );
 
+    const rightContent = (
+        <ActionPanel
+            groups={[
+                {
+                    items: [
+                        ...(devis?.status === 'draft'
+                            ? [{ icon: Send, label: 'Envoyer', variant: 'sage' as const, onClick: handleSend, disabled: sending || !sessionActive }]
+                            : []),
+                        ...(devis?.status === 'draft' || devis?.status === 'sent'
+                            ? [{ icon: ArrowRightLeft, label: 'Convertir', onClick: handleConvert, disabled: converting || !sessionActive }]
+                            : []),
+                    ],
+                },
+                { items: [{ icon: FileText, label: 'Mes devis', onClick: () => navigate('/telesales/devis') }] },
+            ]}
+        />
+    );
+
     return (
         <MasterLayout
+            leftContent={leftContent}
             mainContent={mainContent}
-            rightContent={<ActionPanel groups={[]} />}
+            rightContent={rightContent}
         />
     );
 };

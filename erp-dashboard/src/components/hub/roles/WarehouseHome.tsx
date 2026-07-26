@@ -1,7 +1,7 @@
 import { useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import {
-    ClipboardList, Package, AlertTriangle, Layers,
+    ClipboardList, Package, Layers,
     ArrowLeftRight, Database, ChevronRight, RefreshCw, Warehouse,
 } from 'lucide-react';
 import { KpiWidget, KpiWidgetSkeleton } from '../widgets/KpiWidget';
@@ -18,8 +18,8 @@ export const WarehouseHome = () => {
     const { data: bpsInProgress, isLoading: ipLoading } = usePreparationBills({ per_page: 5, status: 'in_progress' });
 
     const loading = bpsLoading || ipLoading;
-    const pendingCount = bpsData?.total ?? 0;
-    const inProgressCount = bpsInProgress?.total ?? 0;
+    const pendingCount = bpsData?.preparation_bills?.total ?? 0;
+    const inProgressCount = bpsInProgress?.preparation_bills?.total ?? 0;
 
     const kpis = [
         {
@@ -96,9 +96,9 @@ export const WarehouseHome = () => {
                         <div className="space-y-2">
                             {[1, 2, 3].map(i => <div key={i} className="h-10 bg-gray-100 dark:bg-gray-800 rounded-lg animate-pulse" />)}
                         </div>
-                    ) : bpsData?.data?.length ? (
+                    ) : bpsData?.preparation_bills?.data?.length ? (
                         <div className="space-y-1">
-                            {bpsData.data.slice(0, 5).map((bp: any) => (
+                            {bpsData.preparation_bills.data.slice(0, 5).map((bp: any) => (
                                 <button
                                     key={bp.id}
                                     onClick={() => navigate('/magasinier/preparations')}
@@ -142,7 +142,6 @@ export const WarehouseHome = () => {
                             { label: 'Mon Stock', icon: Package, route: '/magasinier/stock', color: 'text-sage-600' },
                             { label: 'Consultation Stock', icon: Database, route: '/stock/consultation', color: 'text-indigo-500' },
                             { label: 'Transferts', icon: ArrowLeftRight, route: '/dispatcher/warehouse-transfers', color: 'text-blue-500' },
-                            { label: 'Bons de Prép. Stock', icon: ClipboardList, route: '/stock/preparation-bills', color: 'text-violet-500' },
                         ].map(nav => {
                             const NavIcon = nav.icon;
                             return (

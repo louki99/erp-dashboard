@@ -48,6 +48,7 @@ import { TelesalesPlanningPage } from '@/pages/telesales/TelesalesPlanningPage';
 import { TelesalesVisitPage } from '@/pages/telesales/TelesalesVisitPage';
 import { TelesalesCatalogPage } from '@/pages/telesales/TelesalesCatalogPage';
 import { TelesalesOrderPage } from '@/pages/telesales/TelesalesOrderPage';
+import { TelesalesOrdersListPage } from '@/pages/telesales/TelesalesOrdersListPage';
 import { TelesalesDevisListPage } from '@/pages/telesales/TelesalesDevisListPage';
 import { TelesalesDevisDetailPage } from '@/pages/telesales/TelesalesDevisDetailPage';
 import { TelesalesPortfolioPage } from '@/pages/telesales/TelesalesPortfolioPage';
@@ -398,6 +399,12 @@ function AppRoutes() {
       <Route path="/telesales/catalog" element={
         <ProtectedRoute requiredRole={['televendeur', 'admin', 'root']}>
           <TelesalesCatalogPage />
+        </ProtectedRoute>
+      } />
+
+      <Route path="/telesales/orders" element={
+        <ProtectedRoute requiredRole={['televendeur', 'admin', 'root']}>
+          <TelesalesOrdersListPage />
         </ProtectedRoute>
       } />
 

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { telesalesApi } from '@/services/api/telesalesApi';
-import type { PartnerReturnSummary, CreateReturnRequest } from '@/types/telesalesAgent.types';
+import type { PartnerReturnSummary, CreateReturnRequest, ReturnDetailResponse } from '@/types/telesalesAgent.types';
 
 export const useReturnsList = (filters: { status?: string }) => {
     const [returns, setReturns] = useState<PartnerReturnSummary[]>([]);
@@ -37,4 +37,32 @@ export const useCreateReturn = () => {
         }
     }, []);
     return { createReturn, loading };
+};
+
+// Detail of one return (lines, conditions, reason) — fetched on selection.
+export const useReturnDetail = (id: number | null) => {
+    const [detail, setDetail] = useState<ReturnDetailResponse['return'] | null>(null);
+    const [loading, setLoading] = useState(false);
+    const [error, setError] = useState<string | null>(null);
+
+    const fetch = useCallback(async () => {
+        if (!id) {
+            setDetail(null);
+            return;
+        }
+        setLoading(true);
+        setError(null);
+        try {
+            const res = await telesalesApi.returns.getDetail(id);
+            setDetail(res.return);
+        } catch (err) {
+            setError(err instanceof Error ? err.message : 'Échec du chargement du retour');
+        } finally {
+            setLoading(false);
+        }
+    }, [id]);
+
+    useEffect(() => { fetch(); }, [fetch]);
+
+    return { detail, loading, error, refetch: fetch };
 };

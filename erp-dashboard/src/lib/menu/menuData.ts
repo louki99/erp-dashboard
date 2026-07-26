@@ -835,6 +835,7 @@ export const MENU_MODULES: MenuModule[] = [
           { id: 'tv-agent:dashboard', label: 'Poste Télévendeur', route: '/telesales/dashboard', description: 'Session (start/pause/resume/end) et vue d\'ensemble', keywords: ['session', 'dashboard', 'télévendeur', 'tableau de bord'] },
           { id: 'tv-agent:planning', label: 'Semainier / Planning', route: '/telesales/planning', description: 'Appels planifiés, appel libre', keywords: ['planning', 'semainier', 'appel'] },
           { id: 'tv-agent:catalog', label: 'Catalogue produits', route: '/telesales/catalog', description: 'Recherche produit, stock, prix négocié', keywords: ['catalogue', 'produit', 'stock', 'prix'] },
+          { id: 'tv-agent:orders', label: 'Mes commandes', route: '/telesales/orders', description: 'Historique des commandes prises pendant les appels', keywords: ['commande', 'order', 'historique'] },
           { id: 'tv-agent:devis', label: 'Mes devis', route: '/telesales/devis', description: 'Devis B2B — création, envoi, conversion en commande', keywords: ['devis', 'quote', 'b2b'] },
           { id: 'tv-agent:portfolio', label: 'Mon portefeuille', route: '/telesales/portfolio', description: 'Partenaires assignés par le superviseur', keywords: ['portefeuille', 'partenaire', 'assignation'] },
           { id: 'tv-agent:returns', label: 'Retours clients', route: '/telesales/returns', description: 'Retours commerciaux différés, approbation direction', keywords: ['retour', 'return', 'sav'] },

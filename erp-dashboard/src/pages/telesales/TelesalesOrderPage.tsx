@@ -498,11 +498,19 @@ export const TelesalesOrderPage = () => {
                     mainContent={
                         <div className="h-full flex flex-col bg-gray-50/50">
                             <TelesalesSessionBanner />
-                            <div className="p-6 border-b border-gray-200 bg-white/80 backdrop-blur-md shadow-sm z-10">
-                                <button onClick={goBackToVisit} className="flex items-center gap-1.5 text-sm text-gray-500 hover:text-gray-700 mb-3">
-                                    <ArrowLeft className="w-4 h-4" /> Retour
+                            <div className="px-6 py-5 border-b border-gray-200 bg-white/90 backdrop-blur-md shadow-sm z-10 flex items-center gap-4">
+                                <button onClick={goBackToVisit} title="Retour" className="w-9 h-9 rounded-xl bg-gray-100 hover:bg-gray-200 flex items-center justify-center shrink-0 transition-colors">
+                                    <ArrowLeft className="w-4 h-4 text-gray-500" />
                                 </button>
-                                <h2 className="text-2xl font-extrabold text-gray-900 tracking-tight">Commande</h2>
+                                <div className="w-11 h-11 rounded-xl bg-sage-100 flex items-center justify-center shrink-0">
+                                    <ShoppingCart className="w-5 h-5 text-sage-600" />
+                                </div>
+                                <div className="min-w-0 flex-1">
+                                    <h2 className="text-lg font-extrabold text-gray-900 tracking-tight truncate">
+                                        {order ? order.bc_number : 'Commande'}
+                                    </h2>
+                                    {order && <p className="text-xs font-medium text-gray-500 mt-0.5 truncate">{order.partner.name}</p>}
+                                </div>
                             </div>
                             <div className="flex-1 flex items-center justify-center p-6">
                                 {loadingExisting ? (
@@ -616,13 +624,18 @@ export const TelesalesOrderPage = () => {
                 mainContent={
                     <div className="h-full flex flex-col bg-gray-50/50">
                         <TelesalesSessionBanner />
-                        <div className="p-4 border-b border-gray-200 bg-white/80 backdrop-blur-md shadow-sm z-10 shrink-0">
-                            <div className="flex items-center justify-between gap-3 mb-3">
-                                <button onClick={goBackToVisit} className="flex items-center gap-1.5 text-sm text-gray-500 hover:text-gray-700 shrink-0">
-                                    <ArrowLeft className="w-4 h-4" /> Retour
+                        <div className="p-4 border-b border-gray-200 bg-white/90 backdrop-blur-md shadow-sm z-10 shrink-0">
+                            <div className="flex items-center gap-3 mb-3">
+                                <button onClick={goBackToVisit} title="Retour" className="w-8 h-8 rounded-lg bg-gray-100 hover:bg-gray-200 flex items-center justify-center shrink-0 transition-colors">
+                                    <ArrowLeft className="w-4 h-4 text-gray-500" />
                                 </button>
-                                <h2 className="text-lg font-extrabold text-gray-900 tracking-tight">Prise de commande</h2>
-                                <div className="w-16" />
+                                <div className="w-8 h-8 rounded-lg bg-sage-100 flex items-center justify-center shrink-0">
+                                    <ShoppingCart className="w-4 h-4 text-sage-600" />
+                                </div>
+                                <div className="min-w-0 flex-1">
+                                    <h2 className="text-sm font-extrabold text-gray-900 tracking-tight truncate">Prise de commande</h2>
+                                    {partner && <p className="text-[11px] text-gray-400 truncate">{partner.name} ({partner.code})</p>}
+                                </div>
                             </div>
                             <div className="relative">
                                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />

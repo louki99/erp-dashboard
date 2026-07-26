@@ -15,6 +15,7 @@ import type {
     StockRow,
     PreparationBillListResponse,
     PreparationBillDetailResponse,
+    PreparationBillMagasiniersResponse,
     BPFilters,
     CreatePreparationBillPayload,
     UpdatePreparationBillPayload,
@@ -139,6 +140,13 @@ export const getPreparationBill = async (id: number): Promise<PreparationBillDet
 export const createPreparationBill = async (payload: CreatePreparationBillPayload) => {
     const res = await apiClient.post(`${BASE}/stock/preparation-bills`, payload);
     return unwrap(res.data);
+};
+
+export const getPreparationBillMagasiniers = async (branchId?: number): Promise<PreparationBillMagasiniersResponse> => {
+    const params: Record<string, any> = {};
+    if (branchId) params.branch_id = branchId;
+    const res = await apiClient.get<PreparationBillMagasiniersResponse>(`${BASE}/stock/preparation-bills/magasiniers`, { params });
+    return unwrap<PreparationBillMagasiniersResponse>(res.data);
 };
 
 export const updatePreparationBill = async (id: number, payload: UpdatePreparationBillPayload) => {

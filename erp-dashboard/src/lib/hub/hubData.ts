@@ -115,6 +115,7 @@ export const BUSINESS_DOMAINS: BusinessDomain[] = [
                 icon: PackageCheck,
                 actions: [
                     { id: 'bl-list',          label: 'Bons de Livraison',   route: '/dispatcher/bons-livraisons',      icon: FileText      },
+                    { id: 'bp-list',          label: 'Bons de Préparation', route: '/stock/preparation-bills',         icon: ClipboardList },
                     { id: 'missions',         label: 'Espace Missions',     route: '/dispatcher/workspace/missions',   icon: Target        },
                     { id: 'mission-planning', label: 'Planification',       route: '/dispatcher/mission-planning',     icon: CalendarClock },
                     { id: 'map-live',         label: 'Carte en Direct',     route: '/dispatcher/workspace/map',        icon: Map           },
@@ -254,18 +255,6 @@ export const BUSINESS_DOMAINS: BusinessDomain[] = [
         requiredRole: ['magasinier', 'admin', 'root'],
         processes: [
             {
-                id: 'receptions',
-                label: 'Réception Marchandises',
-                description: 'Entrées de stock, saisie obligatoire des lots et DLUO',
-                route: '/stock/preparation-bills',
-                icon: PackageCheck,
-                actions: [
-                    { id: 'bp-list',    label: 'Bons de Préparation', route: '/stock/preparation-bills', icon: ClipboardList},
-                    { id: 'bp-create',  label: 'Nouveau Bon',          route: '/stock/preparation-bills', icon: FilePlus     },
-                    { id: 'warehouses', label: 'Entrepôts',            route: '/stock/warehouses',        icon: Warehouse    },
-                ],
-            },
-            {
                 id: 'pick-tasks',
                 label: 'Tâches de Collecte (Pick Tasks)',
                 description: 'Feuilles de picking quotidiennes par chemin d\'emplacement',
@@ -314,6 +303,7 @@ export const BUSINESS_DOMAINS: BusinessDomain[] = [
                     { id: 'wms-receipt',     label: 'Nouvelle Réception',  route: '/stock/wms-receipt',     icon: PackageCheck  },
                     { id: 'wms-transfer',    label: 'Bon de Transfert',    route: '/stock/wms-transfer',    icon: ArrowLeftRight},
                     { id: 'wms-adjustment',  label: 'Ajustement Manuel',   route: '/stock/wms-adjustment',  icon: Calculator    },
+                    { id: 'warehouses',      label: 'Entrepôts',           route: '/stock/warehouses',      icon: Warehouse     },
                 ],
             },
             {
@@ -539,6 +529,7 @@ export const QUICK_ACTIONS_BY_ROLE: Record<HubRole, QuickAction[]> = {
     dispatcher: [
         { id: 'pending-orders', label: 'Commandes en Attente', icon: Clock, route: '/dispatcher/orders', color: 'bg-amber-500' },
         { id: 'bl-list', label: 'Bons de Livraison', icon: FileText, route: '/dispatcher/bons-livraisons', color: 'bg-blue-500' },
+        { id: 'prep-bills', label: 'Bons de Préparation', icon: ClipboardList, route: '/stock/preparation-bills', color: 'bg-violet-500' },
         { id: 'missions', label: 'Espace Missions', icon: Route, route: '/dispatcher/workspace/missions', color: 'bg-sage-600' },
         { id: 'map', label: 'Carte en Direct', icon: Map, route: '/dispatcher/workspace/map', color: 'bg-emerald-600' },
         { id: 'fleet', label: 'Flotte & Livreurs', icon: Truck, route: '/dispatcher/fleet', color: 'bg-indigo-500' },
@@ -550,7 +541,6 @@ export const QUICK_ACTIONS_BY_ROLE: Record<HubRole, QuickAction[]> = {
         { id: 'wms-batches',    label: 'Lots & Péremption',   icon: AlertTriangle,  route: '/stock/wms-batches',               color: 'bg-red-500'    },
         { id: 'preparations',   label: 'Mes Préparations',    icon: List,           route: '/magasinier/preparations',         color: 'bg-orange-500' },
         { id: 'transfers',      label: 'Transferts',          icon: ArrowLeftRight, route: '/dispatcher/warehouse-transfers',  color: 'bg-blue-500'   },
-        { id: 'prep-bills',     label: 'Bons de Prép.',       icon: FileText,       route: '/stock/preparation-bills',         color: 'bg-emerald-600'},
     ],
     finance: [
         { id: 'bc-pending', label: 'BCs en Attente', icon: Clock, route: '/adv/validation', color: 'bg-amber-500' },

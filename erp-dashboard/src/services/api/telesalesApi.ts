@@ -189,7 +189,7 @@ export const telesalesApi = {
             const response = await apiClient.get<ScheduledOrdersResponse>(`${TELESALES_BASE}/orders/scheduled`, { params });
             return response.data;
         },
-        getList: async (params?: { status?: string; date_from?: string; date_to?: string; search?: string }): Promise<OrdersListResponse> => {
+        getList: async (params?: { status?: string; date_from?: string; date_to?: string; search?: string; partner_id?: number }): Promise<OrdersListResponse> => {
             const response = await apiClient.get<OrdersListResponse>(`${TELESALES_BASE}/orders`, { params });
             return response.data;
         },

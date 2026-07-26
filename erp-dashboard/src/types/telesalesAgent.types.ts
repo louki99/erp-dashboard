@@ -3,9 +3,9 @@
 // Ref: docs/TeleSales_UI_Integration_Spec.md §1–6.
 // NOT the same base URL as Lot 1 admin (/api/backend/admin/telesales/...) — see telesales.types.ts.
 
-import type { TeleVisit, TeleVisitOutcome, ApiSuccessResponse } from './telesales.types';
+import type { TeleVisit, TeleVisitOutcome, TeleVisitPartner, ApiSuccessResponse } from './telesales.types';
 
-export type { TeleVisit, TeleVisitOutcome };
+export type { TeleVisit, TeleVisitOutcome, TeleVisitPartner };
 export { TELE_VISIT_OUTCOME_LABELS } from './telesales.types';
 
 // ─── §2 — Session ─────────────────────────────────────────────────────────────

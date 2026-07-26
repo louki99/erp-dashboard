@@ -1,13 +1,12 @@
 import { useMemo, useState } from 'react';
-import type { ColDef } from 'ag-grid-community';
-import { Search, Loader2, RefreshCw, PackageSearch, Tag, Box, Layers, WifiOff, SlidersHorizontal, X, Building2, CheckCircle2, XCircle } from 'lucide-react';
+import { Search, RefreshCw, Package, Tag, Box, Layers, WifiOff, SlidersHorizontal, X, Building2, CheckCircle2, XCircle, Filter } from 'lucide-react';
 
 import { MasterLayout } from '@/components/layout/MasterLayout';
-import { DataGrid } from '@/components/common/DataGrid';
 import { ActionPanel } from '@/components/layout/ActionPanel';
 import { Modal } from '@/components/common/Modal';
 import { PartnerPicker, type PartnerPickerOption } from '@/components/telesales/PartnerPicker';
 import { SyncStatusBadge } from '@/components/telesales/SyncStatusBadge';
+import { ListPanel, DetailHeader, EmptySelection } from '@/components/telesales/panels';
 import { useCatalogProducts, useCatalogPages } from '@/hooks/telesales/useTelesalesCatalog';
 import { useCurrentSession } from '@/hooks/telesales/useTelesalesSession';
 import { useCachedCatalog, useCachedPartner } from '@/hooks/telesales/useTelesalesSync';
@@ -90,43 +89,109 @@ export const TelesalesCatalogPage = () => {
 
     const loading = usingCache ? loadingCache : loadingLive;
 
-    const columnDefs = useMemo<ColDef[]>(
-        () => [
-            { field: 'code', headerName: 'Code', width: 110, filter: false },
-            { field: 'name', headerName: 'Produit', flex: 1, minWidth: 160, filter: false },
-            {
-                field: 'price', headerName: 'Prix', width: 110, filter: false,
-                cellRenderer: (p: any) => (
-                    <span className="font-bold">
-                        {Number(p.value ?? 0).toLocaleString('fr-FR', { minimumFractionDigits: 2 })}
-                        {p.data?.estimated && <span className="ml-1 text-[10px] font-bold text-amber-500" title="Estimation locale — confirmé à la création de la commande">≈</span>}
-                    </span>
-                ),
-            },
-            {
-                field: 'stock_available', headerName: 'Stock', width: 80, filter: false,
-                cellStyle: (p: any): { color: string } => ({ color: (p.value ?? 0) > 0 ? '#059669' : '#dc2626' }),
-            },
-        ],
-        []
-    );
-
     const pageName = (code: string | null) => pages.find((p) => p.code === code)?.name ?? code ?? '-';
 
-    const mainContent = (
-        <div className="h-full flex flex-col bg-gray-50/50">
-            {!selected ? (
-                <div className="flex-1 flex items-center justify-center text-gray-400">
-                    <div className="text-center">
-                        <PackageSearch className="w-12 h-12 mx-auto mb-3 text-gray-300" />
-                        <p className="text-sm font-medium">Sélectionnez un produit</p>
-                        <p className="text-xs text-gray-400 mt-1">Cliquez sur une ligne pour afficher les détails</p>
+    // ── Left panel — data list ────────────────────────────────────────────────
+
+    const leftContent = (
+        <ListPanel
+            icon={Package}
+            title="Catalogue"
+            subtitle={`${products.length} produit${products.length !== 1 ? 's' : ''}`}
+            accent="sage"
+            items={products}
+            loading={loading}
+            emptyIcon={Package}
+            emptyText="Aucun produit trouvé"
+            selectedId={selected?.id ?? null}
+            getId={(p) => p.id}
+            onSelect={setSelected}
+            filters={
+                <>
+                    {/* Compact toolbar — search stays inline (most-used action), everything
+                        else (partenaire, catégorie, session, sync) lives behind "Filtres". */}
+                    <div className="flex items-center gap-1.5">
+                        <div className="relative flex-1 min-w-0">
+                            <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400" />
+                            <input
+                                type="text"
+                                value={search}
+                                onChange={(e) => setSearch(e.target.value)}
+                                placeholder="Rechercher par nom, code..."
+                                className="w-full pl-8 pr-3 py-1.5 text-xs border border-gray-200 rounded-xl bg-gray-50 focus:outline-none focus:ring-2 focus:ring-sage-500 focus:bg-white transition-all"
+                            />
+                        </div>
+                        <button
+                            onClick={() => setShowFiltersModal(true)}
+                            className={`relative shrink-0 p-2 rounded-xl border transition-colors ${
+                                activeFilterCount > 0 ? 'bg-sage-50 border-sage-200 text-sage-600' : 'bg-white border-gray-200 text-gray-500 hover:bg-gray-50'
+                            }`}
+                            title="Filtres (partenaire, catégorie)"
+                        >
+                            <SlidersHorizontal className="w-4 h-4" />
+                            {activeFilterCount > 0 && (
+                                <span className="absolute -top-1 -right-1 w-4 h-4 flex items-center justify-center text-[9px] font-bold text-white bg-sage-600 rounded-full">
+                                    {activeFilterCount}
+                                </span>
+                            )}
+                        </button>
+                    </div>
+                    {partner && (
+                        <span className="inline-flex items-center gap-1.5 px-2 py-1 bg-sage-50 border border-sage-100 rounded-full text-[11px] text-sage-700">
+                            {partner.name}
+                            <button onClick={() => setPartner(null)} className="text-sage-400 hover:text-sage-700">
+                                <X className="w-3 h-3" />
+                            </button>
+                        </span>
+                    )}
+                </>
+            }
+            renderRow={(p) => (
+                <div className="flex items-start justify-between gap-2">
+                    <div className="min-w-0">
+                        <p className="text-xs font-semibold text-gray-800 truncate">{p.name}</p>
+                        <p className="text-[10px] text-gray-400 mt-0.5">{p.code}</p>
+                    </div>
+                    <div className="shrink-0 text-right">
+                        <p className="text-xs font-bold text-gray-900">
+                            {p.estimated && (
+                                <span className="mr-0.5 text-[10px] font-bold text-amber-500" title="Estimation locale — confirmé à la création de la commande">≈</span>
+                            )}
+                            {p.price.toLocaleString('fr-FR', { minimumFractionDigits: 2 })}
+                        </p>
+                        <p className="flex items-center justify-end gap-1 text-[10px] text-gray-400 mt-0.5">
+                            <span
+                                className={`w-1.5 h-1.5 rounded-full ${p.stock_available > 0 ? 'bg-emerald-500' : 'bg-red-500'}`}
+                                title={p.stock_available > 0 ? 'En stock' : 'Rupture de stock'}
+                            />
+                            {p.stock_available}
+                        </p>
                     </div>
                 </div>
-            ) : (
-                <div className="flex-1 overflow-y-auto p-6 flex items-start justify-center">
-                    <div className="max-w-xl w-full space-y-6">
-                        <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5 flex items-center gap-4">
+            )}
+        />
+    );
+
+    // ── Center panel — detail ─────────────────────────────────────────────────
+
+    const mainContent = (
+        <div className="h-full flex flex-col overflow-hidden bg-slate-50/50">
+            <DetailHeader
+                icon={Package}
+                title={selected ? selected.name : 'Catalogue produits'}
+                subtitle={
+                    selected
+                        ? `${selected.code} · ${pageName(selected.product_page_code)}`
+                        : `${products.length} produit${products.length !== 1 ? 's' : ''}`
+                }
+                accent="sage"
+            />
+            <div className="flex-1 overflow-y-auto p-6 lg:p-8">
+                {!selected ? (
+                    <EmptySelection icon={Package} title="Sélectionnez un produit" />
+                ) : (
+                    <div className="max-w-xl space-y-6">
+                        <div className="bg-white border border-gray-200 rounded-xl shadow-sm p-5 flex items-center gap-4">
                             <div className="w-14 h-14 rounded-xl bg-sage-100 flex items-center justify-center shrink-0">
                                 <Box className="w-7 h-7 text-sage-600" />
                             </div>
@@ -154,14 +219,14 @@ export const TelesalesCatalogPage = () => {
                         </div>
 
                         {(selected.short_description || selected.barcode) && (
-                            <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-4 space-y-1">
+                            <div className="bg-white border border-gray-200 rounded-xl shadow-sm p-5 space-y-1">
                                 {selected.short_description && <div className="text-sm text-gray-700">{selected.short_description}</div>}
                                 {selected.barcode && <div className="text-xs text-gray-400">Code-barres : {selected.barcode}</div>}
                             </div>
                         )}
 
                         <div className="grid grid-cols-2 gap-3">
-                            <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-4">
+                            <div className="bg-white border border-gray-200 rounded-xl shadow-sm p-5">
                                 <div className="flex items-center gap-1.5 text-[11px] font-bold text-gray-400 uppercase mb-1">
                                     <Tag className="w-3.5 h-3.5" /> Prix
                                 </div>
@@ -174,7 +239,7 @@ export const TelesalesCatalogPage = () => {
                                     {selected.priceLabel}
                                 </span>
                             </div>
-                            <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-4">
+                            <div className="bg-white border border-gray-200 rounded-xl shadow-sm p-5">
                                 <div className="flex items-center gap-1.5 text-[11px] font-bold text-gray-400 uppercase mb-1">
                                     <Layers className="w-3.5 h-3.5" /> Stock disponible
                                 </div>
@@ -185,43 +250,43 @@ export const TelesalesCatalogPage = () => {
                         </div>
 
                         <div className="grid grid-cols-2 gap-3">
-                            <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-4">
+                            <div className="bg-white border border-gray-200 rounded-xl shadow-sm p-5">
                                 <div className="text-[11px] font-bold text-gray-400 uppercase mb-1">Catégorie</div>
                                 <div className="text-sm font-semibold text-gray-800">{pageName(selected.product_page_code)}</div>
                             </div>
                             {selected.price_list && (
-                                <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-4">
+                                <div className="bg-white border border-gray-200 rounded-xl shadow-sm p-5">
                                     <div className="text-[11px] font-bold text-gray-400 uppercase mb-1">Liste de prix</div>
                                     <div className="text-sm font-semibold text-gray-800">{selected.price_list.name} ({selected.price_list.code})</div>
                                 </div>
                             )}
                         </div>
 
-                        <div className="bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden">
-                            <div className="px-4 py-2.5 bg-gray-50 border-b border-gray-100 text-[11px] font-bold text-gray-500 uppercase">
+                        <div className="bg-white border border-gray-200 rounded-xl shadow-sm p-5">
+                            <div className="text-[11px] font-bold text-gray-400 uppercase mb-3">
                                 Règles produit
                             </div>
-                            <div className="p-4 grid grid-cols-2 gap-x-4 gap-y-2 text-xs">
+                            <div className="grid grid-cols-2 gap-x-4 gap-y-2 text-xs">
                                 <FlagRow ok={selected.flags.is_returnable} label="Retour autorisé" />
                                 <FlagRow ok={selected.flags.is_discountable} label="Remise autorisée" />
                                 <FlagRow ok={selected.flags.is_expirable} label="Périssable" />
                                 <FlagRow ok={selected.flags.decimal_quantity_allowed} label="Quantité décimale" />
                             </div>
                             {selected.flags.min_quantity_order > 1 && (
-                                <div className="px-4 pb-3 text-xs text-gray-500">
+                                <div className="pt-3 text-xs text-gray-500">
                                     Quantité minimale de commande : <strong>{selected.flags.min_quantity_order}</strong>
                                 </div>
                             )}
                         </div>
 
                         {selected.packagings.length > 0 && (
-                            <div className="bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden">
-                                <div className="px-4 py-2.5 bg-gray-50 border-b border-gray-100 text-[11px] font-bold text-gray-500 uppercase">
+                            <div className="bg-white border border-gray-200 rounded-xl shadow-sm p-5">
+                                <div className="text-[11px] font-bold text-gray-400 uppercase mb-3">
                                     Conditionnements
                                 </div>
                                 <div className="divide-y divide-gray-50">
                                     {selected.packagings.map((pkg) => (
-                                        <div key={pkg.packaging_id} className="px-4 py-2.5 flex items-center justify-between text-sm">
+                                        <div key={pkg.packaging_id} className="py-2 first:pt-0 last:pb-0 flex items-center justify-between text-sm">
                                             <span className="text-gray-700">{pkg.unit_name} × {pkg.quantity}</span>
                                             {pkg.is_default && (
                                                 <span className="text-[10px] font-bold text-sage-600 bg-sage-50 px-2 py-0.5 rounded-full">Par défaut</span>
@@ -243,91 +308,33 @@ export const TelesalesCatalogPage = () => {
                             </p>
                         )}
                     </div>
-                </div>
-            )}
+                )}
+            </div>
         </div>
+    );
+
+    // ── Right panel — actions ─────────────────────────────────────────────────
+
+    const rightContent = (
+        <ActionPanel
+            groups={[
+                {
+                    items: [
+                        { icon: Filter, label: 'Filtres', variant: 'sage', onClick: () => setShowFiltersModal(true) },
+                    ],
+                },
+                {
+                    items: [
+                        { icon: RefreshCw, label: 'Rafraîchir', onClick: refetchLive },
+                    ],
+                },
+            ]}
+        />
     );
 
     return (
         <>
-            <MasterLayout
-                leftContent={
-                    <div className="h-full bg-white border-r border-gray-100 flex flex-col">
-                        <div className="px-3 py-2 border-b border-gray-100 shrink-0 flex items-center justify-between">
-                            <h1 className="text-sm font-semibold text-gray-900">Catalogue produits</h1>
-                            <span className="px-2 py-0.5 text-[10px] font-bold bg-sage-100 text-sage-700 rounded-full">{products.length}</span>
-                        </div>
-
-                        {/* Compact toolbar — search stays inline (most-used action), everything
-                            else (partner, catégorie, session, sync) lives behind "Filtres" so the
-                            DataGrid keeps the vertical space instead of a tall filter stack. */}
-                        <div className="p-2 border-b border-gray-100 shrink-0 flex items-center gap-1.5">
-                            <div className="relative flex-1 min-w-0">
-                                <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400" />
-                                <input
-                                    type="text"
-                                    value={search}
-                                    onChange={(e) => setSearch(e.target.value)}
-                                    placeholder="Rechercher par nom, code..."
-                                    className="w-full pl-8 pr-3 py-1.5 text-xs border border-gray-200 rounded-md focus:outline-none focus:ring-2 focus:ring-sage-500 focus:border-transparent bg-gray-50"
-                                />
-                            </div>
-                            <button
-                                onClick={() => setShowFiltersModal(true)}
-                                className={`relative shrink-0 p-2 rounded-md border transition-colors ${
-                                    activeFilterCount > 0 ? 'bg-sage-50 border-sage-200 text-sage-600' : 'bg-white border-gray-200 text-gray-500 hover:bg-gray-50'
-                                }`}
-                                title="Filtres (partenaire, catégorie)"
-                            >
-                                <SlidersHorizontal className="w-4 h-4" />
-                                {activeFilterCount > 0 && (
-                                    <span className="absolute -top-1 -right-1 w-4 h-4 flex items-center justify-center text-[9px] font-bold text-white bg-sage-600 rounded-full">
-                                        {activeFilterCount}
-                                    </span>
-                                )}
-                            </button>
-                        </div>
-
-                        {partner && (
-                            <div className="px-2 pt-2 shrink-0">
-                                <span className="inline-flex items-center gap-1.5 px-2 py-1 bg-sage-50 border border-sage-100 rounded-full text-[11px] text-sage-700">
-                                    {partner.name}
-                                    <button onClick={() => setPartner(null)} className="text-sage-400 hover:text-sage-700">
-                                        <X className="w-3 h-3" />
-                                    </button>
-                                </span>
-                            </div>
-                        )}
-
-                        <div className="flex-1 min-h-0 p-2">
-                            <div className="bg-white rounded-lg border border-gray-200 shadow-sm h-full">
-                                {loading ? (
-                                    <div className="flex items-center justify-center h-full text-gray-500">
-                                        <Loader2 className="w-6 h-6 animate-spin mr-2" /> Chargement...
-                                    </div>
-                                ) : products.length === 0 ? (
-                                    <div className="flex items-center justify-center h-full text-gray-400 text-xs text-center px-4">
-                                        Aucun produit trouvé
-                                    </div>
-                                ) : (
-                                    <DataGrid
-                                        rowData={products}
-                                        columnDefs={columnDefs}
-                                        loading={loading}
-                                        rowSelection="single"
-                                        onRowClicked={(e: any) => setSelected(e.data)}
-                                        getRowClass={(p: any) => (selected && p.data?.id === selected.id ? 'bg-sage-50' : '')}
-                                    />
-                                )}
-                            </div>
-                        </div>
-                    </div>
-                }
-                mainContent={mainContent}
-                rightContent={
-                    <ActionPanel groups={[{ items: [{ icon: RefreshCw, label: 'Rafraîchir', onClick: refetchLive }] }]} />
-                }
-            />
+            <MasterLayout leftContent={leftContent} mainContent={mainContent} rightContent={rightContent} />
 
             <Modal isOpen={showFiltersModal} onClose={() => setShowFiltersModal(false)} title="Filtres" size="sm">
                 <div className="p-5 space-y-4">

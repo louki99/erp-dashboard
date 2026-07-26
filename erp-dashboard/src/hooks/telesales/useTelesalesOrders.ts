@@ -54,6 +54,61 @@ export const useUpdateOrder = () => {
     return { updateOrder, loading };
 };
 
+// Agent's own orders list (§5) — backs the "Mes commandes" left panel. Also
+// used with `partner_id` (correctif 2026-08) to show a partner's real order
+// history — `order_history` on the visit/planning partner object is an
+// aggregated snapshot only, not a browsable list.
+export const useOrdersList = (filters: { status?: string; search?: string; partner_id?: number } = {}) => {
+    const [orders, setOrders] = useState<TelesalesOrder[]>([]);
+    const [loading, setLoading] = useState(true);
+    const [error, setError] = useState<string | null>(null);
+
+    const fetch = useCallback(async () => {
+        setLoading(true);
+        setError(null);
+        try {
+            const res = await telesalesApi.orders.getList({
+                status: filters.status || undefined,
+                search: filters.search || undefined,
+                partner_id: filters.partner_id || undefined,
+            });
+            setOrders(res.orders);
+        } catch (err) {
+            setError(err instanceof Error ? err.message : 'Échec du chargement des commandes');
+        } finally {
+            setLoading(false);
+        }
+    }, [filters.status, filters.search, filters.partner_id]);
+
+    useEffect(() => { fetch(); }, [fetch]);
+
+    return { orders, loading, error, refetch: fetch };
+};
+
+// §5.5 — orders scheduled for a given day (dashboard "Programmées" section).
+export const useScheduledOrders = (date?: string) => {
+    const [orders, setOrders] = useState<TelesalesOrder[]>([]);
+    const [loading, setLoading] = useState(true);
+    const [error, setError] = useState<string | null>(null);
+
+    const fetch = useCallback(async () => {
+        setLoading(true);
+        setError(null);
+        try {
+            const res = await telesalesApi.orders.getScheduled(date ? { date } : undefined);
+            setOrders(res.orders);
+        } catch (err) {
+            setError(err instanceof Error ? err.message : 'Échec du chargement des commandes programmées');
+        } finally {
+            setLoading(false);
+        }
+    }, [date]);
+
+    useEffect(() => { fetch(); }, [fetch]);
+
+    return { orders, loading, error, refetch: fetch };
+};
+
 // 422 credit-exceeded (docs §5.3) is a normal business state — this hook lets the
 // order-taking screen distinguish it from a hard failure via err.response.data.credit_validation.
 export const useSubmitOrder = () => {
