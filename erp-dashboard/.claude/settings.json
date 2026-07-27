@@ -17,7 +17,9 @@
       "Bash(rm -f tsc_bp2.txt)",
       "Bash(rm -f tsc_bp3.txt)",
       "Bash(rm -f tsc_bp4.txt)",
-      "Bash(rm -f tsc_bp5.txt)"
+      "Bash(rm -f tsc_bp5.txt)",
+      "Bash(rm -f tsc_mag.txt)",
+      "Bash(rm -f tsc_sq.txt)"
     ]
   }
 }
