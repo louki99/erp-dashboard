@@ -668,9 +668,10 @@ const CreateWarehouseDialog = ({ open, onClose }: { open: boolean; onClose: () =
                         </div>
                         <div>
                             <label className="block text-xs text-gray-500 mb-1 font-medium">Type</label>
-                            <select value={form.type} onChange={e => setForm(p => ({ ...p, type: e.target.value as any }))}
+                            <select value={form.type} onChange={e => setForm(p => ({ ...p, type: e.target.value as WarehouseType }))}
                                 className="w-full px-3 py-2 border border-gray-200 rounded-xl text-sm bg-white focus:outline-none focus:ring-2 focus:ring-indigo-400">
                                 <option value="central">Dépôt Central</option>
+                                <option value="delivery_van">Fourgon Livraison</option>
                                 <option value="system_virtual">Virtuel Système</option>
                             </select>
                         </div>

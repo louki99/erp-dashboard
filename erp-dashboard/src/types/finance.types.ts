@@ -1,11 +1,20 @@
+export type JournalType = 'AGENT_CASH' | 'BANK_ACCOUNT' | string;
+
 export interface Journal {
   id: number;
   code: string;
+  // 'BANK_ACCOUNT' = company bank/deposit account (user is null, scoped to a branch);
+  // otherwise a personal agent cash register. May be absent on legacy rows.
+  type?: JournalType;
   method_suffix: 'ESP' | 'CHQ' | 'EFF' | 'VIR' | 'VER';
   currency: string;
   cached_balance: string;
   is_active: boolean;
-  user: { id: number; name: string; code: string; branch_id: number | null };
+  // null for a BANK_ACCOUNT journal.
+  user: { id: number; name: string; code: string; branch_id: number | null } | null;
+  branch?: { id: number; code: string; name: string } | null;
+  bank_name?: string | null;
+  rib?: string | null;
   computed_balance: number;
   transit_balance: number;
   available_balance: number;
@@ -38,6 +47,9 @@ export interface Transfer {
   transfer_type: 'DIRECT' | 'BANK_DEPOSIT' | null;
   versement_reference: string | null;
   versement_photo_path: string | null;
+  // Ready-to-display URL for the deposit receipt (use for <img src>); distinct from
+  // versement_photo_path which is the raw storage path, not displayable.
+  versement_photo_url: string | null;
   bank_name: string | null;
   deposit_date: string | null;
   intake_line_id: number | null;

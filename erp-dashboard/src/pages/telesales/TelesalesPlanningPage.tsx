@@ -76,7 +76,7 @@ export const TelesalesPlanningPage = () => {
             const visit = await startAdhoc({ partner_id: adhocPartner.id });
             setAdhocPartner(null);
             setShowAdhocModal(false);
-            navigate(`/telesales/visits/${visit.id}`, { state: { visit } });
+            navigate('/telesales/cockpit', { state: { visit } });
         } catch (err: any) {
             toast.error(err?.response?.data?.message || "Échec du démarrage de l'appel");
         }
@@ -86,12 +86,12 @@ export const TelesalesPlanningPage = () => {
     // no need to hit /start again, that would 422 ("déjà démarrée").
     const handleCall = useCallback(async (visit: TeleVisit) => {
         if (visit.started_at) {
-            navigate(`/telesales/visits/${visit.id}`, { state: { visit } });
+            navigate('/telesales/cockpit', { state: { visit } });
             return;
         }
         try {
             const started = await startPlanned(visit.id);
-            navigate(`/telesales/visits/${started.id}`, { state: { visit: started } });
+            navigate('/telesales/cockpit', { state: { visit: started } });
         } catch (err: any) {
             toast.error(err?.response?.data?.message || "Échec du démarrage de l'appel");
         }

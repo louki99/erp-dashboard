@@ -1,13 +1,14 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ChevronDown, ChevronRight, Plus, RefreshCw, Shield, Sliders, User, X } from 'lucide-react';
+import { ChevronDown, ChevronRight, Plus, RefreshCw, Shield, Sliders, User, X, UserPlus, Activity, CheckCircle2, AlertTriangle, Loader2, Truck } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import toast from 'react-hot-toast';
 import { MasterLayout } from '@/components/layout/MasterLayout';
 import { rbacApi } from '@/services/api/rbacApi';
 import { getBranches, getCompanies, getShops } from '@/services/api/configApi';
+import { getWarehouses } from '@/services/api/warehouseApi';
 import { getGeoAreas } from '@/services/api/routingApi';
-import type { RbacUserRow, RbacUserAccess, RbacRole, AccessProfile, RbacPermissionCatalog, RbacUserInfoPayload } from '@/types/rbac.types';
+import type { RbacUserRow, RbacUserAccess, RbacRole, AccessProfile, RbacPermissionCatalog, RbacUserInfoPayload, RbacCreateUserPayload, RbacReadyToWork, RbacVehicle } from '@/types/rbac.types';
 import { RbacNav } from './RbacNav';
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -472,13 +473,333 @@ const UserInfoTab = ({ user, onRefresh }: { user: RbacUserAccess['user']; onRefr
   );
 };
 
+// ── Ready-to-work tab ─────────────────────────────────────────────────────────
+
+const READY_CHECK_STYLE: Record<string, { icon: typeof CheckCircle2; cls: string }> = {
+  ok: { icon: CheckCircle2, cls: 'text-emerald-600 bg-emerald-50 border-emerald-100' },
+  warning: { icon: AlertTriangle, cls: 'text-amber-600 bg-amber-50 border-amber-100' },
+  error: { icon: AlertTriangle, cls: 'text-red-600 bg-red-50 border-red-100' },
+};
+
+const ReadyToWorkTab = ({ user }: { user: RbacUserRow }) => {
+  const { t } = useTranslation();
+  const [data, setData] = useState<RbacReadyToWork | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    try {
+      const res = await rbacApi.getUserReadyToWork(user.id);
+      if (res.success) setData(res.data);
+    } catch { toast.error(t('rbac.users.readyLoadError')); }
+    finally { setLoading(false); }
+  }, [user.id, t]);
+
+  useEffect(() => { load(); }, [load]);
+
+  const ready = data?.status === 'ready';
+  return (
+    <div className="space-y-4">
+      {loading ? (
+        <div className="flex items-center gap-2 text-sm text-gray-400"><Loader2 className="w-4 h-4 animate-spin" /> {t('common.loading')}</div>
+      ) : !data ? (
+        <p className="text-sm text-gray-400">{t('rbac.users.readyLoadError')}</p>
+      ) : (
+        <>
+          <div className={`flex items-center justify-between rounded-xl border p-4 ${ready ? 'bg-emerald-50 border-emerald-200' : 'bg-amber-50 border-amber-200'}`}>
+            <div className="flex items-center gap-3">
+              <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${ready ? 'bg-emerald-100' : 'bg-amber-100'}`}>
+                {ready ? <CheckCircle2 className="w-5 h-5 text-emerald-600" /> : <AlertTriangle className="w-5 h-5 text-amber-600" />}
+              </div>
+              <div>
+                <p className={`text-sm font-bold ${ready ? 'text-emerald-800' : 'text-amber-800'}`}>
+                  {ready ? t('rbac.users.readyStatusReady') : t('rbac.users.readyStatusNotReady')}
+                </p>
+                <p className="text-xs text-gray-500">{data.user.name}{data.user.code ? ` · ${data.user.code}` : ''}</p>
+              </div>
+            </div>
+            <button onClick={load} className="p-1.5 text-gray-400 hover:text-gray-700 rounded-lg hover:bg-white/60" title={t('common.refresh')}>
+              <RefreshCw className="w-4 h-4" />
+            </button>
+          </div>
+
+          <div className="space-y-2">
+            {data.diagnostics.length === 0 ? (
+              <p className="text-sm text-gray-400">{t('rbac.users.readyNoChecks')}</p>
+            ) : (
+              data.diagnostics.map((d, i) => {
+                const style = READY_CHECK_STYLE[d.status] ?? READY_CHECK_STYLE.error;
+                const Icon = style.icon;
+                return (
+                  <div key={`${d.check}-${i}`} className={`flex items-start gap-2.5 rounded-lg border p-3 ${style.cls}`}>
+                    <Icon className="w-4 h-4 shrink-0 mt-0.5" />
+                    <div className="min-w-0">
+                      <p className="text-xs font-bold uppercase tracking-wide">{d.check}</p>
+                      <p className="text-sm text-gray-700 mt-0.5">{d.message}</p>
+                    </div>
+                  </div>
+                );
+              })
+            )}
+          </div>
+        </>
+      )}
+
+      {/* Assign primary warehouse + vehicle to resolve the readiness gaps. */}
+      <LogisticsConfig user={user} onSaved={load} />
+    </div>
+  );
+};
+
+// ── Logistics assignment (warehouse + vehicle) ────────────────────────────────
+
+const LOGISTICS_ROLES = ['van_seller', 'van_delivery'];
+
+const LogisticsConfig = ({ user, onSaved }: { user: RbacUserRow; onSaved: () => void }) => {
+  const { t } = useTranslation();
+  const [warehouses, setWarehouses] = useState<{ id: number; name: string; code: string; branch_code: string }[]>([]);
+  const [vehicles, setVehicles] = useState<RbacVehicle[]>([]);
+  const [branchCode, setBranchCode] = useState<string | null>(null);
+  const [warehouseId, setWarehouseId] = useState('');
+  const [vehicleId, setVehicleId] = useState('');
+  const [role, setRole] = useState('van_seller');
+  const [notes, setNotes] = useState('');
+  const [saving, setSaving] = useState(false);
+
+  // Load the user's branch warehouses; derive branch_code from them, then vehicles.
+  useEffect(() => {
+    if (!user.branch_id) return;
+    let cancelled = false;
+    getWarehouses({ branch_id: user.branch_id, active_only: true })
+      .then((res) => {
+        if (cancelled) return;
+        const list = (res.warehouses?.data ?? []).map(w => ({ id: w.id, name: w.name, code: w.code, branch_code: w.branch_code }));
+        setWarehouses(list);
+        const bc = list[0]?.branch_code ?? null;
+        setBranchCode(bc);
+        if (bc) {
+          rbacApi.getRbacVehicles({ branch_code: bc })
+            .then(v => { if (!cancelled) setVehicles(v.data ?? []); })
+            .catch(() => {});
+        }
+      })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, [user.branch_id]);
+
+  const save = async () => {
+    if (!warehouseId) { toast.error(t('rbac.users.logisticsWarehouseRequired')); return; }
+    setSaving(true);
+    try {
+      const res = await rbacApi.assignUserLogistics(user.id, {
+        primary_warehouse_id: Number(warehouseId),
+        vehicle_id: vehicleId ? Number(vehicleId) : undefined,
+        role,
+        notes: notes.trim() || undefined,
+      });
+      if (res.success) {
+        toast.success(res.message || t('rbac.users.logisticsSaved'));
+        onSaved();
+      } else {
+        toast.error(res.error || t('rbac.users.logisticsError'));
+      }
+    } catch (err: any) {
+      // 422 RBAC_VAN_REASSIGN_BLOCKED — van still holds stock, surface the message.
+      toast.error(err?.response?.data?.message ?? t('rbac.users.logisticsError'));
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const inputCls = 'w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500';
+  const labelCls = 'block text-xs font-medium text-gray-600 mb-1';
+
+  if (!user.branch_id) {
+    return (
+      <div className="rounded-xl border border-gray-200 p-4 text-xs text-gray-500 flex items-start gap-2">
+        <AlertTriangle className="w-4 h-4 text-amber-500 shrink-0 mt-0.5" />
+        {t('rbac.users.logisticsNeedBranch')}
+      </div>
+    );
+  }
+
+  return (
+    <div className="rounded-xl border border-indigo-100 bg-indigo-50/40 p-4 space-y-3">
+      <div className="flex items-center gap-2">
+        <Truck className="w-4 h-4 text-indigo-600" />
+        <h4 className="text-sm font-bold text-gray-800">{t('rbac.users.logisticsTitle')}</h4>
+      </div>
+      <div>
+        <label className={labelCls}>{t('rbac.users.logisticsWarehouse')} *</label>
+        <select value={warehouseId} onChange={e => setWarehouseId(e.target.value)} className={inputCls}>
+          <option value="">{t('common.selectPlaceholder')}</option>
+          {warehouses.map(w => <option key={w.id} value={w.id}>{w.name} ({w.code})</option>)}
+        </select>
+      </div>
+      <div>
+        <label className={labelCls}>{t('rbac.users.logisticsVehicle')}</label>
+        <select value={vehicleId} onChange={e => setVehicleId(e.target.value)} className={inputCls} disabled={!branchCode}>
+          <option value="">{t('rbac.users.logisticsNoVehicle')}</option>
+          {vehicles.map(v => (
+            <option key={v.id} value={v.id}>
+              {v.internal_code} · {v.plate_number}{v.is_assigned ? ` — ${t('rbac.users.logisticsAssigned')}` : ''}
+            </option>
+          ))}
+        </select>
+      </div>
+      <div>
+        <label className={labelCls}>{t('rbac.users.logisticsRole')}</label>
+        <select value={role} onChange={e => setRole(e.target.value)} className={inputCls}>
+          {LOGISTICS_ROLES.map(r => <option key={r} value={r}>{r}</option>)}
+        </select>
+      </div>
+      <div>
+        <label className={labelCls}>{t('rbac.users.logisticsNotes')}</label>
+        <input value={notes} onChange={e => setNotes(e.target.value)} className={inputCls} />
+      </div>
+      <div className="flex justify-end">
+        <button onClick={save} disabled={saving || !warehouseId} className="px-4 py-2 text-sm font-medium text-white bg-indigo-600 rounded-lg hover:bg-indigo-700 disabled:opacity-50 flex items-center gap-2">
+          {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Truck className="w-4 h-4" />}
+          {t('rbac.users.logisticsAssign')}
+        </button>
+      </div>
+    </div>
+  );
+};
+
+// ── Create User Form (inline, in the detail area) ─────────────────────────────
+
+const CreateUserForm = ({ allRoles, profiles, onCancel, onCreated }: {
+  allRoles: RbacRole[]; profiles: AccessProfile[]; onCancel: () => void; onCreated: (createdId?: number) => void;
+}) => {
+  const { t } = useTranslation();
+  const [branches, setBranches] = useState<{ id: number; name: string }[]>([]);
+  const [saving, setSaving] = useState(false);
+  const [form, setForm] = useState<RbacCreateUserPayload>({
+    name: '', email: '', password: '', code: '', branch_id: 0, role: '',
+    access_profile_id: null, phone: '', is_active: true,
+  });
+
+  useEffect(() => {
+    getBranches().then(bs => setBranches(bs.map(b => ({ id: b.id, name: b.name })))).catch(() => {});
+  }, []);
+
+  const update = <K extends keyof RbacCreateUserPayload>(k: K, v: RbacCreateUserPayload[K]) => setForm(prev => ({ ...prev, [k]: v }));
+
+  const submit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!form.name.trim() || !form.email.trim() || !form.password || !form.code.trim() || !form.branch_id || !form.role) {
+      toast.error(t('rbac.users.createRequired'));
+      return;
+    }
+    setSaving(true);
+    try {
+      const res = await rbacApi.createUser({
+        ...form,
+        name: form.name.trim(),
+        email: form.email.trim(),
+        code: form.code.trim(),
+        phone: form.phone?.trim() || undefined,
+        access_profile_id: form.access_profile_id || undefined,
+      });
+      if (res.success) {
+        toast.success(res.message || t('rbac.users.createSuccess'));
+        onCreated(res.data?.id);
+      } else {
+        toast.error(res.error || t('rbac.users.createError'));
+      }
+    } catch (err: any) {
+      toast.error(err?.response?.data?.message ?? t('rbac.users.createError'));
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const inputCls = 'w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500';
+  const labelCls = 'block text-xs font-medium text-gray-600 mb-1';
+
+  return (
+    <div className="flex flex-col h-full bg-white border-l border-gray-200">
+      <div className="flex items-center justify-between px-5 py-4 border-b border-gray-200">
+        <div className="flex items-center gap-2">
+          <div className="w-8 h-8 rounded-lg bg-indigo-100 flex items-center justify-center"><UserPlus className="w-4 h-4 text-indigo-600" /></div>
+          <p className="font-semibold text-gray-900">{t('rbac.users.createTitle')}</p>
+        </div>
+        <button onClick={onCancel} className="p-1.5 text-gray-400 hover:text-gray-700 rounded-lg hover:bg-gray-100"><X className="w-4 h-4" /></button>
+      </div>
+      <form onSubmit={submit} className="flex-1 overflow-y-auto p-5 space-y-3.5">
+        <div className="grid grid-cols-2 gap-3">
+          <div>
+            <label className={labelCls}>{t('rbac.users.fieldName')} *</label>
+            <input value={form.name} onChange={e => update('name', e.target.value)} className={inputCls} />
+          </div>
+          <div>
+            <label className={labelCls}>{t('rbac.users.fieldCode')} *</label>
+            <input value={form.code} onChange={e => update('code', e.target.value)} placeholder="0099" className={`${inputCls} font-mono`} />
+          </div>
+        </div>
+        <div>
+          <label className={labelCls}>{t('rbac.users.fieldEmail')} *</label>
+          <input type="email" value={form.email} onChange={e => update('email', e.target.value)} className={inputCls} />
+        </div>
+        <div className="grid grid-cols-2 gap-3">
+          <div>
+            <label className={labelCls}>{t('rbac.users.fieldPassword')} *</label>
+            <input type="password" value={form.password} onChange={e => update('password', e.target.value)} className={inputCls} />
+          </div>
+          <div>
+            <label className={labelCls}>{t('rbac.users.fieldPhone')}</label>
+            <input value={form.phone ?? ''} onChange={e => update('phone', e.target.value)} className={inputCls} />
+          </div>
+        </div>
+        <div className="grid grid-cols-2 gap-3">
+          <div>
+            <label className={labelCls}>{t('rbac.users.fieldBranch')} *</label>
+            <select value={form.branch_id || ''} onChange={e => update('branch_id', Number(e.target.value))} className={inputCls}>
+              <option value="">{t('common.selectPlaceholder')}</option>
+              {branches.map(b => <option key={b.id} value={b.id}>{b.name}</option>)}
+            </select>
+          </div>
+          <div>
+            <label className={labelCls}>{t('rbac.users.fieldRole')} *</label>
+            <select value={form.role} onChange={e => update('role', e.target.value)} className={inputCls}>
+              <option value="">{t('common.selectPlaceholder')}</option>
+              {allRoles.map(r => <option key={r.name} value={r.name}>{r.name}</option>)}
+            </select>
+          </div>
+        </div>
+        <div>
+          <label className={labelCls}>{t('rbac.users.fieldAccessProfile')}</label>
+          <select value={form.access_profile_id ?? ''} onChange={e => update('access_profile_id', e.target.value ? Number(e.target.value) : null)} className={inputCls}>
+            <option value="">{t('rbac.users.noProfile')}</option>
+            {profiles.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+          </select>
+        </div>
+        <label className="flex items-center gap-2 text-sm text-gray-700">
+          <input type="checkbox" checked={form.is_active ?? true} onChange={e => update('is_active', e.target.checked)}
+            className="w-4 h-4 text-indigo-600 border-gray-300 rounded focus:ring-indigo-500" />
+          {t('rbac.users.infoActive')}
+        </label>
+        <p className="text-[11px] text-gray-400">{t('rbac.users.createRoleHint')}</p>
+        <div className="flex justify-end gap-2 pt-2">
+          <button type="button" onClick={onCancel} className="px-4 py-2 text-sm text-gray-600 border border-gray-300 rounded-lg hover:bg-gray-50">{t('common.cancel')}</button>
+          <button type="submit" disabled={saving} className="px-4 py-2 text-sm font-medium text-white bg-indigo-600 rounded-lg hover:bg-indigo-700 disabled:opacity-50 flex items-center gap-2">
+            {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <UserPlus className="w-4 h-4" />}
+            {saving ? t('common.creating') : t('common.create')}
+          </button>
+        </div>
+      </form>
+    </div>
+  );
+};
+
 // ── User Detail Panel ─────────────────────────────────────────────────────────
 
 const UserDetailPanel = ({ user, allRoles, profiles, catalog, onClose }: {
   user: RbacUserRow; allRoles: RbacRole[]; profiles: AccessProfile[]; catalog: RbacPermissionCatalog | null; onClose: () => void;
 }) => {
   const { t } = useTranslation();
-  const [tab, setTab] = useState<'roles' | 'perms' | 'profile' | 'info'>('roles');
+  const [tab, setTab] = useState<'roles' | 'perms' | 'profile' | 'info' | 'ready'>('roles');
   const [access, setAccess] = useState<RbacUserAccess | null>(null);
   const [loadingAccess, setLoadingAccess] = useState(true);
 
@@ -500,6 +821,7 @@ const UserDetailPanel = ({ user, allRoles, profiles, catalog, onClose }: {
     { id: 'perms' as const, labelKey: 'rbac.users.tabs.permissions', icon: Plus },
     { id: 'profile' as const, labelKey: 'rbac.users.tabs.profile', icon: Sliders },
     { id: 'info' as const, labelKey: 'rbac.users.tabs.info', icon: User },
+    { id: 'ready' as const, labelKey: 'rbac.users.tabs.ready', icon: Activity },
   ];
 
   return (
@@ -532,7 +854,9 @@ const UserDetailPanel = ({ user, allRoles, profiles, catalog, onClose }: {
       </div>
 
       <div className="flex-1 overflow-y-auto p-5">
-        {loadingAccess ? (
+        {tab === 'ready' ? (
+          <ReadyToWorkTab user={user} />
+        ) : loadingAccess ? (
           <div className="text-sm text-gray-400">{t('common.loading')}</div>
         ) : access ? (
           <>
@@ -559,6 +883,7 @@ export function UsersAccessPage() {
   const [catalog, setCatalog] = useState<RbacPermissionCatalog | null>(null);
   const [loading, setLoading] = useState(true);
   const [selectedUser, setSelectedUser] = useState<RbacUserRow | null>(null);
+  const [creating, setCreating] = useState(false);
 
   const [search, setSearch] = useState('');
   const [filterRole, setFilterRole] = useState('');
@@ -589,11 +914,19 @@ export function UsersAccessPage() {
 
   const mainPanel = (
     <div className="h-full flex flex-col overflow-hidden bg-gray-50">
-      <div className="px-6 py-3 bg-white border-b border-gray-200 shrink-0">
-        <h1 className="text-sm font-bold text-gray-900">{t('rbac.users.title')}</h1>
-        <p className="text-[10px] text-gray-400">
-          {loading ? t('common.loading') : `${users.length} ${t('rbac.users.title').toLowerCase()}`}
-        </p>
+      <div className="px-6 py-3 bg-white border-b border-gray-200 shrink-0 flex items-center justify-between">
+        <div>
+          <h1 className="text-sm font-bold text-gray-900">{t('rbac.users.title')}</h1>
+          <p className="text-[10px] text-gray-400">
+            {loading ? t('common.loading') : `${users.length} ${t('rbac.users.title').toLowerCase()}`}
+          </p>
+        </div>
+        <button
+          onClick={() => { setCreating(true); setSelectedUser(null); }}
+          className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-white bg-indigo-600 rounded-lg hover:bg-indigo-700"
+        >
+          <UserPlus className="w-3.5 h-3.5" /> {t('rbac.users.createTitle')}
+        </button>
       </div>
 
       <div className="px-6 py-3 bg-white border-b border-gray-100 flex items-center gap-3 flex-wrap">
@@ -618,7 +951,7 @@ export function UsersAccessPage() {
       </div>
 
       <div className="flex-1 flex overflow-hidden">
-        <div className={`flex flex-col overflow-hidden ${selectedUser ? 'w-2/5 border-r border-gray-200' : 'w-full'}`}>
+        <div className={`flex flex-col overflow-hidden ${(selectedUser || creating) ? 'w-2/5 border-r border-gray-200' : 'w-full'}`}>
           {loading ? (
             <div className="flex items-center justify-center flex-1 text-sm text-gray-400">{t('common.loading')}</div>
           ) : users.length === 0 ? (
@@ -626,7 +959,7 @@ export function UsersAccessPage() {
           ) : (
             <div className="flex-1 overflow-y-auto">
               {users.map(user => (
-                <button key={user.id} onClick={() => setSelectedUser(user)}
+                <button key={user.id} onClick={() => { setSelectedUser(user); setCreating(false); }}
                   className={`w-full text-left px-4 py-3 border-b border-gray-100 hover:bg-indigo-50/50 transition-colors ${
                     selectedUser?.id === user.id ? 'bg-indigo-50 border-l-2 border-l-indigo-600' : ''
                   }`}>
@@ -654,7 +987,16 @@ export function UsersAccessPage() {
           )}
         </div>
 
-        {selectedUser ? (
+        {creating ? (
+          <div className="flex-1 overflow-hidden">
+            <CreateUserForm
+              allRoles={allRoles}
+              profiles={profiles}
+              onCancel={() => setCreating(false)}
+              onCreated={() => { setCreating(false); fetchData(); }}
+            />
+          </div>
+        ) : selectedUser ? (
           <div className="flex-1 overflow-hidden">
             <UserDetailPanel user={selectedUser} allRoles={allRoles} profiles={profiles} catalog={catalog} onClose={() => setSelectedUser(null)} />
           </div>

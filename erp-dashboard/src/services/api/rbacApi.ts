@@ -7,6 +7,10 @@ import type {
   RbacUserAccess,
   AccessProfile,
   RbacUserInfoPayload,
+  RbacCreateUserPayload,
+  RbacReadyToWork,
+  RbacLogisticsPayload,
+  RbacVehicle,
 } from '@/types/rbac.types';
 
 const RBAC_BASE = '/api/backend/rbac';
@@ -46,6 +50,44 @@ export const rbacApi = {
       success: boolean;
       data: { data: RbacUserRow[]; total: number };
     }>(`${RBAC_BASE}/users`, { params });
+    return response.data;
+  },
+
+  // POST /api/backend/rbac/users — create a user (cash journals auto-provisioned server-side)
+  createUser: async (payload: RbacCreateUserPayload) => {
+    const response = await apiClient.post<{
+      success: boolean;
+      data: RbacUserRow & { code?: string | null };
+      message?: string;
+      error?: string;
+      error_code?: string;
+    }>(`${RBAC_BASE}/users`, payload);
+    return response.data;
+  },
+
+  // GET /api/backend/rbac/users/{identifier}/ready-to-work — identifier = id | code | email | phone
+  getUserReadyToWork: async (identifier: string | number) => {
+    const response = await apiClient.get<{
+      success: boolean;
+      data: RbacReadyToWork;
+    }>(`${RBAC_BASE}/users/${encodeURIComponent(String(identifier))}/ready-to-work`);
+    return response.data;
+  },
+
+  // POST /api/backend/rbac/users/{id}/logistics — assign primary warehouse (+ optional vehicle)
+  assignUserLogistics: async (userId: number, payload: RbacLogisticsPayload) => {
+    const response = await apiClient.post<{
+      success: boolean;
+      message?: string;
+      error?: string;
+      error_code?: string;
+    }>(`${RBAC_BASE}/users/${userId}/logistics`, payload);
+    return response.data;
+  },
+
+  // GET /api/backend/rbac/vehicles?branch_code=… — explicit branch scoping
+  getRbacVehicles: async (params: { branch_code: string; type?: string; search?: string }) => {
+    const response = await apiClient.get<{ data: RbacVehicle[] }>(`${RBAC_BASE}/vehicles`, { params });
     return response.data;
   },
 

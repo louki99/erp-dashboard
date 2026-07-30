@@ -20,12 +20,12 @@ const visitStatus = (visit: TeleVisit) =>
         : { label: 'En attente', cls: 'bg-gray-100 text-gray-500' };
 
 // Écran 1 (docs §8.1) — bandeau de session + KPIs du jour + accès rapide aux
-// autres écrans du poste. "Fiche télé-visite" n'a pas de route autonome (elle
-// se navigue avec un visit_id, via Planning/Portefeuille) — on y renvoie
-// l'agent vers le planning du jour à la place.
+// autres écrans du poste. "Cockpit" (2026-08) is the all-in-one in-call
+// workspace (planning/portefeuille → fiche → catalogue → panier, no page
+// navigation) — the primary entry point for actually working a call.
 const SECTIONS = [
-    { icon: CalendarDays, label: 'Planning / Semainier', description: 'Appels planifiés du jour, appel libre', route: '/telesales/planning' },
-    { icon: FileText, label: 'Fiche télé-visite', description: "Qualifier un appel en cours", route: '/telesales/planning' },
+    { icon: Headset, label: 'Cockpit Télévendeur', description: "Appel en cours : fiche, qualification et commande sur un seul écran", route: '/telesales/cockpit' },
+    { icon: CalendarDays, label: 'Planning / Semainier', description: 'Planifier un appel futur, semainier', route: '/telesales/planning' },
     { icon: ShoppingCart, label: 'Catalogue & Prise de commande', description: 'Rechercher un produit, créer une commande', route: '/telesales/catalog' },
     { icon: ClipboardList, label: 'Mes commandes', description: 'Historique des commandes prises pendant les appels', route: '/telesales/orders' },
     { icon: Briefcase, label: 'Devis B2B', description: 'Créer, envoyer, convertir un devis', route: '/telesales/devis' },

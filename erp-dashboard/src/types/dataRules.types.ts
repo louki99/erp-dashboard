@@ -10,6 +10,9 @@ export const DATA_RULE_MODEL_TYPES = [
     'App\\Models\\PaymentMethod',
     'App\\Models\\Category',
     'App\\Models\\Product',
+    'App\\Models\\TreasuryTransferRoute',
+    'App\\Models\\DocumentType',
+    'App\\Models\\DeliveryMission',
 ] as const;
 
 export const DATA_RULE_SUBJECTS = [
@@ -18,6 +21,9 @@ export const DATA_RULE_SUBJECTS = [
     'payment_method',
     'category',
     'product',
+    'treasury_transfer_route',
+    'document_type',
+    'delivery_mission',
 ] as const;
 
 export type DataRuleScopeType = (typeof DATA_RULE_SCOPE_TYPES)[number];

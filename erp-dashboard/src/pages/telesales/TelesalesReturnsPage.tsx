@@ -1,4 +1,5 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { RotateCcw, Plus, Loader2, Trash2, AlertTriangle, RefreshCw, Package, CalendarClock } from 'lucide-react';
 import toast from 'react-hot-toast';
 
@@ -40,7 +41,13 @@ const STATUS_LABELS: Record<string, string> = {
     REJECTED: 'Rejeté',
 };
 
+interface IncomingState {
+    openCreateForPartner?: PartnerPickerOption;
+}
+
 export const TelesalesReturnsPage = () => {
+    const navigate = useNavigate();
+    const location = useLocation();
     const [statusFilter, setStatusFilter] = useState('');
     const { returns, loading, refetch } = useReturnsList({ status: statusFilter || undefined });
     const { createReturn, loading: creating } = useCreateReturn();
@@ -48,10 +55,21 @@ export const TelesalesReturnsPage = () => {
     const [selected, setSelected] = useState<PartnerReturnSummary | null>(null);
     const { detail, loading: loadingDetail } = useReturnDetail(selected?.id ?? null);
 
-    const [showCreateModal, setShowCreateModal] = useState(false);
-    const [partner, setPartner] = useState<PartnerPickerOption | null>(null);
+    // Opened with a partner from the Cockpit's "Créer un retour" action — preselect
+    // it and open the create modal straight away.
+    const incoming = (location.state as IncomingState | null) ?? null;
+    const [showCreateModal, setShowCreateModal] = useState(!!incoming?.openCreateForPartner);
+    const [partner, setPartner] = useState<PartnerPickerOption | null>(incoming?.openCreateForPartner ?? null);
     const [lines, setLines] = useState<ReturnLine[]>([]);
     const [notes, setNotes] = useState('');
+
+    useEffect(() => {
+        if (incoming?.openCreateForPartner) {
+            // Clear the nav state so a later back/forward doesn't reopen the modal.
+            navigate(location.pathname, { replace: true, state: null });
+        }
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []);
 
     const addProduct = (product: CatalogProduct) => {
         setLines((prev) => {

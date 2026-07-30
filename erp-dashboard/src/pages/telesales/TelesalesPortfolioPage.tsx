@@ -24,7 +24,7 @@ export const TelesalesPortfolioPage = () => {
     const handleCall = useCallback(async (partner: PortfolioPartner) => {
         try {
             const visit = await startAdhoc({ partner_id: partner.id });
-            navigate(`/telesales/visits/${visit.id}`, { state: { visit } });
+            navigate('/telesales/cockpit', { state: { visit } });
         } catch (err: any) {
             toast.error(err?.response?.data?.message || "Échec du démarrage de l'appel");
         }

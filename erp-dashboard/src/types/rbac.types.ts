@@ -141,6 +141,59 @@ export interface RbacUserInfoPayload {
   is_active?: boolean;
 }
 
+// POST /api/backend/rbac/users — `role` must be a real Spatie role name (see GET
+// /rbac/roles), not a filter alias like "vendeur"/"salesperson". Cash journals are
+// auto-provisioned server-side by an observer.
+export interface RbacCreateUserPayload {
+  name: string;
+  email: string;
+  password: string;
+  code: string;
+  branch_id: number;
+  role: string;
+  access_profile_id?: number | null;
+  company_id?: number | null;
+  phone?: string | null;
+  is_active?: boolean;
+}
+
+// GET /api/backend/rbac/users/{identifier}/ready-to-work — {identifier} accepts a
+// numeric id or a code/matricule/email/phone.
+export interface RbacReadyToWorkCheck {
+  check: string;
+  status: 'ok' | 'error' | 'warning' | string;
+  message: string;
+}
+
+export interface RbacReadyToWork {
+  user: { id: number; name: string; code: string | null };
+  status: 'ready' | 'not_ready' | string;
+  diagnostics: RbacReadyToWorkCheck[];
+}
+
+// POST /api/backend/rbac/users/{id}/logistics — assigns the primary warehouse and
+// (optionally) a vehicle. Storage location is derived server-side from the vehicle
+// chain (Vehicle → vanWarehouse → vanStorageLocation), never set directly.
+export interface RbacLogisticsPayload {
+  primary_warehouse_id: number;
+  vehicle_id?: number | null;
+  role?: string;
+  notes?: string;
+}
+
+// GET /api/backend/rbac/vehicles?branch_code=… — explicit branch scoping (unlike
+// /dispatcher/vehicles which scopes to the logged-in admin's own branch).
+export interface RbacVehicle {
+  id: number;
+  internal_code: string;
+  plate_number: string;
+  type: string;
+  branch_code: string;
+  // Already assigned to someone — informational only (grey/warn); POST /logistics
+  // still handles reassignment (guarded server-side against vans holding stock).
+  is_assigned: boolean;
+}
+
 export interface AccessProfile {
   id: number;
   name: string;

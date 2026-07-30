@@ -19,7 +19,32 @@
       "Bash(rm -f tsc_bp4.txt)",
       "Bash(rm -f tsc_bp5.txt)",
       "Bash(rm -f tsc_mag.txt)",
-      "Bash(rm -f tsc_sq.txt)"
+      "Bash(rm -f tsc_sq.txt)",
+      "Bash(rm -f tsc_cockpit.txt)",
+      "Bash(rm -f tsc_cockpit2.txt)",
+      "Bash(rm -f tsc_ck.txt)",
+      "Bash(rm -f tsc_ck2.txt)",
+      "Bash(rm -f tsc_ck3.txt)",
+      "Bash(rm -f tsc_ck4.txt)",
+      "Bash(rm -f tsc_ck5.txt)",
+      "Bash(rm -f tsc_ck6.txt)",
+      "Bash(rm -f tsc_ck7.txt)",
+      "Bash(rm -f tsc_ck8.txt)",
+      "Bash(rm -f tsc_ck9.txt)",
+      "Bash(rm -f tsc_ck10.txt)",
+      "Bash(rm -f tsc_ck11.txt)",
+      "Bash(node -e \"['fr','en','ar'].forEach\\(l=>{JSON.parse\\(require\\('fs'\\).readFileSync\\('src/i18n/locales/'+l+'.json','utf8'\\)\\);console.log\\(l+' JSON ok'\\)}\\)\")",
+      "Bash(rm -f tsc_j.txt)",
+      "Bash(node -e \"for\\(const l of ['fr','en','ar']\\){const o=JSON.parse\\(require\\('fs'\\).readFileSync\\('src/i18n/locales/'+l+'.json','utf8'\\)\\);console.log\\(l,'common.all=',o.common&&o.common.all\\)}\")",
+      "Bash(node -e \"['fr','en','ar'].forEach\\(l=>{JSON.parse\\(require\\('fs'\\).readFileSync\\('src/i18n/locales/'+l+'.json','utf8'\\)\\);console.log\\(l+' ok'\\)}\\)\")",
+      "Bash(rm -f tsc_fin.txt)",
+      "Bash(break)",
+      "Bash(rm -f tsc_jr.txt)",
+      "Bash(rm -f tsc_dr.txt)",
+      "Bash(node -e \"const o=JSON.parse\\(require\\('fs'\\).readFileSync\\('src/i18n/locales/fr.json','utf8'\\)\\); const u=o.rbac&&o.rbac.users; console.log\\('users keys:', u?Object.keys\\(u\\).join\\(','\\):'NONE'\\); console.log\\('tabs:', u&&u.tabs?Object.keys\\(u.tabs\\).join\\(','\\):'NONE'\\); console.log\\('noProfile:', u&&u.noProfile\\); console.log\\('common.selectPlaceholder:', o.common&&o.common.selectPlaceholder\\); console.log\\('common.creating:', o.common&&o.common.creating\\)\")",
+      "Bash(rm -f tsc_rbac.txt)",
+      "Bash(rm -f tsc_wh.txt)",
+      "Bash(rm -f tsc_log.txt)"
     ]
   }
 }

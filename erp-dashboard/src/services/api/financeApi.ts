@@ -22,6 +22,7 @@ export const financeApi = {
   getJournals: async (params?: {
     branch_id?: number;
     user_id?: number;
+    type?: string;
     method_suffix?: string;
     active_only?: boolean;
     search?: string;
@@ -38,12 +39,20 @@ export const financeApi = {
     return response.data;
   },
 
-  createJournal: async (payload: { user_id: number; method_suffix: string; branch_id?: number }) => {
+  // Two shapes (backend 2026-08): default (agent cash register) requires user_id and
+  // auto-generates the code; type: "BANK_ACCOUNT" is a company bank/deposit account —
+  // no owner, caller-chosen free `code`, scoped to a branch, with optional bank_name/rib.
+  createJournal: async (payload:
+    | { user_id: number; method_suffix: string; branch_id?: number }
+    | { type: 'BANK_ACCOUNT'; code: string; method_suffix: string; branch_id: number; bank_name?: string; rib?: string }
+  ) => {
     const response = await apiClient.post<{ success: boolean; data: Journal; message?: string }>(`${FINANCE_BASE}/journals`, payload);
     return response.data;
   },
 
-  updateJournal: async (id: number, payload: { is_active?: boolean; currency?: string }) => {
+  // Agent cash journal: is_active/currency. BANK_ACCOUNT journal: only bank_name/rib are
+  // editable (branch_id/code/type are frozen; other fields → 422 FINANCE_NOT_A_BANK_ACCOUNT).
+  updateJournal: async (id: number, payload: { is_active?: boolean; currency?: string; bank_name?: string; rib?: string }) => {
     const response = await apiClient.put<{ success: boolean; data: Journal; message?: string }>(`${FINANCE_BASE}/journals/${id}`, payload);
     return response.data;
   },

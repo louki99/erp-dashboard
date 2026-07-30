@@ -17,6 +17,10 @@ interface MasterLayoutProps {
     leftContent?: React.ReactNode;
     mainContent?: React.ReactNode; // New prop for explicit middle content
     rightContent?: React.ReactNode; // New prop for custom action panel
+    // Optional content injected into the global top bar (right cluster, before the
+    // controls) — used e.g. by the Télévendeur Cockpit to surface its session/chrono
+    // controls at the very top instead of consuming vertical space in the workspace.
+    topBarContent?: React.ReactNode;
     className?: string;
 }
 
@@ -26,6 +30,7 @@ export const MasterLayout: React.FC<MasterLayoutProps> = ({
     leftContent,
     mainContent,
     rightContent,
+    topBarContent,
     className,
 }) => {
     const navigate = useNavigate();
@@ -271,6 +276,14 @@ export const MasterLayout: React.FC<MasterLayoutProps> = ({
 
                 {/* Right: Controls & User Info */}
                 <div className="flex items-center gap-2 md:gap-4">
+                    {/* Page-injected top-bar content (e.g. télévendeur session controls) */}
+                    {topBarContent && (
+                        <>
+                            <div className="hidden md:flex items-center">{topBarContent}</div>
+                            <div className="h-6 w-px bg-white/10 hidden md:block"></div>
+                        </>
+                    )}
+
                     {/* Theme Toggle */}
                     <button
                         onClick={toggleTheme}

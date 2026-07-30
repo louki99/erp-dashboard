@@ -13,6 +13,9 @@ export const MODEL_TYPE_OPTIONS: ModelTypeOption[] = [
     { label: 'Moyen de paiement', value: 'App\\Models\\PaymentMethod', subject: 'payment_method' },
     { label: 'Catégorie', value: 'App\\Models\\Category', subject: 'category' },
     { label: 'Produit', value: 'App\\Models\\Product', subject: 'product' },
+    { label: 'Route de transfert trésorerie', value: 'App\\Models\\TreasuryTransferRoute', subject: 'treasury_transfer_route' },
+    { label: 'Type de document', value: 'App\\Models\\DocumentType', subject: 'document_type' },
+    { label: 'Mission de livraison', value: 'App\\Models\\DeliveryMission', subject: 'delivery_mission' },
 ];
 
 export const SCOPE_TYPE_OPTIONS: ScopeTypeOption[] = [

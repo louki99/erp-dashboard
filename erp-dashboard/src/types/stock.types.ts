@@ -177,7 +177,7 @@ export interface WarehouseFilters {
 export interface CreateWarehousePayload {
     branch_id: number;
     name: string;
-    type?: 'central' | 'system_virtual';
+    type?: WarehouseType;
     code?: string;
     is_active?: boolean;
 }

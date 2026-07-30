@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { ArrowLeftRight, Plus, RefreshCw, CheckCircle2, XCircle, ChevronRight } from 'lucide-react';
+import { ArrowLeftRight, Plus, RefreshCw, CheckCircle2, XCircle, ChevronRight, Landmark, AlertTriangle } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import toast from 'react-hot-toast';
 import { MasterLayout } from '@/components/layout/MasterLayout';
@@ -98,6 +98,31 @@ const ApproveModal = ({ transfer, onClose, onDone }: { transfer: Transfer; onClo
       <div className="bg-white rounded-xl shadow-xl w-full max-w-md p-6">
         <h2 className="text-lg font-semibold text-gray-900 mb-4">{t('finance.transfers.approveTitle')} #{transfer.id}</h2>
         <form onSubmit={handleSubmit} className="space-y-4">
+          {/* Bank deposit — show the receipt before approving. The photo is required
+              server-side before approval (else 422 TREASURY_VERSEMENT_REQUIRED), so warn
+              clearly when it's still missing. Preview uses versement_photo_url (a ready
+              URL), never versement_photo_path (raw storage path). */}
+          {transfer.transfer_type === 'BANK_DEPOSIT' && (
+            <div className="rounded-lg bg-purple-50 border border-purple-200 p-3 space-y-2">
+              <div className="flex items-center gap-2 text-xs font-semibold text-purple-800">
+                <Landmark className="w-3.5 h-3.5" /> {t('modules.finance.transferType.bankDeposit')}
+              </div>
+              <div className="grid grid-cols-2 gap-2 text-xs">
+                <div><span className="text-gray-500">{t('finance.transfers.detail.depositRef')}: </span><span className="font-medium text-gray-800">{transfer.versement_reference || '—'}</span></div>
+                <div><span className="text-gray-500">{t('finance.transfers.detail.depositDate')}: </span><span className="font-medium text-gray-800">{transfer.deposit_date || '—'}</span></div>
+              </div>
+              {transfer.versement_photo_url ? (
+                <a href={transfer.versement_photo_url} target="_blank" rel="noreferrer" className="block">
+                  <img src={transfer.versement_photo_url} alt={t('finance.transfers.depositPhotoLabel')} className="w-full max-h-48 object-contain rounded-lg border border-purple-100 bg-white" />
+                </a>
+              ) : (
+                <div className="flex items-start gap-2 text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-2.5 py-2">
+                  <AlertTriangle className="w-3.5 h-3.5 shrink-0 mt-0.5" />
+                  {t('finance.transfers.depositPhotoMissing')}
+                </div>
+              )}
+            </div>
+          )}
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">{t('finance.transfers.confirmedAmount')}</label>
             <input type="number" step="0.01" value={confirmedAmount}
@@ -113,7 +138,12 @@ const ApproveModal = ({ transfer, onClose, onDone }: { transfer: Transfer; onClo
             <button type="button" onClick={onClose} className="px-4 py-2 text-sm text-gray-600 border border-gray-300 rounded-lg hover:bg-gray-50">
               {t('common.cancel')}
             </button>
-            <button type="submit" disabled={saving} className="px-4 py-2 text-sm font-medium text-white bg-green-600 rounded-lg hover:bg-green-700 disabled:opacity-50 flex items-center gap-2">
+            <button
+              type="submit"
+              disabled={saving || (transfer.transfer_type === 'BANK_DEPOSIT' && !transfer.versement_photo_url)}
+              title={transfer.transfer_type === 'BANK_DEPOSIT' && !transfer.versement_photo_url ? t('finance.transfers.depositPhotoMissing') : undefined}
+              className="px-4 py-2 text-sm font-medium text-white bg-green-600 rounded-lg hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+            >
               {saving ? <RefreshCw className="w-4 h-4 animate-spin" /> : <CheckCircle2 className="w-4 h-4" />}
               {t('common.approve')}
             </button>
@@ -178,7 +208,6 @@ const CreateTransferModal = ({ journals, onClose, onCreated }: { journals: Journ
   const [sourceJournalId, setSourceJournalId] = useState('');
   const [destJournalId, setDestJournalId] = useState('');
   const [amount, setAmount] = useState('');
-  const [transferType, setTransferType] = useState<'DIRECT' | 'BANK_DEPOSIT'>('DIRECT');
   const [versementRef, setVersementRef] = useState('');
   const [versementPhoto, setVersementPhoto] = useState('');
   const [bankName, setBankName] = useState('');
@@ -188,24 +217,32 @@ const CreateTransferModal = ({ journals, onClose, onCreated }: { journals: Journ
   const [saving, setSaving] = useState(false);
 
   const sourceJournal = journals.find(j => j.id === Number(sourceJournalId));
-  const isESP = sourceJournal?.method_suffix === 'ESP';
+  const destJournal = journals.find(j => j.id === Number(destJournalId));
   const isCHQorEFF = sourceJournal?.method_suffix === 'CHQ' || sourceJournal?.method_suffix === 'EFF';
-  const isBankDeposit = isESP && transferType === 'BANK_DEPOSIT';
+  // Backend rule (2026-08): the transfer_type is dictated by the DESTINATION journal.
+  // A BANK_ACCOUNT destination requires BANK_DEPOSIT + versement_reference + deposit_date;
+  // a cash-register destination must be DIRECT.
+  const destIsBank = destJournal?.type === 'BANK_ACCOUNT';
+  const effectiveTransferType: 'DIRECT' | 'BANK_DEPOSIT' = destIsBank ? 'BANK_DEPOSIT' : 'DIRECT';
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!sourceJournalId || !destJournalId) { toast.error(t('finance.transfers.journalsRequired')); return; }
+    if (destIsBank) {
+      if (!versementRef.trim()) { toast.error(t('finance.transfers.depositRefRequired')); return; }
+      if (!depositDate) { toast.error(t('finance.transfers.depositDateRequired')); return; }
+    }
     setSaving(true);
     try {
       await financeApi.createTransfer({
         source_journal_id: Number(sourceJournalId),
         dest_journal_id: Number(destJournalId),
         amount: parseFloat(amount || '0'),
-        ...(isESP ? { transfer_type: transferType } : {}),
-        ...(isBankDeposit && versementRef ? { versement_reference: versementRef } : {}),
-        ...(isBankDeposit && versementPhoto ? { versement_photo_path: versementPhoto } : {}),
-        ...(isBankDeposit && bankName ? { bank_name: bankName } : {}),
-        ...(isBankDeposit && depositDate ? { deposit_date: depositDate } : {}),
+        transfer_type: effectiveTransferType,
+        ...(destIsBank && versementRef ? { versement_reference: versementRef } : {}),
+        ...(destIsBank && versementPhoto ? { versement_photo_path: versementPhoto } : {}),
+        ...(destIsBank && bankName ? { bank_name: bankName } : {}),
+        ...(destIsBank && depositDate ? { deposit_date: depositDate } : {}),
         ...(isCHQorEFF && intakeLineId ? { intake_line_id: Number(intakeLineId) } : {}),
         ...(note ? { note } : {}),
       });
@@ -237,42 +274,37 @@ const CreateTransferModal = ({ journals, onClose, onCreated }: { journals: Journ
             <select value={destJournalId} onChange={e => setDestJournalId(e.target.value)}
               className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500">
               <option value="">{t('common.selectPlaceholder')}</option>
-              {journals.filter(j => j.id !== Number(sourceJournalId)).map(j => <option key={j.id} value={j.id}>{j.code} ({j.method_suffix})</option>)}
+              {journals.filter(j => j.id !== Number(sourceJournalId)).map(j => <option key={j.id} value={j.id}>{j.code} ({j.method_suffix}){j.type === 'BANK_ACCOUNT' ? ` 🏦 ${j.bank_name ?? ''}`.trimEnd() : ''}</option>)}
             </select>
           </div>
-          {isESP && (
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">{t('modules.finance.transferType.direct').replace('direct', '')} {t('common.type')}</label>
-              <select value={transferType} onChange={e => setTransferType(e.target.value as 'DIRECT' | 'BANK_DEPOSIT')}
-                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500">
-                <option value="DIRECT">{t('modules.finance.transferType.direct')}</option>
-                <option value="BANK_DEPOSIT">{t('modules.finance.transferType.bankDeposit')}</option>
-              </select>
-            </div>
-          )}
-          {isBankDeposit && (
-            <>
+          {destIsBank && (
+            <div className="rounded-lg bg-purple-50 border border-purple-200 p-3 space-y-3">
+              <div className="flex items-center gap-2 text-xs font-semibold text-purple-800">
+                <Landmark className="w-3.5 h-3.5" />
+                {t('modules.finance.transferType.bankDeposit')} — {destJournal?.bank_name || destJournal?.code}
+              </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">{t('finance.transfers.depositRefLabel')}</label>
+                <label className="block text-sm font-medium text-gray-700 mb-1">{t('finance.transfers.depositRefLabel')} <span className="text-red-500">*</span></label>
                 <input type="text" value={versementRef} onChange={e => setVersementRef(e.target.value)}
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500" />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">{t('finance.transfers.depositDateLabel')} <span className="text-red-500">*</span></label>
+                <input type="date" value={depositDate} onChange={e => setDepositDate(e.target.value)}
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500" />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">{t('finance.transfers.bankNameLabel')}</label>
+                <input type="text" value={bankName} onChange={e => setBankName(e.target.value)} placeholder={destJournal?.bank_name ?? ''}
                   className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500" />
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">{t('finance.transfers.depositPhotoLabel')}</label>
                 <input type="text" value={versementPhoto} onChange={e => setVersementPhoto(e.target.value)}
                   className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500" />
+                <p className="text-xs text-amber-600 mt-1">{t('finance.transfers.depositPhotoApproveHint')}</p>
               </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">{t('finance.transfers.bankNameLabel')}</label>
-                <input type="text" value={bankName} onChange={e => setBankName(e.target.value)}
-                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500" />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">{t('finance.transfers.depositDateLabel')}</label>
-                <input type="date" value={depositDate} onChange={e => setDepositDate(e.target.value)}
-                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500" />
-              </div>
-            </>
+            </div>
           )}
           {isCHQorEFF && (
             <div>

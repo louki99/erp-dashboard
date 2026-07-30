@@ -2,7 +2,8 @@ import { useEffect, useState } from 'react';
 import { useLocation, useNavigate, useParams } from 'react-router-dom';
 import {
     CheckCircle2, PhoneOff, MessageSquareWarning, PhoneMissed, PhoneCall, PackageX,
-    ShoppingCart, FileText, Loader2, User, RefreshCw, Phone, Clock,
+    ShoppingCart, FileText, Loader2, User, RefreshCw, Phone, Clock, CalendarDays,
+    StickyNote, AlertCircle, CheckCircle,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 
@@ -17,13 +18,13 @@ import { useSessionGate } from '@/hooks/telesales/useSessionGate';
 import type { TeleVisit, TeleVisitOutcome } from '@/types/telesalesAgent.types';
 import { TELE_VISIT_OUTCOME_LABELS } from '@/types/telesalesAgent.types';
 
-const OUTCOME_CONFIG: Record<TeleVisitOutcome, { icon: React.ElementType; bg: string; border: string; iconColor: string; textColor: string }> = {
-    ORDER_TAKEN: { icon: CheckCircle2, bg: 'bg-emerald-50 hover:bg-emerald-100', border: 'border-emerald-100', iconColor: 'text-emerald-600', textColor: 'text-emerald-700' },
-    UNAVAILABLE: { icon: PhoneOff, bg: 'bg-gray-50 hover:bg-gray-100', border: 'border-gray-200', iconColor: 'text-gray-400', textColor: 'text-gray-600' },
-    COMPLAINT: { icon: MessageSquareWarning, bg: 'bg-red-50 hover:bg-red-100', border: 'border-red-100', iconColor: 'text-red-500', textColor: 'text-red-700' },
-    NO_ANSWER: { icon: PhoneMissed, bg: 'bg-amber-50 hover:bg-amber-100', border: 'border-amber-100', iconColor: 'text-amber-500', textColor: 'text-amber-700' },
-    BUSY: { icon: PhoneCall, bg: 'bg-rose-50 hover:bg-rose-100', border: 'border-rose-100', iconColor: 'text-rose-500', textColor: 'text-rose-700' },
-    RESTOCK_NEEDED: { icon: PackageX, bg: 'bg-blue-50 hover:bg-blue-100', border: 'border-blue-100', iconColor: 'text-blue-500', textColor: 'text-blue-700' },
+const OUTCOME_CONFIG: Record<TeleVisitOutcome, { icon: React.ElementType; ring: string; iconBg: string; iconColor: string; textColor: string }> = {
+    ORDER_TAKEN: { icon: CheckCircle2, ring: 'ring-emerald-200 hover:ring-emerald-300', iconBg: 'bg-emerald-50', iconColor: 'text-emerald-600', textColor: 'text-emerald-700' },
+    UNAVAILABLE: { icon: PhoneOff, ring: 'ring-gray-200 hover:ring-gray-300', iconBg: 'bg-gray-100', iconColor: 'text-gray-500', textColor: 'text-gray-700' },
+    COMPLAINT: { icon: MessageSquareWarning, ring: 'ring-red-200 hover:ring-red-300', iconBg: 'bg-red-50', iconColor: 'text-red-500', textColor: 'text-red-700' },
+    NO_ANSWER: { icon: PhoneMissed, ring: 'ring-amber-200 hover:ring-amber-300', iconBg: 'bg-amber-50', iconColor: 'text-amber-500', textColor: 'text-amber-700' },
+    BUSY: { icon: PhoneCall, ring: 'ring-rose-200 hover:ring-rose-300', iconBg: 'bg-rose-50', iconColor: 'text-rose-500', textColor: 'text-rose-700' },
+    RESTOCK_NEEDED: { icon: PackageX, ring: 'ring-blue-200 hover:ring-blue-300', iconBg: 'bg-blue-50', iconColor: 'text-blue-500', textColor: 'text-blue-700' },
 };
 
 const todayIso = () => new Date().toISOString().slice(0, 10);
@@ -69,8 +70,11 @@ export const TelesalesVisitPage = () => {
             setVisit(updated);
             toast.success(`Appel qualifié : ${TELE_VISIT_OUTCOME_LABELS[outcome]}`);
             refetchToday();
-        } catch (err: any) {
-            toast.error(err?.response?.data?.message || 'Échec de la qualification');
+        } catch (err: unknown) {
+            const message = err && typeof err === 'object' && 'response' in err
+                ? (err.response as { data?: { message?: string } })?.data?.message
+                : undefined;
+            toast.error(message || 'Échec de la qualification');
         } finally {
             setPendingOutcome(null);
         }
@@ -146,57 +150,98 @@ export const TelesalesVisitPage = () => {
             <EmptySelection icon={Phone} title="Sélectionnez un appel" hint="Cliquez sur un appel de la liste pour afficher la fiche" />
         )
     ) : (
-        <div className="max-w-2xl space-y-6">
-            <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5 flex items-center gap-4">
-                <div className="w-12 h-12 rounded-full bg-sage-100 flex items-center justify-center shrink-0">
-                    <User className="w-6 h-6 text-sage-600" />
+        <div className="max-w-3xl space-y-6">
+            {/* Partner status header */}
+            <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5">
+                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+                    <div className="flex items-center gap-4">
+                        <div className="w-12 h-12 rounded-xl bg-sage-50 flex items-center justify-center shrink-0">
+                            <User className="w-6 h-6 text-sage-600" />
+                        </div>
+                        <div>
+                            <div className="text-lg font-bold text-gray-900">{visit.partner?.name ?? `Partenaire #${visit.partner_id}`}</div>
+                            <div className="flex items-center gap-2 text-sm text-gray-500 mt-0.5">
+                                <span>{visit.partner?.code}</span>
+                                {visit.scheduled_at && (
+                                    <>
+                                        <span className="w-1 h-1 rounded-full bg-gray-300" />
+                                        <span className="inline-flex items-center gap-1">
+                                            <CalendarDays className="w-3.5 h-3.5" />
+                                            {new Date(visit.scheduled_at).toLocaleString('fr-FR', { dateStyle: 'short', timeStyle: 'short' })}
+                                        </span>
+                                    </>
+                                )}
+                            </div>
+                        </div>
+                    </div>
+                    <div>
+                        {alreadyQualified ? (
+                            <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold bg-emerald-100 text-emerald-700">
+                                <CheckCircle className="w-3.5 h-3.5" />
+                                Qualifié · {TELE_VISIT_OUTCOME_LABELS[visit.outcome!]}
+                            </span>
+                        ) : (
+                            <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold bg-amber-100 text-amber-700">
+                                <Clock className="w-3.5 h-3.5" />
+                                En attente de qualification
+                            </span>
+                        )}
+                    </div>
                 </div>
-                <div>
-                    <div className="text-lg font-bold text-gray-900">{visit.partner?.name ?? `Partenaire #${visit.partner_id}`}</div>
-                    <div className="text-sm text-gray-400">{visit.partner?.code}</div>
-                </div>
-                {alreadyQualified && (
-                    <span className="ml-auto inline-flex items-center px-3 py-1 rounded-full text-xs font-bold bg-emerald-100 text-emerald-700">
-                        Qualifié — {TELE_VISIT_OUTCOME_LABELS[visit.outcome!]}
-                    </span>
-                )}
             </div>
 
             {visit.partner && <PartnerFicheCard partner={visit.partner} />}
 
-            {!sessionActive && !alreadyQualified && <SessionRequiredNotice />}
+            {!sessionActive && !alreadyQualified && <SessionRequiredNotice className="rounded-xl px-4 py-3" />}
 
-            <div>
-                <label className="block text-xs font-bold text-gray-500 uppercase mb-1.5">Notes de l'appel</label>
+            {/* Notes */}
+            <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5">
+                <div className="flex items-center gap-2 mb-3">
+                    <StickyNote className="w-4 h-4 text-sage-600" />
+                    <label className="text-xs font-bold text-gray-500 uppercase tracking-wide">Notes de l'appel</label>
+                </div>
                 <textarea
                     value={notes}
                     onChange={(e) => setNotes(e.target.value)}
                     disabled={alreadyQualified || !sessionActive}
                     rows={4}
-                    placeholder="Points clés de la conversation..."
-                    className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-sage-500/50 focus:border-sage-500 disabled:bg-gray-50 disabled:text-gray-400"
+                    placeholder="Points clés de la conversation, demandes particulières, relances..."
+                    className="w-full px-3.5 py-3 text-sm text-gray-700 bg-gray-50/50 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-sage-500/30 focus:border-sage-500 focus:bg-white transition-all disabled:bg-gray-100 disabled:text-gray-400 resize-none"
                 />
             </div>
 
-            <div>
-                <label className="block text-xs font-bold text-gray-500 uppercase mb-3">Résultat de l'appel</label>
+            {/* Outcome */}
+            <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5">
+                <div className="flex items-center gap-2 mb-4">
+                    <AlertCircle className="w-4 h-4 text-sage-600" />
+                    <label className="text-xs font-bold text-gray-500 uppercase tracking-wide">Résultat de l'appel</label>
+                </div>
                 <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
                     {(Object.keys(TELE_VISIT_OUTCOME_LABELS) as TeleVisitOutcome[]).map((outcome) => {
-                        const { icon: Icon, bg, border, iconColor, textColor } = OUTCOME_CONFIG[outcome];
+                        const { icon: Icon, ring, iconBg, iconColor, textColor } = OUTCOME_CONFIG[outcome];
                         const isPending = pendingOutcome === outcome && completing;
+                        const isSelected = visit?.outcome === outcome;
                         return (
                             <button
                                 key={outcome}
                                 onClick={() => handleQualify(outcome)}
                                 disabled={alreadyQualified || completing || !sessionActive}
-                                className={`flex items-center gap-2.5 px-4 py-3 rounded-xl border font-semibold text-sm shadow-sm transition-all disabled:opacity-40 disabled:cursor-not-allowed ${bg} ${border} ${textColor}`}
+                                className={`flex items-center gap-3 px-4 py-3.5 rounded-xl border font-semibold text-sm shadow-sm transition-all text-left disabled:opacity-40 disabled:cursor-not-allowed ${
+                                    isSelected
+                                        ? 'bg-emerald-50 border-emerald-200 ring-1 ring-emerald-200'
+                                        : `bg-white border-gray-100 hover:bg-gray-50 hover:border-gray-200 ring-1 ring-transparent ${ring}`
+                                }`}
                             >
-                                {isPending ? (
-                                    <Loader2 className={`w-4 h-4 shrink-0 animate-spin ${iconColor}`} />
-                                ) : (
-                                    <Icon className={`w-4 h-4 shrink-0 ${iconColor}`} />
-                                )}
-                                {TELE_VISIT_OUTCOME_LABELS[outcome]}
+                                <span className={`w-8 h-8 rounded-lg ${iconBg} flex items-center justify-center shrink-0`}>
+                                    {isPending ? (
+                                        <Loader2 className={`w-4 h-4 shrink-0 animate-spin ${iconColor}`} />
+                                    ) : (
+                                        <Icon className={`w-4 h-4 shrink-0 ${iconColor}`} />
+                                    )}
+                                </span>
+                                <span className={`${isSelected ? 'text-emerald-700' : textColor}`}>
+                                    {TELE_VISIT_OUTCOME_LABELS[outcome]}
+                                </span>
                             </button>
                         );
                     })}
@@ -204,25 +249,30 @@ export const TelesalesVisitPage = () => {
             </div>
 
             {visit.outcome === 'ORDER_TAKEN' && (visit.order_id || linkedOrderId) && (
-                <div className="bg-emerald-50 border border-emerald-100 rounded-xl p-4">
-                    <div className="text-sm text-emerald-700 font-medium">
-                        Commande #{visit.order_id ?? linkedOrderId} liée à cet appel.
+                <div className="bg-emerald-50 border border-emerald-100 rounded-xl p-4 flex items-center gap-3">
+                    <div className="w-8 h-8 rounded-lg bg-emerald-100 flex items-center justify-center shrink-0">
+                        <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+                    </div>
+                    <div>
+                        <div className="text-sm font-bold text-emerald-800">Commande liée à cet appel</div>
+                        <div className="text-xs text-emerald-600/80">Commande #{visit.order_id ?? linkedOrderId}</div>
                     </div>
                 </div>
             )}
 
-            <div className="flex gap-3">
+            {/* Actions */}
+            <div className="flex flex-col sm:flex-row gap-3 pt-2">
                 <button
                     onClick={goToOrder}
                     disabled={alreadyQualified || !sessionActive}
-                    className="flex-1 flex items-center justify-center gap-2 px-4 py-3 text-sm font-bold text-white bg-emerald-800 rounded-xl shadow-sm hover:bg-emerald-900 disabled:opacity-40 disabled:cursor-not-allowed"
+                    className="flex-1 flex items-center justify-center gap-2 px-5 py-3.5 text-sm font-bold text-white bg-emerald-700 rounded-xl shadow-sm hover:bg-emerald-800 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
                 >
                     <ShoppingCart className="w-4 h-4" /> Prise de commande
                 </button>
                 <button
                     onClick={goToDevis}
                     disabled={alreadyQualified || !sessionActive}
-                    className="flex-1 flex items-center justify-center gap-2 px-4 py-3 text-sm font-bold text-gray-700 bg-white border border-gray-200 rounded-xl shadow-sm hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed"
+                    className="flex-1 flex items-center justify-center gap-2 px-5 py-3.5 text-sm font-bold text-gray-700 bg-white border border-gray-200 rounded-xl shadow-sm hover:bg-gray-50 hover:border-gray-300 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
                 >
                     <FileText className="w-4 h-4 text-gray-500" /> Créer un devis
                 </button>
