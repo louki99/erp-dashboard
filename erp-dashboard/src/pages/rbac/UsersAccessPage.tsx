@@ -544,9 +544,6 @@ const ReadyToWorkTab = ({ user }: { user: RbacUserRow }) => {
           </div>
         </>
       )}
-
-      {/* Assign primary warehouse + vehicle to resolve the readiness gaps. */}
-      <LogisticsConfig user={user} onSaved={load} />
     </div>
   );
 };
@@ -555,7 +552,15 @@ const ReadyToWorkTab = ({ user }: { user: RbacUserRow }) => {
 
 const LOGISTICS_ROLES = ['van_seller', 'van_delivery'];
 
-const LogisticsConfig = ({ user, onSaved }: { user: RbacUserRow; onSaved: () => void }) => {
+// Role → logistics relevance. Van-selling / delivery roles get the full tab
+// (warehouse + vehicle); pre-selling roles get the tab but no vehicle (they don't
+// drive a van, just need a primary warehouse); everyone else has no Logistique tab.
+const VAN_ROLE_HINTS = ['vanselling', 'van_selling', 'van_seller', 'delivery', 'van_delivery', 'livraison', 'livreur'];
+const PRESELL_ROLE_HINTS = ['preselling', 'pre_selling', 'prevente', 'pre_vente'];
+const matchesRoleHint = (roles: string[] | undefined, hints: string[]) =>
+  (roles ?? []).some(r => { const l = r.toLowerCase(); return hints.some(h => l.includes(h)); });
+
+const LogisticsConfig = ({ user, vehicleEnabled = true, onSaved }: { user: RbacUserRow; vehicleEnabled?: boolean; onSaved: () => void }) => {
   const { t } = useTranslation();
   const [warehouses, setWarehouses] = useState<{ id: number; name: string; code: string; branch_code: string }[]>([]);
   const [vehicles, setVehicles] = useState<RbacVehicle[]>([]);
@@ -567,17 +572,18 @@ const LogisticsConfig = ({ user, onSaved }: { user: RbacUserRow; onSaved: () => 
   const [saving, setSaving] = useState(false);
 
   // Load the user's branch warehouses; derive branch_code from them, then vehicles.
+  // Only central warehouses are eligible as a user's primary warehouse.
   useEffect(() => {
     if (!user.branch_id) return;
     let cancelled = false;
-    getWarehouses({ branch_id: user.branch_id, active_only: true })
+    getWarehouses({ branch_id: user.branch_id, active_only: true, type: 'central' })
       .then((res) => {
         if (cancelled) return;
         const list = (res.warehouses?.data ?? []).map(w => ({ id: w.id, name: w.name, code: w.code, branch_code: w.branch_code }));
         setWarehouses(list);
         const bc = list[0]?.branch_code ?? null;
         setBranchCode(bc);
-        if (bc) {
+        if (bc && vehicleEnabled) {
           rbacApi.getRbacVehicles({ branch_code: bc })
             .then(v => { if (!cancelled) setVehicles(v.data ?? []); })
             .catch(() => {});
@@ -585,7 +591,7 @@ const LogisticsConfig = ({ user, onSaved }: { user: RbacUserRow; onSaved: () => 
       })
       .catch(() => {});
     return () => { cancelled = true; };
-  }, [user.branch_id]);
+  }, [user.branch_id, vehicleEnabled]);
 
   const save = async () => {
     if (!warehouseId) { toast.error(t('rbac.users.logisticsWarehouseRequired')); return; }
@@ -638,7 +644,7 @@ const LogisticsConfig = ({ user, onSaved }: { user: RbacUserRow; onSaved: () => 
       </div>
       <div>
         <label className={labelCls}>{t('rbac.users.logisticsVehicle')}</label>
-        <select value={vehicleId} onChange={e => setVehicleId(e.target.value)} className={inputCls} disabled={!branchCode}>
+        <select value={vehicleId} onChange={e => setVehicleId(e.target.value)} className={`${inputCls} disabled:bg-gray-100 disabled:text-gray-400`} disabled={!vehicleEnabled || !branchCode}>
           <option value="">{t('rbac.users.logisticsNoVehicle')}</option>
           {vehicles.map(v => (
             <option key={v.id} value={v.id}>
@@ -646,6 +652,7 @@ const LogisticsConfig = ({ user, onSaved }: { user: RbacUserRow; onSaved: () => 
             </option>
           ))}
         </select>
+        {!vehicleEnabled && <p className="text-[10px] text-gray-400 mt-1">{t('rbac.users.logisticsVehicleNa')}</p>}
       </div>
       <div>
         <label className={labelCls}>{t('rbac.users.logisticsRole')}</label>
@@ -799,7 +806,7 @@ const UserDetailPanel = ({ user, allRoles, profiles, catalog, onClose }: {
   user: RbacUserRow; allRoles: RbacRole[]; profiles: AccessProfile[]; catalog: RbacPermissionCatalog | null; onClose: () => void;
 }) => {
   const { t } = useTranslation();
-  const [tab, setTab] = useState<'roles' | 'perms' | 'profile' | 'info' | 'ready'>('roles');
+  const [tab, setTab] = useState<'roles' | 'perms' | 'profile' | 'info' | 'logistics' | 'ready'>('roles');
   const [access, setAccess] = useState<RbacUserAccess | null>(null);
   const [loadingAccess, setLoadingAccess] = useState(true);
 
@@ -816,11 +823,20 @@ const UserDetailPanel = ({ user, allRoles, profiles, catalog, onClose }: {
 
   const currentProfileId = user.access_profile?.id ?? null;
 
+  // Logistics only concerns field-sales roles: van/delivery (full) or pre-selling
+  // (warehouse only, vehicle disabled). Hidden for everyone else (cashier, télévendeur…).
+  const isVanRole = matchesRoleHint(user.roles, VAN_ROLE_HINTS);
+  const isPresellRole = matchesRoleHint(user.roles, PRESELL_ROLE_HINTS);
+  const showLogistics = isVanRole || isPresellRole;
+  // Guard against a stale 'logistics' tab when switching to a user that hides it.
+  const activeTab = tab === 'logistics' && !showLogistics ? 'roles' : tab;
+
   const TABS = [
     { id: 'roles' as const, labelKey: 'rbac.users.tabs.roles', icon: Shield },
     { id: 'perms' as const, labelKey: 'rbac.users.tabs.permissions', icon: Plus },
     { id: 'profile' as const, labelKey: 'rbac.users.tabs.profile', icon: Sliders },
     { id: 'info' as const, labelKey: 'rbac.users.tabs.info', icon: User },
+    ...(showLogistics ? [{ id: 'logistics' as const, labelKey: 'rbac.users.tabs.logistics', icon: Truck }] : []),
     { id: 'ready' as const, labelKey: 'rbac.users.tabs.ready', icon: Activity },
   ];
 
@@ -841,29 +857,31 @@ const UserDetailPanel = ({ user, allRoles, profiles, catalog, onClose }: {
         </div>
       </div>
 
-      <div className="flex border-b border-gray-200 px-4">
+      <div className="flex border-b border-gray-200 px-4 overflow-x-auto">
         {TABS.map(({ id, labelKey, icon: Icon }) => (
           <button key={id} onClick={() => setTab(id)}
-            className={`flex items-center gap-1.5 px-3 py-2.5 text-sm font-medium border-b-2 -mb-px transition-colors ${
-              tab === id ? 'text-indigo-700 border-indigo-600' : 'text-gray-500 border-transparent hover:text-gray-700'
+            className={`flex items-center gap-1.5 px-3 py-2.5 text-sm font-medium border-b-2 -mb-px transition-colors shrink-0 whitespace-nowrap ${
+              activeTab === id ? 'text-indigo-700 border-indigo-600' : 'text-gray-500 border-transparent hover:text-gray-700'
             }`}>
-            <Icon className="w-3.5 h-3.5" />
+            <Icon className="w-3.5 h-3.5 shrink-0" />
             {t(labelKey)}
           </button>
         ))}
       </div>
 
       <div className="flex-1 overflow-y-auto p-5">
-        {tab === 'ready' ? (
+        {activeTab === 'ready' ? (
           <ReadyToWorkTab user={user} />
+        ) : activeTab === 'logistics' ? (
+          <LogisticsConfig user={user} vehicleEnabled={isVanRole} onSaved={() => setTab('ready')} />
         ) : loadingAccess ? (
           <div className="text-sm text-gray-400">{t('common.loading')}</div>
         ) : access ? (
           <>
-            {tab === 'roles' && <RolesTab userId={user.id} access={access} allRoles={allRoles} onRefresh={fetchAccess} />}
-            {tab === 'perms' && <PermsTab userId={user.id} access={access} catalog={catalog} onRefresh={fetchAccess} />}
-            {tab === 'profile' && <ProfileTab userId={user.id} access={access} profiles={profiles} currentProfileId={currentProfileId} onRefresh={fetchAccess} />}
-            {tab === 'info' && access && <UserInfoTab user={access.user} onRefresh={fetchAccess} />}
+            {activeTab === 'roles' && <RolesTab userId={user.id} access={access} allRoles={allRoles} onRefresh={fetchAccess} />}
+            {activeTab === 'perms' && <PermsTab userId={user.id} access={access} catalog={catalog} onRefresh={fetchAccess} />}
+            {activeTab === 'profile' && <ProfileTab userId={user.id} access={access} profiles={profiles} currentProfileId={currentProfileId} onRefresh={fetchAccess} />}
+            {activeTab === 'info' && access && <UserInfoTab user={access.user} onRefresh={fetchAccess} />}
           </>
         ) : (
           <p className="text-sm text-gray-400">{t('rbac.users.loadAccessError')}</p>

@@ -88,18 +88,29 @@ const DEFAULT_CENTER = { lat: 31.7917, lng: -7.0926 };
 const DEFAULT_ZOOM = 6;
 const GOOGLE_MAPS_LIBRARIES: ('geometry' | 'drawing')[] = ['geometry'];
 
-function makeIcon(color: string, selected = false): google.maps.Icon {
-    const size = 28;
+
+// Pin with optional count badge — used when multiple orders share the same GPS location.
+function makeGroupIcon(color: string, count: number, selected = false): google.maps.Icon {
+    const size = 32;
     const stroke = selected ? '#f59e0b' : 'white';
-    const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 0 ${size} ${size}">
-        <path d="M14 0C6.268 0 0 6.268 0 14c0 10.5 14 28 14 28s14-17.5 14-28C28 6.268 21.732 0 14 0z" fill="${color}" stroke="${stroke}" stroke-width="2"/>
-    </svg>`;
-    const url = `data:image/svg+xml;charset=UTF-8,${encodeURIComponent(svg)}`;
+    const pin = `<path d="M16 0C7.163 0 0 7.163 0 16c0 12 16 32 16 32s16-20 16-32C32 7.163 24.837 0 16 0z" fill="${color}" stroke="${stroke}" stroke-width="2"/>`;
+    const badge = count > 1
+        ? `<circle cx="26" cy="6" r="7" fill="white" stroke="${color}" stroke-width="1.5"/>
+           <text x="26" y="6.5" dominant-baseline="central" text-anchor="middle" fill="${color}" font-size="${count >= 10 ? 6 : 7.5}" font-weight="900" font-family="system-ui,sans-serif">${count}</text>`
+        : '';
+    const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 0 ${size} ${size}">${pin}${badge}</svg>`;
     return {
-        url,
+        url: `data:image/svg+xml;charset=UTF-8,${encodeURIComponent(svg)}`,
         scaledSize: new google.maps.Size(size, size),
         anchor: new google.maps.Point(size / 2, size),
     };
+}
+
+interface LocationGroup {
+    key: string;
+    lat: number;
+    lng: number;
+    orders: DispatcherOrder[];
 }
 
 export const OrdersMapView = ({
@@ -119,32 +130,13 @@ export const OrdersMapView = ({
     const [drawMode, setDrawMode] = useState(false);
     const [isTracing, setIsTracing] = useState(false);
     const [path, setPath] = useState<Array<[number, number]>>([]);
-    const [activeInfoId, setActiveInfoId] = useState<number | null>(null);
+    const [activeInfoId, setActiveInfoId] = useState<string | null>(null);
 
     const { isLoaded } = useJsApiLoader({
         googleMapsApiKey: GOOGLE_MAPS_API_KEY,
         libraries: GOOGLE_MAPS_LIBRARIES,
     });
 
-    // Icons must be created lazily — `google` is only available after the JS API loader finishes.
-    const { ICON_UNASSIGNED, ICON_UNASSIGNED_SEL, ICON_ASSIGNED, ICON_ASSIGNED_SEL, ICON_PICKED } = useMemo(() => {
-        if (!isLoaded) {
-            return {
-                ICON_UNASSIGNED: undefined,
-                ICON_UNASSIGNED_SEL: undefined,
-                ICON_ASSIGNED: undefined,
-                ICON_ASSIGNED_SEL: undefined,
-                ICON_PICKED: undefined,
-            };
-        }
-        return {
-            ICON_UNASSIGNED: makeIcon('#4f46e5'),
-            ICON_UNASSIGNED_SEL: makeIcon('#4f46e5', true),
-            ICON_ASSIGNED: makeIcon('#9ca3af'),
-            ICON_ASSIGNED_SEL: makeIcon('#9ca3af', true),
-            ICON_PICKED: makeIcon('#059669'),
-        };
-    }, [isLoaded]);
 
     const hasShape = path.length >= 3;
 
@@ -240,6 +232,20 @@ export const OrdersMapView = ({
     );
     const ordersNoGps = orders.length - ordersWithGps.length;
 
+    // Group orders that share the same GPS coordinate into one map pin.
+    const locationGroups = useMemo<LocationGroup[]>(() => {
+        const map = new Map<string, LocationGroup>();
+        for (const o of ordersWithGps) {
+            const lat = Number(o.partner.geo_lat);
+            const lng = Number(o.partner.geo_lng);
+            // 5-decimal precision ≈ 1 m — close enough to merge same-partner pins.
+            const key = `${lat.toFixed(5)},${lng.toFixed(5)}`;
+            if (!map.has(key)) map.set(key, { key, lat, lng, orders: [] });
+            map.get(key)!.orders.push(o);
+        }
+        return [...map.values()];
+    }, [ordersWithGps]);
+
     // Auto-fit to markers when orders change.
     useEffect(() => {
         const map = mapRef.current;
@@ -296,7 +302,7 @@ export const OrdersMapView = ({
             clustererRef.current?.setMap(null);
             clustererRef.current = null;
         };
-    }, [isLoaded, ordersWithGps.length]);
+    }, [isLoaded, locationGroups.length]);
 
     if (!isLoaded) {
         return (
@@ -334,7 +340,7 @@ export const OrdersMapView = ({
                 </button>
 
                 <span className="text-xs text-gray-400 ml-auto">
-                    {ordersWithGps.length} pin{ordersWithGps.length !== 1 ? 's' : ''}
+                    {ordersWithGps.length} BC{ordersWithGps.length !== 1 ? 's' : ''} · {locationGroups.length} localisation{locationGroups.length !== 1 ? 's' : ''}
                     {ordersNoGps > 0 && ` · ${ordersNoGps} sans GPS`}
                 </span>
 
@@ -393,61 +399,114 @@ export const OrdersMapView = ({
                         />
                     )}
 
-                    {ordersWithGps.map((order, idx) => {
-                        const lat = Number(order.partner.geo_lat);
-                        const lng = Number(order.partner.geo_lng);
-                        const isAssigned = false;
-                        const isPicked = multiMode && selectedIds!.includes(order.id);
-                        const isSel = !multiMode && order.id === selectedId;
-                        const icon = isPicked
-                            ? ICON_PICKED
-                            : isAssigned
-                            ? (isSel ? ICON_ASSIGNED_SEL : ICON_ASSIGNED)
-                            : (isSel ? ICON_UNASSIGNED_SEL : ICON_UNASSIGNED);
+                    {locationGroups.map((group, idx) => {
+                        const { key, lat, lng, orders: groupOrders } = group;
+                        const count = groupOrders.length;
+                        const firstOrder = groupOrders[0];
+
+                        const allPicked = multiMode && groupOrders.every(o => selectedIds!.includes(o.id));
+                        const somePicked = !allPicked && multiMode && groupOrders.some(o => selectedIds!.includes(o.id));
+                        const isSel = !multiMode && count === 1 && firstOrder.id === selectedId;
+
+                        const pinColor = allPicked ? '#059669' : somePicked ? '#d97706' : '#4f46e5';
+                        const icon = isLoaded ? makeGroupIcon(pinColor, count, isSel || allPicked) : undefined;
 
                         return (
                             <Marker
-                                key={order.id}
+                                key={key}
                                 position={{ lat, lng }}
                                 icon={icon}
-                                onLoad={(marker) => {
-                                    markerRefs.current[idx] = marker;
-                                }}
+                                onLoad={(marker) => { markerRefs.current[idx] = marker; }}
                                 onClick={() => {
-                                    if (!multiMode) {
-                                        onSelectOrder?.(order);
-                                    }
-                                    setActiveInfoId(order.id);
+                                    if (!multiMode && count === 1) onSelectOrder?.(firstOrder);
+                                    setActiveInfoId(activeInfoId === key ? null : key);
                                 }}
                             >
-                                {activeInfoId === order.id && (
+                                {activeInfoId === key && (
                                     <InfoWindow
                                         position={{ lat, lng }}
                                         onCloseClick={() => setActiveInfoId(null)}
                                     >
-                                        <div className="text-xs leading-snug min-w-[170px]">
-                                            <div className="font-bold text-indigo-700 mb-1">{order.order_code}</div>
-                                            <div className="font-medium text-gray-800">{order.partner.name}</div>
-                                            <div className="text-gray-500">{order.partner.city}</div>
-                                            {order.partner.delivery_zone && (
-                                                <div className="mt-1 text-sage-600 font-medium">{order.partner.delivery_zone}</div>
-                                            )}
-                                            <div className="mt-1 font-semibold text-gray-700">
-                                                {Number(order.total_amount).toLocaleString('fr-FR')} MAD
+                                        <div className="leading-snug" style={{ minWidth: 210, maxWidth: 290, fontFamily: 'system-ui,sans-serif' }}>
+                                            {/* Partner header */}
+                                            <div style={{ fontWeight: 700, fontSize: 13, color: '#111827', marginBottom: 2 }}>
+                                                {firstOrder.partner.name}
                                             </div>
-                                            {isAssigned && (
-                                                <div className="mt-1 text-amber-600 font-semibold">⚠ Déjà en DO</div>
+                                            {firstOrder.partner.address_line1 && (
+                                                <div style={{ fontSize: 11, color: '#6b7280', marginBottom: 4 }}>
+                                                    {firstOrder.partner.address_line1}
+                                                </div>
                                             )}
-                                            {multiMode && (
+                                            {firstOrder.partner.delivery_zone && (
+                                                <div style={{ fontSize: 11, color: '#059669', fontWeight: 600, marginBottom: 6 }}>
+                                                    {firstOrder.partner.delivery_zone}
+                                                </div>
+                                            )}
+
+                                            {/* Order list */}
+                                            <div style={{ borderTop: '1px solid #e5e7eb', marginBottom: count > 1 ? 6 : 0 }}>
+                                                {groupOrders.map(order => {
+                                                    const isPicked = multiMode && selectedIds!.includes(order.id);
+                                                    return (
+                                                        <div key={order.id} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 0', borderBottom: '1px solid #f3f4f6' }}>
+                                                            <div style={{ flex: 1, minWidth: 0 }}>
+                                                                <div style={{ fontWeight: 700, fontSize: 11, color: '#4338ca', letterSpacing: '0.01em' }}>
+                                                                    {order.order_code}
+                                                                </div>
+                                                                <div style={{ fontSize: 11, color: '#374151', fontWeight: 600 }}>
+                                                                    {Number(order.total_amount).toLocaleString('fr-FR')} MAD
+                                                                </div>
+                                                            </div>
+                                                            {multiMode ? (
+                                                                <button
+                                                                    onClick={() => onToggleOrder?.(order)}
+                                                                    style={{
+                                                                        flexShrink: 0,
+                                                                        display: 'flex', alignItems: 'center', gap: 3,
+                                                                        padding: '4px 8px', borderRadius: 6, border: 'none',
+                                                                        fontSize: 11, fontWeight: 700, cursor: 'pointer',
+                                                                        background: isPicked ? '#d1fae5' : '#4f46e5',
+                                                                        color: isPicked ? '#065f46' : 'white',
+                                                                    }}
+                                                                >
+                                                                    {isPicked ? '✓' : '+'}
+                                                                </button>
+                                                            ) : (
+                                                                <button
+                                                                    onClick={() => { onSelectOrder?.(order); setActiveInfoId(null); }}
+                                                                    style={{
+                                                                        flexShrink: 0,
+                                                                        padding: '4px 8px', borderRadius: 6, border: 'none',
+                                                                        fontSize: 11, fontWeight: 700, cursor: 'pointer',
+                                                                        background: '#4f46e5', color: 'white',
+                                                                    }}
+                                                                >
+                                                                    Voir
+                                                                </button>
+                                                            )}
+                                                        </div>
+                                                    );
+                                                })}
+                                            </div>
+
+                                            {/* Bulk select button for multi-order groups */}
+                                            {multiMode && count > 1 && (
                                                 <button
-                                                    onClick={() => onToggleOrder?.(order)}
-                                                    className={`mt-2 w-full flex items-center justify-center gap-1 px-2 py-1.5 rounded text-xs font-semibold transition-colors ${
-                                                        isPicked
-                                                            ? 'bg-emerald-100 text-emerald-700 hover:bg-emerald-200'
-                                                            : 'bg-sage-500 text-white hover:bg-sage-600'
-                                                    }`}
+                                                    onClick={() => {
+                                                        if (allPicked) {
+                                                            groupOrders.forEach(o => { if (selectedIds!.includes(o.id)) onToggleOrder?.(o); });
+                                                        } else {
+                                                            groupOrders.forEach(o => { if (!selectedIds!.includes(o.id)) onToggleOrder?.(o); });
+                                                        }
+                                                    }}
+                                                    style={{
+                                                        width: '100%', padding: '6px 0', borderRadius: 6, border: 'none',
+                                                        fontSize: 11, fontWeight: 700, cursor: 'pointer', textAlign: 'center',
+                                                        background: allPicked ? '#f3f4f6' : '#059669',
+                                                        color: allPicked ? '#6b7280' : 'white',
+                                                    }}
                                                 >
-                                                    {isPicked ? (<><Check className="w-3 h-3" /> Sélectionné</>) : (<><Plus className="w-3 h-3" /> Sélectionner</>)}
+                                                    {allPicked ? 'Tout désélectionner' : `Sélectionner les ${count} BCs`}
                                                 </button>
                                             )}
                                         </div>

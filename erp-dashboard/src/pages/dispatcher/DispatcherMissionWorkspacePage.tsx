@@ -230,7 +230,7 @@ const DraggableOrderRow = ({
             <CopyButton text={order.order_code} />
           </div>
           <div className="text-[11px] text-gray-500 truncate">
-            {order.partner.name}{order.partner.city ? ` · ${order.partner.city}` : ''}
+            {order.partner.name}
           </div>
           {order.salesperson_data?.salesperson?.name && (
             <div className="text-[10px] text-gray-400 truncate">{order.salesperson_data.salesperson.name}</div>
@@ -982,7 +982,6 @@ const BcDetailModal = ({ orderId, onClose }: { orderId: number; onClose: () => v
               {order && (
                 <p className="mt-0.5 text-sm text-sage-200 truncate">
                   {order.partner.name}
-                  {order.partner.city ? ` · ${order.partner.city}` : ''}
                   {order.order_date ? ` · ${fmtDate(order.order_date)}` : ''}
                 </p>
               )}
@@ -1051,8 +1050,7 @@ const BcDetailModal = ({ orderId, onClose }: { orderId: number; onClose: () => v
                 <p className="text-sm font-bold text-gray-900 mb-0.5 truncate">{order.partner.name}</p>
                 <p className="text-[11px] text-gray-400 font-mono mb-3">{order.partner.code}</p>
                 <div className="space-y-0.5">
-                  {order.partner.city    && infoRow('Ville',    order.partner.city)}
-                  {order.partner.address && infoRow('Adresse',  order.partner.address)}
+                  {order.partner.address_line1 && infoRow('Adresse', order.partner.address_line1)}
                   {area                  && infoRow('Zone',     area.name)}
                   {order.partner.delivery_zone && infoRow('Secteur', order.partner.delivery_zone)}
                   {itin && infoRow('Tournée', <span className="text-emerald-600">{itin.name}</span>)}

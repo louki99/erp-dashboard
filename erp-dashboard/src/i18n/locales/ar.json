@@ -500,6 +500,7 @@
         "permissions": "الصلاحيات",
         "profile": "ملف الوصول",
         "info": "المعلومات",
+        "logistics": "اللوجستيك",
         "ready": "جاهز للعمل"
       },
       "createTitle": "مستخدم جديد",
@@ -523,6 +524,7 @@
       "logisticsWarehouse": "المستودع الرئيسي",
       "logisticsWarehouseRequired": "اختر مستودعاً رئيسياً",
       "logisticsVehicle": "المركبة (اختياري)",
+      "logisticsVehicleNa": "غير قابل للتطبيق لدور ما قبل البيع (بدون مركبة).",
       "logisticsNoVehicle": "لا توجد مركبة",
       "logisticsAssigned": "مُعيَّنة بالفعل",
       "logisticsRole": "الدور اللوجستي",

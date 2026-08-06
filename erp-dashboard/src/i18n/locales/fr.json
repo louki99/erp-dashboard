@@ -500,6 +500,7 @@
         "permissions": "Permissions",
         "profile": "Profil d'accès",
         "info": "Informations",
+        "logistics": "Logistique",
         "ready": "Prêt au travail"
       },
       "createTitle": "Nouvel utilisateur",
@@ -523,6 +524,7 @@
       "logisticsWarehouse": "Entrepôt principal",
       "logisticsWarehouseRequired": "Sélectionnez un entrepôt principal",
       "logisticsVehicle": "Véhicule (optionnel)",
+      "logisticsVehicleNa": "Non applicable pour un rôle pré-vente (pas de véhicule).",
       "logisticsNoVehicle": "Aucun véhicule",
       "logisticsAssigned": "déjà affecté",
       "logisticsRole": "Rôle logistique",

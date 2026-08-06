@@ -500,6 +500,7 @@
         "permissions": "Permissions",
         "profile": "Access profile",
         "info": "Information",
+        "logistics": "Logistics",
         "ready": "Ready to work"
       },
       "createTitle": "New user",
@@ -523,6 +524,7 @@
       "logisticsWarehouse": "Primary warehouse",
       "logisticsWarehouseRequired": "Select a primary warehouse",
       "logisticsVehicle": "Vehicle (optional)",
+      "logisticsVehicleNa": "Not applicable for a pre-selling role (no vehicle).",
       "logisticsNoVehicle": "No vehicle",
       "logisticsAssigned": "already assigned",
       "logisticsRole": "Logistics role",

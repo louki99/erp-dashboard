@@ -118,6 +118,36 @@ export interface Vehicle {
   has_active_shipments?: boolean;
 }
 
+// POST /api/backend/dispatcher/vehicles (root/admin/supervisor only). A `van` type
+// auto-provisions its warehouse + storage location server-side; truck/motorcycle don't.
+export interface CreateVehiclePayload {
+  plate_number: string;
+  make: string;
+  model: string;
+  year: number;
+  type: 'van' | 'truck' | 'motorcycle';
+  internal_code?: string;
+  branch_code: string;
+  cold_chain_enabled?: boolean;
+  payload_kg?: number | null;
+  fuel_type?: string;
+  // Physical capacity fields accepted by POST/PUT since 2026-08 (docs §12d-bis).
+  capacity_volume?: number | null;
+  capacity_weight?: number | null;
+  capacity_length?: number | null;
+  capacity_width?: number | null;
+  capacity_height?: number | null;
+  usable_volume_ratio?: number | null;
+  loading_efficiency_ratio?: number | null;
+}
+
+// PUT/PATCH /api/backend/dispatcher/vehicles/{id} (root/admin/supervisor only, 2026-08-01).
+// Same fields as create but ALL optional — send only what changes. `status` is editable here
+// (active/maintenance/retired); DELETE is a soft-retire, so this is the way to reactivate too.
+export type UpdateVehiclePayload = Partial<CreateVehiclePayload> & {
+  status?: 'active' | 'maintenance' | 'retired';
+};
+
 // ─── Fleet & Rider Master Data (docs §12d) — unaffected by the 2026-06-20 migration ───────────
 
 export interface Branch {
@@ -144,10 +174,10 @@ export interface RiderFull {
 export interface RiderWithVehicles {
   id: number;
   name: string;
-  last_name?: string;
+  // Backend replaced `last_name` with `code` here (2026-08-01) — rider matricule, e.g. "LIV000012".
+  // Nullable: legacy/demo riders may have no code yet.
+  code?: string | null;
   phone?: string;
-  email?: string;
-  branch_code?: string;
   branch?: Branch;
   is_active: boolean;
   vehicles: Vehicle[];
@@ -257,14 +287,10 @@ export interface DispatcherOrderGeoArea {
 }
 
 export interface DispatcherOrderFinancialMetadata {
-  id?: number;
-  order_id?: number;
   is_credit_sale: boolean;
   payment_term_id?: number | null;
+  // Returned by the detail endpoint only (/orders/{id}), not by the list (/orders/pending)
   payment_method?: string | null;
-  stamp_duty?: string | number | null;
-  avoir_id?: number | null;
-  approved_by?: number | null;
 }
 
 export interface DispatcherOrder {
@@ -291,8 +317,7 @@ export interface DispatcherOrder {
     id?: number;
     code: string;
     name: string;
-    city?: string;
-    address?: string;
+    address_line1?: string;
     geo_lat?: string | number | null;
     geo_lng?: string | number | null;
     delivery_zone?: string | null;

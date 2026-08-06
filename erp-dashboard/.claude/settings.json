@@ -44,7 +44,18 @@
       "Bash(node -e \"const o=JSON.parse\\(require\\('fs'\\).readFileSync\\('src/i18n/locales/fr.json','utf8'\\)\\); const u=o.rbac&&o.rbac.users; console.log\\('users keys:', u?Object.keys\\(u\\).join\\(','\\):'NONE'\\); console.log\\('tabs:', u&&u.tabs?Object.keys\\(u.tabs\\).join\\(','\\):'NONE'\\); console.log\\('noProfile:', u&&u.noProfile\\); console.log\\('common.selectPlaceholder:', o.common&&o.common.selectPlaceholder\\); console.log\\('common.creating:', o.common&&o.common.creating\\)\")",
       "Bash(rm -f tsc_rbac.txt)",
       "Bash(rm -f tsc_wh.txt)",
-      "Bash(rm -f tsc_log.txt)"
+      "Bash(rm -f tsc_log.txt)",
+      "Bash(rm -f tsc_wh2.txt)",
+      "Bash(rm -f tsc_tab.txt)",
+      "Bash(rm -f tsc_role.txt)",
+      "Bash(rm -f tsc_veh.txt)",
+      "Bash(rm -f tsc_veh2.txt)",
+      "Bash(rm -f tsc_am.txt)",
+      "Bash([ -s \"$F\" ])",
+      "Bash(node -e \"const fs=require\\('fs'\\);const d=fs.readFileSync\\('d:/project__avenir/omni360/omin360__mobile/erp-dashboard/erp-dashboard/localStorage.json','utf8'\\) catch\\(\\(\\)=>'{}'\\);console.log\\(JSON.parse\\(d\\).erp_token||''\\)\")",
+      "Bash(curl -s http://localhost:8000/api/backend/dispatcher/orders/131 -H \"Authorization: Bearer $\\(node -e \"const fs=require\\('fs'\\);const d=fs.readFileSync\\('d:/project__avenir/omni360/omin360__mobile/erp-dashboard/erp-dashboard/localStorage.json','utf8'\\) catch\\(\\(\\)=>'{}'\\);console.log\\(JSON.parse\\(d\\).erp_token||''\\)\" \\)\")",
+      "Bash(curl -s http://localhost:8000/api/backend/dispatcher/orders/131)",
+      "Bash(python -m json.tool)"
     ]
   }
 }

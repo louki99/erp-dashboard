@@ -19,6 +19,7 @@ import {
   Package,
   PackageCheck,
   Radio,
+  Route,
   RotateCcw,
   ScanLine,
   Settings,
@@ -564,6 +565,7 @@ export const MENU_MODULES: MenuModule[] = [
         title: 'Planification',
         items: [
           { id: 'dispatcher:planif', label: 'Planification auto', route: '/dispatcher/mission-planning' },
+          { id: 'dispatcher:route-optimizer', label: 'Optimisation des tournées', route: '/dispatcher/route-optimizer', icon: Route, description: 'Calcule les tournées optimales via le solveur VRP (distance, durée, capacité)' },
         ],
       },
     ],

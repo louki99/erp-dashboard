@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { dispatcherApi } from '@/services/api/dispatcherApi';
-import type { ApiSuccessResponse, RiderWithVehicles, Vehicle } from '@/types/dispatcher.types';
+import type { ApiSuccessResponse, RiderWithVehicles, Vehicle, CreateVehiclePayload, UpdateVehiclePayload } from '@/types/dispatcher.types';
 
 export const useRidersWithVehicles = (filters?: { branch_code?: string; status?: string; search?: string }) => {
   const [data, setData] = useState<RiderWithVehicles[]>([]);
@@ -88,4 +88,34 @@ export const useUpdateAssignment = () => {
     finally { setLoading(false); }
   };
   return { update, loading };
+};
+
+export const useCreateVehicle = () => {
+  const [loading, setLoading] = useState(false);
+  const create = async (payload: CreateVehiclePayload) => {
+    setLoading(true);
+    try { return await dispatcherApi.vehicles.create(payload); }
+    finally { setLoading(false); }
+  };
+  return { create, loading };
+};
+
+export const useUpdateVehicle = () => {
+  const [loading, setLoading] = useState(false);
+  const update = async (id: number, payload: UpdateVehiclePayload) => {
+    setLoading(true);
+    try { return await dispatcherApi.vehicles.update(id, payload); }
+    finally { setLoading(false); }
+  };
+  return { update, loading };
+};
+
+export const useRetireVehicle = () => {
+  const [loading, setLoading] = useState(false);
+  const retire = async (id: number) => {
+    setLoading(true);
+    try { return await dispatcherApi.vehicles.retire(id); }
+    finally { setLoading(false); }
+  };
+  return { retire, loading };
 };

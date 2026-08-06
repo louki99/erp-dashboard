@@ -576,8 +576,7 @@ const OrderDetailPanel = ({
             >
                 <InfoRow label="Nom" value={order.partner?.name} />
                 <InfoRow label="Code" value={order.partner?.code} />
-                <InfoRow label="Ville" value={order.partner?.city} />
-                {order.partner?.address && <InfoRow label="Adresse" value={order.partner.address} />}
+                {order.partner?.address_line1 && <InfoRow label="Adresse" value={order.partner.address_line1} />}
                 <InfoRow label="Zone livraison" value={zone !== '—' ? zone : undefined} />
                 {order.partner?.geo_area && (
                     <InfoRow label="Secteur" value={`${order.partner.geo_area.name} (${order.partner.geo_area.code})`} />
@@ -804,14 +803,6 @@ export const DispatcherOrdersPage = () => {
             minWidth: 150,
             cellRenderer: (p: { value: string }) => (
                 <span className="font-medium text-gray-900 truncate">{p.value ?? '—'}</span>
-            ),
-        },
-        {
-            field: 'partner.city',
-            headerName: 'Ville',
-            width: 100,
-            cellRenderer: (p: { value?: string }) => (
-                <span className="text-xs text-gray-500">{p.value ?? '—'}</span>
             ),
         },
         {

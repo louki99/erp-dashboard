@@ -15,6 +15,9 @@ import type {
   RiderWithVehicles,
   Branch,
   Vehicle,
+  DeliveryMission,
+  CreateVehiclePayload,
+  UpdateVehiclePayload,
   ApiSuccessResponse,
   SplitBlPayload,
   CancelBlPayload,
@@ -307,6 +310,25 @@ export const dispatcherApi = {
     getList: async (): Promise<Vehicle[]> => {
       const r = await apiClient.get<{ success: boolean; data: Vehicle[] }>(`${BASE}/vehicles`);
       return r.data?.data ?? [];
+    },
+    // POST /api/backend/dispatcher/vehicles — root/admin/supervisor only (403 otherwise).
+    // 422 with Laravel `errors` shape on validation (e.g. duplicate plate_number).
+    create: async (payload: CreateVehiclePayload): Promise<{ success: boolean; message?: string; data: Vehicle }> => {
+      const r = await apiClient.post<{ success: boolean; message?: string; data: Vehicle }>(`${BASE}/vehicles`, payload);
+      return r.data;
+    },
+    // PUT /api/backend/dispatcher/vehicles/{id} — root/admin/supervisor only. All fields optional,
+    // send only what changes. plate_number/internal_code stay unique. Same 422 `errors` shape.
+    update: async (id: number, payload: UpdateVehiclePayload): Promise<{ success: boolean; message?: string; data: Vehicle }> => {
+      const r = await apiClient.put<{ success: boolean; message?: string; data: Vehicle }>(`${BASE}/vehicles/${id}`, payload);
+      return r.data;
+    },
+    // DELETE /api/backend/dispatcher/vehicles/{id} — NOT a hard delete: soft-retires the vehicle
+    // (status → "retired"), preserving its assignment history. 422 error_code
+    // DISPATCHER_VEHICLE_ASSIGNED if still assigned to a rider — unassign first, then retry.
+    retire: async (id: number): Promise<{ success: boolean; message?: string }> => {
+      const r = await apiClient.delete<{ success: boolean; message?: string }>(`${BASE}/vehicles/${id}`);
+      return r.data;
     },
   },
 

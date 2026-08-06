@@ -177,7 +177,10 @@ export interface WarehouseFilters {
 export interface CreateWarehousePayload {
     branch_id: number;
     name: string;
-    type?: WarehouseType;
+    // delivery_van is intentionally NOT creatable here — POST /warehouses rejects it
+    // (DB CHECK: a van warehouse must have a vehicle_id). Van warehouses are auto-
+    // provisioned via POST /rbac/users/{id}/logistics with a vehicle_id.
+    type?: 'central' | 'system_virtual';
     code?: string;
     is_active?: boolean;
 }
