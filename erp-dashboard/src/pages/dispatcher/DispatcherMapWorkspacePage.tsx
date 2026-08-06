@@ -155,6 +155,7 @@ export const DispatcherMapWorkspacePage = () => {
               selectedIds={selectedOrderIds}
               onToggleOrder={toggleOrder}
               onPolygonChange={handlePolygonChange}
+              depot={{ lat: 33.5731, lng: -7.5898 }}
             />
           )}
         </div>
