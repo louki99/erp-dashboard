@@ -2,8 +2,7 @@
  * OrdersMapView — dispatcher map with:
  *  • Location grouping: multiple BCs at same address → one pin with count badge
  *  • Zone coloring: pins colored by geo_area / itinerary, with legend strip
- *  • OSRM route preview: when 2+ orders selected, draws driving route with
- *    distance + duration banner (OSRM at localhost:5000)
+ *  • Route preview: when 2+ orders selected, draws straight-line path between stops
  *  • Freehand lasso zone selection
  *  • MarkerClusterer for dense zoom levels
  */
@@ -18,7 +17,7 @@ import {
     Polyline as GPolyline,
 } from '@react-google-maps/api';
 import { MarkerClusterer } from '@googlemaps/markerclusterer';
-import { MousePointer2, Trash2, Navigation, Loader2 } from 'lucide-react';
+import { MousePointer2, Trash2, Navigation } from 'lucide-react';
 
 import { GOOGLE_MAPS_API_KEY } from '@/config/googleMaps';
 import type { DispatcherOrder } from '@/types/dispatcher.types';
@@ -65,7 +64,6 @@ export interface MapBbox {
 const DEFAULT_CENTER = { lat: 31.7917, lng: -7.0926 }; // Morocco center
 const DEFAULT_ZOOM = 6;
 const GOOGLE_MAPS_LIBRARIES: ('geometry' | 'drawing')[] = ['geometry'];
-const OSRM_BASE = 'http://localhost:5000';
 
 // 10 distinct, colorblind-friendly zone colors
 const ZONE_PALETTE = [
@@ -112,8 +110,7 @@ interface LocationGroup {
 
 interface RoutePreview {
     path: { lat: number; lng: number }[];
-    distanceM: number;
-    durationS: number;
+    stopCount: number;
 }
 
 // ─── Component ────────────────────────────────────────────────────────────────
@@ -153,8 +150,6 @@ export const OrdersMapView = ({
     const [isTracing,    setIsTracing]    = useState(false);
     const [path,         setPath]         = useState<Array<[number, number]>>([]);
     const [activeInfoId, setActiveInfoId] = useState<string | null>(null);
-    const [routePreview, setRoutePreview] = useState<RoutePreview | null>(null);
-    const [routeLoading, setRouteLoading] = useState(false);
 
     const { isLoaded } = useJsApiLoader({
         googleMapsApiKey: GOOGLE_MAPS_API_KEY,
@@ -229,44 +224,20 @@ export const OrdersMapView = ({
         return [...map.values()];
     }, [ordersWithGps]);
 
-    // ── OSRM route preview ──────────────────────────────────────────────────
+    // ── Straight-line route preview (no backend needed) ─────────────────────
+    // Draws a dashed line connecting selected stops in order.
+    // Actual road routing is handled by the Route Optimizer page.
 
-    const fetchRoute = useCallback(async (ids: number[]) => {
-        const selected = ordersWithGps.filter(o => ids.includes(o.id));
-        if (selected.length < 2) { setRoutePreview(null); return; }
-
-        const pts: string[] = [];
-        if (depot) pts.push(`${depot.lng},${depot.lat}`);
-        selected.forEach(o => pts.push(`${Number(o.partner.geo_lng)},${Number(o.partner.geo_lat)}`));
-        if (depot) pts.push(`${depot.lng},${depot.lat}`); // return to depot
-
-        setRouteLoading(true);
-        try {
-            const res  = await fetch(`${OSRM_BASE}/route/v1/driving/${pts.join(';')}?overview=full&geometries=geojson&steps=false`);
-            const data = await res.json();
-            if (data.routes?.[0]) {
-                const r = data.routes[0];
-                setRoutePreview({
-                    path: (r.geometry.coordinates as [number, number][]).map(([lng, lat]) => ({ lat, lng })),
-                    distanceM: r.distance,
-                    durationS: r.duration,
-                });
-            }
-        } catch {
-            setRoutePreview(null);
-        } finally {
-            setRouteLoading(false);
-        }
-    }, [ordersWithGps, depot]);
-
-    const selectedKey = selectedIds?.join(',') ?? '';
-    useEffect(() => {
-        if (!multiMode || !selectedIds || selectedIds.length < 2) {
-            setRoutePreview(null);
-            return;
-        }
-        fetchRoute(selectedIds);
-    }, [multiMode, selectedKey]); // eslint-disable-line react-hooks/exhaustive-deps
+    const routePreview = useMemo<RoutePreview | null>(() => {
+        if (!multiMode || !selectedIds || selectedIds.length < 2) return null;
+        const selected = ordersWithGps.filter(o => selectedIds.includes(o.id));
+        if (selected.length < 2) return null;
+        const pts: { lat: number; lng: number }[] = [];
+        if (depot) pts.push({ lat: depot.lat, lng: depot.lng });
+        selected.forEach(o => pts.push({ lat: Number(o.partner.geo_lat), lng: Number(o.partner.geo_lng) }));
+        if (depot) pts.push({ lat: depot.lat, lng: depot.lng });
+        return { path: pts, stopCount: selected.length };
+    }, [multiMode, selectedIds, ordersWithGps, depot]);
 
     // ── Lasso helpers ───────────────────────────────────────────────────────
 
@@ -362,14 +333,6 @@ export const OrdersMapView = ({
         return () => { clustererRef.current?.setMap(null); clustererRef.current = null; };
     }, [isLoaded, locationGroups.length, clustererRenderer]);
 
-    // ── Formatters ─────────────────────────────────────────────────────────
-
-    const fmtDist = (m: number) => m >= 1000 ? `${(m / 1000).toFixed(1)} km` : `${Math.round(m)} m`;
-    const fmtDur  = (s: number) => {
-        const h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60);
-        return h > 0 ? `${h}h${String(m).padStart(2, '0')}` : `${m} min`;
-    };
-
     // ─────────────────────────────────────────────────────────────────────────
 
     if (!isLoaded) {
@@ -380,57 +343,54 @@ export const OrdersMapView = ({
         <div className="h-full flex flex-col">
 
             {/* ── Toolbar ──────────────────────────────────────────────────── */}
-            <div className="flex items-center gap-2 px-3 py-2 bg-white border-b border-gray-100 shrink-0 flex-wrap gap-y-1.5">
+            <div className="flex items-center gap-2 px-3 py-2 bg-white border-b border-gray-100 shrink-0">
 
                 {/* Lasso button */}
                 <button
                     onClick={toggleDrawMode}
-                    className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg transition-colors ${
-                        isTracing       ? 'bg-amber-500 text-white'
-                        : hasShape      ? 'bg-red-500 text-white hover:bg-red-600'
-                        : drawMode      ? 'bg-amber-500 text-white hover:bg-amber-600'
-                        : 'bg-sage-500 text-white hover:bg-sage-600'
+                    className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg transition-colors shrink-0 ${
+                        isTracing  ? 'bg-amber-500 text-white'
+                        : hasShape ? 'bg-red-500 text-white hover:bg-red-600'
+                        : drawMode ? 'bg-amber-400 text-white hover:bg-amber-500'
+                        : 'bg-gray-100 text-gray-700 hover:bg-gray-200 border border-gray-200'
                     }`}
                 >
-                    {hasShape   ? <><Trash2       className="w-3.5 h-3.5" /> Effacer zone</>
-                    : isTracing  ? <><MousePointer2 className="w-3.5 h-3.5" /> Tracé en cours…</>
-                    : drawMode   ? <><MousePointer2 className="w-3.5 h-3.5" /> Cliquez, maintenez, glissez</>
-                    :              <><MousePointer2 className="w-3.5 h-3.5" /> Dessiner une zone</>}
+                    {hasShape
+                        ? <><Trash2 className="w-3.5 h-3.5" /> Effacer zone</>
+                        : isTracing
+                        ? <><MousePointer2 className="w-3.5 h-3.5" /> Tracé…</>
+                        : drawMode
+                        ? <><MousePointer2 className="w-3.5 h-3.5" /> Maintenir &amp; glisser</>
+                        : <><MousePointer2 className="w-3.5 h-3.5" /> Dessiner une zone</>}
                 </button>
 
-                {/* OSRM route banner */}
-                {multiMode && routeLoading && (
-                    <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-blue-50 border border-blue-200 text-xs text-blue-600 font-medium">
-                        <Loader2 className="w-3 h-3 animate-spin" /> Calcul itinéraire…
+                {/* Route preview pill */}
+                {multiMode && routePreview && (
+                    <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-emerald-50 border border-emerald-200 text-[11px] font-semibold text-emerald-700 shrink-0">
+                        <Navigation className="w-3 h-3" />
+                        {routePreview.stopCount} arrêt{routePreview.stopCount > 1 ? 's' : ''}
+                        <span className="text-emerald-400 font-normal">· vol d'oiseau</span>
                     </div>
                 )}
-                {multiMode && routePreview && !routeLoading && (
-                    <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-emerald-50 border border-emerald-200 text-xs font-semibold text-emerald-700">
-                        <Navigation className="w-3.5 h-3.5 shrink-0" />
-                        <span>{fmtDist(routePreview.distanceM)}</span>
-                        <span className="text-emerald-300">·</span>
-                        <span>~{fmtDur(routePreview.durationS)}</span>
-                        {depot && <span className="text-emerald-500 font-normal text-[10px]">aller-retour dépôt</span>}
-                    </div>
-                )}
+
+                <div className="flex-1" />
 
                 {/* Stats */}
-                <span className="text-xs text-gray-400 ml-auto">
+                <span className="text-[11px] text-gray-400 whitespace-nowrap">
                     {ordersWithGps.length} BC{ordersWithGps.length !== 1 ? 's' : ''}
-                    {locationGroups.length !== ordersWithGps.length && ` · ${locationGroups.length} localisation${locationGroups.length !== 1 ? 's' : ''}`}
-                    {ordersNoGps > 0 && <span className="text-amber-500"> · {ordersNoGps} sans GPS</span>}
+                    {locationGroups.length !== ordersWithGps.length && ` · ${locationGroups.length} loc.`}
+                    {ordersNoGps > 0 && <span className="text-amber-500"> · {ordersNoGps} ∅GPS</span>}
                 </span>
 
-                {/* Selection legend */}
-                {multiMode ? (
-                    <span className="flex items-center gap-1 text-xs text-gray-500">
-                        <span className="inline-block w-2.5 h-2.5 rounded-full bg-emerald-500" /> Sélectionné
-                    </span>
-                ) : (
-                    <span className="flex items-center gap-1 text-xs text-gray-500">
-                        <span className="inline-block w-2.5 h-2.5 rounded-full bg-blue-400" /> Par zone
-                    </span>
-                )}
+                {/* Legend pill */}
+                <span className={`flex items-center gap-1.5 text-[11px] font-medium px-2 py-0.5 rounded-full border shrink-0 ${
+                    multiMode
+                        ? 'text-emerald-700 bg-emerald-50 border-emerald-200'
+                        : 'text-blue-600 bg-blue-50 border-blue-200'
+                }`}>
+                    <span className={`inline-block w-2 h-2 rounded-full ${multiMode ? 'bg-emerald-500' : 'bg-blue-400'}`} />
+                    {multiMode ? 'Sélectionné' : 'Par zone'}
+                </span>
             </div>
 
             {/* ── Zone legend strip ─────────────────────────────────────────── */}
@@ -472,27 +432,34 @@ export const OrdersMapView = ({
                         />
                     )}
 
-                    {/* OSRM route preview — dashed emerald line with direction arrows */}
+                    {/* Straight-line route preview — dashed emerald with directional arrows */}
                     {routePreview && (
                         <GPolyline
                             path={routePreview.path}
                             options={{
                                 strokeColor: '#10b981',
-                                strokeOpacity: 0.9,
-                                strokeWeight: 4,
+                                strokeOpacity: 0,
+                                strokeWeight: 0,
                                 geodesic: true,
-                                icons: [{
-                                    icon: {
-                                        path: google.maps.SymbolPath.FORWARD_CLOSED_ARROW,
-                                        scale: 3,
-                                        fillColor: '#10b981',
-                                        fillOpacity: 1,
-                                        strokeColor: 'white',
-                                        strokeWeight: 1,
+                                icons: [
+                                    {
+                                        icon: { path: 'M 0,-1 0,1', strokeColor: '#10b981', strokeWeight: 3, strokeOpacity: 0.75, scale: 4 },
+                                        offset: '0',
+                                        repeat: '16px',
                                     },
-                                    offset: '50%',
-                                    repeat: '100px',
-                                }],
+                                    {
+                                        icon: {
+                                            path: google.maps.SymbolPath.FORWARD_CLOSED_ARROW,
+                                            scale: 3,
+                                            fillColor: '#10b981',
+                                            fillOpacity: 0.9,
+                                            strokeColor: 'white',
+                                            strokeWeight: 1,
+                                        },
+                                        offset: '50%',
+                                        repeat: '120px',
+                                    },
+                                ],
                             }}
                         />
                     )}

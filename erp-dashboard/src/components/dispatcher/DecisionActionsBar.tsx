@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { AlertCircle, Loader2, Pencil, CheckCircle2, Route, Trash2, Send, X, Truck, User, Package, AlertTriangle } from 'lucide-react';
 import toast from 'react-hot-toast';
 
@@ -576,6 +576,32 @@ const DecisionFormModal = ({
 export type DecisionExecutor = (id: number, decision: string, extra?: Record<string, unknown>) => Promise<{ success: boolean; message: string; output?: unknown }>;
 export type DecisionsFetcher = (id: number) => Promise<{ decisions: DoDecisionItem[] }>;
 
+// ─── Module-level decisions cache ────────────────────────────────────────────
+// Keyed by (fetchDecisions fn reference, subjectId) → 30-second TTL.
+// Prevents redundant requests when a collapsed row is re-expanded, when a
+// parent re-renders due to search/sync, or when multiple BLs mount together.
+// Entries are force-invalidated after a decision is executed so the next
+// render gets fresh data.
+const _decisionsCache = new Map<DecisionsFetcher, Map<number, { data: DoDecisionItem[]; ts: number }>>();
+const CACHE_TTL = 30_000;
+
+function cacheRead(fn: DecisionsFetcher, id: number): DoDecisionItem[] | null {
+    const entry = _decisionsCache.get(fn)?.get(id);
+    if (!entry || Date.now() - entry.ts > CACHE_TTL) return null;
+    return entry.data;
+}
+
+function cacheWrite(fn: DecisionsFetcher, id: number, data: DoDecisionItem[]): void {
+    let inner = _decisionsCache.get(fn);
+    if (!inner) { inner = new Map(); _decisionsCache.set(fn, inner); }
+    inner.set(id, { data, ts: Date.now() });
+}
+
+function cacheInvalidate(fn: DecisionsFetcher, id: number): void {
+    _decisionsCache.get(fn)?.delete(id);
+}
+// ─────────────────────────────────────────────────────────────────────────────
+
 /**
  * Model-agnostic "available decisions" action bar — fetches the live decision list for a
  * subject (DO / LOT / BCH / BL) from the workflow engine and renders one button per decision,
@@ -614,16 +640,33 @@ export const DecisionActionsBar = ({
 
   const decisions = passedDecisions ?? fetchedDecisions;
 
-  const refetch = () => {
-    if (!fetchDecisions) return;
+  // Keep a ref so refetch always uses the latest fetchDecisions without being
+  // listed as an effect dependency (which would cause re-fires on every render
+  // when the caller passes an inline arrow function).
+  const fetchRef = useRef(fetchDecisions);
+  fetchRef.current = fetchDecisions;
+
+  const refetch = useCallback((force = false) => {
+    const fn = fetchRef.current;
+    if (!fn) return;
+    if (!force) {
+      const cached = cacheRead(fn, subjectId);
+      if (cached) { setFetchedDecisions(cached); setLoading(false); return; }
+    }
     setLoading(true);
-    fetchDecisions(subjectId)
-      .then((res) => setFetchedDecisions(res.decisions ?? []))
+    fn(subjectId)
+      .then((res) => {
+        const data = res.decisions ?? [];
+        cacheWrite(fn, subjectId, data);
+        setFetchedDecisions(data);
+      })
       .catch(() => setFetchedDecisions([]))
       .finally(() => setLoading(false));
-  };
+  }, [subjectId]); // only subjectId — fetchRef is a stable ref, never a dep
 
-  useEffect(() => { refetch(); }, [subjectId, fetchDecisions]);
+  // Fetch on mount and whenever the subject changes. fetchDecisions identity
+  // changes (inline arrows) no longer trigger this.
+  useEffect(() => { refetch(); }, [refetch]);
 
   const run = async (decision: string, extra?: Record<string, unknown>) => {
     setExecuting(true);
@@ -714,8 +757,11 @@ export const DecisionActionsBar = ({
         const isTerminal = /^(cancel|complete)_/.test(decision);
         if (isTerminal) {
           if (!passedDecisions) setFetchedDecisions([]);
+          // Invalidate so the next expand gets fresh data if the component remounts
+          if (fetchRef.current) cacheInvalidate(fetchRef.current, subjectId);
         } else {
-          refetch();
+          // Force-bypass cache — decisions just changed after the action
+          refetch(true);
         }
       } else {
         toast.error(res.message || 'Action refusée');

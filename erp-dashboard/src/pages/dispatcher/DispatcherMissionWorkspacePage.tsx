@@ -24,13 +24,14 @@ import { BlDetailModal } from '@/components/dispatcher/BlDetailModal';
 import { ShortageAllocationModal } from '@/components/dispatcher/ShortageAllocationModal';
 import { computeMissionLoad } from '@/utils/missionLoad';
 import { dispatcherApi } from '@/services/api/dispatcherApi';
-import { useDispatcherPendingOrders, useDispatcherOrderDetail } from '@/hooks/dispatcher/useDispatcherOrders';
+import { useDispatcherOrderDetail } from '@/hooks/dispatcher/useDispatcherOrders';
+import { useLocalDispatcherOrders } from '@/hooks/dispatcher/useLocalDispatcherOrders';
 import { useRidersWithVehicles } from '@/hooks/dispatcher/useDispatcherFleet';
 import {
   useDeliveryMissionsList,
   useCreateDeliveryMission,
 } from '@/hooks/dispatcher/useDispatcherDeliveryMissions';
-import type { DeliveryMission, DispatcherOrder, OrdersPendingFilters, ReviewPartialPreparationOutput } from '@/types/dispatcher.types';
+import type { DeliveryMission, DispatcherOrder, ReviewPartialPreparationOutput } from '@/types/dispatcher.types';
 
 // ─── BC → Delivery Mission workspace (docs §8.1, 2026-06-20) ──────────────────
 // Replaces the old two-screen Planning/Loading split: rider + vehicle are now picked at mission
@@ -642,7 +643,7 @@ const MissionCard = ({
           <DecisionActionsBar
             subjectId={mission.id}
             subjectLabel={mission.mission_number}
-            fetchDecisions={() => dispatcherApi.deliveryMissions.getDecisions(mission.id)}
+            fetchDecisions={dispatcherApi.deliveryMissions.getDecisions}
             executeDecision={dispatcherApi.deliveryMissions.executeDecision}
             onActionDone={onRefresh}
             missionContext={{
@@ -1163,9 +1164,9 @@ const BcDetailModal = ({ orderId, onClose }: { orderId: number; onClose: () => v
                   <div className="divide-y divide-gray-50">
                     {products.map((item, idx) => {
                       const qty       = Number(item.quantity);
-                      const unitP     = item.final_price ?? item.price;
-                      const lineTotal = qty * unitP;
-                      const hasPromo  = item.final_price != null && item.final_price !== item.price;
+                      const unitP     = Number(item.final_price ?? item.price);
+                      const lineTotal = item.total_price != null ? Number(item.total_price) : qty * unitP;
+                      const hasPromo  = item.final_price != null && Number(item.final_price) !== Number(item.price);
                       const ref       = item.product?.code ?? item.product?.sku;
                       return (
                         <div
@@ -1280,11 +1281,6 @@ export const DispatcherMissionWorkspacePage = () => {
   const [itineraryIds, setItineraryIds] = useState<number[]>([]);
   const [salespersonIds, setSalespersonIds] = useState<number[]>([]);
 
-  const orderFilters = useMemo<OrdersPendingFilters>(() => ({
-    per_page: 100,
-    search: search || undefined,
-  }), [search]);
-
   const activeFilterCount = [search, city].filter(Boolean).length
     + (itineraryIds.length > 0 ? 1 : 0) + (salespersonIds.length > 0 ? 1 : 0);
 
@@ -1293,8 +1289,17 @@ export const DispatcherMissionWorkspacePage = () => {
     setItineraryIds([]); setSalespersonIds([]);
   };
 
-  const { data: pendingData, loading: ordersLoading, refetch: refetchOrders } = useDispatcherPendingOrders(orderFilters);
-  const allOrders = pendingData?.data ?? [];
+  const { orders: rawOrders, loading: ordersLoading, syncing, refetch: refetchOrders } = useLocalDispatcherOrders();
+  // Apply search client-side — all orders are cached locally
+  const allOrders = useMemo(() => {
+    if (!search) return rawOrders;
+    const q = search.toLowerCase();
+    return rawOrders.filter(o =>
+      o.name?.toLowerCase().includes(q) ||
+      o.partner?.name?.toLowerCase().includes(q) ||
+      o.partner?.address_line1?.toLowerCase().includes(q)
+    );
+  }, [rawOrders, search]);
 
   // Options derived from the currently loaded page — no dedicated lookup endpoint exists yet.
   const itineraryOptions = useMemo<CheckboxOption[]>(() => {
@@ -1523,7 +1528,7 @@ export const DispatcherMissionWorkspacePage = () => {
             onClick={refetchOrders}
             className="flex items-center justify-center px-3 py-1.5 rounded-lg border border-gray-200 text-gray-600 hover:bg-gray-50"
           >
-            <RefreshCw size={12} />
+            <RefreshCw size={12} className={syncing ? 'animate-spin text-blue-500' : ''} />
           </button>
         </div>
 

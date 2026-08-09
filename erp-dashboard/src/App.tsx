@@ -118,6 +118,7 @@ import { AccessProfilesPage } from '@/pages/rbac/AccessProfilesPage';
 import { TranslationsPage } from '@/pages/translations/TranslationsPage';
 import { AuditPage } from '@/pages/audit/AuditPage';
 import { BackupPage } from '@/pages/backup/BackupPage';
+import { DispatcherNewOrderAlert } from '@/components/dispatcher/DispatcherNewOrderAlert';
 
 
 // Simple Navigation Wrapper to show active route in DevSwitcher style (optional, but let's stick to MegaMenu for now)
@@ -855,6 +856,7 @@ function App() {
           <ThemeProvider>
             <LanguageProvider>
               <AppRoutes />
+              <DispatcherNewOrderAlert />
               <Toaster position="top-right" />
               <MaintenanceBanner />
             </LanguageProvider>

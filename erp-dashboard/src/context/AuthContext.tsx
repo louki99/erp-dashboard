@@ -22,6 +22,7 @@ export interface User {
         type: string;
     } | null;
     branch?: {
+        id?: number;   // numeric branch ID — available since 2026-08-07 backend update
         code: string;
         name: string;
         address: string;

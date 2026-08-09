@@ -27,6 +27,9 @@ import type {
     PartnerAddress,
     PartnerAddressPayload,
     PartnerAddressesResponse,
+    PartnerContact,
+    PartnerContactPayload,
+    PartnerPayerResponse,
 } from '../../types/partner.types';
 
 const BASE_PATH = '/api/backend/partners';
@@ -70,6 +73,38 @@ export const getPartnerFormMasterData = async (): Promise<PartnerMasterData> => 
 export const getCountries = async (): Promise<import('../../types/partner.types').CountryItem[]> => {
     const response = await apiClient.get<{ success: boolean; data: import('../../types/partner.types').CountryItem[] }>(`${MASTERDATA_PATH}/countries`);
     return response.data.data ?? [];
+};
+
+const COMMERCIAL_ROLES = new Set([
+    'televendeur', 'commercial_director', 'commercial_technician',
+    'vanSelling', 'preSelling', 'cdz', 'visitor',
+]);
+
+export interface CommercialEmployee {
+    id: number;
+    name: string;
+    last_name: string | null;
+    email: string;
+    is_active: boolean;
+    roles: { name: string }[];
+}
+
+export const getCommercialEmployees = async (): Promise<CommercialEmployee[]> => {
+    const firstRes = await apiClient.get<{ users: { data: CommercialEmployee[]; last_page: number } }>(
+        '/api/backend/employees', { params: { per_page: 100 } }
+    );
+    const { data, last_page } = firstRes.data.users;
+    const all = [...data];
+    if (last_page > 1) {
+        const pages = Array.from({ length: last_page - 1 }, (_, i) => i + 2);
+        const rest = await Promise.all(
+            pages.map(p => apiClient.get<{ users: { data: CommercialEmployee[] } }>(
+                '/api/backend/employees', { params: { per_page: 100, page: p } }
+            ))
+        );
+        rest.forEach(r => all.push(...r.data.users.data));
+    }
+    return all.filter(u => u.is_active && u.roles.some(r => COMMERCIAL_ROLES.has(r.name)));
 };
 
 // ─── Create form metadata (legacy - used for edit mode only) ─────────────────
@@ -202,7 +237,12 @@ export const getPartnerItinerary = async (id: number): Promise<PartnerItineraryR
 export const getItineraries = async (): Promise<{ id: number; code: string; name: string; branch_code: string; geo_area_code?: string }[]> => {
     const response = await apiClient.get(`${ITINERARIES_PATH}`);
     const d = response.data;
-    return Array.isArray(d) ? d : (d?.data ?? []);
+    // API returns { itineraries: { current_page, data: [...] } }
+    if (Array.isArray(d)) return d;
+    if (Array.isArray(d?.itineraries?.data)) return d.itineraries.data;
+    if (Array.isArray(d?.itineraries)) return d.itineraries;
+    if (Array.isArray(d?.data)) return d.data;
+    return [];
 };
 
 export const assignItinerary = async (itineraryId: number, data: { partner_code: string; rank?: number; visit_frequency_days?: number; start_time?: string; end_time?: string; is_stop_point?: boolean; notes?: string }) => {
@@ -213,6 +253,42 @@ export const assignItinerary = async (itineraryId: number, data: { partner_code:
 export const removeFromItinerary = async (itineraryId: number, itineraryPartnerId: number) => {
     const response = await apiClient.delete(`${ITINERARIES_PATH}/${itineraryId}/partner/${itineraryPartnerId}`);
     return response.data;
+};
+
+// ─── Contacts ───────────────────────────────────────────────────────────────
+
+export const getPartnerContacts = async (partnerId: number): Promise<PartnerContact[]> => {
+    const response = await apiClient.get<PartnerContact[] | { data: PartnerContact[] }>(`${BASE_PATH}/${partnerId}/contacts`);
+    return Array.isArray(response.data) ? response.data : ((response.data as any)?.data ?? []);
+};
+
+export const createPartnerContact = async (partnerId: number, data: PartnerContactPayload): Promise<PartnerContact> => {
+    const response = await apiClient.post<{ contact: PartnerContact } | PartnerContact>(`${BASE_PATH}/${partnerId}/contacts`, data);
+    return (response.data as any)?.contact ?? response.data as PartnerContact;
+};
+
+export const updatePartnerContact = async (partnerId: number, contactId: number, data: Partial<PartnerContactPayload>): Promise<PartnerContact> => {
+    const response = await apiClient.put<{ contact: PartnerContact } | PartnerContact>(`${BASE_PATH}/${partnerId}/contacts/${contactId}`, data);
+    return (response.data as any)?.contact ?? response.data as PartnerContact;
+};
+
+export const deletePartnerContact = async (partnerId: number, contactId: number): Promise<void> => {
+    await apiClient.delete(`${BASE_PATH}/${partnerId}/contacts/${contactId}`);
+};
+
+export const setDefaultPartnerContact = async (partnerId: number, contactId: number): Promise<void> => {
+    await apiClient.patch(`${BASE_PATH}/${partnerId}/contacts/${contactId}/default`);
+};
+
+// ─── Payer ───────────────────────────────────────────────────────────────────
+
+export const getPartnerPayer = async (partnerId: number): Promise<PartnerPayerResponse> => {
+    const response = await apiClient.get<PartnerPayerResponse>(`${BASE_PATH}/${partnerId}/payer`);
+    return response.data;
+};
+
+export const updatePartnerPayer = async (partnerId: number, payerPartnerId: number | null): Promise<void> => {
+    await apiClient.patch(`${BASE_PATH}/${partnerId}/payer`, { payer_partner_id: payerPartnerId });
 };
 
 // ─── Partner Balances (§11) ─────────────────────────────────────────────────

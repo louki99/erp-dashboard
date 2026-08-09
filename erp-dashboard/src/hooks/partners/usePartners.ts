@@ -585,3 +585,58 @@ export const useSetDefaultPartnerAddress = () => {
     >(({ partnerId, addressId }) => partnerApi.setDefaultPartnerAddress(partnerId, addressId));
     return { setDefaultAddress: execute, loading, error };
 };
+
+// ─── Contacts ────────────────────────────────────────────────────────────────
+
+export const usePartnerContacts = (partnerId: number | null) => {
+    const [data, setData] = useState<import('../../types/partner.types').PartnerContact[]>([]);
+    const [loading, setLoading] = useState(false);
+    const fetch = useCallback(async (id: number) => {
+        setLoading(true);
+        try { setData(await partnerApi.getPartnerContacts(id)); }
+        catch { /* ignore */ }
+        finally { setLoading(false); }
+    }, []);
+    useEffect(() => { if (partnerId) fetch(partnerId); else setData([]); }, [partnerId, fetch]);
+    return { data, loading, refetch: () => { if (partnerId) fetch(partnerId); } };
+};
+
+export const useCreatePartnerContact = () => useMutation(
+    ({ partnerId, data }: { partnerId: number; data: import('../../types/partner.types').PartnerContactPayload }) =>
+        partnerApi.createPartnerContact(partnerId, data)
+);
+
+export const useUpdatePartnerContact = () => useMutation(
+    ({ partnerId, contactId, data }: { partnerId: number; contactId: number; data: Partial<import('../../types/partner.types').PartnerContactPayload> }) =>
+        partnerApi.updatePartnerContact(partnerId, contactId, data)
+);
+
+export const useDeletePartnerContact = () => useMutation(
+    ({ partnerId, contactId }: { partnerId: number; contactId: number }) =>
+        partnerApi.deletePartnerContact(partnerId, contactId)
+);
+
+export const useSetDefaultPartnerContact = () => useMutation(
+    ({ partnerId, contactId }: { partnerId: number; contactId: number }) =>
+        partnerApi.setDefaultPartnerContact(partnerId, contactId)
+);
+
+// ─── Payer ────────────────────────────────────────────────────────────────────
+
+export const usePartnerPayer = (partnerId: number | null) => {
+    const [data, setData] = useState<import('../../types/partner.types').PartnerPayerResponse | null>(null);
+    const [loading, setLoading] = useState(false);
+    const fetch = useCallback(async (id: number) => {
+        setLoading(true);
+        try { setData(await partnerApi.getPartnerPayer(id)); }
+        catch { /* ignore */ }
+        finally { setLoading(false); }
+    }, []);
+    useEffect(() => { if (partnerId) fetch(partnerId); else setData(null); }, [partnerId, fetch]);
+    return { data, loading, refetch: () => { if (partnerId) fetch(partnerId); } };
+};
+
+export const useUpdatePartnerPayer = () => useMutation(
+    ({ partnerId, payerPartnerId }: { partnerId: number; payerPartnerId: number | null }) =>
+        partnerApi.updatePartnerPayer(partnerId, payerPartnerId)
+);

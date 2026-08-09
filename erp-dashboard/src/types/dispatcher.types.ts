@@ -280,10 +280,10 @@ export interface DispatcherOrderItinerary {
 
 export interface DispatcherOrderGeoArea {
   id?: number;
-  code: string;
+  code?: string;  // absent on embedded order geo_area (only present on full GeoArea objects)
   name: string;
   geo_area_type?: { code: string; name: string };
-  parent?: { id?: number; code: string; name: string };
+  parent?: { id?: number; code?: string; name: string };
 }
 
 export interface DispatcherOrderFinancialMetadata {
@@ -309,6 +309,8 @@ export interface DispatcherOrder {
   due_date?: string;
   branch_id?: number;
   branch_code?: string;
+  partner_id?: number;
+  delivery_mission_id?: number | null;
   salesperson_id?: number;
   /** Legacy field — prefer salesperson_data.salesperson */
   salesperson?: { id: number; name: string } | null;
@@ -321,6 +323,8 @@ export interface DispatcherOrder {
     geo_lat?: string | number | null;
     geo_lng?: string | number | null;
     delivery_zone?: string | null;
+    geo_area_id?: number | null;       // raw FK — read geo_area object for display
+    default_address_id?: number | null; // raw FK — ignore, read address_line1 instead
     geo_area?: DispatcherOrderGeoArea | null;
     active_itineraries?: DispatcherOrderItinerary[];
   };
@@ -351,10 +355,20 @@ export interface DispatcherOrder {
     id: number;
     order_id?: number;
     product_id: number;
-    quantity: number | string;  // backend returns string e.g. "10.0000"
-    price: number;              // base unit price
-    final_price?: number;       // unit price after promo — prefer over price
-    product?: { id: number; name: string; code?: string; sku?: string } & ProductLogistics;
+    quantity: number | string;          // backend returns string e.g. "20.0000"
+    ordered_quantity?: number | string;
+    allocated_quantity?: number | string;
+    shortage_quantity?: number | string;
+    price: number | string;             // unit price — backend returns string e.g. "66.94"
+    total_price?: number | string;      // line total (quantity × price)
+    final_price?: number | string;      // unit price after promo — prefer over price
+    product?: {
+      id: number;
+      name: string;
+      code?: string;
+      sku?: string;
+      thumbnail?: string | null;
+    } & ProductLogistics;
   }>;
 }
 

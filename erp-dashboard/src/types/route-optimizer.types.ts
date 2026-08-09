@@ -1,5 +1,6 @@
 export type OptimizationObjective = 'minimize_distance' | 'minimize_duration';
-export type BatchStatus = 'success' | 'error';
+export type BatchStatus = 'success' | 'error';                                      // optimize-dispatch operation result
+export type BatchLifecycleStatus = 'processing' | 'completed' | 'confirmed' | 'cancelled' | 'failed'; // batch state machine
 export type HealthStatus = 'healthy' | 'degraded' | 'unhealthy';
 
 export interface OptimizeOrderInput {
@@ -58,6 +59,27 @@ export interface OptimizeDispatchResponse {
 export interface ConfirmBatchResponse {
     status: 'confirmed';
     batch_id: string;
+}
+
+export interface CancelBatchResponse {
+    status: 'cancelled';
+    batch_id: string;
+}
+
+export interface BatchSummary {
+    batch_id: string;
+    batch_name: string;
+    status: BatchLifecycleStatus;
+    total_orders: number;
+    total_customers: number;
+    total_weight_kg: number;
+    total_volume_m3: number;
+    total_tours: number;
+    optimization_score: number;
+    error_message: string | null;
+    created_at: string;
+    completed_at: string | null;
+    confirmed_at: string | null;
 }
 
 export interface OptimizerHealth {

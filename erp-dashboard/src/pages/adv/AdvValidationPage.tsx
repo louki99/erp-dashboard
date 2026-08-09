@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import apiClient from '@/services/api/client';
 import toast from 'react-hot-toast';
 import { PERMISSIONS } from '@/lib/rbac/permissions';
@@ -10,16 +10,18 @@ import { useAdvWorkflow } from '@/hooks/adv/useAdvWorkflow';
 import {
     Calendar, User, Building, CheckCircle, XCircle, Clock,
     AlertTriangle, CreditCard, FileText, Package, Loader2,
-    Settings, Printer, Download, Share2, History,
+    Printer, Download, Share2, History,
     ShieldAlert, TrendingUp, Truck, DollarSign,
     Tag, Layers, Weight, Box, AlertCircle,
     Search, RefreshCw, BarChart3, Star,
-    Receipt, Warehouse,
+    Receipt, Warehouse, ListChecks,
 } from 'lucide-react';
 import type { ColDef } from 'ag-grid-community';
 import { MasterLayout } from '@/components/layout/MasterLayout';
-import { DataGrid } from '@/components/common/DataGrid';
 import { ActionPanel } from '@/components/layout/ActionPanel';
+import { DataGrid } from '@/components/common/DataGrid';
+import { SageTabs, type TabItem } from '@/components/common/SageTabs';
+import { SageCollapsible } from '@/components/common/SageCollapsible';
 import { cn } from '@/lib/utils';
 import { advApi } from '@/services/api/advApi';
 
@@ -107,62 +109,79 @@ const Bar = ({ pct, color = 'emerald' }: { pct: number; color?: string }) => {
     );
 };
 
-// ─── Sidebar BC list ──────────────────────────────────────────────────────────
+// ─── Left: BC DataGrid ────────────────────────────────────────────────────────
 
-interface BcRowProps { bc: any; selected: boolean; onClick: () => void }
-const BcRow = ({ bc, selected, onClick }: BcRowProps) => {
-    const cfg = getCfg(bc.bc_status);
-    return (
-        <button onClick={onClick}
-            className={cn(
-                'w-full text-left px-4 py-3 border-l-[3px] transition-all duration-150',
-                selected
-                    ? cn('bg-sage-50 border-l-sage-500', cfg.row.replace('border-l-', 'border-l-sage-'))
-                    : cn('hover:bg-gray-50/80 border-l-transparent', 'hover:' + cfg.row),
-                'border-b border-gray-100/80 last:border-b-0 focus:outline-none focus:bg-sage-50/60'
-            )}
-        >
-            <div className="flex items-start justify-between gap-2">
-                <div className="min-w-0 flex-1">
-                    <div className="flex items-center gap-1.5 mb-0.5">
-                        <span className={cn('w-1.5 h-1.5 rounded-full shrink-0 mt-px', cfg.dot)} />
-                        <span className="text-xs font-bold text-gray-800 font-mono truncate">{bc.order_code}</span>
-                    </div>
-                    <p className="text-[11px] text-gray-500 truncate pl-3">{bc.partner?.name ?? '—'}</p>
-                </div>
-                <div className="text-right shrink-0">
-                    <p className="text-xs font-black text-gray-900">{fmt(bc.total_amount, 0)} <span className="font-normal text-gray-400">Dh</span></p>
-                    <p className="text-[10px] text-gray-400 mt-0.5">{fmtDate(bc.created_at)}</p>
-                </div>
-            </div>
-            <div className="flex items-center justify-between mt-1.5 pl-3">
-                <Pill className={cn(cfg.badge, 'text-[10px]')}>{cfg.label}</Pill>
-                <span className="text-[10px] text-gray-400">{bc.canal}</span>
-            </div>
-        </button>
-    );
-};
-
-const BcSidebar = ({ bcs, loading, selectedId, onSelect, onRefresh }: { bcs: any[]; loading: boolean; selectedId: number | null; onSelect: (id: number) => void; onRefresh: () => void }) => {
+const AdvBcGrid = ({ bcs, loading, selectedId, onSelect, onRefresh }: {
+    bcs: any[]; loading: boolean; selectedId: number | null;
+    onSelect: (id: number) => void; onRefresh: () => void;
+}) => {
     const [search, setSearch] = useState('');
+
     const filtered = useMemo(() => {
         if (!search.trim()) return bcs;
         const q = search.toLowerCase();
         return bcs.filter(b =>
             b.order_code?.toLowerCase().includes(q) ||
-            b.partner?.name?.toLowerCase().includes(q) ||
-            b.bc_status?.toLowerCase().includes(q)
+            b.partner?.name?.toLowerCase().includes(q)
         );
     }, [bcs, search]);
 
+    const isSelected = useCallback((row: any) => row.id === selectedId, [selectedId]);
+
+    const colDefs = useMemo<ColDef[]>(() => [
+        {
+            headerName: 'N° BC',
+            flex: 1,
+            minWidth: 130,
+            sortable: true,
+            cellRenderer: (p: any) => (
+                <div className="flex items-center gap-2 h-full">
+                    <span className={cn('w-2 h-2 rounded-full shrink-0', getCfg(p.data.bc_status).dot)} />
+                    <div className="min-w-0">
+                        <p className="font-mono font-bold text-[11px] text-gray-900 truncate leading-tight">{p.data.order_code}</p>
+                        <p className="text-[10px] text-gray-400 truncate leading-tight">{fmtDate(p.data.created_at)}</p>
+                    </div>
+                </div>
+            ),
+        },
+        {
+            headerName: 'Client',
+            flex: 2,
+            minWidth: 120,
+            sortable: true,
+            cellRenderer: (p: any) => (
+                <div className="flex flex-col justify-center h-full">
+                    <p className="text-[11px] font-semibold text-gray-800 truncate leading-tight">{p.data.partner?.name ?? '—'}</p>
+                    <p className="text-[10px] text-gray-400 truncate leading-tight">{p.data.canal}</p>
+                </div>
+            ),
+        },
+        {
+            field: 'total_amount',
+            headerName: 'TTC',
+            width: 90,
+            sortable: true,
+            cellRenderer: (p: any) => (
+                <div className="flex flex-col items-end justify-center h-full">
+                    <p className="text-xs font-black text-gray-900 leading-tight">{fmt(p.value, 0)} Dh</p>
+                    <p className={cn('text-[9px] font-semibold leading-tight', getCfg(p.data.bc_status).badge.split(' ').filter(c => c.startsWith('text-')).join(' '))}>
+                        {getCfg(p.data.bc_status).label}
+                    </p>
+                </div>
+            ),
+        },
+    ], []);
+
     return (
-        <div className="flex flex-col h-full bg-white border-r border-gray-200">
-            {/* Header */}
-            <div className="px-4 pt-4 pb-3 border-b border-gray-100 shrink-0 space-y-3">
-                <div className="flex items-center justify-between">
+        <div className="flex flex-col h-full bg-white">
+            {/* Header — mirrors ProductsPage sidebar header */}
+            <div className="px-4 py-3 border-b border-gray-100 shrink-0">
+                <div className="flex items-center justify-between mb-2.5">
                     <div>
-                        <p className="text-xs font-bold text-gray-900">Commandes ADV</p>
-                        <p className="text-[10px] text-gray-400 mt-0.5">{bcs.length} bon{bcs.length > 1 ? 's' : ''} de commande</p>
+                        <p className="text-sm font-bold text-gray-900">Commandes ADV</p>
+                        <p className="text-[10px] text-gray-400 mt-0.5">
+                            {filtered.length}{filtered.length !== bcs.length ? ` / ${bcs.length}` : ''} bon{bcs.length !== 1 ? 's' : ''} de commande
+                        </p>
                     </div>
                     <button onClick={onRefresh} disabled={loading}
                         className="p-1.5 rounded-lg text-gray-400 hover:text-gray-600 hover:bg-gray-100 transition-colors disabled:opacity-40">
@@ -175,43 +194,25 @@ const BcSidebar = ({ bcs, loading, selectedId, onSelect, onRefresh }: { bcs: any
                         placeholder="Rechercher..."
                         className="w-full pl-8 pr-3 py-2 text-xs bg-gray-50 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-sage-400/50 focus:border-sage-400 transition-colors placeholder:text-gray-400" />
                 </div>
-                {/* Status summary */}
-                <div className="flex gap-1 flex-wrap">
-                    {Object.entries(STATUS).slice(0, 5).map(([s, cfg]) => {
-                        const count = bcs.filter(b => b.bc_status === s).length;
-                        if (!count) return null;
-                        return (
-                            <button key={s} onClick={() => setSearch(s)}
-                                className={cn('flex items-center gap-1 px-1.5 py-0.5 rounded-md text-[10px] font-semibold ring-1 transition-colors hover:opacity-80', cfg.badge)}>
-                                <span className={cn('w-1.5 h-1.5 rounded-full', cfg.dot)} />{count}
-                            </button>
-                        );
-                    })}
-                    {search && (
-                        <button onClick={() => setSearch('')}
-                            className="px-1.5 py-0.5 rounded-md text-[10px] font-semibold bg-gray-100 text-gray-500 hover:bg-gray-200 ring-1 ring-gray-200">
-                            ×
-                        </button>
-                    )}
-                </div>
             </div>
 
-            {/* List */}
-            <div className="flex-1 overflow-y-auto">
-                {loading ? (
+            {/* DataGrid */}
+            <div className="flex-1 min-h-0">
+                {loading && bcs.length === 0 ? (
                     <div className="flex items-center justify-center h-32 text-gray-400">
                         <Loader2 className="w-5 h-5 animate-spin" />
                     </div>
-                ) : filtered.length === 0 ? (
-                    <div className="flex flex-col items-center justify-center h-32 text-gray-400">
-                        <FileText className="w-8 h-8 mb-2 text-gray-200" />
-                        <p className="text-xs">Aucun résultat</p>
-                    </div>
                 ) : (
-                    filtered.map(bc => (
-                        <BcRow key={bc.id} bc={bc} selected={bc.id === selectedId}
-                            onClick={() => onSelect(bc.id)} />
-                    ))
+                    <DataGrid
+                        rowData={filtered}
+                        columnDefs={colDefs}
+                        rowHeight={52}
+                        headerHeight={36}
+                        rowSelection="single"
+                        onRowClicked={(e: any) => onSelect(e.data.id)}
+                        defaultSelectedIds={isSelected}
+                        getRowId={(p: any) => String(p.data.id)}
+                    />
                 )}
             </div>
         </div>
@@ -265,307 +266,376 @@ const DerogationModal = ({ isOpen, bcId, onClose, onSuccess }: { isOpen: boolean
     );
 };
 
-// ─── Detail: Document Header ──────────────────────────────────────────────────
+// ─── Tab: Infos (replaces fixed header) ───────────────────────────────────────
 
-const DetailHeader = ({ data }: { data: BcDetailData }) => {
+const TabInfos = ({ data, onNavigate }: { data: BcDetailData; onNavigate?: (tabId: string) => void }) => {
     const { bc, stockAvailable, creditOk, creditExceeded, excessAmount } = data;
     const cfg = getCfg(bc.bc_status);
 
+    const checks = [
+        { ok: creditOk,       icon: CreditCard,   koIcon: XCircle,       okLabel: 'Crédit OK',        koLabel: creditExceeded ? `Dépass. ${fmt(excessAmount, 0)} Dh` : 'Crédit KO', targetTab: 'client' },
+        { ok: stockAvailable, icon: Warehouse,     koIcon: XCircle,       okLabel: 'Stock OK',         koLabel: 'Stock insuffisant',   targetTab: 'stock' },
+        { ok: bc.financial_metadata?.balance_checked ?? false, icon: CheckCircle, koIcon: AlertTriangle, okLabel: 'Solde vérifié', koLabel: 'Solde non vérifié', targetTab: 'resume' },
+        { ok: !data.pendingDerogation, icon: ShieldAlert, koIcon: XCircle, okLabel: 'Sans dérogation', koLabel: 'Dérogation en cours', targetTab: 'decisions' },
+    ];
+
     return (
-        <div className="bg-white border-b border-gray-100 shrink-0">
-            {/* Top stripe with status color */}
-            <div className={cn('h-1 w-full rounded-t-none', cfg.dot.replace('bg-', 'bg-'))} />
+        <div className="space-y-4">
 
-            <div className="px-6 py-5">
-                {/* Row 1: ID + Status + Amount */}
-                <div className="flex items-start justify-between gap-4 mb-4">
-                    <div>
-                        <div className="flex items-center gap-2.5 mb-1.5">
-                            <h1 className="text-xl font-black text-gray-900 font-mono tracking-tight">{bc.order_code}</h1>
-                            <Pill className={cfg.badge}><span className={cn('w-1.5 h-1.5 rounded-full', cfg.dot)} />{cfg.label}</Pill>
-                            {bc.is_preorder && <Pill className="bg-sage-50 text-sage-700 ring-sage-200">Pré-commande</Pill>}
+            {/* ── Identité (no duplicate header — parent SageCollapsible already labels this section) ── */}
+            <div className="bg-white rounded-xl border border-gray-200">
+                {/* Code + status pills */}
+                <div className="flex items-center justify-between px-5 py-3 border-b border-gray-100">
+                    <div className="flex items-center gap-2.5 min-w-0">
+                        <span className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider shrink-0">N° BC</span>
+                        <span className="text-sm font-black font-mono text-gray-900 tracking-tight">{bc.order_code}</span>
+                    </div>
+                    <div className="flex items-center gap-1.5 shrink-0">
+                        <Pill className={cfg.badge}>
+                            <span className={cn('w-1.5 h-1.5 rounded-full', cfg.dot)} />
+                            {cfg.label}
+                        </Pill>
+                        {bc.is_preorder && <Pill className="bg-sage-50 text-sage-700 ring-sage-200">Pré-commande</Pill>}
+                    </div>
+                </div>
+
+                {/* Partner + TTC */}
+                <div className="px-5 py-4 flex items-center justify-between gap-6">
+                    <div className="flex items-center gap-2.5 min-w-0">
+                        <div className="w-8 h-8 rounded-lg bg-gray-100 flex items-center justify-center shrink-0">
+                            <Building className="w-4 h-4 text-gray-500" />
                         </div>
-                        <div className="flex items-center gap-2 text-sm text-gray-500">
-                            <Building className="w-3.5 h-3.5 text-gray-400" />
-                            <span className="font-semibold text-gray-700">{bc.partner.name}</span>
+                        <div className="min-w-0">
+                            <p className="text-sm font-bold text-gray-900 truncate">{bc.partner.name}</p>
+                            <p className="text-[11px] font-mono text-gray-400">{bc.partner.code}</p>
+                        </div>
+                    </div>
+
+                    {/* TTC encadré */}
+                    <div className="shrink-0 bg-gray-50 border border-gray-200 rounded-xl px-5 py-3 text-right">
+                        <p className="text-[9px] font-semibold text-gray-400 uppercase tracking-wider mb-0.5">Montant TTC</p>
+                        <p className="text-2xl font-black text-gray-900 tabular-nums leading-none">
+                            {fmt(bc.total_amount)}<span className="text-sm font-semibold text-gray-400 ml-1">Dh</span>
+                        </p>
+                        <div className="flex items-center justify-end gap-3 mt-1.5 text-[11px] text-gray-500">
+                            <span>HT <span className="font-bold text-gray-700 tabular-nums">{fmt(bc.sub_total)}</span></span>
                             <span className="text-gray-300">·</span>
-                            <span className="font-mono text-gray-400 text-xs">{bc.partner.code}</span>
-                        </div>
-                    </div>
-
-                    <div className="text-right shrink-0">
-                        <p className="text-2xl font-black text-gray-900">{fmt(bc.total_amount)} <span className="text-sm font-normal text-gray-400">Dh</span></p>
-                        <div className="flex items-center justify-end gap-3 text-xs text-gray-400 mt-0.5">
-                            <span>HT {fmt(bc.sub_total)} Dh</span>
-                            <span className="text-gray-200">|</span>
-                            <span>TVA {fmt(bc.tax_amount)} Dh</span>
+                            <span>TVA <span className="font-bold text-gray-700 tabular-nums">{fmt(bc.tax_amount)}</span></span>
                         </div>
                     </div>
                 </div>
+            </div>
 
-                {/* Row 2: Meta chips */}
-                <div className="flex items-center gap-2 flex-wrap mb-3">
-                    <div className="flex items-center gap-1.5 px-2.5 py-1 bg-gray-50 rounded-lg border border-gray-100 text-xs text-gray-600">
-                        <Calendar className="w-3 h-3 text-gray-400" />
-                        {fmtDate(bc.order_date, true)}
-                    </div>
-                    {bc.due_date && (
-                        <div className="flex items-center gap-1.5 px-2.5 py-1 bg-gray-50 rounded-lg border border-gray-100 text-xs text-gray-600">
-                            <Clock className="w-3 h-3 text-gray-400" />
-                            Échéance : {fmtDate(bc.due_date)}
-                        </div>
-                    )}
-                    <div className="flex items-center gap-1.5 px-2.5 py-1 bg-gray-50 rounded-lg border border-gray-100 text-xs text-gray-600">
-                        <Tag className="w-3 h-3 text-gray-400" />{bc.canal}
-                    </div>
-                    <div className="flex items-center gap-1.5 px-2.5 py-1 bg-gray-50 rounded-lg border border-gray-100 text-xs text-gray-600">
-                        <FileText className="w-3 h-3 text-gray-400" />{bc.document_type}
-                    </div>
-                    <div className="flex items-center gap-1.5 px-2.5 py-1 bg-gray-50 rounded-lg border border-gray-100 text-xs text-gray-600">
-                        <Package className="w-3 h-3 text-gray-400" />{bc.order_products.length} article{bc.order_products.length > 1 ? 's' : ''}
+            {/* ── Classification & Dates (compact rows) ── */}
+            <div className="grid grid-cols-2 gap-4">
+                <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+                    <SectionHeader icon={Tag} title="Classification" />
+                    <div className="divide-y divide-gray-50">
+                        {[
+                            { label: 'Canal',         value: bc.canal,                      icon: Tag },
+                            { label: 'Type doc.',     value: bc.document_type,              icon: FileText },
+                            { label: 'Nb articles',   value: `${bc.order_products.length} article${bc.order_products.length > 1 ? 's' : ''}`, icon: Package },
+                        ].map(f => (
+                            <div key={f.label} className="flex items-center gap-2.5 px-4 py-2">
+                                <f.icon className="w-3 h-3 text-gray-300 shrink-0" />
+                                <span className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider w-20 shrink-0">{f.label}</span>
+                                <span className="text-xs font-semibold text-gray-800">{f.value}</span>
+                            </div>
+                        ))}
                     </div>
                 </div>
 
-                {/* Row 3: Check indicators */}
-                <div className="flex items-center gap-2 flex-wrap">
-                    {[
-                        { ok: creditOk, okLabel: 'Crédit OK', koLabel: creditExceeded ? `Dépassement ${fmt(excessAmount, 0)} Dh` : 'Crédit KO', icon: CreditCard },
-                        { ok: stockAvailable, okLabel: 'Stock OK', koLabel: 'Stock insuffisant', icon: Warehouse },
-                        { ok: bc.financial_metadata?.balance_checked ?? false, okLabel: 'Solde vérifié', koLabel: 'Solde non vérifié', icon: CheckCircle },
-                        { ok: !data.pendingDerogation, okLabel: 'Sans dérogation', koLabel: 'Dérogation en cours', icon: ShieldAlert },
-                    ].map(({ ok, okLabel, koLabel, icon: Icon }) => (
-                        <div key={okLabel} className={cn('flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-semibold',
-                            ok ? 'bg-emerald-50 text-emerald-700 border border-emerald-100' : 'bg-red-50 text-red-700 border border-red-100')}>
-                            {ok ? <CheckCircle className="w-3 h-3" /> : <XCircle className="w-3 h-3" />}
-                            {ok ? okLabel : koLabel}
-                        </div>
-                    ))}
+                <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+                    <SectionHeader icon={Calendar} title="Dates" />
+                    <div className="divide-y divide-gray-50">
+                        {[
+                            { label: 'Commande', value: fmtDate(bc.order_date, true),              icon: Calendar },
+                            { label: 'Échéance', value: bc.due_date ? fmtDate(bc.due_date) : '—', icon: Clock },
+                            { label: 'Créée le', value: fmtDate(bc.created_at, true),             icon: Clock },
+                        ].map(f => (
+                            <div key={f.label} className="flex items-center gap-2.5 px-4 py-2">
+                                <f.icon className="w-3 h-3 text-gray-300 shrink-0" />
+                                <span className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider w-20 shrink-0">{f.label}</span>
+                                <span className="text-xs font-semibold text-gray-800 tabular-nums">{f.value}</span>
+                            </div>
+                        ))}
+                    </div>
+                </div>
+            </div>
+
+            {/* ── Contrôles & Alertes ── */}
+            <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+                <SectionHeader
+                    icon={ShieldAlert}
+                    title="Contrôles & Alertes"
+                    badge={
+                        checks.some(c => !c.ok) ? (
+                            <span className="text-[10px] font-bold px-2 py-0.5 bg-red-50 text-red-600 border border-red-200 rounded-full">
+                                {checks.filter(c => !c.ok).length} anomalie{checks.filter(c => !c.ok).length > 1 ? 's' : ''}
+                            </span>
+                        ) : (
+                            <span className="text-[10px] font-bold px-2 py-0.5 bg-emerald-50 text-emerald-600 border border-emerald-200 rounded-full">
+                                Tout validé
+                            </span>
+                        )
+                    }
+                />
+                <div className="grid grid-cols-4 divide-x divide-gray-100">
+                    {checks.map(({ ok, icon: OkIcon, koIcon: KoIcon, okLabel, koLabel, targetTab }) => {
+                        const Icon = ok ? OkIcon : KoIcon;
+                        return (
+                            <button
+                                key={okLabel}
+                                type="button"
+                                onClick={() => onNavigate?.(targetTab)}
+                                className={cn(
+                                    'flex flex-col items-center justify-center gap-2 py-5 px-3 w-full text-center transition-colors',
+                                    ok ? 'bg-white hover:bg-gray-50' : 'bg-red-50/40 hover:bg-red-50/70',
+                                    onNavigate && 'cursor-pointer'
+                                )}
+                            >
+                                <div className={cn('w-9 h-9 rounded-full flex items-center justify-center',
+                                    ok ? 'bg-emerald-50' : 'bg-red-100')}>
+                                    <Icon className={cn('w-4 h-4', ok ? 'text-emerald-600' : 'text-red-500')} />
+                                </div>
+                                <div>
+                                    <p className={cn('text-xs font-bold', ok ? 'text-emerald-700' : 'text-red-700')}>
+                                        {ok ? okLabel : koLabel}
+                                    </p>
+                                    <p className="text-[10px] text-gray-400 mt-0.5">
+                                        {ok ? '✓ Validé' : (onNavigate ? '→ Voir détail' : '✗ Anomalie')}
+                                    </p>
+                                </div>
+                            </button>
+                        );
+                    })}
                 </div>
 
-                {/* Alert banners */}
                 {(creditExceeded || !stockAvailable) && (
-                    <div className="mt-3 space-y-2">
+                    <div className="border-t border-gray-100 p-4 space-y-2">
                         {creditExceeded && (
                             <div className="flex items-center gap-3 px-4 py-2.5 bg-red-50 border border-red-200 rounded-xl">
                                 <AlertTriangle className="w-4 h-4 text-red-500 shrink-0" />
-                                <p className="text-xs font-semibold text-red-700">Plafond de crédit dépassé de <span className="font-black">{fmt(excessAmount)} Dh</span> — une dérogation est nécessaire pour valider cette commande.</p>
+                                <p className="text-xs font-semibold text-red-700">
+                                    Plafond de crédit dépassé de <span className="font-black">{fmt(excessAmount)} Dh</span> — dérogation nécessaire.
+                                </p>
                             </div>
                         )}
                         {!stockAvailable && (
                             <div className="flex items-center gap-3 px-4 py-2.5 bg-amber-50 border border-amber-200 rounded-xl">
                                 <Package className="w-4 h-4 text-amber-500 shrink-0" />
-                                <p className="text-xs font-semibold text-amber-700">Certains articles présentent un stock insuffisant par rapport à la quantité commandée.</p>
+                                <p className="text-xs font-semibold text-amber-700">Certains articles présentent un stock insuffisant.</p>
                             </div>
                         )}
                     </div>
                 )}
             </div>
-
-            {/* Tab bar */}
-            <div className="px-6 border-t border-gray-100" id="detail-tab-anchor" />
         </div>
     );
 };
 
-// ─── Tab nav ──────────────────────────────────────────────────────────────────
+// ─── Tab definitions (matches ProductsPage pattern) ───────────────────────────
 
-const TABS = [
+const ADV_TABS: TabItem[] = [
+    { id: 'infos',      label: 'Infos',       icon: FileText },
+    { id: 'decisions',  label: 'Décisions',   icon: ListChecks },
     { id: 'resume',     label: 'Résumé',      icon: BarChart3 },
-    { id: 'lignes',     label: 'Lignes',       icon: Receipt },
-    { id: 'client',     label: 'Client',       icon: User },
-    { id: 'stock',      label: 'Stock',        icon: Warehouse },
-    { id: 'logistique', label: 'Logistique',   icon: Truck },
-    { id: 'historique', label: 'Historique',   icon: History },
-] as const;
-type TabId = typeof TABS[number]['id'];
+    { id: 'lignes',     label: 'Lignes',      icon: Receipt },
+    { id: 'client',     label: 'Client',      icon: User },
+    { id: 'stock',      label: 'Stock',       icon: Warehouse },
+    { id: 'logistique', label: 'Logistique',  icon: Truck },
+    { id: 'historique', label: 'Historique',  icon: History },
+];
 
-const TabBar = ({ active, onChange }: { active: TabId; onChange: (t: TabId) => void }) => (
-    <div className="flex items-center gap-0.5 px-6 bg-white border-b border-gray-100 shrink-0 overflow-x-auto">
-        {TABS.map(({ id, label, icon: Icon }) => (
-            <button key={id} onClick={() => onChange(id)}
-                className={cn('flex items-center gap-1.5 px-3 py-3 text-xs font-semibold border-b-2 transition-all whitespace-nowrap',
-                    active === id
-                        ? 'border-sage-500 text-sage-700'
-                        : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-200'
-                )}>
-                <Icon className="w-3.5 h-3.5" />
-                {label}
-            </button>
-        ))}
-    </div>
+// ─── Tab: Décisions ──────────────────────────────────────────────────────────
+
+const TabDecisions = ({ bc, onRefresh }: { bc: BC; onRefresh: () => void }) => (
+    <BCWorkflowActions orderId={bc.id} onSuccess={onRefresh} />
 );
 
 // ─── Tab: Résumé ──────────────────────────────────────────────────────────────
 
+const SectionHeader = ({ icon: Icon, title, badge }: { icon: React.ElementType; title: string; badge?: React.ReactNode }) => (
+    <div className="flex items-center justify-between px-5 py-3 border-b border-gray-100">
+        <div className="flex items-center gap-2.5">
+            <Icon className="w-4 h-4 text-gray-400" />
+            <span className="text-sm font-semibold text-gray-800">{title}</span>
+        </div>
+        {badge}
+    </div>
+);
+
 const TabResume = ({ data, onRefresh }: { data: BcDetailData; onRefresh: () => void }) => {
     const { bc, partnerStats } = data;
-    const wi = bc.workflow_instance;
+    const wi   = bc.workflow_instance;
+    const limit = n(bc.partner.credit_limit);
+    const used  = n(bc.partner.credit_used);
+    const avail = n(bc.partner.credit_available);
+    const util  = limit > 0 ? Math.min((used / limit) * 100, 100) : 0;
+    const barColor = util > 90 ? 'bg-red-500' : util > 75 ? 'bg-amber-400' : 'bg-emerald-500';
+    const utilColor = util > 90 ? 'text-red-600' : util > 75 ? 'text-amber-600' : 'text-emerald-600';
 
     return (
-        <div className="grid grid-cols-3 gap-5">
-            {/* Left col: Workflow + stats */}
-            <div className="col-span-2 space-y-5">
-                {/* Workflow actions */}
-                <Card>
-                    <CardHeader icon={Settings} title="Actions Workflow" />
-                    <div className="p-5">
-                        <BCWorkflowActions orderId={bc.id} onSuccess={onRefresh} />
-                    </div>
-                </Card>
+        <div className="space-y-4">
 
-                {/* BC details */}
-                <Card>
-                    <CardHeader icon={FileText} title="Détails de la Commande" />
-                    <div className="p-5">
-                        <dl className="grid grid-cols-2 gap-x-8 gap-y-4">
-                            <Field label="N° Commande"    value={<span className="font-mono">{bc.order_code}</span>} />
-                            <Field label="Statut BC"      value={<Pill className={getCfg(bc.bc_status).badge}><span className={cn('w-1.5 h-1.5 rounded-full', getCfg(bc.bc_status).dot)} />{getCfg(bc.bc_status).label}</Pill>} />
-                            <Field label="Canal"          value={bc.canal} />
-                            <Field label="Type document"  value={bc.document_type} />
-                            <Field label="Date commande"  value={fmtDate(bc.order_date, true)} />
-                            <Field label="Date échéance"  value={fmtDate(bc.due_date)} />
-                            <Field label="Statut paiement" value={bc.payment_status} />
-                            <Field label="Branche"        value={`#${bc.branch_id}`} />
-                        </dl>
-                        {bc.bc_notes && (
-                            <>
-                                <Divider />
-                                <div className="p-3 bg-amber-50 border border-amber-100 rounded-xl">
-                                    <p className="text-[10px] font-semibold text-amber-500 uppercase tracking-wider mb-1">Notes</p>
-                                    <p className="text-sm text-amber-800">{bc.bc_notes}</p>
-                                </div>
-                            </>
-                        )}
-                    </div>
-                </Card>
+            {/* ── Synthèse financière (KPI strip) ── */}
+            <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+                <div className="grid grid-cols-4 divide-x divide-gray-100">
+                    {[
+                        { label: 'Total TTC',    value: fmt(bc.total_amount), unit: 'Dh', cls: 'text-gray-900' },
+                        { label: 'Sous-total HT', value: fmt(bc.sub_total),  unit: 'Dh', cls: 'text-gray-700' },
+                        { label: 'TVA',           value: fmt(bc.tax_amount), unit: 'Dh', cls: 'text-amber-600' },
+                        ...(bc.financial_metadata?.stamp_duty && n(bc.financial_metadata.stamp_duty) > 0
+                            ? [{ label: 'Timbre fiscal', value: fmt(bc.financial_metadata.stamp_duty), unit: 'Dh', cls: 'text-gray-500' }]
+                            : [{ label: 'Articles', value: String(bc.order_products.length), unit: '', cls: 'text-gray-700' }]
+                        ),
+                    ].map(({ label, value, unit, cls }) => (
+                        <div key={label} className="px-5 py-4">
+                            <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider mb-1">{label}</p>
+                            <p className={cn('text-xl font-black tabular-nums', cls)}>
+                                {value}
+                                {unit && <span className="text-xs font-normal text-gray-400 ml-1">{unit}</span>}
+                            </p>
+                        </div>
+                    ))}
+                </div>
+            </div>
+
+            {/* ── Workflow + Paiement ── */}
+            <div className="grid grid-cols-2 gap-4">
 
                 {/* Workflow state */}
-                {wi?.current_step && (
-                    <Card>
-                        <CardHeader icon={Clock} title="État Workflow" />
-                        <div className="p-5">
-                            <div className="flex items-start gap-4 mb-4">
-                                <div className="flex-1 p-3 bg-sage-50 border border-sage-100 rounded-xl">
-                                    <p className="text-[10px] text-sage-400 font-semibold uppercase tracking-wider">Étape actuelle</p>
-                                    <p className="text-sm font-bold text-sage-800 mt-0.5">{wi.current_step.name}</p>
-                                    <p className="text-xs text-sage-500 font-mono mt-0.5">{wi.current_step.code}</p>
+                <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+                    <SectionHeader
+                        icon={Clock}
+                        title="État du workflow"
+                        badge={wi?.status ? (
+                            <span className="text-[10px] font-semibold px-2 py-0.5 bg-indigo-50 text-indigo-600 border border-indigo-100 rounded-full uppercase tracking-wider">
+                                {wi.status.replace(/_/g, ' ')}
+                            </span>
+                        ) : undefined}
+                    />
+                    {wi?.current_step ? (
+                        <div className="divide-y divide-gray-50">
+                            <div className="px-5 py-4 flex items-center gap-3">
+                                <div className="w-8 h-8 rounded-lg bg-sage-50 border border-sage-100 flex items-center justify-center shrink-0">
+                                    <CheckCircle className="w-4 h-4 text-sage-600" />
                                 </div>
-                                <div className="px-3 py-2 bg-gray-50 border border-gray-100 rounded-xl text-center">
-                                    <p className="text-[10px] text-gray-400 font-semibold uppercase">Statut</p>
-                                    <p className="text-xs font-bold text-gray-700 mt-0.5 capitalize">{wi.status.replace('_', ' ')}</p>
+                                <div>
+                                    <p className="text-[10px] text-gray-400 font-semibold uppercase tracking-wider">Étape actuelle</p>
+                                    <p className="text-sm font-bold text-gray-900">{wi.current_step.name}</p>
+                                    <p className="text-[10px] font-mono text-gray-400">{wi.current_step.code}</p>
                                 </div>
                             </div>
                             {wi.current_step.allowed_transitions.length > 0 && (
-                                <div>
-                                    <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider mb-2">Transitions autorisées</p>
+                                <div className="px-5 py-3">
+                                    <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider mb-2">Prochaines transitions</p>
                                     <div className="flex flex-wrap gap-1.5">
                                         {wi.current_step.allowed_transitions.map(t => (
-                                            <span key={t} className="px-2 py-0.5 bg-slate-100 text-slate-600 border border-slate-200 rounded-lg text-[10px] font-mono">{t}</span>
+                                            <span key={t} className="px-2 py-0.5 bg-slate-50 border border-slate-200 rounded text-[10px] font-mono text-slate-600">
+                                                {t}
+                                            </span>
                                         ))}
                                     </div>
                                 </div>
                             )}
                         </div>
-                    </Card>
-                )}
+                    ) : (
+                        <div className="px-5 py-6 text-sm text-gray-400">Aucun workflow actif</div>
+                    )}
+                </div>
+
+                {/* Paiement */}
+                <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+                    <SectionHeader icon={Receipt} title="Paiement" />
+                    <div className="divide-y divide-gray-50">
+                        {[
+                            { label: 'Mode',          value: bc.financial_metadata?.payment_method ?? '—' },
+                            { label: 'Statut',        value: bc.payment_status },
+                            { label: 'Vente crédit',  value: bc.financial_metadata?.is_credit_sale ? 'Oui' : 'Non' },
+                            { label: 'Solde vérifié', value: bc.financial_metadata?.balance_checked ? 'Vérifié' : 'Non vérifié' },
+                        ].map(({ label, value }) => (
+                            <div key={label} className="flex items-center justify-between px-5 py-2.5">
+                                <span className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider">{label}</span>
+                                <span className="text-xs font-semibold text-gray-800">{value}</span>
+                            </div>
+                        ))}
+                        {bc.bc_notes && (
+                            <div className="px-5 py-3 bg-amber-50">
+                                <p className="text-[10px] font-semibold text-amber-500 uppercase tracking-wider mb-0.5">Note</p>
+                                <p className="text-xs text-amber-800">{bc.bc_notes}</p>
+                            </div>
+                        )}
+                    </div>
+                </div>
             </div>
 
-            {/* Right col: Partner quick + Financial summary */}
-            <div className="space-y-5">
-                {/* Financial summary */}
-                <Card>
-                    <CardHeader icon={DollarSign} title="Synthèse Financière" />
-                    <div className="p-5 space-y-3">
-                        <div className="p-4 bg-gradient-to-br from-sage-500 to-sage-700 rounded-xl text-white">
-                            <p className="text-[10px] font-semibold uppercase tracking-wider opacity-80 mb-1">Total TTC</p>
-                            <p className="text-2xl font-black">{fmt(bc.total_amount)} <span className="text-sm font-normal opacity-70">Dh</span></p>
-                        </div>
-                        <div className="grid grid-cols-2 gap-2">
-                            <div className="p-3 bg-sage-50 border border-sage-100 rounded-xl">
-                                <p className="text-[10px] text-sage-400 font-semibold uppercase">HT</p>
-                                <p className="text-sm font-black text-sage-800 mt-0.5">{fmt(bc.sub_total)} Dh</p>
-                            </div>
-                            <div className="p-3 bg-amber-50 border border-amber-100 rounded-xl">
-                                <p className="text-[10px] text-amber-400 font-semibold uppercase">TVA</p>
-                                <p className="text-sm font-black text-amber-800 mt-0.5">{fmt(bc.tax_amount)} Dh</p>
-                            </div>
-                        </div>
-                        <Divider />
-                        <div className="space-y-2.5">
-                            <div className="flex justify-between text-xs">
-                                <span className="text-gray-500">Mode paiement</span>
-                                <span className="font-semibold text-gray-800">{bc.financial_metadata?.payment_method ?? '—'}</span>
-                            </div>
-                            <div className="flex justify-between text-xs">
-                                <span className="text-gray-500">Vente crédit</span>
-                                <Pill className={bc.financial_metadata?.is_credit_sale ? 'bg-sage-50 text-sage-700 ring-sage-200' : 'bg-gray-50 text-gray-600 ring-gray-200'}>
-                                    {bc.financial_metadata?.is_credit_sale ? 'Oui' : 'Non'}
-                                </Pill>
-                            </div>
-                            <div className="flex justify-between text-xs">
-                                <span className="text-gray-500">Solde vérifié</span>
-                                <Pill className={bc.financial_metadata?.balance_checked ? 'bg-emerald-50 text-emerald-700 ring-emerald-200' : 'bg-red-50 text-red-700 ring-red-200'}>
-                                    {bc.financial_metadata?.balance_checked ? 'Oui' : 'Non'}
-                                </Pill>
-                            </div>
-                        </div>
-                    </div>
-                </Card>
+            {/* ── Crédit + Activité ── */}
+            <div className="grid grid-cols-2 gap-4">
 
-                {/* Partner stats */}
-                {partnerStats && (
-                    <Card>
-                        <CardHeader icon={TrendingUp} title="Stats Partenaire" />
-                        <div className="p-5 space-y-4">
+                {/* Crédit client */}
+                <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+                    <SectionHeader
+                        icon={CreditCard}
+                        title="Crédit client"
+                        badge={
+                            <span className={cn('text-[10px] font-bold px-2 py-0.5 rounded-full border',
+                                bc.partner.credit_hold
+                                    ? 'bg-red-50 text-red-600 border-red-200'
+                                    : 'bg-emerald-50 text-emerald-600 border-emerald-200')}>
+                                {bc.partner.credit_hold ? 'Bloqué' : 'Normal'}
+                            </span>
+                        }
+                    />
+                    <div className="px-5 py-4 space-y-4">
+                        <div>
+                            <div className="flex justify-between items-center text-xs mb-1.5">
+                                <span className="text-gray-500">Utilisation du plafond</span>
+                                <span className={cn('font-black', utilColor)}>{util.toFixed(1)} %</span>
+                            </div>
+                            <div className="w-full h-1.5 bg-gray-100 rounded-full overflow-hidden">
+                                <div className={cn('h-full rounded-full', barColor)} style={{ width: `${util}%` }} />
+                            </div>
+                        </div>
+                        <div className="grid grid-cols-3 divide-x divide-gray-100 border border-gray-100 rounded-lg overflow-hidden">
                             {[
-                                { label: 'Commandes totales', value: partnerStats.total_orders, color: 'sage' as const },
-                                { label: 'BCs en attente',    value: partnerStats.pending_bcs,  color: 'amber' as const },
-                            ].map(s => (
-                                <div key={s.label}>
-                                    <div className="flex justify-between items-center mb-1.5">
-                                        <span className="text-xs text-gray-500">{s.label}</span>
-                                        <Stat label="" value={s.value} color={s.color} />
-                                    </div>
+                                { label: 'Plafond',    value: limit, cls: 'text-gray-800' },
+                                { label: 'Utilisé',    value: used,  cls: 'text-amber-600' },
+                                { label: 'Disponible', value: avail, cls: 'text-emerald-600' },
+                            ].map(({ label, value, cls }) => (
+                                <div key={label} className="px-3 py-2.5 text-center">
+                                    <p className="text-[9px] text-gray-400 font-semibold uppercase tracking-wider">{label}</p>
+                                    <p className={cn('text-sm font-black mt-0.5 tabular-nums', cls)}>{fmt(value, 0)}</p>
+                                    <p className="text-[9px] text-gray-300">Dh</p>
                                 </div>
                             ))}
-                            <Divider />
-                            <div className="flex justify-between text-xs">
-                                <span className="text-gray-500">Valeur moy. commande</span>
-                                <span className="font-black text-gray-900">{fmt(partnerStats.avg_order_value, 0)} Dh</span>
-                            </div>
-                        </div>
-                    </Card>
-                )}
-
-                {/* Credit quick view */}
-                <Card>
-                    <CardHeader icon={CreditCard} title="Crédit Client" />
-                    <div className="p-5">
-                        <div className="mb-3">
-                            <div className="flex justify-between text-xs mb-1.5">
-                                <span className="text-gray-500">Utilisation</span>
-                                <span className="font-bold text-gray-700">
-                                    {n(bc.partner.credit_limit) > 0 ? ((n(bc.partner.credit_used) / n(bc.partner.credit_limit)) * 100).toFixed(1) : '0'}%
-                                </span>
-                            </div>
-                            <Bar pct={n(bc.partner.credit_limit) > 0 ? (n(bc.partner.credit_used) / n(bc.partner.credit_limit)) * 100 : 0}
-                                color={(n(bc.partner.credit_used) / n(bc.partner.credit_limit)) > 0.9 ? 'red' : (n(bc.partner.credit_used) / n(bc.partner.credit_limit)) > 0.75 ? 'amber' : 'emerald'} />
-                        </div>
-                        <div className="space-y-2">
-                            <div className="flex justify-between text-xs"><span className="text-gray-400">Plafond</span><span className="font-bold">{fmt(bc.partner.credit_limit, 0)} Dh</span></div>
-                            <div className="flex justify-between text-xs"><span className="text-gray-400">Utilisé</span><span className="font-bold text-amber-600">{fmt(bc.partner.credit_used, 0)} Dh</span></div>
-                            <div className="flex justify-between text-xs"><span className="text-gray-400">Disponible</span><span className="font-bold text-emerald-600">{fmt(bc.partner.credit_available, 0)} Dh</span></div>
-                        </div>
-                        <div className="mt-3 pt-3 border-t border-gray-100">
-                            <div className="flex justify-between items-center">
-                                <span className="text-xs text-gray-500">Statut</span>
-                                <Pill className={bc.partner.credit_hold ? 'bg-red-50 text-red-700 ring-red-200' : 'bg-emerald-50 text-emerald-700 ring-emerald-200'}>
-                                    {bc.partner.credit_hold ? 'Bloqué' : 'Normal'}
-                                </Pill>
-                            </div>
                         </div>
                     </div>
-                </Card>
+                </div>
+
+                {/* Activité partenaire */}
+                {partnerStats ? (
+                    <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+                        <SectionHeader icon={TrendingUp} title="Activité partenaire" />
+                        <div className="divide-y divide-gray-50">
+                            {[
+                                { label: 'Commandes totales', value: String(partnerStats.total_orders),         cls: 'text-gray-800' },
+                                { label: 'En attente',        value: String(partnerStats.pending_bcs),          cls: 'text-amber-600' },
+                                { label: 'Panier moyen',      value: `${fmt(partnerStats.avg_order_value, 0)} Dh`, cls: 'text-blue-700' },
+                            ].map(({ label, value, cls }) => (
+                                <div key={label} className="flex items-center justify-between px-5 py-2.5">
+                                    <span className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider">{label}</span>
+                                    <span className={cn('text-sm font-black tabular-nums', cls)}>{value}</span>
+                                </div>
+                            ))}
+                        </div>
+                    </div>
+                ) : (
+                    <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+                        <SectionHeader icon={TrendingUp} title="Activité partenaire" />
+                        <div className="px-5 py-6 text-sm text-gray-400">Aucune donnée disponible</div>
+                    </div>
+                )}
             </div>
         </div>
     );
@@ -574,111 +644,159 @@ const TabResume = ({ data, onRefresh }: { data: BcDetailData; onRefresh: () => v
 // ─── Tab: Lignes ──────────────────────────────────────────────────────────────
 
 const TabLignes = ({ bc }: { bc: BC }) => {
-    const totals = bc.order_products.reduce((a, p) => ({
-        ht: a.ht + n(p.line_total_ht), tva: a.tva + n(p.line_tax_amount), ttc: a.ttc + n(p.total_price),
-    }), { ht: 0, tva: 0, ttc: 0 });
-
-    const colDefs: ColDef<OrderProduct>[] = [
-        {
-            headerName: '', field: 'product.thumbnail' as any, width: 48, pinned: 'left', resizable: false, sortable: false,
-            cellRenderer: (p: any) => (
-                <div className="flex items-center justify-center h-full">
-                    {p.data.product.thumbnail
-                        ? <img src={p.data.product.thumbnail} alt="" className="w-7 h-7 rounded-lg object-cover border border-gray-100" />
-                        : <div className="w-7 h-7 rounded-lg bg-gray-100 flex items-center justify-center text-[8px] font-bold text-gray-400">{p.data.product.code?.slice(-3)}</div>}
-                </div>
-            ),
-        },
-        {
-            headerName: 'Article', flex: 2, minWidth: 220, pinned: 'left',
-            cellRenderer: (p: any) => (
-                <div className="flex flex-col justify-center h-full py-1">
-                    <p className="text-xs font-bold text-gray-900 leading-tight truncate">{p.data.product.name}</p>
-                    <div className="flex items-center gap-1.5 mt-0.5">
-                        <span className="text-[10px] font-mono text-gray-400">{p.data.product.code}</span>
-                        {p.data.sales_group_code && <span className="text-[9px] px-1 bg-slate-100 text-slate-500 rounded font-semibold">{p.data.sales_group_code}</span>}
-                    </div>
-                </div>
-            ),
-        },
-        {
-            headerName: 'Qté', field: 'quantity', width: 72,
-            cellClass: 'font-black text-right text-sm text-gray-900',
-            valueFormatter: p => parseFloat(p.value).toLocaleString('fr-FR'),
-        },
-        {
-            headerName: 'TVA', field: 'tax_rate', width: 60,
-            cellClass: 'text-center text-xs text-gray-500',
-            valueFormatter: p => `${parseFloat(p.value).toFixed(0)}%`,
-        },
-        {
-            headerName: 'PU HT', field: 'unit_price_ht', width: 100,
-            cellClass: 'text-right text-xs text-gray-500',
-            valueFormatter: p => `${fmt(p.value)} Dh`,
-        },
-        {
-            headerName: 'PU TTC', field: 'price', width: 100,
-            cellClass: 'text-right text-xs font-semibold text-gray-700',
-            valueFormatter: p => `${fmt(p.value)} Dh`,
-        },
-        {
-            headerName: 'Total HT', field: 'line_total_ht', width: 110,
-            cellClass: 'text-right text-xs text-gray-500',
-            valueFormatter: p => `${fmt(p.value)} Dh`,
-        },
-        {
-            headerName: 'TVA Ligne', field: 'line_tax_amount', width: 100,
-            cellClass: 'text-right text-xs text-amber-600',
-            valueFormatter: p => `${fmt(p.value)} Dh`,
-        },
-        {
-            headerName: 'Total TTC', field: 'total_price', width: 115, pinned: 'right',
-            cellRenderer: (p: any) => (
-                <div className="flex items-center justify-end h-full">
-                    <span className="font-black text-sm text-sage-700">{fmt(p.value)} Dh</span>
-                </div>
-            ),
-        },
-        {
-            headerName: 'Stock', field: 'available_stock_quantity', width: 90, pinned: 'right',
-            cellRenderer: (p: any) => {
-                const ok = p.value >= parseFloat(p.data.quantity);
-                return (
-                    <div className="flex items-center justify-center h-full">
-                        <span className={cn('text-[10px] font-bold px-2 py-0.5 rounded-full', ok ? 'bg-emerald-100 text-emerald-700' : 'bg-red-100 text-red-700')}>
-                            {p.value}
-                        </span>
-                    </div>
-                );
-            },
-        },
-    ];
+    const totals = bc.order_products.reduce(
+        (a, p) => ({ ht: a.ht + n(p.line_total_ht), tva: a.tva + n(p.line_tax_amount), ttc: a.ttc + n(p.total_price) }),
+        { ht: 0, tva: 0, ttc: 0 }
+    );
 
     return (
-        <div className="space-y-4">
-            {/* Totals bar */}
-            <div className="grid grid-cols-3 gap-3">
-                {[
-                    { label: 'Total HT',  value: totals.ht,  color: 'blue' },
-                    { label: 'Total TVA', value: totals.tva, color: 'amber' },
-                    { label: 'Total TTC', value: totals.ttc, color: 'sage' },
-                ].map(t => (
-                    <Card key={t.label} className="p-4 flex items-center gap-3">
-                        <div className={cn('w-1 h-8 rounded-full shrink-0', t.color === 'blue' ? 'bg-blue-400' : t.color === 'amber' ? 'bg-amber-400' : 'bg-sage-500')} />
-                        <div>
-                            <p className="text-[10px] text-gray-400 font-semibold uppercase">{t.label}</p>
-                            <p className="text-lg font-black text-gray-900 mt-0.5">{fmt(t.value)} <span className="text-xs font-normal text-gray-400">Dh</span></p>
-                        </div>
-                    </Card>
-                ))}
+        <div className="space-y-3">
+
+            {/* ── Summary strip ── */}
+            <div className="bg-white rounded-xl border border-gray-200 px-5 py-3 flex items-center justify-between">
+                <div className="flex items-center gap-2 text-sm text-gray-600">
+                    <Package className="w-4 h-4 text-gray-400" />
+                    <span className="font-semibold">{bc.order_products.length} article{bc.order_products.length > 1 ? 's' : ''}</span>
+                </div>
+                <div className="flex items-center gap-3 text-sm">
+                    <span className="text-gray-400">HT</span>
+                    <span className="font-bold text-gray-800">{fmt(totals.ht)} Dh</span>
+                    <span className="text-gray-300">+</span>
+                    <span className="text-gray-400">TVA</span>
+                    <span className="font-bold text-amber-600">{fmt(totals.tva)} Dh</span>
+                    <span className="text-gray-300">=</span>
+                    <span className="font-black text-sage-700 bg-sage-50 px-3 py-1 rounded-lg border border-sage-200 text-sm">
+                        {fmt(totals.ttc)} Dh TTC
+                    </span>
+                </div>
             </div>
 
-            {/* Grid */}
-            <Card>
-                <div className="h-[420px] overflow-hidden rounded-2xl">
-                    <DataGrid rowData={bc.order_products} columnDefs={colDefs} rowHeight={52} />
+            {/* ── Invoice table ── */}
+            <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+                <div className="overflow-x-auto">
+                    <table className="w-full text-xs border-collapse">
+                        <thead>
+                            <tr className="bg-gray-50 border-b border-gray-200">
+                                <th className="w-11 px-3 py-3 border-r border-gray-100" />
+                                <th className="text-left px-4 py-3 font-semibold text-gray-500 uppercase tracking-wider">Article</th>
+                                <th className="text-right px-4 py-3 font-semibold text-gray-500 uppercase tracking-wider whitespace-nowrap">Qté</th>
+                                <th className="text-right px-4 py-3 font-semibold text-gray-500 uppercase tracking-wider whitespace-nowrap">PU HT</th>
+                                <th className="text-center px-3 py-3 font-semibold text-gray-500 uppercase tracking-wider">TVA</th>
+                                <th className="text-right px-4 py-3 font-semibold text-gray-500 uppercase tracking-wider whitespace-nowrap">PU TTC</th>
+                                <th className="text-right px-4 py-3 font-semibold text-gray-500 uppercase tracking-wider whitespace-nowrap border-l border-gray-100">Total HT</th>
+                                <th className="text-right px-4 py-3 font-semibold text-gray-500 uppercase tracking-wider whitespace-nowrap">TVA Ligne</th>
+                                <th className="text-right px-4 py-3 font-semibold text-gray-500 uppercase tracking-wider whitespace-nowrap border-l border-gray-200 bg-sage-50/60">Total TTC</th>
+                                <th className="text-center px-4 py-3 font-semibold text-gray-500 uppercase tracking-wider">Stock</th>
+                            </tr>
+                        </thead>
+
+                        <tbody>
+                            {bc.order_products.map((item, idx) => {
+                                const qty = parseFloat(item.quantity);
+                                const stockOk      = item.available_stock_quantity >= qty;
+                                const stockPartial = item.available_stock_quantity > 0 && !stockOk;
+                                const unitLabel    = item.unit ?? item.logistics_line?.shipping_level ?? null;
+
+                                return (
+                                    <tr key={item.id}
+                                        className={cn(
+                                            'border-b border-gray-100 transition-colors hover:bg-gray-50/70 group',
+                                            !stockOk && 'bg-red-50/20 hover:bg-red-50/40'
+                                        )}>
+
+                                        {/* Line # / thumbnail */}
+                                        <td className="px-3 py-3 border-r border-gray-100">
+                                            {item.product.thumbnail
+                                                ? <img src={item.product.thumbnail} alt="" className="w-8 h-8 rounded-lg object-cover border border-gray-100" />
+                                                : <div className="w-8 h-8 rounded-lg bg-gray-50 border border-gray-200 flex items-center justify-center text-[10px] font-semibold text-gray-400">
+                                                    #{idx + 1}
+                                                  </div>
+                                            }
+                                        </td>
+
+                                        {/* Article */}
+                                        <td className="px-4 py-3 max-w-[240px]">
+                                            <p className="font-semibold text-gray-900 leading-tight truncate">{item.product.name}</p>
+                                            <div className="flex items-center gap-1.5 mt-0.5">
+                                                <span className="font-mono text-gray-400 text-[10px]">{item.product.code}</span>
+                                                {item.sales_group_code && (
+                                                    <span className="px-1.5 py-0.5 bg-slate-100 text-slate-500 rounded text-[9px] font-semibold">{item.sales_group_code}</span>
+                                                )}
+                                            </div>
+                                        </td>
+
+                                        {/* Qty + unit */}
+                                        <td className="px-4 py-3 text-right whitespace-nowrap">
+                                            <span className="font-black text-gray-900 text-sm tabular-nums">{qty.toLocaleString('fr-FR')}</span>
+                                            {unitLabel && (
+                                                <span className="ml-1 text-[10px] font-semibold text-gray-500 bg-gray-100 px-1.5 py-0.5 rounded">
+                                                    {unitLabel}
+                                                </span>
+                                            )}
+                                        </td>
+
+                                        {/* PU HT */}
+                                        <td className="px-4 py-3 text-right text-gray-600 tabular-nums font-medium">{fmt(item.unit_price_ht)}<span className="text-gray-400 ml-0.5">Dh</span></td>
+
+                                        {/* TVA % */}
+                                        <td className="px-3 py-3 text-center">
+                                            <span className="inline-block px-1.5 py-0.5 bg-amber-50 text-amber-600 rounded font-semibold text-[10px]">
+                                                {parseFloat(item.tax_rate).toFixed(0)}%
+                                            </span>
+                                        </td>
+
+                                        {/* PU TTC */}
+                                        <td className="px-4 py-3 text-right font-semibold text-gray-700 tabular-nums">{fmt(item.price)}<span className="text-gray-400 ml-0.5">Dh</span></td>
+
+                                        {/* Total HT */}
+                                        <td className="px-4 py-3 text-right text-gray-600 tabular-nums font-medium border-l border-gray-100">{fmt(item.line_total_ht)}<span className="text-gray-400 ml-0.5">Dh</span></td>
+
+                                        {/* TVA montant */}
+                                        <td className="px-4 py-3 text-right text-amber-600 tabular-nums font-medium">{fmt(item.line_tax_amount)}<span className="text-amber-400 ml-0.5">Dh</span></td>
+
+                                        {/* Total TTC */}
+                                        <td className="px-4 py-3 text-right font-black text-sage-700 tabular-nums border-l border-gray-200 bg-sage-50/30 group-hover:bg-sage-50/60">
+                                            {fmt(item.total_price)}<span className="text-sage-400 font-semibold ml-0.5">Dh</span>
+                                        </td>
+
+                                        {/* Stock */}
+                                        <td className="px-4 py-3 text-center">
+                                            <span className={cn(
+                                                'inline-flex items-center gap-1 px-2 py-1 rounded-lg font-bold text-[10px] leading-none',
+                                                stockOk      ? 'bg-emerald-100 text-emerald-700' :
+                                                stockPartial ? 'bg-amber-100   text-amber-700'   :
+                                                               'bg-red-100     text-red-700'
+                                            )}>
+                                                {stockOk ? <CheckCircle className="w-2.5 h-2.5" /> : <AlertTriangle className="w-2.5 h-2.5" />}
+                                                {item.available_stock_quantity}
+                                            </span>
+                                        </td>
+                                    </tr>
+                                );
+                            })}
+                        </tbody>
+
+                        {/* ── Footer totals ── */}
+                        <tfoot>
+                            <tr className="border-t-2 border-gray-200 bg-gray-50/80">
+                                <td colSpan={6} className="px-4 py-3 text-right text-[10px] font-bold text-gray-400 uppercase tracking-widest">
+                                    Sous-total
+                                </td>
+                                <td className="px-4 py-3 text-right font-bold text-gray-700 tabular-nums border-l border-gray-100">
+                                    {fmt(totals.ht)} Dh
+                                </td>
+                                <td className="px-4 py-3 text-right font-bold text-amber-600 tabular-nums">
+                                    {fmt(totals.tva)} Dh
+                                </td>
+                                <td className="px-4 py-3 text-right font-black text-sage-700 tabular-nums border-l border-gray-200 bg-sage-50/60">
+                                    {fmt(totals.ttc)} Dh
+                                </td>
+                                <td />
+                            </tr>
+                        </tfoot>
+                    </table>
                 </div>
-            </Card>
+            </div>
         </div>
     );
 };
@@ -687,117 +805,180 @@ const TabLignes = ({ bc }: { bc: BC }) => {
 
 const TabClient = ({ bc }: { bc: BC }) => {
     const p = bc.partner;
-    const limit = n(p.credit_limit), used = n(p.credit_used), avail = n(p.credit_available);
-    const util = limit > 0 ? (used / limit) * 100 : 0;
+    const limit      = n(p.credit_limit);
+    const used       = n(p.credit_used);
+    const avail      = n(p.credit_available);
+    const util       = limit > 0 ? (used / limit) * 100 : 0;
     const newBalance = used + n(bc.total_amount);
     const willExceed = newBalance > limit;
+    const barColor   = util > 90 ? 'bg-red-500' : util > 75 ? 'bg-amber-400' : 'bg-emerald-500';
+    const pctColor   = util > 90 ? 'text-red-600' : util > 75 ? 'text-amber-600' : 'text-emerald-600';
+
+    const payScore  = p.payment_behavior_score ?? 0;
+    const riskScore = p.risk_score ?? 0;
+    const payColor  = payScore  >= 70 ? 'bg-emerald-500' : payScore  >= 40 ? 'bg-amber-400' : 'bg-red-500';
+    const riskColor = riskScore >= 70 ? 'bg-red-500'     : riskScore >= 40 ? 'bg-amber-400' : 'bg-emerald-500';
 
     return (
-        <div className="grid grid-cols-3 gap-5">
-            {/* Identity */}
-            <Card className="col-span-2">
-                <CardHeader icon={User} title="Identité & Coordonnées" />
-                <div className="p-5 grid grid-cols-2 gap-x-10 gap-y-4">
-                    <div className="space-y-4">
-                        <Field label="Code client"    value={<span className="font-mono">{p.code}</span>} />
-                        <Field label="Raison sociale" value={p.name} />
-                        <Field label="Type"           value={p.partner_type} />
-                        <Field label="Canal"          value={p.channel} />
-                        <Field label="ICE"            value={p.tax_number_ice} />
-                        <Field label="IF"             value={p.tax_number_if} />
-                        <Field label="Statut"         value={<Pill className={p.status === 'ACTIVE' ? 'bg-emerald-50 text-emerald-700 ring-emerald-200' : 'bg-red-50 text-red-700 ring-red-200'}>{p.status}</Pill>} />
+        <div className="space-y-4">
+
+            {/* ── Identity strip ── */}
+            <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+                {/* Header row */}
+                <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100">
+                    <div className="flex items-center gap-3">
+                        <div className="w-10 h-10 rounded-full bg-sage-100 flex items-center justify-center shrink-0">
+                            <span className="text-sm font-black text-sage-700">{p.name?.charAt(0).toUpperCase()}</span>
+                        </div>
+                        <div>
+                            <p className="text-sm font-bold text-gray-900 leading-tight">{p.name}</p>
+                            <p className="text-[11px] font-mono text-gray-400 leading-tight mt-0.5">{p.code}</p>
+                        </div>
                     </div>
-                    <div className="space-y-4">
-                        <Field label="Adresse"    value={p.address_line1} />
-                        <Field label="Ville"      value={p.city} />
-                        <Field label="Région"     value={p.region} />
-                        <Field label="Pays"       value={p.country} />
-                        <Field label="Téléphone"  value={p.phone} />
-                        <Field label="Email"      value={p.email} />
-                        <Field label="Site web"   value={p.website} />
+                    <div className="flex items-center gap-2">
+                        <Pill className={p.status === 'ACTIVE'
+                            ? 'bg-emerald-50 text-emerald-700 ring-emerald-200'
+                            : 'bg-red-50 text-red-700 ring-red-200'}>
+                            <span className={cn('w-1.5 h-1.5 rounded-full', p.status === 'ACTIVE' ? 'bg-emerald-500' : 'bg-red-500')} />
+                            {p.status}
+                        </Pill>
+                        {p.partner_type && (
+                            <Pill className="bg-gray-50 text-gray-600 ring-gray-200">{p.partner_type}</Pill>
+                        )}
                     </div>
                 </div>
-            </Card>
 
-            {/* Scores */}
-            <div className="space-y-4">
-                <Card>
-                    <CardHeader icon={Star} title="Scores" />
-                    <div className="p-5 space-y-5">
+                {/* Fields grid */}
+                <div className="grid grid-cols-3 divide-x divide-gray-100">
+                    {/* Coordonnées */}
+                    <div className="px-5 py-4 space-y-3">
+                        <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">Coordonnées</p>
                         {[
-                            { label: 'Comportement paiement', value: p.payment_behavior_score, invert: false },
-                            { label: 'Score de risque',       value: p.risk_score,             invert: true },
-                        ].map(s => {
-                            const pct = s.value;
-                            const color = s.invert
-                                ? (pct >= 70 ? 'red' : pct >= 40 ? 'amber' : 'emerald') as any
-                                : (pct >= 70 ? 'emerald' : pct >= 40 ? 'amber' : 'red') as any;
-                            return (
-                                <div key={s.label}>
-                                    <div className="flex justify-between text-xs mb-1.5">
-                                        <span className="text-gray-500">{s.label}</span>
-                                        <span className="font-black text-gray-900">{pct}<span className="text-gray-400 font-normal">/100</span></span>
-                                    </div>
-                                    <Bar pct={pct} color={color} />
-                                </div>
-                            );
-                        })}
-                        <Divider />
-                        <div className="grid grid-cols-2 gap-3">
-                            <div className="text-center p-2 bg-gray-50 rounded-xl">
-                                <p className="text-xl font-black text-gray-900">{p.total_orders_count}</p>
-                                <p className="text-[10px] text-gray-400">commandes</p>
+                            { label: 'Adresse',   value: p.address_line1 },
+                            { label: 'Ville',     value: [p.city, p.region].filter(Boolean).join(', ') || null },
+                            { label: 'Pays',      value: p.country },
+                            { label: 'Téléphone', value: p.phone },
+                            { label: 'Email',     value: p.email },
+                        ].map(({ label, value }) => value ? (
+                            <div key={label}>
+                                <p className="text-[10px] text-gray-400 font-medium">{label}</p>
+                                <p className="text-xs font-semibold text-gray-800 mt-0.5">{value}</p>
                             </div>
-                            <div className="text-center p-2 bg-gray-50 rounded-xl">
-                                <p className="text-sm font-black text-gray-900">{fmt(p.total_orders_value, 0)}</p>
-                                <p className="text-[10px] text-gray-400">Dh total</p>
+                        ) : null)}
+                    </div>
+
+                    {/* Fiscal */}
+                    <div className="px-5 py-4 space-y-3">
+                        <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">Fiscal & Commercial</p>
+                        {[
+                            { label: 'ICE',   value: p.tax_number_ice },
+                            { label: 'IF',    value: p.tax_number_if },
+                            { label: 'Canal', value: p.channel },
+                        ].map(({ label, value }) => value ? (
+                            <div key={label}>
+                                <p className="text-[10px] text-gray-400 font-medium">{label}</p>
+                                <p className="text-xs font-semibold text-gray-800 font-mono mt-0.5">{value}</p>
+                            </div>
+                        ) : null)}
+                    </div>
+
+                    {/* Scores + activity */}
+                    <div className="px-5 py-4 space-y-4">
+                        <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">Scores & Activité</p>
+                        {[
+                            { label: 'Paiement', score: payScore,  bar: payColor },
+                            { label: 'Risque',   score: riskScore, bar: riskColor },
+                        ].map(({ label, score, bar }) => (
+                            <div key={label}>
+                                <div className="flex justify-between text-[10px] mb-1">
+                                    <span className="text-gray-500 font-medium">{label}</span>
+                                    <span className="font-black text-gray-800">{score}<span className="text-gray-400 font-normal">/100</span></span>
+                                </div>
+                                <div className="w-full h-1.5 bg-gray-100 rounded-full overflow-hidden">
+                                    <div className={cn('h-full rounded-full', bar)} style={{ width: `${score}%` }} />
+                                </div>
+                            </div>
+                        ))}
+                        <div className="pt-2 border-t border-gray-100 grid grid-cols-2 gap-2 text-center">
+                            <div className="bg-gray-50 rounded-lg py-2">
+                                <p className="text-base font-black text-gray-900">{p.total_orders_count}</p>
+                                <p className="text-[9px] text-gray-400 font-medium mt-0.5">commandes</p>
+                            </div>
+                            <div className="bg-gray-50 rounded-lg py-2">
+                                <p className="text-xs font-black text-gray-900">{fmt(p.total_orders_value, 0)}</p>
+                                <p className="text-[9px] text-gray-400 font-medium mt-0.5">Dh total</p>
                             </div>
                         </div>
                     </div>
-                </Card>
+                </div>
             </div>
 
-            {/* Credit full */}
-            <Card className="col-span-3">
-                <CardHeader icon={CreditCard} title="Situation Crédit" />
+            {/* ── Crédit ── */}
+            <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+                <div className="flex items-center justify-between px-5 py-3.5 border-b border-gray-100">
+                    <div className="flex items-center gap-2">
+                        <CreditCard className="w-4 h-4 text-gray-400" />
+                        <span className="text-sm font-semibold text-gray-800">Situation crédit</span>
+                    </div>
+                    <Pill className={p.credit_hold ? 'bg-red-50 text-red-700 ring-red-200' : 'bg-emerald-50 text-emerald-700 ring-emerald-200'}>
+                        <span className={cn('w-1.5 h-1.5 rounded-full', p.credit_hold ? 'bg-red-500' : 'bg-emerald-500')} />
+                        {p.credit_hold ? 'Bloqué' : 'Normal'}
+                    </Pill>
+                </div>
+
                 <div className="p-5">
+                    {/* Exceed alert */}
                     {willExceed && (
-                        <div className="mb-5 flex items-start gap-3 p-4 bg-red-50 border border-red-200 rounded-xl">
+                        <div className="flex items-start gap-3 p-4 bg-red-50 border border-red-200 rounded-xl mb-5">
                             <AlertTriangle className="w-4 h-4 text-red-500 shrink-0 mt-0.5" />
-                            <div className="text-sm">
-                                <p className="font-bold text-red-800">Ce BC dépasserait le plafond de crédit</p>
-                                <p className="text-red-600 text-xs mt-0.5">Nouveau solde après BC : <b>{fmt(newBalance)} Dh</b> — Plafond : <b>{fmt(limit)} Dh</b> — Excédent : <b>{fmt(newBalance - limit)} Dh</b></p>
+                            <div>
+                                <p className="text-xs font-bold text-red-800">Ce BC dépasse le plafond de crédit</p>
+                                <p className="text-[11px] text-red-600 mt-1 space-x-3">
+                                    <span>Nouveau solde : <b>{fmt(newBalance)} Dh</b></span>
+                                    <span>·</span>
+                                    <span>Plafond : <b>{fmt(limit)} Dh</b></span>
+                                    <span>·</span>
+                                    <span>Excédent : <b className="text-red-700">{fmt(newBalance - limit)} Dh</b></span>
+                                </p>
                             </div>
                         </div>
                     )}
-                    <div className="grid grid-cols-4 gap-5">
-                        <div className="col-span-3">
-                            <div className="flex justify-between text-sm mb-2">
-                                <span className="text-gray-500 font-medium">Taux d'utilisation</span>
-                                <span className="font-black">{util.toFixed(1)}%</span>
-                            </div>
-                            <div className="w-full h-3 rounded-full bg-gray-100 overflow-hidden mb-4">
-                                <div className={cn('h-full rounded-full transition-all', util > 100 ? 'bg-red-500' : util > 80 ? 'bg-amber-500' : 'bg-emerald-500')}
-                                    style={{ width: `${Math.min(util, 100)}%` }} />
-                            </div>
-                            <div className="grid grid-cols-3 gap-4">
-                                {[{ l: 'Plafond', v: limit, c: 'text-gray-900' }, { l: 'Utilisé', v: used, c: 'text-amber-700' }, { l: 'Disponible', v: avail, c: 'text-emerald-700' }].map(i => (
-                                    <div key={i.l} className="p-3 bg-gray-50 rounded-xl border border-gray-100">
-                                        <p className="text-[10px] text-gray-400 uppercase font-semibold">{i.l}</p>
-                                        <p className={cn('text-lg font-black mt-0.5', i.c)}>{fmt(i.v, 0)} <span className="text-xs font-normal text-gray-400">Dh</span></p>
-                                    </div>
-                                ))}
-                            </div>
+
+                    {/* Usage bar */}
+                    <div className="mb-5">
+                        <div className="flex justify-between items-center mb-2">
+                            <span className="text-xs text-gray-500 font-medium">Taux d'utilisation</span>
+                            <span className={cn('text-sm font-black', pctColor)}>{util.toFixed(1)}%</span>
                         </div>
-                        <div className="space-y-3">
-                            <Field label="Statut crédit" value={<Pill className={p.credit_hold ? 'bg-red-50 text-red-700 ring-red-200' : 'bg-emerald-50 text-emerald-700 ring-emerald-200'}>{p.credit_hold ? '● Bloqué' : '● Normal'}</Pill>} />
-                            {p.credit_hold_reason && <Field label="Raison" value={p.credit_hold_reason} />}
-                            <Field label="Mode paiement" value={bc.financial_metadata?.payment_method} />
-                            <Field label="Solde vérifié" value={bc.financial_metadata?.balance_checked ? 'Oui' : 'Non'} />
+                        <div className="w-full h-2.5 bg-gray-100 rounded-full overflow-hidden">
+                            <div className={cn('h-full rounded-full transition-all duration-500', barColor)}
+                                style={{ width: `${Math.min(util, 100)}%` }} />
                         </div>
                     </div>
+
+                    {/* Three amounts */}
+                    <div className="grid grid-cols-3 gap-3">
+                        {[
+                            { label: 'Plafond',    value: limit, cls: 'text-gray-800',    border: 'border-gray-200' },
+                            { label: 'Utilisé',    value: used,  cls: 'text-amber-600',   border: 'border-amber-100' },
+                            { label: 'Disponible', value: avail, cls: 'text-emerald-600', border: 'border-emerald-100' },
+                        ].map(({ label, value, cls, border }) => (
+                            <div key={label} className={cn('rounded-xl border p-4 text-center', border, 'bg-gray-50/50')}>
+                                <p className="text-[10px] text-gray-400 font-semibold uppercase tracking-wider">{label}</p>
+                                <p className={cn('text-lg font-black mt-1 leading-none', cls)}>{fmt(value, 0)}</p>
+                                <p className="text-[10px] text-gray-400 mt-0.5">Dh</p>
+                            </div>
+                        ))}
+                    </div>
+
+                    {p.credit_hold_reason && (
+                        <div className="mt-4 px-4 py-3 bg-red-50 border border-red-100 rounded-xl">
+                            <p className="text-[10px] font-semibold text-red-400 uppercase tracking-wider mb-0.5">Raison du blocage</p>
+                            <p className="text-xs text-red-700">{p.credit_hold_reason}</p>
+                        </div>
+                    )}
                 </div>
-            </Card>
+            </div>
         </div>
     );
 };
@@ -805,66 +986,135 @@ const TabClient = ({ bc }: { bc: BC }) => {
 // ─── Tab: Stock ───────────────────────────────────────────────────────────────
 
 const TabStock = ({ bc }: { bc: BC }) => {
-    const items = bc.order_products;
-    const ok = items.filter(p => p.available_stock_quantity >= parseFloat(p.quantity)).length;
-    const partial = items.filter(p => p.available_stock_quantity > 0 && p.available_stock_quantity < parseFloat(p.quantity)).length;
-    const out = items.length - ok - partial;
+    const items   = bc.order_products;
+    const okCount = items.filter(p => p.available_stock_quantity >= parseFloat(p.quantity)).length;
+    const partCount = items.filter(p => p.available_stock_quantity > 0 && p.available_stock_quantity < parseFloat(p.quantity)).length;
+    const outCount  = items.length - okCount - partCount;
+    const allOk     = outCount === 0 && partCount === 0;
 
     return (
-        <div className="space-y-5">
-            {/* KPIs */}
-            <div className="grid grid-cols-3 gap-4">
-                {[
-                    { label: 'Disponible', n: ok,      icon: CheckCircle, c: { bg: 'bg-emerald-50', border: 'border-emerald-200', text: 'text-emerald-700', icon: 'text-emerald-500' } },
-                    { label: 'Partiel',    n: partial,  icon: AlertTriangle, c: { bg: 'bg-amber-50', border: 'border-amber-200', text: 'text-amber-700', icon: 'text-amber-500' } },
-                    { label: 'Rupture',    n: out,      icon: XCircle, c: { bg: 'bg-red-50', border: 'border-red-200', text: 'text-red-700', icon: 'text-red-500' } },
-                ].map(({ label, n: count, icon: Icon, c }) => (
-                    <div key={label} className={cn('rounded-2xl border p-5 flex items-center gap-4', c.bg, c.border)}>
-                        <div className={cn('w-10 h-10 rounded-xl bg-white/60 flex items-center justify-center shrink-0')}>
-                            <Icon className={cn('w-5 h-5', c.icon)} />
+        <div className="space-y-3">
+
+            {/* ── Summary strip ── */}
+            <div className="bg-white rounded-xl border border-gray-200 px-5 py-3 flex items-center justify-between">
+                <div className="flex items-center gap-2 text-sm text-gray-600">
+                    <Package className="w-4 h-4 text-gray-400" />
+                    <span className="font-semibold">{items.length} article{items.length > 1 ? 's' : ''}</span>
+                </div>
+                <div className="flex items-center gap-3">
+                    {[
+                        { count: okCount,   label: 'Disponible', dot: 'bg-emerald-500', cls: 'text-emerald-700' },
+                        { count: partCount, label: 'Partiel',    dot: 'bg-amber-400',  cls: 'text-amber-700'  },
+                        { count: outCount,  label: 'Rupture',    dot: 'bg-red-500',    cls: 'text-red-700'    },
+                    ].map(({ count, label, dot, cls }) => count > 0 && (
+                        <div key={label} className="flex items-center gap-1.5">
+                            <span className={cn('w-2 h-2 rounded-full', dot)} />
+                            <span className={cn('text-xs font-semibold', cls)}>{count} {label}</span>
                         </div>
-                        <div>
-                            <p className={cn('text-3xl font-black leading-none', c.text)}>{count}</p>
-                            <p className={cn('text-xs mt-1', c.text, 'opacity-70')}>{label}</p>
-                        </div>
-                    </div>
-                ))}
+                    ))}
+                    {allOk && (
+                        <span className="flex items-center gap-1.5 text-xs font-semibold text-emerald-700">
+                            <CheckCircle className="w-3.5 h-3.5" /> Tout disponible
+                        </span>
+                    )}
+                </div>
             </div>
 
-            {/* Per article */}
-            <Card>
-                <CardHeader icon={Package} title="Stock par Article" />
-                <div className="divide-y divide-gray-50">
-                    {items.map(item => {
-                        const qty = parseFloat(item.quantity);
-                        const avail = item.available_stock_quantity;
-                        const pct = qty > 0 ? Math.min(avail / qty, 1) * 100 : 100;
-                        const okLine = avail >= qty;
-                        const partLine = avail > 0 && !okLine;
-                        const color = okLine ? 'emerald' : partLine ? 'amber' : 'red';
-                        return (
-                            <div key={item.id} className="px-5 py-4">
-                                <div className="flex items-center justify-between mb-2">
-                                    <div className="flex items-center gap-2.5 min-w-0">
-                                        <span className={cn('w-2 h-2 rounded-full shrink-0', okLine ? 'bg-emerald-500' : partLine ? 'bg-amber-500' : 'bg-red-500')} />
-                                        <div className="min-w-0">
-                                            <p className="text-xs font-bold text-gray-900 truncate">{item.product.name}</p>
-                                            <p className="text-[10px] text-gray-400 font-mono">{item.product.code}</p>
+            {/* ── Per-article table ── */}
+            <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+                <table className="w-full text-xs border-collapse">
+                    <thead>
+                        <tr className="bg-gray-50 border-b border-gray-200">
+                            <th className="w-10 px-3 py-3 border-r border-gray-100" />
+                            <th className="text-left px-4 py-3 font-semibold text-gray-500 uppercase tracking-wider">Article</th>
+                            <th className="text-right px-4 py-3 font-semibold text-gray-500 uppercase tracking-wider whitespace-nowrap">Qté commandée</th>
+                            <th className="text-right px-4 py-3 font-semibold text-gray-500 uppercase tracking-wider whitespace-nowrap">Stock dispo</th>
+                            <th className="px-5 py-3 font-semibold text-gray-500 uppercase tracking-wider" style={{ minWidth: 160 }}>Couverture</th>
+                            <th className="text-center px-4 py-3 font-semibold text-gray-500 uppercase tracking-wider">Statut</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {items.map(item => {
+                            const qty      = parseFloat(item.quantity);
+                            const avail    = item.available_stock_quantity;
+                            const pct      = qty > 0 ? Math.min(avail / qty, 1) * 100 : 100;
+                            const okLine   = avail >= qty;
+                            const partLine = avail > 0 && !okLine;
+                            const barCls   = okLine ? 'bg-emerald-500' : partLine ? 'bg-amber-400' : 'bg-red-500';
+                            const dotCls   = okLine ? 'bg-emerald-500' : partLine ? 'bg-amber-400' : 'bg-red-500';
+                            const pillCls  = okLine
+                                ? 'bg-emerald-50 text-emerald-700 ring-emerald-200'
+                                : partLine
+                                ? 'bg-amber-50 text-amber-700 ring-amber-200'
+                                : 'bg-red-50 text-red-700 ring-red-200';
+
+                            return (
+                                <tr key={item.id}
+                                    className={cn(
+                                        'border-b border-gray-100 hover:bg-gray-50/60 transition-colors',
+                                        !okLine && !partLine && 'bg-red-50/20',
+                                        partLine && 'bg-amber-50/10'
+                                    )}>
+                                    {/* Thumbnail */}
+                                    <td className="px-3 py-3 border-r border-gray-100">
+                                        {item.product.thumbnail
+                                            ? <img src={item.product.thumbnail} alt="" className="w-8 h-8 rounded-lg object-cover border border-gray-100" />
+                                            : <div className="w-8 h-8 rounded-lg bg-gray-100 flex items-center justify-center text-[9px] font-bold text-gray-400 font-mono">
+                                                {item.product.code?.slice(-3)}
+                                              </div>
+                                        }
+                                    </td>
+
+                                    {/* Article */}
+                                    <td className="px-4 py-3">
+                                        <div className="flex items-center gap-2">
+                                            <span className={cn('w-2 h-2 rounded-full shrink-0', dotCls)} />
+                                            <div className="min-w-0">
+                                                <p className="font-semibold text-gray-900 truncate leading-tight">{item.product.name}</p>
+                                                <p className="font-mono text-gray-400 text-[10px] mt-0.5">{item.product.code}</p>
+                                            </div>
                                         </div>
-                                    </div>
-                                    <div className="flex items-center gap-3 shrink-0 ml-4">
-                                        <span className="text-xs text-gray-500"><span className="font-black text-gray-900">{avail}</span> / {qty} unités</span>
-                                        <Pill className={okLine ? 'bg-emerald-50 text-emerald-700 ring-emerald-200' : partLine ? 'bg-amber-50 text-amber-700 ring-amber-200' : 'bg-red-50 text-red-700 ring-red-200'}>
+                                    </td>
+
+                                    {/* Qty ordered */}
+                                    <td className="px-4 py-3 text-right">
+                                        <span className="font-black text-gray-900">{qty.toLocaleString('fr-FR')}</span>
+                                        {item.unit && <span className="text-gray-400 ml-1 text-[10px]">{item.unit}</span>}
+                                    </td>
+
+                                    {/* Stock available */}
+                                    <td className="px-4 py-3 text-right">
+                                        <span className={cn('font-black', okLine ? 'text-emerald-600' : partLine ? 'text-amber-600' : 'text-red-600')}>
+                                            {avail.toLocaleString('fr-FR')}
+                                        </span>
+                                    </td>
+
+                                    {/* Coverage bar */}
+                                    <td className="px-5 py-3">
+                                        <div className="flex items-center gap-2.5">
+                                            <div className="flex-1 h-1.5 bg-gray-100 rounded-full overflow-hidden">
+                                                <div className={cn('h-full rounded-full transition-all', barCls)}
+                                                    style={{ width: `${pct}%` }} />
+                                            </div>
+                                            <span className={cn('text-[10px] font-bold tabular-nums w-8 text-right shrink-0',
+                                                okLine ? 'text-emerald-600' : partLine ? 'text-amber-600' : 'text-red-600')}>
+                                                {pct.toFixed(0)}%
+                                            </span>
+                                        </div>
+                                    </td>
+
+                                    {/* Status pill */}
+                                    <td className="px-4 py-3 text-center">
+                                        <Pill className={pillCls}>
                                             {okLine ? 'OK' : partLine ? 'Partiel' : 'Rupture'}
                                         </Pill>
-                                    </div>
-                                </div>
-                                <Bar pct={pct} color={color} />
-                            </div>
-                        );
-                    })}
-                </div>
-            </Card>
+                                    </td>
+                                </tr>
+                            );
+                        })}
+                    </tbody>
+                </table>
+            </div>
         </div>
     );
 };
@@ -988,85 +1238,274 @@ const TabHistorique = ({ bc, orderId }: { bc: BC; orderId: number }) => {
     const { workflowHistory, isLoadingHistory } = useAdvWorkflow(orderId);
     const transitions = bc.workflow_instance?.transitions ?? [];
 
+    const getActionCfg = (action: string) => {
+        const a = action.toLowerCase();
+        if (['submit_order', 'confirm', 'approve', 'sell', 'resume'].some(k => a.includes(k)))
+            return { dot: 'bg-sage-500 ring-sage-200', tag: 'bg-sage-50 text-sage-700 border-sage-200' };
+        if (['reject', 'cancel'].some(k => a.includes(k)))
+            return { dot: 'bg-red-500 ring-red-200', tag: 'bg-red-50 text-red-700 border-red-200' };
+        if (['hold', 'credit', 'escalat'].some(k => a.includes(k)))
+            return { dot: 'bg-amber-500 ring-amber-200', tag: 'bg-amber-50 text-amber-700 border-amber-200' };
+        if (a === 'initialized')
+            return { dot: 'bg-gray-400 ring-gray-200', tag: 'bg-gray-50 text-gray-500 border-gray-200' };
+        return { dot: 'bg-indigo-500 ring-indigo-200', tag: 'bg-indigo-50 text-indigo-700 border-indigo-200' };
+    };
+
     return (
-        <div className="grid grid-cols-2 gap-5">
-            {/* Transitions from BC detail */}
-            <Card>
-                <CardHeader icon={Clock} title="Transitions de la Commande" />
-                <div className="p-5">
+        <div className="grid grid-cols-2 gap-4">
+            {/* ── Transitions de la Commande ── */}
+            <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+                <SectionHeader
+                    icon={Clock}
+                    title="Transitions de la Commande"
+                    badge={transitions.length > 0 ? (
+                        <span className="text-xs font-semibold text-gray-400 tabular-nums">{transitions.length}</span>
+                    ) : undefined}
+                />
+                <div className="p-4">
                     {transitions.length === 0 ? (
-                        <p className="text-sm text-gray-400 text-center py-4">Aucune transition</p>
+                        <div className="flex flex-col items-center justify-center py-10 text-gray-300">
+                            <Clock className="w-8 h-8 mb-2" />
+                            <p className="text-sm text-gray-400">Aucune transition enregistrée</p>
+                        </div>
                     ) : (
                         <div className="relative">
-                            <div className="absolute left-4 top-0 bottom-0 w-px bg-gray-100" />
+                            <div className="absolute left-[6px] top-3 bottom-3 w-px bg-gray-100" />
                             <div className="space-y-4">
-                                {transitions.map(t => (
-                                    <div key={t.id} className="relative pl-10">
-                                        <div className={cn('absolute left-3 top-1.5 w-2.5 h-2.5 rounded-full border-2 border-white ring-2', t.action === 'submit_order' ? 'bg-sage-500 ring-sage-200' : t.action === 'initialized' ? 'bg-gray-400 ring-gray-200' : 'bg-sage-500 ring-sage-200')} />
-                                        <div className="bg-gray-50 border border-gray-100 rounded-xl p-3.5">
-                                            <div className="flex items-center justify-between mb-1.5">
-                                                <span className="text-[10px] font-mono font-bold text-gray-700 px-1.5 py-0.5 bg-white border border-gray-200 rounded-md">{t.action}</span>
-                                                <span className="text-[10px] text-gray-400">{fmtDate(t.performed_at, true)}</span>
-                                            </div>
-                                            {t.performed_by && (
-                                                <div className="flex items-center gap-1.5 mt-1">
-                                                    <div className="w-4 h-4 rounded-full bg-sage-100 flex items-center justify-center shrink-0">
-                                                        <User className="w-2.5 h-2.5 text-sage-600" />
+                                {transitions.map((t, i) => {
+                                    const cfg = getActionCfg(t.action);
+                                    return (
+                                        <div key={t.id ?? i} className="relative pl-6">
+                                            <div className={cn('absolute left-0 top-1.5 w-3.5 h-3.5 rounded-full border-2 border-white ring-2 shrink-0', cfg.dot)} />
+                                            <div className="space-y-1.5">
+                                                <div className="flex items-center justify-between gap-2 flex-wrap">
+                                                    <span className={cn('text-[10px] font-mono font-bold px-2 py-0.5 rounded border', cfg.tag)}>
+                                                        {t.action.replace(/_/g, ' ')}
+                                                    </span>
+                                                    <span className="text-[10px] text-gray-400 tabular-nums">{fmtDate(t.performed_at, true)}</span>
+                                                </div>
+                                                {t.performed_by && (
+                                                    <div className="flex items-center gap-1.5">
+                                                        <div className="w-4 h-4 rounded-full bg-gray-100 flex items-center justify-center shrink-0">
+                                                            <User className="w-2.5 h-2.5 text-gray-500" />
+                                                        </div>
+                                                        <span className="text-xs font-semibold text-gray-700">{t.performed_by.name}</span>
+                                                        {(t.performed_by as any).role && (
+                                                            <span className="text-[10px] text-gray-400">· {(t.performed_by as any).role}</span>
+                                                        )}
                                                     </div>
-                                                    <span className="text-xs font-semibold text-gray-700">{t.performed_by.name}</span>
-                                                </div>
-                                            )}
-                                            {t.comment && <p className="text-xs italic text-gray-500 mt-1.5 pt-1.5 border-t border-gray-100">"{t.comment}"</p>}
-                                            {t.metadata && Object.keys(t.metadata).length > 0 && (
-                                                <div className="mt-2 flex flex-wrap gap-1">
-                                                    {Object.entries(t.metadata).map(([k, v]) => (
-                                                        <span key={k} className="text-[9px] px-1.5 py-0.5 bg-white border border-gray-200 rounded font-mono text-gray-400">{k}: {String(v)}</span>
-                                                    ))}
-                                                </div>
-                                            )}
+                                                )}
+                                                {t.comment && (
+                                                    <p className="text-xs italic text-gray-500 pl-2 border-l-2 border-gray-200">
+                                                        {t.comment}
+                                                    </p>
+                                                )}
+                                                {t.metadata && Object.keys(t.metadata).length > 0 && (
+                                                    <div className="flex flex-wrap gap-1 pt-0.5">
+                                                        {Object.entries(t.metadata).map(([k, v]) => (
+                                                            <span key={k} className="text-[9px] px-1.5 py-0.5 bg-gray-50 border border-gray-200 rounded font-mono text-gray-400">
+                                                                {k}: {String(v)}
+                                                            </span>
+                                                        ))}
+                                                    </div>
+                                                )}
+                                            </div>
                                         </div>
-                                    </div>
-                                ))}
+                                    );
+                                })}
                             </div>
                         </div>
                     )}
                 </div>
-            </Card>
+            </div>
 
-            {/* Workflow API history */}
-            <Card>
-                <CardHeader icon={History} title="Historique Workflow" />
-                <div className="p-5">
+            {/* ── Historique Workflow ── */}
+            <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+                <SectionHeader
+                    icon={History}
+                    title="Historique Workflow"
+                    badge={!isLoadingHistory && workflowHistory.length > 0 ? (
+                        <span className="text-xs font-semibold text-gray-400 tabular-nums">{workflowHistory.length}</span>
+                    ) : undefined}
+                />
+                <div className="p-4">
                     {isLoadingHistory ? (
                         <div className="flex items-center justify-center h-20 text-gray-400">
-                            <Loader2 className="w-5 h-5 animate-spin mr-2" /><span className="text-sm">Chargement...</span>
+                            <Loader2 className="w-5 h-5 animate-spin mr-2" />
+                            <span className="text-sm">Chargement...</span>
+                        </div>
+                    ) : workflowHistory.length === 0 ? (
+                        <div className="flex flex-col items-center justify-center py-10 text-gray-300">
+                            <History className="w-8 h-8 mb-2" />
+                            <p className="text-sm text-gray-400">Aucun historique disponible</p>
                         </div>
                     ) : (
-                        <WorkflowHistory history={workflowHistory} isLoading={isLoadingHistory} />
+                        <div className="relative">
+                            <div className="absolute left-[6px] top-3 bottom-3 w-px bg-gray-100" />
+                            <div className="space-y-4">
+                                {workflowHistory.map((entry, i) => {
+                                    const cfg = getActionCfg(entry.action ?? '');
+                                    return (
+                                        <div key={entry.id ?? i} className="relative pl-6">
+                                            <div className={cn('absolute left-0 top-1.5 w-3.5 h-3.5 rounded-full border-2 border-white ring-2 shrink-0', cfg.dot)} />
+                                            <div className="space-y-1.5">
+                                                <div className="flex items-center justify-between gap-2 flex-wrap">
+                                                    <div className="flex items-center gap-1.5">
+                                                        <span className="text-[10px] px-2 py-0.5 bg-gray-50 border border-gray-200 rounded font-mono text-gray-500">
+                                                            {entry.from_step}
+                                                        </span>
+                                                        <span className="text-[10px] text-gray-400">→</span>
+                                                        <span className={cn('text-[10px] px-2 py-0.5 rounded border font-mono font-bold', cfg.tag)}>
+                                                            {entry.to_step}
+                                                        </span>
+                                                    </div>
+                                                    <span className="text-[10px] text-gray-400 tabular-nums">{fmtDate(entry.created_at, true)}</span>
+                                                </div>
+                                                {entry.user && (
+                                                    <div className="flex items-center gap-1.5 flex-wrap">
+                                                        <div className="w-4 h-4 rounded-full bg-gray-100 flex items-center justify-center shrink-0">
+                                                            <User className="w-2.5 h-2.5 text-gray-500" />
+                                                        </div>
+                                                        <span className="text-xs font-semibold text-gray-700">{entry.user}</span>
+                                                        {entry.action && (
+                                                            <span className={cn('text-[10px] font-mono px-1.5 py-0.5 rounded border', cfg.tag)}>
+                                                                {entry.action.replace(/_/g, ' ')}
+                                                            </span>
+                                                        )}
+                                                    </div>
+                                                )}
+                                                {entry.comment && (
+                                                    <p className="text-xs italic text-gray-500 pl-2 border-l-2 border-gray-200">
+                                                        {entry.comment}
+                                                    </p>
+                                                )}
+                                                {entry.metadata && Object.keys(entry.metadata).length > 0 && (
+                                                    <div className="flex flex-wrap gap-1 pt-0.5">
+                                                        {Object.entries(entry.metadata).map(([k, v]) => (
+                                                            <span key={k} className="text-[9px] px-1.5 py-0.5 bg-gray-50 border border-gray-200 rounded font-mono text-gray-400">
+                                                                {k}: {String(v)}
+                                                            </span>
+                                                        ))}
+                                                    </div>
+                                                )}
+                                            </div>
+                                        </div>
+                                    );
+                                })}
+                            </div>
+                        </div>
                     )}
                 </div>
-            </Card>
+            </div>
         </div>
     );
 };
 
-// ─── Detail view ──────────────────────────────────────────────────────────────
+
+// ─── Detail view — ProductsPage scroll-spy pattern ────────────────────────────
 
 const DetailView = ({ detailData, onRefresh }: { detailData: BcDetailData; onRefresh: () => void }) => {
-    const [tab, setTab] = useState<TabId>('resume');
     const { bc } = detailData;
+    const containerRef = useRef<HTMLDivElement>(null);
+    const sectionRefs = useRef<Record<string, HTMLDivElement | null>>({});
+    const isScrollingRef = useRef(false);
+    const [activeTab, setActiveTab] = useState('infos');
+    const [openSections, setOpenSections] = useState<Record<string, boolean>>({
+        infos: true, decisions: true, resume: true, lignes: true, client: true, stock: true, logistique: true, historique: true,
+    });
+
+    const handleTabChange = (tabId: string) => {
+        setActiveTab(tabId);
+        const section = sectionRefs.current[tabId];
+        if (section && containerRef.current) {
+            isScrollingRef.current = true;
+            section.scrollIntoView({ behavior: 'smooth', block: 'start' });
+            setTimeout(() => { isScrollingRef.current = false; }, 1000);
+        }
+    };
+
+    const toggleSection = (id: string, isOpen: boolean) =>
+        setOpenSections(prev => ({ ...prev, [id]: isOpen }));
+
+    const handleExpandAll = () =>
+        setOpenSections(ADV_TABS.reduce((a, t) => ({ ...a, [t.id]: true }), {}));
+
+    const handleCollapseAll = () =>
+        setOpenSections(ADV_TABS.reduce((a, t) => ({ ...a, [t.id]: false }), {}));
+
+    useEffect(() => {
+        const container = containerRef.current;
+        if (!container) return;
+        const handleScroll = () => {
+            if (isScrollingRef.current) return;
+            const top = container.scrollTop;
+            for (const tab of ADV_TABS) {
+                const el = sectionRefs.current[tab.id];
+                if (!el || !openSections[tab.id]) continue;
+                if (el.offsetTop <= top + 100 && el.offsetTop + el.clientHeight > top + 50) {
+                    if (activeTab !== tab.id) setActiveTab(tab.id);
+                    break;
+                }
+            }
+        };
+        container.addEventListener('scroll', handleScroll);
+        return () => container.removeEventListener('scroll', handleScroll);
+    }, [openSections, activeTab]);
 
     return (
-        <div className="flex flex-col h-full overflow-hidden bg-slate-50/80">
-            <DetailHeader data={detailData} />
-            <TabBar active={tab} onChange={setTab} />
-            <div className="flex-1 overflow-y-auto p-5">
-                {tab === 'resume'     && <TabResume     data={detailData}   onRefresh={onRefresh} />}
-                {tab === 'lignes'     && <TabLignes     bc={bc} />}
-                {tab === 'client'     && <TabClient     bc={bc} />}
-                {tab === 'stock'      && <TabStock      bc={bc} />}
-                {tab === 'logistique' && <TabLogistique logistics={detailData.logistics_aggregate} />}
-                {tab === 'historique' && <TabHistorique bc={bc} orderId={bc.id} />}
+        <div className="flex flex-col h-full overflow-hidden bg-slate-50">
+            <div className="shrink-0 bg-white border-b border-gray-200 overflow-hidden">
+                <SageTabs
+                    tabs={ADV_TABS}
+                    activeTabId={activeTab}
+                    onTabChange={handleTabChange}
+                    onExpandAll={handleExpandAll}
+                    onCollapseAll={handleCollapseAll}
+                    className="shadow-none"
+                />
+            </div>
+
+            <div ref={containerRef} className="flex-1 overflow-y-auto p-3 sm:p-4 space-y-3 scroll-smooth bg-slate-50">
+                <div ref={el => { sectionRefs.current['infos'] = el; }}>
+                    <SageCollapsible title="Informations de la commande" isOpen={openSections['infos']} onOpenChange={o => toggleSection('infos', o)}>
+                        <TabInfos data={detailData} onNavigate={handleTabChange} />
+                    </SageCollapsible>
+                </div>
+                <div ref={el => { sectionRefs.current['decisions'] = el; }}>
+                    <SageCollapsible title="Décisions & Actions" isOpen={openSections['decisions']} onOpenChange={o => toggleSection('decisions', o)}>
+                        <TabDecisions bc={bc} onRefresh={onRefresh} />
+                    </SageCollapsible>
+                </div>
+                <div ref={el => { sectionRefs.current['resume'] = el; }}>
+                    <SageCollapsible title="Résumé" isOpen={openSections['resume']} onOpenChange={o => toggleSection('resume', o)}>
+                        <TabResume data={detailData} onRefresh={onRefresh} />
+                    </SageCollapsible>
+                </div>
+                <div ref={el => { sectionRefs.current['lignes'] = el; }}>
+                    <SageCollapsible title="Lignes de commande" isOpen={openSections['lignes']} onOpenChange={o => toggleSection('lignes', o)}>
+                        <TabLignes bc={bc} />
+                    </SageCollapsible>
+                </div>
+                <div ref={el => { sectionRefs.current['client'] = el; }}>
+                    <SageCollapsible title="Client & Crédit" isOpen={openSections['client']} onOpenChange={o => toggleSection('client', o)}>
+                        <TabClient bc={bc} />
+                    </SageCollapsible>
+                </div>
+                <div ref={el => { sectionRefs.current['stock'] = el; }}>
+                    <SageCollapsible title="Disponibilité Stock" isOpen={openSections['stock']} onOpenChange={o => toggleSection('stock', o)}>
+                        <TabStock bc={bc} />
+                    </SageCollapsible>
+                </div>
+                <div ref={el => { sectionRefs.current['logistique'] = el; }}>
+                    <SageCollapsible title="Logistique" isOpen={openSections['logistique']} onOpenChange={o => toggleSection('logistique', o)}>
+                        <TabLogistique logistics={detailData.logistics_aggregate} />
+                    </SageCollapsible>
+                </div>
+                <div ref={el => { sectionRefs.current['historique'] = el; }}>
+                    <SageCollapsible title="Historique & Workflow" isOpen={openSections['historique']} onOpenChange={o => toggleSection('historique', o)}>
+                        <TabHistorique bc={bc} orderId={bc.id} />
+                    </SageCollapsible>
+                </div>
             </div>
         </div>
     );
@@ -1111,12 +1550,21 @@ export const AdvValidationPage = () => {
     const handleSelect = (id: number) => { setSelectedId(id); fetchDetail(id); };
     const handleRefresh = () => { fetchList(); if (selectedId) fetchDetail(selectedId); };
 
+    const bc = detailData?.bc ?? null;
+    const canDerogation = can(PERMISSIONS.ADV.CREDIT_UPDATE_LIMIT);
+    const canExport = can(PERMISSIONS.ADV.BC_EXPORT);
+
     return (
         <>
             <MasterLayout
                 leftContent={
-                    <BcSidebar bcs={bcs} loading={loading} selectedId={selectedId}
-                        onSelect={handleSelect} onRefresh={fetchList} />
+                    <AdvBcGrid
+                        bcs={bcs}
+                        loading={loading}
+                        selectedId={selectedId}
+                        onSelect={handleSelect}
+                        onRefresh={fetchList}
+                    />
                 }
                 mainContent={
                     <div className="h-full overflow-hidden flex flex-col">
@@ -1143,27 +1591,22 @@ export const AdvValidationPage = () => {
                 rightContent={
                     <ActionPanel
                         groups={[
-                            ...(can(PERMISSIONS.ADV.CREDIT_UPDATE_LIMIT)
-                                ? [{
-                                    items: [{
-                                        icon: ShieldAlert,
-                                        label: 'Demander Dérogation',
-                                        variant: 'sage' as const,
-                                        onClick: () => setShowDerogation(true),
-                                        disabled: !selectedId || detailData?.bc.bc_status === 'pending_derogation',
-                                    }],
-                                }]
-                                : []),
+                            ...(canDerogation ? [{
+                                items: [{
+                                    icon: ShieldAlert,
+                                    label: 'Dérogation crédit',
+                                    variant: 'warning' as const,
+                                    disabled: !bc || bc.bc_status === 'pending_derogation',
+                                    onClick: () => setShowDerogation(true),
+                                }],
+                            }] : []),
                             {
                                 items: [
-                                    { icon: Printer, label: 'Imprimer', disabled: !selectedId },
-                                    ...(can(PERMISSIONS.ADV.BC_EXPORT)
-                                        ? [{ icon: Download, label: 'Exporter PDF', disabled: !selectedId }]
-                                        : []),
-                                    { icon: Share2, label: 'Partager', variant: 'primary' as const, disabled: !selectedId },
+                                    { icon: Printer,  label: 'Imprimer',     disabled: !bc },
+                                    ...(canExport ? [{ icon: Download, label: 'Exporter PDF', disabled: !bc }] : []),
+                                    { icon: Share2,   label: 'Partager',     disabled: !bc },
                                 ],
                             },
-                            { items: [{ icon: Settings, label: 'Paramètres' }] },
                         ]}
                     />
                 }

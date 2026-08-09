@@ -1,13 +1,13 @@
 import { useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Loader2, MapPinned, Package, CheckCircle2, X, Truck, Box, Weight, AlertTriangle, RefreshCw, ArrowLeft } from 'lucide-react';
+import { Loader2, MapPinned, CheckCircle2, X, Truck, Box, Weight, AlertTriangle, RefreshCw, ArrowLeft, Route, Users, DollarSign, LayoutList } from 'lucide-react';
 import toast from 'react-hot-toast';
 
 import { OrdersMapView, pointInPolygon } from '@/components/dispatcher/OrdersMapView';
 import { SearchSelectDropdown } from '@/components/dispatcher/SearchSelectDropdown';
 import { LoadCapacityBar } from '@/components/dispatcher/LoadCapacityBar';
 import { computeMissionLoad } from '@/utils/missionLoad';
-import { useDispatcherPendingOrders } from '@/hooks/dispatcher/useDispatcherOrders';
+import { useLocalDispatcherOrders } from '@/hooks/dispatcher/useLocalDispatcherOrders';
 import { useRidersWithVehicles } from '@/hooks/dispatcher/useDispatcherFleet';
 import { useCreateDeliveryMission } from '@/hooks/dispatcher/useDispatcherDeliveryMissions';
 import type { DispatcherOrder } from '@/types/dispatcher.types';
@@ -21,8 +21,7 @@ import type { DispatcherOrder } from '@/types/dispatcher.types';
 
 export const DispatcherMapWorkspacePage = () => {
   const navigate = useNavigate();
-  const { data: pendingData, loading: ordersLoading, refetch: refetchOrders } = useDispatcherPendingOrders({ per_page: 200 });
-  const orders = useMemo(() => pendingData?.data ?? [], [pendingData]);
+  const { orders, loading: ordersLoading, syncing, refetch: refetchOrders } = useLocalDispatcherOrders();
 
   const [selectedOrderIds, setSelectedOrderIds] = useState<number[]>([]);
   const [riderId, setRiderId] = useState<number | ''>('');
@@ -51,6 +50,10 @@ export const DispatcherMapWorkspacePage = () => {
   );
 
   const missionLoad = useMemo(() => computeMissionLoad(selectedOrders), [selectedOrders]);
+  const totalAmount = useMemo(
+    () => selectedOrders.reduce((sum, o) => sum + (Number(o.total_amount) || 0), 0),
+    [selectedOrders],
+  );
 
   const toggleOrder = (order: DispatcherOrder) => {
     setSelectedOrderIds((prev) =>
@@ -136,9 +139,9 @@ export const DispatcherMapWorkspacePage = () => {
         <button
           onClick={refetchOrders}
           className="ml-auto p-1.5 rounded-lg hover:bg-gray-100 text-gray-400"
-          title="Rafraîchir"
+          title={syncing ? 'Synchronisation…' : 'Rafraîchir'}
         >
-          <RefreshCw size={14} />
+          <RefreshCw size={14} className={syncing ? 'animate-spin text-blue-400' : ''} />
         </button>
       </div>
 
@@ -160,143 +163,284 @@ export const DispatcherMapWorkspacePage = () => {
           )}
         </div>
 
-        {/* Selection / mission panel */}
-        <div className="w-96 shrink-0 bg-white border-l border-gray-200 flex flex-col">
-        <div className="p-4 border-b border-gray-100 flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <Package size={16} className="text-sage-600" />
-            <h2 className="text-sm font-bold text-gray-900">{selectedOrderIds.length} sélectionnée(s)</h2>
-          </div>
-          {selectedOrderIds.length > 0 && (
-            <button
-              onClick={clearSelection}
-              className="text-xs text-red-500 hover:text-red-700 font-medium flex items-center gap-1"
-            >
-              <X size={12} /> Vider
-            </button>
-          )}
-        </div>
+        {/* ── Mission Builder Panel ─────────────────────────────────────── */}
+        <div className="w-[380px] shrink-0 bg-white border-l border-gray-200 flex flex-col overflow-hidden">
 
-        <div className="flex-1 overflow-y-auto p-3 space-y-1.5">
-          {selectedOrders.length === 0 ? (
-            <p className="text-xs text-gray-400 text-center py-8">
-              Dessinez une zone sur la carte ou cliquez un pin pour ajouter des commandes
-            </p>
-          ) : (
-            selectedOrders.map((o) => (
-              <div key={o.id} className="flex items-center justify-between gap-2 px-2.5 py-2 rounded-lg bg-emerald-50 border border-emerald-100">
-                <div className="min-w-0">
-                  <div className="text-xs font-mono font-semibold text-gray-800 truncate">{o.order_code}</div>
-                  <div className="text-[11px] text-gray-500 truncate">{o.partner.name}</div>
-                </div>
-                <button
-                  onClick={() => toggleOrder(o)}
-                  className="p-1 rounded hover:bg-emerald-100 text-emerald-600 shrink-0"
-                >
-                  <X size={12} />
-                </button>
+          {/* ① Fixed header */}
+          <div className="shrink-0 px-4 py-3 border-b border-gray-100 bg-gray-50">
+            <div className="flex items-center gap-2.5">
+              <div className="p-1.5 bg-blue-100 rounded-lg shrink-0">
+                <Route size={14} className="text-blue-600" />
               </div>
-            ))
-          )}
-        </div>
-
-        {/* Mission creation */}
-        <div className="border-t border-gray-100 p-4 space-y-3">
-          <SearchSelectDropdown
-            label="Livreur"
-            options={riders.map((r) => ({
-              id: r.id,
-              label: r.name,
-              sublabel: r.vehicles.length === 0 ? 'Sans véhicule' : r.vehicles.length > 1 ? `${r.vehicles.length} véhicules` : (r.vehicles[0].display_name ?? r.vehicles[0].plate_number),
-            }))}
-            value={riderId}
-            onChange={handleSelectRider}
-            disabled={ridersLoading}
-          />
-
-          {riderId !== '' && riderVehicles.length === 0 && (
-            <div className="flex items-center gap-2 px-3 py-2.5 rounded-lg bg-amber-50 border border-amber-200 text-xs text-amber-800">
-              <AlertTriangle size={14} className="shrink-0" /> Ce livreur n'a aucun véhicule assigné.
-            </div>
-          )}
-
-          {riderVehicles.length > 1 && (
-            <SearchSelectDropdown
-              label="Véhicule"
-              options={riderVehicles.map((v) => ({
-                id: v.id,
-                label: v.display_name ?? v.plate_number ?? v.plate ?? `#${v.id}`,
-                sublabel: [v.make, v.model].filter(Boolean).join(' ') || undefined,
-              }))}
-              value={vehicleId}
-              onChange={setVehicleId}
-            />
-          )}
-
-          {selectedVehicle && (
-            <div className="p-3 rounded-lg bg-sage-50 border border-sage-100">
-              <div className="flex items-center gap-2 mb-2">
-                <Truck size={14} className="text-blue-500" />
-                <span className="text-sm font-bold text-blue-900">
-                  {selectedVehicle.display_name ?? selectedVehicle.plate_number ?? selectedVehicle.plate}
+              <div className="flex-1 min-w-0">
+                <h2 className="text-sm font-bold text-gray-900">Construire une mission</h2>
+                <p className="text-[11px] text-gray-400">Sélectionnez des BCs sur la carte</p>
+              </div>
+              {selectedOrders.length > 0 && (
+                <span className="text-[11px] font-bold text-blue-700 bg-blue-100 rounded-full px-2.5 py-0.5 shrink-0">
+                  {selectedOrders.length} BC{selectedOrders.length > 1 ? 's' : ''}
                 </span>
-              </div>
-              <div className="grid grid-cols-2 gap-2 text-xs">
-                <div className="flex items-center gap-1.5 text-blue-700">
-                  <Box size={12} /> <strong>{selectedVehicle.capacity_volume ?? '—'} m³</strong>
+              )}
+            </div>
+          </div>
+
+          {/* ② Fixed stats bar — compact single row */}
+          {selectedOrders.length > 0 && (
+            <div className="shrink-0 border-b border-blue-100 bg-blue-50 px-4 py-2">
+              <div className="grid grid-cols-4 divide-x divide-blue-100 text-center">
+                <div className="px-1">
+                  <p className="text-sm font-bold text-blue-800 leading-none">{selectedOrders.length}</p>
+                  <p className="text-[9px] font-semibold text-blue-400 uppercase tracking-wide mt-0.5">BCs</p>
                 </div>
-                <div className="flex items-center gap-1.5 text-blue-700">
-                  <Weight size={12} /> <strong>{selectedVehicle.payload_kg ?? selectedVehicle.capacity_weight ?? '—'} kg</strong>
+                <div className="px-1">
+                  <p className="text-sm font-bold text-blue-800 leading-none">{missionLoad.weightKg.toFixed(1)}</p>
+                  <p className="text-[9px] font-semibold text-blue-400 uppercase tracking-wide mt-0.5">kg</p>
+                </div>
+                <div className="px-1">
+                  <p className="text-sm font-bold text-blue-800 leading-none">{missionLoad.volumeM3.toFixed(2)}</p>
+                  <p className="text-[9px] font-semibold text-blue-400 uppercase tracking-wide mt-0.5">m³</p>
+                </div>
+                <div className="px-1">
+                  <p className="text-sm font-bold text-emerald-700 leading-none truncate">
+                    {totalAmount > 0 ? totalAmount.toLocaleString('fr-FR', { maximumFractionDigits: 0 }) : '—'}
+                  </p>
+                  <p className="text-[9px] font-semibold text-blue-400 uppercase tracking-wide mt-0.5">MAD</p>
                 </div>
               </div>
             </div>
           )}
 
-          {selectedOrderIds.length > 0 && selectedVehicle && (
-            <LoadCapacityBar estimate={missionLoad} vehicle={selectedVehicle} />
-          )}
+          {/* ③ Single scrollable body — orders + assignment form */}
+          <div className="flex-1 overflow-y-auto min-h-0">
 
-          <input
-            type="text"
-            value={notes}
-            onChange={(e) => setNotes(e.target.value)}
-            placeholder="Notes (optionnel)…"
-            className="w-full border border-gray-300 rounded-lg px-2.5 py-2 text-sm"
-          />
+            {/* Empty state */}
+            {selectedOrders.length === 0 && (
+              <div className="flex flex-col items-center justify-center py-16 text-center px-6">
+                <div className="p-5 bg-gray-50 rounded-2xl mb-4">
+                  <MapPinned size={32} className="text-gray-200" />
+                </div>
+                <p className="text-sm font-semibold text-gray-500">Aucune commande sélectionnée</p>
+                <p className="text-xs text-gray-400 mt-1.5 leading-relaxed">
+                  Dessinez une zone sur la carte<br />ou cliquez directement sur un pin
+                </p>
+              </div>
+            )}
 
-          <button
-            onClick={() => setShowConfirm(true)}
-            disabled={selectedOrderIds.length === 0 || riderId === '' || vehicleId === ''}
-            className="w-full flex items-center justify-center gap-2 px-4 py-2.5 text-sm font-semibold rounded-lg bg-sage-500 hover:bg-sage-600 text-white shadow-sm disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
-          >
-            <CheckCircle2 size={14} /> Créer la mission ({selectedOrderIds.length} BC)
-          </button>
+            {/* Order list */}
+            {selectedOrders.length > 0 && (
+              <>
+                <div className="sticky top-0 z-10 px-4 py-2 bg-white border-b border-gray-100 flex items-center justify-between shadow-[0_1px_4px_rgba(0,0,0,0.04)]">
+                  <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider flex items-center gap-1.5">
+                    <LayoutList size={10} /> Commandes
+                  </span>
+                  <button
+                    onClick={clearSelection}
+                    className="text-[11px] text-red-500 hover:text-red-700 font-semibold flex items-center gap-1 transition-colors"
+                  >
+                    <X size={10} /> Tout vider
+                  </button>
+                </div>
+
+                <div className="px-3 pt-2 pb-1 space-y-1.5">
+                  {selectedOrders.map((o) => {
+                    const w   = Number(o.total_weight_kg) || 0;
+                    const v   = Number(o.total_volume_m3) || 0;
+                    const amt = Number(o.total_amount) || 0;
+                    return (
+                      <div
+                        key={o.id}
+                        className="flex items-center gap-2.5 px-3 py-2.5 rounded-xl bg-gray-50 border border-gray-100 hover:border-red-100 hover:bg-red-50/20 transition-colors group"
+                      >
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-1.5 mb-0.5">
+                            <span className="text-[10px] font-mono font-bold text-indigo-600 bg-indigo-50 border border-indigo-100 px-1.5 py-0.5 rounded leading-none">
+                              {o.order_code}
+                            </span>
+                            {amt > 0 && (
+                              <span className="text-[10px] font-semibold text-emerald-600 ml-auto">
+                                {amt.toLocaleString('fr-FR')} MAD
+                              </span>
+                            )}
+                          </div>
+                          <div className="text-xs font-semibold text-gray-800 truncate">{o.partner.name}</div>
+                          {(w > 0 || v > 0) && (
+                            <div className="flex items-center gap-2 mt-0.5 text-[10px] text-gray-400">
+                              {w > 0 && <span className="flex items-center gap-0.5"><Weight size={9} />{w.toFixed(1)} kg</span>}
+                              {v > 0 && <span className="flex items-center gap-0.5"><Box size={9} />{v.toFixed(2)} m³</span>}
+                            </div>
+                          )}
+                        </div>
+                        <button
+                          onClick={() => toggleOrder(o)}
+                          className="p-1.5 rounded-lg text-gray-300 hover:text-red-500 hover:bg-red-100 shrink-0 transition-colors opacity-0 group-hover:opacity-100"
+                          title="Retirer de la sélection"
+                        >
+                          <X size={12} />
+                        </button>
+                      </div>
+                    );
+                  })}
+                </div>
+              </>
+            )}
+
+            {/* Assignment form — always visible, scrolls with orders */}
+            <div className="px-4 pt-4 pb-3 border-t border-gray-100 mt-2">
+              <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wider flex items-center gap-1.5 mb-3">
+                <Users size={10} /> Assignation
+              </p>
+
+              <div className="space-y-3">
+                <SearchSelectDropdown
+                  label="Livreur"
+                  options={riders.map((r) => ({
+                    id: r.id,
+                    label: r.name,
+                    sublabel: r.vehicles.length === 0
+                      ? 'Sans véhicule'
+                      : r.vehicles.length > 1
+                      ? `${r.vehicles.length} véhicules`
+                      : (r.vehicles[0].display_name ?? r.vehicles[0].plate_number),
+                  }))}
+                  value={riderId}
+                  onChange={handleSelectRider}
+                  disabled={ridersLoading}
+                />
+
+                {riderId !== '' && riderVehicles.length === 0 && (
+                  <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-amber-50 border border-amber-200 text-xs text-amber-700">
+                    <AlertTriangle size={12} className="shrink-0" />
+                    Ce livreur n'a aucun véhicule assigné.
+                  </div>
+                )}
+
+                {riderVehicles.length > 1 && (
+                  <SearchSelectDropdown
+                    label="Véhicule"
+                    options={riderVehicles.map((v) => ({
+                      id: v.id,
+                      label: v.display_name ?? v.plate_number ?? v.plate ?? `#${v.id}`,
+                      sublabel: [v.make, v.model].filter(Boolean).join(' ') || undefined,
+                    }))}
+                    value={vehicleId}
+                    onChange={setVehicleId}
+                  />
+                )}
+
+                {selectedVehicle && (
+                  <div className="flex items-center gap-3 px-3 py-2.5 rounded-xl bg-blue-50 border border-blue-100">
+                    <div className="p-1.5 bg-blue-100 rounded-lg shrink-0">
+                      <Truck size={13} className="text-blue-600" />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <div className="text-sm font-bold text-blue-900 truncate">
+                        {selectedVehicle.display_name ?? selectedVehicle.plate_number ?? selectedVehicle.plate}
+                      </div>
+                      <div className="flex items-center gap-3 mt-0.5 text-[10px] text-blue-500 font-medium">
+                        <span className="flex items-center gap-0.5"><Box size={9} />{selectedVehicle.capacity_volume ?? '—'} m³</span>
+                        <span className="flex items-center gap-0.5"><Weight size={9} />{selectedVehicle.payload_kg ?? selectedVehicle.capacity_weight ?? '—'} kg</span>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {selectedOrderIds.length > 0 && selectedVehicle && (
+                  <LoadCapacityBar estimate={missionLoad} vehicle={selectedVehicle} />
+                )}
+
+                <input
+                  type="text"
+                  value={notes}
+                  onChange={(e) => setNotes(e.target.value)}
+                  placeholder="Notes pour le livreur (optionnel)…"
+                  className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm text-gray-800 placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-200 bg-white"
+                />
+              </div>
+            </div>
+          </div>
+
+          {/* ④ Fixed create button — always pinned at bottom */}
+          <div className="shrink-0 px-4 py-3 border-t border-gray-200 bg-white">
+            <button
+              onClick={() => setShowConfirm(true)}
+              disabled={selectedOrderIds.length === 0 || riderId === '' || vehicleId === ''}
+              className="w-full flex items-center justify-center gap-2 px-4 py-3 text-sm font-bold rounded-xl bg-blue-600 hover:bg-blue-700 active:bg-blue-800 text-white shadow-sm disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+            >
+              <CheckCircle2 size={15} />
+              Créer la mission
+              {selectedOrderIds.length > 0 && (
+                <span className="ml-1 bg-white/20 text-white text-xs font-bold px-2 py-0.5 rounded-full">
+                  {selectedOrderIds.length} BC{selectedOrderIds.length > 1 ? 's' : ''}
+                </span>
+              )}
+            </button>
+          </div>
         </div>
       </div>
-      </div>
 
-      {/* Confirmation */}
+      {/* Confirmation modal */}
       {showConfirm && (
-        <div className="fixed inset-0 z-[1000] flex items-center justify-center bg-black/40 backdrop-blur-sm">
-          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm mx-4 p-5">
-            <h3 className="text-sm font-bold text-gray-900 mb-2">Confirmer la création de mission</h3>
-            <p className="text-xs text-gray-500 mb-4">
-              {selectedOrderIds.length} commande(s) seront regroupées en une mission, assignée à{' '}
-              <strong>{selectedRider?.name}</strong> avec le véhicule{' '}
-              <strong>{selectedVehicle?.display_name ?? selectedVehicle?.plate_number}</strong>.
-            </p>
-            <div className="flex gap-2">
+        <div className="fixed inset-0 z-[1000] flex items-center justify-center bg-black/50 backdrop-blur-sm">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm mx-4 overflow-hidden">
+            {/* Modal header */}
+            <div className="px-5 pt-5 pb-4 border-b border-gray-100">
+              <div className="flex items-center gap-3 mb-1">
+                <div className="p-2 bg-blue-50 rounded-xl">
+                  <Route size={16} className="text-blue-600" />
+                </div>
+                <h3 className="text-sm font-bold text-gray-900">Confirmer la mission</h3>
+              </div>
+            </div>
+
+            {/* Mission summary */}
+            <div className="px-5 py-4 space-y-3">
+              <div className="grid grid-cols-3 gap-2 text-center py-2 bg-gray-50 rounded-xl">
+                <div>
+                  <p className="text-lg font-bold text-gray-900">{selectedOrderIds.length}</p>
+                  <p className="text-[10px] text-gray-400 uppercase">BCs</p>
+                </div>
+                <div className="border-x border-gray-200">
+                  <p className="text-lg font-bold text-gray-900">{missionLoad.weightKg.toFixed(1)}</p>
+                  <p className="text-[10px] text-gray-400 uppercase">kg</p>
+                </div>
+                <div>
+                  <p className="text-lg font-bold text-gray-900">{missionLoad.volumeM3.toFixed(2)}</p>
+                  <p className="text-[10px] text-gray-400 uppercase">m³</p>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-2.5 px-3 py-2.5 rounded-xl bg-blue-50 border border-blue-100 text-sm">
+                <Truck size={14} className="text-blue-500 shrink-0" />
+                <div className="min-w-0">
+                  <span className="font-semibold text-blue-900">{selectedRider?.name}</span>
+                  <span className="text-blue-400 mx-1.5">·</span>
+                  <span className="text-blue-600 text-xs">{selectedVehicle?.display_name ?? selectedVehicle?.plate_number}</span>
+                </div>
+              </div>
+
+              {totalAmount > 0 && (
+                <p className="text-center text-xs text-gray-500">
+                  Valeur totale :{' '}
+                  <strong className="text-gray-800">
+                    {totalAmount.toLocaleString('fr-FR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} MAD
+                  </strong>
+                </p>
+              )}
+            </div>
+
+            {/* Actions */}
+            <div className="px-5 pb-5 flex gap-2">
               <button
                 onClick={handleCreateMission}
                 disabled={creating}
-                className="flex-1 flex items-center justify-center gap-2 py-2.5 text-sm font-semibold rounded-lg bg-sage-500 hover:bg-sage-600 text-white disabled:opacity-50"
+                className="flex-1 flex items-center justify-center gap-2 py-2.5 text-sm font-bold rounded-xl bg-blue-600 hover:bg-blue-700 text-white disabled:opacity-50 transition-colors"
               >
                 {creating ? <Loader2 size={14} className="animate-spin" /> : <CheckCircle2 size={14} />}
-                Confirmer
+                {creating ? 'Création…' : 'Créer la mission'}
               </button>
               <button
                 onClick={() => setShowConfirm(false)}
-                className="px-4 py-2.5 text-sm font-medium text-gray-700 bg-white border border-gray-200 rounded-lg hover:bg-gray-100"
+                className="px-4 py-2.5 text-sm font-semibold text-gray-600 bg-white border border-gray-200 rounded-xl hover:bg-gray-50 transition-colors"
               >
                 Annuler
               </button>

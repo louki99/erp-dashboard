@@ -24,6 +24,9 @@ export function useRouteOptimizer() {
     const [confirmed, setConfirmed] = useState(false);
     const [confirming, setConfirming] = useState(false);
     const [confirmError, setConfirmError] = useState<string | null>(null);
+    const [cancelling, setCancelling] = useState(false);
+    const [cancelled, setCancelled] = useState(false);
+    const [cancelError, setCancelError] = useState<string | null>(null);
 
     const optimize = useCallback(async (payload: OptimizeDispatchRequest) => {
         setLoading(true);
@@ -31,6 +34,8 @@ export function useRouteOptimizer() {
         setResult(null);
         setConfirmed(false);
         setConfirmError(null);
+        setCancelled(false);
+        setCancelError(null);
         try {
             const res = await routeOptimizerApi.optimizeDispatch(payload);
             setResult(res);
@@ -48,11 +53,11 @@ export function useRouteOptimizer() {
         }
     }, []);
 
-    const confirm = useCallback(async (batchId: string, userId: number) => {
+    const confirm = useCallback(async (batchId: string) => {
         setConfirming(true);
         setConfirmError(null);
         try {
-            await routeOptimizerApi.confirmBatch(batchId, userId);
+            await routeOptimizerApi.confirmBatch(batchId);
             setConfirmed(true);
         } catch (err: any) {
             const status = err?.response?.status;
@@ -67,14 +72,37 @@ export function useRouteOptimizer() {
         }
     }, []);
 
+    const cancel = useCallback(async (batchId: string) => {
+        setCancelling(true);
+        setCancelError(null);
+        try {
+            await routeOptimizerApi.cancelBatch(batchId);
+            setCancelled(true);
+        } catch (err: any) {
+            const status = err?.response?.status;
+            const message =
+                status === 409
+                    ? 'Ce lot est déjà confirmé — annulation impossible via cette action.'
+                    : status === 404
+                    ? 'Lot introuvable.'
+                    : (err?.response?.data?.message ?? err?.message ?? 'Erreur annulation');
+            setCancelError(message);
+            throw err;
+        } finally {
+            setCancelling(false);
+        }
+    }, []);
+
     const reset = useCallback(() => {
         setResult(null);
         setError(null);
         setConfirmed(false);
         setConfirmError(null);
+        setCancelled(false);
+        setCancelError(null);
     }, []);
 
-    return { result, loading, error, optimize, confirm, confirming, confirmed, confirmError, reset };
+    return { result, loading, error, optimize, confirm, confirming, confirmed, confirmError, cancel, cancelling, cancelled, cancelError, reset };
 }
 
 // ─── Optimizer health ─────────────────────────────────────────────────────────
@@ -86,7 +114,12 @@ export function useOptimizerHealth() {
         try {
             const h = await routeOptimizerApi.getOptimizerHealth();
             setHealth(h);
-        } catch {
+        } catch (err: any) {
+            // 404 = health endpoint not implemented yet — don't block the optimizer
+            if (err?.response?.status === 404) {
+                setHealth(null);
+                return;
+            }
             setHealth({
                 status: 'unhealthy',
                 database_connected: false,

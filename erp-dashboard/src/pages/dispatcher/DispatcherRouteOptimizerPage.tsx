@@ -20,12 +20,13 @@ import {
     AlertCircle,
     Activity,
     Search,
+    Ban,
 } from 'lucide-react';
 
 import { MasterLayout } from '@/components/layout/MasterLayout';
 import { ActionPanel } from '@/components/layout/ActionPanel';
 import { TourMapView } from '@/components/dispatcher/TourMapView';
-import { useDispatcherPendingOrders } from '@/hooks/dispatcher/useDispatcherOrders';
+import { useLocalDispatcherOrders } from '@/hooks/dispatcher/useLocalDispatcherOrders';
 import { useRouteOptimizer, useOptimizerHealth, generateBatchId } from '@/hooks/dispatcher/useRouteOptimizer';
 import { useAuth } from '@/context/AuthContext';
 import type { DispatcherOrder } from '@/types/dispatcher.types';
@@ -108,7 +109,7 @@ function OrderRow({ order, selected, onToggle, hasCoords }: {
                 </div>
                 <div className="flex items-center gap-2 mt-0.5">
                     {order.partner?.address_line1 && (
-                        <span className="text-xs text-gray-400 truncate">{order.partner.address}</span>
+                        <span className="text-xs text-gray-400 truncate">{order.partner.address_line1}</span>
                     )}
                     {!hasCoords && (
                         <span className="text-[10px] text-amber-600 bg-amber-50 border border-amber-200 rounded px-1 shrink-0">
@@ -203,9 +204,8 @@ const DEFAULT_DEPOT_LNG = '-7.5898';
 export function DispatcherRouteOptimizerPage() {
     const { user } = useAuth();
 
-    const { data: pendingData, loading: ordersLoading, refetch: refetchOrders } =
-        useDispatcherPendingOrders({ per_page: 200 });
-    const allOrders = useMemo(() => pendingData?.data ?? [], [pendingData]);
+    const { orders: allOrders, loading: ordersLoading, syncing, refetch: refetchOrders } =
+        useLocalDispatcherOrders();
 
     const [step, setStep] = useState<Step>('select');
     const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
@@ -218,7 +218,7 @@ export function DispatcherRouteOptimizerPage() {
     const [selectedTourNumber, setSelectedTourNumber] = useState<number>(1);
     const [search, setSearch] = useState('');
 
-    const { result, loading, error, optimize, confirm, confirming, confirmed, confirmError, reset } = useRouteOptimizer();
+    const { result, loading, error, optimize, confirm, confirming, confirmed, confirmError, cancel, cancelling, cancelError, reset } = useRouteOptimizer();
     const { health, recheck: recheckHealth } = useOptimizerHealth();
 
     useEffect(() => { if (confirmed) setStep('confirmed'); }, [confirmed]);
@@ -291,7 +291,8 @@ export function DispatcherRouteOptimizerPage() {
                     order_id: o.id,
                     customer_id: o.partner?.id ?? 0,
                     customer_name: o.partner?.name ?? '',
-                    address: o.partner?.address ?? '',
+                    // address is required by backend — fall back to coords string if address_line1 is absent
+                    address: o.partner?.address_line1 || `${coords.lat.toFixed(5)},${coords.lng.toFixed(5)}`,
                     latitude: coords.lat,
                     longitude: coords.lng,
                     weight_kg: getOrderWeight(o),
@@ -313,8 +314,19 @@ export function DispatcherRouteOptimizerPage() {
 
     const handleConfirm = useCallback(async () => {
         if (!result) return;
-        await confirm(result.batch_id, user?.id ?? 0);
-    }, [result, confirm, user]);
+        await confirm(result.batch_id);
+    }, [result, confirm]);
+
+    const handleCancel = useCallback(async () => {
+        if (!result) return;
+        try {
+            await cancel(result.batch_id);
+            reset();
+            setStep('select');
+        } catch {
+            // cancelError is surfaced in the UI
+        }
+    }, [result, cancel, reset]);
 
     const handleReset = useCallback(() => {
         reset();
@@ -344,8 +356,9 @@ export function DispatcherRouteOptimizerPage() {
                             <button
                                 onClick={() => refetchOrders()}
                                 className="p-1.5 rounded-lg border border-gray-200 bg-white hover:bg-gray-50 text-gray-400 hover:text-gray-600 transition-colors"
+                                title={syncing ? 'Synchronisation…' : 'Rafraîchir'}
                             >
-                                <RefreshCw size={13} />
+                                <RefreshCw size={13} className={syncing ? 'animate-spin text-blue-400' : ''} />
                             </button>
                         </div>
                         <div className="flex items-center justify-between">
@@ -703,6 +716,14 @@ export function DispatcherRouteOptimizerPage() {
                             <p className="text-sm text-red-700">{confirmError}</p>
                         </div>
                     )}
+
+                    {/* Cancel error */}
+                    {cancelError && (
+                        <div className="flex items-start gap-2 p-3 rounded-xl bg-red-50 border border-red-200">
+                            <Ban size={14} className="text-red-500 shrink-0 mt-0.5" />
+                            <p className="text-sm text-red-700">{cancelError}</p>
+                        </div>
+                    )}
                 </div>
             )}
 
@@ -743,7 +764,8 @@ export function DispatcherRouteOptimizerPage() {
         }] : []),
         ...(step === 'review' ? [{
             items: [
-                { label: 'Confirmer les tournées', icon: Check, onClick: handleConfirm, disabled: confirming },
+                { label: 'Confirmer les tournées', icon: Check, onClick: handleConfirm, disabled: confirming || cancelling },
+                { label: 'Annuler le lot', icon: Ban, onClick: handleCancel, disabled: cancelling || confirming },
                 { label: 'Nouvelle optimisation', icon: RotateCcw, onClick: handleReset },
             ],
         }] : []),

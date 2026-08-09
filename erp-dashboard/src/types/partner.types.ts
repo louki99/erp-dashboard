@@ -106,6 +106,7 @@ export interface Partner {
     last_order_date?: string | null;
     last_payment_date?: string | null;
     // Relations
+    payer?: { id: number; code: string; name: string } | null;
     price_list?: { id: number; code: string; name: string } | null;
     channel_ref?: { id: number; code: string; name: string; price_list_id: number } | null;
     customer?: { id: number; user?: { id: number; name: string; email: string } } | null;
@@ -419,6 +420,38 @@ export interface PartnerMasterData {
     partner_families: any[];
     custom_fields: CustomFieldDef[];
     countries?: CountryItem[];
+    channels?: { id: number; code: string; name: string; price_list_id?: number }[];
+}
+
+// ─── Contacts ─────────────────────────────────────────────────────────────────
+
+export interface PartnerContact {
+    id: number;
+    partner_id: number;
+    name: string;
+    job_title: string | null;
+    phone: string | null;
+    email: string | null;
+    is_primary: boolean;
+    notes: string | null;
+    created_at?: string;
+    updated_at?: string;
+}
+
+export interface PartnerContactPayload {
+    name: string;
+    job_title?: string;
+    phone?: string;
+    email?: string;
+    is_primary?: boolean;
+    notes?: string;
+}
+
+// ─── Payer ────────────────────────────────────────────────────────────────────
+
+export interface PartnerPayerResponse {
+    payer: { id: number; code: string; name: string } | null;
+    candidates: { id: number; code: string; name: string }[];
 }
 
 // ─── Auth form data (create partner with user account) ───────────────────────
