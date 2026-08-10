@@ -65,6 +65,11 @@ export interface Partner {
     tax_number_if: string | null;
     tax_exempt: boolean;
     vat_group_code: string | null;
+    waive_stamp_duty: boolean;
+    client_group_id: number | null;
+    client_group?: { id: number; code: string; name: string } | null;
+    payer_partner_id: number | null;
+    invoicing_mode: '1_FAC_PER_BL' | '1_FAC_PER_ORDER' | 'PERIODIC_FIN_DE_MOIS' | null;
     // Address (accesseurs PHP depuis `addresses` table — §21 rétrocompatibles)
     address_line1: string | null;
     address_line2: string | null;
@@ -211,6 +216,8 @@ export interface PartnerListResponse {
 export interface PartnerShowResponse {
     partner: Partner;
     taxId?: string;
+    image_url: string | null;
+    thumb_url: string | null;
     customFields?: Record<string, {
         label: string;
         value: any;
@@ -285,6 +292,21 @@ export interface PartnerFilters {
     channel_id?: number;
     salesperson_id?: number;
     price_list_id?: number;
+    // Geographic
+    city?: string;
+    region?: string;
+    geo_area_id?: number;
+    geo_area_code?: string;
+    branch_code?: string;
+    // Fiscal
+    tax_number_ice?: string;
+    tax_exempt?: 1 | 0;
+    // Group / multi-tier
+    client_group_id?: number | null;
+    // Account
+    has_b2b_account?: 1 | 0;
+    // Custom fields
+    custom_fields?: Record<string, string>;
     sort_by?: 'name' | 'code' | 'created_at' | 'last_order_date' | 'total_orders_count' | 'total_orders_value' | 'average_order_value';
     sort_dir?: 'asc' | 'desc';
     per_page?: number;
@@ -315,6 +337,8 @@ export interface CreatePartnerRequest {
     tax_number_if?: string;
     tax_exempt?: boolean;
     vat_group_code?: string;
+    client_group_id?: number | null;
+    invoicing_mode?: '1_FAC_PER_BL' | '1_FAC_PER_ORDER' | 'PERIODIC_FIN_DE_MOIS' | null;
     // Contact
     phone?: string;
     whatsapp?: string;
@@ -411,7 +435,7 @@ export interface PartnerMasterData {
         is_cash: boolean;
         is_bank_transfer: boolean;
     }[];
-    vat_taxes: { id: number; type: string; name: string; percentage: string; deduction: string }[];
+    vat_taxes: { id: number; code: string; type: string; name: string; percentage: number | string; deduction: string }[];
     geo_areas: GeoAreaItem[];
     geo_area_types: { id: number; code: string; name: string; name_ar?: string; rank: number }[];
     branches: BranchItem[];
@@ -419,8 +443,22 @@ export interface PartnerMasterData {
     salespersons: any[];
     partner_families: any[];
     custom_fields: CustomFieldDef[];
+    client_groups: ClientGroup[];
     countries?: CountryItem[];
     channels?: { id: number; code: string; name: string; price_list_id?: number }[];
+}
+
+export interface ClientGroup {
+    id: number;
+    code: string;
+    name: string;
+    description?: string | null;
+    default_discount_rate?: number | null;
+    kam_user_id?: number | null;
+    is_active: boolean;
+    partners_count?: number;
+    created_at?: string;
+    updated_at?: string;
 }
 
 // ─── Contacts ─────────────────────────────────────────────────────────────────
@@ -433,6 +471,7 @@ export interface PartnerContact {
     phone: string | null;
     email: string | null;
     is_primary: boolean;
+    is_billing_contact: boolean;
     notes: string | null;
     created_at?: string;
     updated_at?: string;
@@ -444,6 +483,7 @@ export interface PartnerContactPayload {
     phone?: string;
     email?: string;
     is_primary?: boolean;
+    is_billing_contact?: boolean;
     notes?: string;
 }
 
@@ -623,6 +663,84 @@ export interface CreatePaymentOverrideRequest {
     payment_term_id?: number | null;
     payment_method_id?: number | null;
     reason: string;
+}
+
+// ─── Partner 360 (GET /partners/{id}/360) ────────────────────────────────────
+
+export type CreditStatus360 = 'ALLOWED' | 'WARNING' | 'SOFT_BLOCK' | 'HARD_BLOCK';
+
+export interface Invoice360 {
+    id: number;
+    invoice_number: string;
+    invoice_date: string;
+    due_date: string;
+    total_amount: number;
+    remaining_amount: number;
+    status: string;
+}
+
+export interface Partner360Response {
+    success: boolean;
+    partner: {
+        id: number;
+        code: string;
+        name: string;
+        status: string;
+        last_order_date: string | null;
+        last_payment_date: string | null;
+        client_group: { id: number; code: string; name: string } | null;
+        subsidiaries_count: number;
+    };
+    billing: {
+        is_billed_via_payer: boolean;
+        billing_partner: { id: number; code: string; name: string } | null;
+    };
+    activity: {
+        orders_count: number;
+        deliveries_count: number;
+        invoices_count: number;
+    };
+    credit: {
+        credit_limit: number;
+        total_exposure: number;
+        available_credit: number;
+        status: CreditStatus360;
+        overdue_invoice_count: number;
+        oldest_overdue_days: number | null;
+    };
+    overdue_invoices: Invoice360[];
+    open_invoices: Invoice360[];
+}
+
+// ─── Client Group Dashboard (GET /client-groups/{id}/dashboard) ───────────────
+
+export interface ClientGroupDashboardPartner {
+    id: number;
+    code: string;
+    name: string;
+    total_exposure: number;
+    is_billed_via_payer: boolean;
+}
+
+export interface ClientGroupDashboard {
+    success: boolean;
+    group: {
+        id: number;
+        code: string;
+        name: string;
+        kam: { id: number; name: string; email: string } | null;
+        default_discount_rate: number | null;
+    };
+    summary: {
+        partners_count: number;
+        total_credit_limit: number;
+        total_exposure: number;
+        total_available_credit: number;
+        overdue_invoice_count: number;
+        total_invoiced_all_time: number;
+        total_outstanding: number;
+    };
+    partners: ClientGroupDashboardPartner[];
 }
 
 // ─── Itinerary endpoint (§11.1) ───────────────────────────────────────────────

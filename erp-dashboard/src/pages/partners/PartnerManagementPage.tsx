@@ -1,21 +1,24 @@
 import React, { useMemo, useState, useRef, useEffect, useCallback } from 'react';
 import ReactDOM from 'react-dom';
+import { useNavigate } from 'react-router-dom';
+import { useAuth } from '@/context/AuthContext';
 import type { ColDef } from 'ag-grid-community';
 import {
     Loader2, RefreshCw, Plus, Edit2, Trash2, Search, X,
     Users, Building2, Phone, Mail, MapPin, CreditCard, Shield,
     Ban, Unlock, FileText,
     CheckCircle2, XCircle, AlertTriangle, Clock, DollarSign,
-    Star, ArrowUpDown, BookOpen, ChevronRight,
+    Star, ArrowUpDown, BookOpen, ChevronRight, ChevronLeft,
     Route, Link2, Unlink,
     Activity, Zap,
     Upload, Locate, Calculator, CheckCircle, XCircle as XCircleIcon,
-    Banknote, Tag, Calendar, Truck, ChevronDown,
+    Banknote, Tag, Calendar, Truck, ChevronDown, SlidersHorizontal, ToggleRight, ToggleLeft, Receipt,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 
+import { cn } from '@/lib/utils';
 import { getGeoAreas } from '@/services/api/routingApi';
-import { getCountries } from '@/services/api/partnerApi';
+import { getCountries, setStampDutyWaiver, getPartner360, updatePartnerInvoicingMode } from '@/services/api/partnerApi';
 
 import { MasterLayout } from '@/components/layout/MasterLayout';
 import { DataGrid } from '@/components/common/DataGrid';
@@ -81,6 +84,7 @@ import type {
     PartnerAddressPayload,
     PartnerContact,
     PartnerContactPayload,
+    Partner360Response,
 } from '@/types/partner.types';
 
 import {
@@ -911,22 +915,48 @@ const SearchableSelect = ({ options, value, onChange, placeholder = 'Sélectionn
 // ─── Component ────────────────────────────────────────────────────────────────
 
 export const PartnerManagementPage = () => {
+    // ── Auth & branch guard ───────────────────────────────────────────────────
+    const { user } = useAuth();
+    const navigate = useNavigate();
+    const isGlobalAdmin = useMemo(() => {
+        if (!user) return false;
+        const allRoles = user.roles?.all ?? [];
+        return allRoles.some(r => ['admin', 'root', 'super_admin', 'superadmin'].includes(r.toLowerCase()));
+    }, [user]);
+    const userBranchCode = user?.branch_code ?? null;
+
     // ── State ─────────────────────────────────────────────────────────────────
     const [selectedPartner, setSelectedPartner] = useState<Partner | null>(null);
     const [showDetailPanel, setShowDetailPanel] = useState(false);
     const [activeTab, setActiveTab] = useState('general');
     const [openSections, setOpenSections] = useState<Record<string, boolean>>({
-        identite: true, adresses: true, contacts: true, commercial: true, credit: true, info: true,
+        profil: true, adresses: true, contacts: true, commercial: true, credit: true, info: true, champs: true, documents: true,
     });
     const sectionRefs = useRef<Record<string, HTMLDivElement | null>>({});
     const containerRef = useRef<HTMLDivElement>(null);
     const isScrollingRef = useRef(false);
 
-    // Filters
-    const [filters, setFilters] = useState<PartnerFilters>({ page: 1, per_page: 20 });
+    // Filters — non-admin users are scoped to their branch
+    const branchFilter: Pick<PartnerFilters, 'branch_code'> = useMemo(
+        () => (isGlobalAdmin ? {} : userBranchCode ? { branch_code: userBranchCode } : {}),
+        [isGlobalAdmin, userBranchCode]
+    );
+    const [filters, setFilters] = useState<PartnerFilters>({ page: 1, per_page: 20, ...branchFilter });
     const [searchInput, setSearchInput] = useState('');
     const [statusFilter, setStatusFilter] = useState<PartnerStatus | ''>('');
     const [channelFilter, setChannelFilter] = useState<string>('');
+    const [partnerTypeFilter, setPartnerTypeFilter] = useState<string>('');
+    const [salespersonIdFilter, setSalespersonIdFilter] = useState<number | ''>('');
+    const [priceListIdFilter, setPriceListIdFilter] = useState<number | ''>('');
+    const [sortByFilter, setSortByFilter] = useState<PartnerFilters['sort_by'] | ''>('');
+    const [sortDirFilter, setSortDirFilter] = useState<'asc' | 'desc'>('asc');
+    const [cityFilter, setCityFilter] = useState('');
+    const [taxIceFilter, setTaxIceFilter] = useState('');
+    const [taxExemptFilter, setTaxExemptFilter] = useState<'' | '1' | '0'>('');
+    const [hasBizAccountFilter, setHasBizAccountFilter] = useState<'' | '1' | '0'>('');
+    const [clientGroupIdFilter, setClientGroupIdFilter] = useState<number | ''>('');
+    const [customFieldFilters, setCustomFieldFilters] = useState<Record<string, string>>({});
+    const [showAdvancedFilters, setShowAdvancedFilters] = useState(false);
 
     // Itinerary assignment panel (expanded fields)
     const [showItineraryPanel, setShowItineraryPanel] = useState(false);
@@ -997,6 +1027,12 @@ export const PartnerManagementPage = () => {
     const stats = statsData?.statistics;
 
     const { data: masterData, loading: masterDataLoading, fetch: fetchMasterData } = usePartnerFormMasterData();
+
+    // Commercial employees for salesperson filter (masterData.salespersons is empty server-side)
+    const [commercialEmployees, setCommercialEmployees] = useState<import('@/services/api/partnerApi').CommercialEmployee[]>([]);
+    useEffect(() => {
+        import('@/services/api/partnerApi').then(m => m.getCommercialEmployees()).then(setCommercialEmployees).catch(() => {});
+    }, []);
 
     const { data: creditHistoryData, loading: creditHistLoading, refetch: refetchCreditHistory } = useCreditHistory(
         showDetailPanel && selectedPartner ? selectedPartner.id : null
@@ -1094,13 +1130,52 @@ export const PartnerManagementPage = () => {
             filtersMountedRef.current = true;
             return;
         }
+        const cfActive = Object.fromEntries(Object.entries(customFieldFilters).filter(([, v]) => v.trim()));
         setFilters(prev => ({
             ...prev,
+            ...branchFilter,
             status: statusFilter || undefined,
             channel: channelFilter || undefined,
+            partner_type: partnerTypeFilter || undefined,
+            salesperson_id: salespersonIdFilter || undefined,
+            price_list_id: priceListIdFilter || undefined,
+            city: cityFilter || undefined,
+            tax_number_ice: taxIceFilter || undefined,
+            tax_exempt: taxExemptFilter !== '' ? (taxExemptFilter === '1' ? 1 : 0) : undefined,
+            has_b2b_account: hasBizAccountFilter !== '' ? (hasBizAccountFilter === '1' ? 1 : 0) : undefined,
+            client_group_id: clientGroupIdFilter || undefined,
+            custom_fields: Object.keys(cfActive).length > 0 ? cfActive : undefined,
+            sort_by: sortByFilter || undefined,
+            sort_dir: sortByFilter ? sortDirFilter : undefined,
             page: 1,
         }));
-    }, [statusFilter, channelFilter]);
+    }, [statusFilter, channelFilter, partnerTypeFilter, salespersonIdFilter, priceListIdFilter,
+        sortByFilter, sortDirFilter, cityFilter, taxIceFilter, taxExemptFilter, hasBizAccountFilter, clientGroupIdFilter, customFieldFilters]);
+
+    const activeFilterCount = [
+        statusFilter, channelFilter, partnerTypeFilter, salespersonIdFilter,
+        priceListIdFilter, sortByFilter, cityFilter, taxIceFilter,
+        taxExemptFilter, hasBizAccountFilter, clientGroupIdFilter,
+        ...Object.values(customFieldFilters).filter(Boolean),
+    ].filter(Boolean).length;
+
+    const handleClearAllFilters = () => {
+        setStatusFilter('');
+        setChannelFilter('');
+        setPartnerTypeFilter('');
+        setSalespersonIdFilter('');
+        setPriceListIdFilter('');
+        setSortByFilter('');
+        setSortDirFilter('asc');
+        setCityFilter('');
+        setTaxIceFilter('');
+        setTaxExemptFilter('');
+        setHasBizAccountFilter('');
+        setClientGroupIdFilter('');
+        setCustomFieldFilters({});
+        setSearchInput('');
+        setFilters({ page: 1, per_page: 20 });
+    };
 
     // ── Column defs ───────────────────────────────────────────────────────────
     const columnDefs = useMemo<ColDef[]>(() => [
@@ -1205,12 +1280,13 @@ export const PartnerManagementPage = () => {
 
     // ── Tabs ──────────────────────────────────────────────────────────────────
     const tabs: TabItem[] = useMemo(() => [
-        { id: 'identite',  label: 'Identité',         icon: FileText   },
-        { id: 'adresses',  label: 'Adresses',         icon: MapPin     },
-        { id: 'contacts',  label: 'Contacts',         icon: Users      },
-        { id: 'commercial',label: 'Commercial',       icon: Tag        },
-        { id: 'credit',    label: 'Paiement & Crédit',icon: CreditCard },
-        { id: 'info',      label: 'Info. suppl.',     icon: BookOpen   },
+        { id: 'apercu',      label: 'Aperçu',        icon: Activity   },
+        { id: 'profil',      label: 'Identité',      icon: Building2  },
+        { id: 'coordonnees', label: 'Coordonnées',   icon: MapPin     },
+        { id: 'commercial',  label: 'Commercial',    icon: Tag        },
+        { id: 'facturation', label: 'Facturation',   icon: Banknote   },
+        { id: 'documents',   label: 'Documents',     icon: FileText   },
+        { id: 'analyse',     label: 'Analyse',       icon: Activity   },
     ], []);
 
     // ── Row selection ─────────────────────────────────────────────────────────
@@ -1228,7 +1304,7 @@ export const PartnerManagementPage = () => {
         setSelectedPartner(row);
         setShowDetailPanel(true);
         setFormMode('view');
-        setActiveTab('identite');
+        setActiveTab('profil');
         setShowPriceListOverride(false);
 
         cursorStyleTimeoutRef.current = setTimeout(() => {
@@ -1249,8 +1325,8 @@ export const PartnerManagementPage = () => {
     };
 
     const toggleSection = (id: string, isOpen: boolean) => setOpenSections(prev => ({ ...prev, [id]: isOpen }));
-    const handleExpandAll  = () => setOpenSections({ identite: true, adresses: true, contacts: true, commercial: true, credit: true, info: true });
-    const handleCollapseAll = () => setOpenSections({ identite: false, adresses: false, contacts: false, commercial: false, credit: false, info: false });
+    const handleExpandAll  = () => setOpenSections({ profil: true, adresses: true, contacts: true, commercial: true, credit: true, info: true, champs: true });
+    const handleCollapseAll = () => setOpenSections({ profil: false, adresses: false, contacts: false, commercial: false, credit: false, info: false, champs: false });
 
     useEffect(() => {
         const container = containerRef.current;
@@ -1418,6 +1494,22 @@ export const PartnerManagementPage = () => {
         } catch (e: any) {
             toast.dismiss(toastId);
             toast.error(e?.response?.data?.message || 'Erreur');
+        }
+    };
+
+    const [stampDutyLoading, setStampDutyLoading] = useState(false);
+    const handleToggleStampDuty = async (waive: boolean) => {
+        if (!selectedPartner) return;
+        setStampDutyLoading(true);
+        try {
+            await setStampDutyWaiver(selectedPartner.id, waive);
+            toast.success(waive ? 'Timbre pris en charge' : 'Timbre non pris en charge');
+            refetchPartners();
+            refetchDetail();
+        } catch (e: any) {
+            toast.error(e?.response?.data?.message || 'Erreur lors de la modification');
+        } finally {
+            setStampDutyLoading(false);
         }
     };
 
@@ -1643,16 +1735,76 @@ export const PartnerManagementPage = () => {
     };
 
     // ── Payer handler ─────────────────────────────────────────────────────────
+    const [pendingPayerId, setPendingPayerId] = useState<{ id: number; name: string } | null>(null);
+    const [payerChangeReason, setPayerChangeReason] = useState('');
     const handleSetPayer = async (payerPartnerId: number | null) => {
         if (!partnerDetail) return;
+        if (payerPartnerId !== null) {
+            const candidate = payerData?.candidates?.find(c => c.id === payerPartnerId);
+            setPayerChangeReason('');
+            setPendingPayerId({ id: payerPartnerId, name: candidate?.name ?? String(payerPartnerId) });
+            return;
+        }
         try {
-            await updatePayerFn({ partnerId: partnerDetail.id, payerPartnerId });
-            toast.success(payerPartnerId ? 'Payeur défini' : 'Payeur retiré');
+            await updatePayerFn({ partnerId: partnerDetail.id, payerPartnerId: null, changeReason: 'Retrait du payeur' });
+            toast.success('Payeur retiré');
             refetchPayer();
+            refetchDetail();
             setShowPayerPicker(false);
             setPayerSearch('');
         } catch { toast.error('Erreur lors de la mise à jour du payeur'); }
     };
+    const confirmSetPayer = async () => {
+        if (!partnerDetail || !pendingPayerId) return;
+        if (payerChangeReason.trim().length < 5) { toast.error('Le motif doit comporter au moins 5 caractères'); return; }
+        try {
+            await updatePayerFn({ partnerId: partnerDetail.id, payerPartnerId: pendingPayerId.id, changeReason: payerChangeReason.trim() });
+            toast.success('Payeur défini');
+            refetchPayer();
+            refetchDetail();
+            setShowPayerPicker(false);
+            setPayerSearch('');
+        } catch { toast.error('Erreur lors de la mise à jour du payeur'); }
+        finally { setPendingPayerId(null); setPayerChangeReason(''); }
+    };
+
+    // ── Invoicing mode handler ────────────────────────────────────────────────
+    const [pendingInvoicingMode, setPendingInvoicingMode] = useState<{
+        value: '1_FAC_PER_BL' | '1_FAC_PER_ORDER' | 'PERIODIC_FIN_DE_MOIS' | null;
+        reason: string;
+    } | null>(null);
+    const [updatingInvoicingMode, setUpdatingInvoicingMode] = useState(false);
+    const handleOpenInvoicingModal = () => {
+        if (!partnerDetail) return;
+        setPendingInvoicingMode({ value: partnerDetail.invoicing_mode ?? '1_FAC_PER_BL', reason: '' });
+    };
+    const confirmInvoicingMode = async () => {
+        if (!partnerDetail || !pendingInvoicingMode) return;
+        if (pendingInvoicingMode.reason.trim().length < 5) { toast.error('Le motif doit comporter au moins 5 caractères'); return; }
+        setUpdatingInvoicingMode(true);
+        try {
+            await updatePartnerInvoicingMode(partnerDetail.id, pendingInvoicingMode.value, pendingInvoicingMode.reason.trim());
+            toast.success('Mode de facturation mis à jour');
+            refetchDetail();
+            setPendingInvoicingMode(null);
+        } catch (e: any) {
+            toast.error(e?.response?.data?.message || 'Erreur lors de la mise à jour');
+        } finally { setUpdatingInvoicingMode(false); }
+    };
+
+    // ── 360 view ──────────────────────────────────────────────────────────────
+    const [data360, setData360] = useState<Partner360Response | null>(null);
+    const [loading360, setLoading360] = useState(false);
+    const fetch360 = useCallback(async (id: number) => {
+        setLoading360(true);
+        try { setData360(await getPartner360(id)); }
+        catch { setData360(null); }
+        finally { setLoading360(false); }
+    }, []);
+    useEffect(() => {
+        if (partnerDetail?.id) fetch360(partnerDetail.id);
+        else setData360(null);
+    }, [partnerDetail?.id, fetch360]);
 
     // Refresh all
     const handleRefreshAll = async () => {
@@ -1777,56 +1929,300 @@ export const PartnerManagementPage = () => {
                                 </div>
                             )}
 
-                            {/* Search */}
-                            <div className="relative">
-                                <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400" />
-                                <input
-                                    type="text"
-                                    value={searchInput}
-                                    onChange={e => handleSearch(e.target.value)}
-                                    placeholder="Rechercher par nom, code, email..."
-                                    className="w-full pl-8 pr-8 py-1.5 text-xs border border-gray-200 rounded-md focus:outline-none focus:ring-2 focus:ring-sage-500 focus:border-transparent bg-gray-50"
-                                />
-                                {searchInput && (
-                                    <button onClick={() => handleSearch('')} className="absolute right-2 top-1/2 -translate-y-1/2 p-0.5 rounded hover:bg-gray-200">
-                                        <X className="w-3 h-3 text-gray-400" />
-                                    </button>
-                                )}
+                            {/* ── Search bar + Advanced toggle ──────── */}
+                            <div className="flex gap-1.5 mt-1">
+                                <div className="relative flex-1">
+                                    <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400" />
+                                    <input
+                                        type="text"
+                                        value={searchInput}
+                                        onChange={e => handleSearch(e.target.value)}
+                                        placeholder="Nom, code, email..."
+                                        className="w-full pl-8 pr-7 py-1.5 text-xs border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-sage-500 focus:border-transparent bg-gray-50"
+                                    />
+                                    {searchInput && (
+                                        <button onClick={() => handleSearch('')} className="absolute right-2 top-1/2 -translate-y-1/2 p-0.5 rounded hover:bg-gray-200">
+                                            <X className="w-3 h-3 text-gray-400" />
+                                        </button>
+                                    )}
+                                </div>
+                                <button
+                                    onClick={() => setShowAdvancedFilters(v => !v)}
+                                    className={cn(
+                                        'flex items-center gap-1 px-2.5 py-1.5 rounded-lg border text-xs font-medium transition-colors shrink-0',
+                                        showAdvancedFilters || activeFilterCount > 0
+                                            ? 'bg-sage-50 border-sage-300 text-sage-700'
+                                            : 'bg-white border-gray-200 text-gray-500 hover:border-gray-300'
+                                    )}
+                                    title="Filtres avancés"
+                                >
+                                    <SlidersHorizontal className="w-3.5 h-3.5" />
+                                    {activeFilterCount > 0 && (
+                                        <span className="w-4 h-4 rounded-full bg-sage-500 text-white text-[9px] font-bold flex items-center justify-center">
+                                            {activeFilterCount}
+                                        </span>
+                                    )}
+                                </button>
                             </div>
 
-                            {/* Filters row */}
-                            <div className="flex gap-2 mt-2">
-                                <div className="flex-1 relative">
-                                    <select
-                                        value={statusFilter}
-                                        onChange={e => setStatusFilter(e.target.value as PartnerStatus | '')}
-                                        className="w-full appearance-none text-[11px] text-gray-600 bg-white border border-gray-200 rounded-md pl-2 pr-6 py-1.5 focus:outline-none focus:ring-1 focus:ring-sage-400 focus:border-sage-300 cursor-pointer"
-                                    >
-                                        <option value="">Tous statuts</option>
-                                        <option value="ACTIVE">Actifs</option>
-                                        <option value="ON_HOLD">En attente</option>
-                                        <option value="BLOCKED">Bloqués</option>
-                                        <option value="CLOSED">Fermés</option>
-                                    </select>
-                                    <span className="pointer-events-none absolute right-1.5 top-1/2 -translate-y-1/2 text-gray-400 text-[10px]">▾</span>
-                                </div>
-                                <div className="flex-1 relative">
-                                    <select
-                                        value={channelFilter}
-                                        onChange={e => setChannelFilter(e.target.value)}
-                                        className="w-full appearance-none text-[11px] text-gray-600 bg-white border border-gray-200 rounded-md pl-2 pr-6 py-1.5 focus:outline-none focus:ring-1 focus:ring-indigo-400 focus:border-indigo-300 cursor-pointer"
-                                    >
-                                        <option value="">Tous canaux</option>
-                                        <option value="GMS">GMS</option>
-                                        <option value="GROS">Gros</option>
-                                        <option value="DETAIL">Détail</option>
-                                        <option value="CHR">CHR</option>
-                                        <option value="SOM_GROS">Semi-Gros</option>
-                                        <option value="OTHER">Autre</option>
-                                    </select>
-                                    <span className="pointer-events-none absolute right-1.5 top-1/2 -translate-y-1/2 text-gray-400 text-[10px]">▾</span>
-                                </div>
-                            </div>
+                            {/* ── Advanced filters MODAL (portal) ──── */}
+                            {showAdvancedFilters && ReactDOM.createPortal(
+                                <div
+                                    className="fixed inset-0 z-[9990] flex items-center justify-center p-4"
+                                    style={{ backgroundColor: 'rgba(15,23,42,0.45)', backdropFilter: 'blur(3px)' }}
+                                    onClick={e => { if (e.target === e.currentTarget) setShowAdvancedFilters(false); }}
+                                >
+                                    <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg overflow-hidden flex flex-col"
+                                        style={{ maxHeight: '90vh', animation: 'modalIn 150ms cubic-bezier(.16,1,.3,1)' }}>
+
+                                        {/* Header */}
+                                        <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100 shrink-0">
+                                            <div className="flex items-center gap-2.5">
+                                                <div className="w-8 h-8 rounded-lg bg-sage-50 flex items-center justify-center">
+                                                    <SlidersHorizontal className="w-4 h-4 text-sage-600" />
+                                                </div>
+                                                <div>
+                                                    <h2 className="text-sm font-semibold text-gray-900">Filtres avancés</h2>
+                                                    {activeFilterCount > 0 && (
+                                                        <p className="text-[10px] text-sage-600">{activeFilterCount} filtre{activeFilterCount > 1 ? 's' : ''} actif{activeFilterCount > 1 ? 's' : ''}</p>
+                                                    )}
+                                                </div>
+                                            </div>
+                                            <button onClick={() => setShowAdvancedFilters(false)}
+                                                className="p-1.5 rounded-lg text-gray-400 hover:text-gray-700 hover:bg-gray-100 transition-colors">
+                                                <X className="w-4 h-4" />
+                                            </button>
+                                        </div>
+
+                                        {/* Body — scrollable */}
+                                        <div className="overflow-y-auto flex-1 px-5 py-4 space-y-4">
+
+                                            {/* Statut + Canal */}
+                                            <div className="grid grid-cols-2 gap-3">
+                                                <div>
+                                                    <label className="block text-xs font-medium text-gray-500 mb-1.5">Statut</label>
+                                                    <select value={statusFilter} onChange={e => setStatusFilter(e.target.value as PartnerStatus | '')}
+                                                        className="w-full text-sm text-gray-700 bg-white border border-gray-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-sage-400 cursor-pointer">
+                                                        <option value="">Tous statuts</option>
+                                                        <option value="ACTIVE">Actif</option>
+                                                        <option value="ON_HOLD">En attente</option>
+                                                        <option value="BLOCKED">Bloqué</option>
+                                                        <option value="CLOSED">Fermé</option>
+                                                    </select>
+                                                </div>
+                                                <div>
+                                                    <label className="block text-xs font-medium text-gray-500 mb-1.5">Canal de vente</label>
+                                                    <select value={channelFilter} onChange={e => setChannelFilter(e.target.value)}
+                                                        className="w-full text-sm text-gray-700 bg-white border border-gray-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-sage-400 cursor-pointer">
+                                                        <option value="">Tous canaux</option>
+                                                        <option value="GMS">GMS</option>
+                                                        <option value="GROS">Gros</option>
+                                                        <option value="DETAIL">Détail</option>
+                                                        <option value="CHR">CHR</option>
+                                                        <option value="SOM_GROS">Semi-Gros</option>
+                                                        <option value="OTHER">Autre</option>
+                                                    </select>
+                                                </div>
+                                            </div>
+
+                                            {/* Type + Commercial */}
+                                            <div className="grid grid-cols-2 gap-3">
+                                                <div>
+                                                    <label className="block text-xs font-medium text-gray-500 mb-1.5">Type partenaire</label>
+                                                    <select value={partnerTypeFilter} onChange={e => setPartnerTypeFilter(e.target.value)}
+                                                        className="w-full text-sm text-gray-700 bg-white border border-gray-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-sage-400 cursor-pointer">
+                                                        <option value="">Tous types</option>
+                                                        <option value="CUSTOMER">Client</option>
+                                                        <option value="SUPPLIER">Fournisseur</option>
+                                                        <option value="BOTH">Client & Fournisseur</option>
+                                                        <option value="B2B">B2B</option>
+                                                        <option value="CASH">Cash</option>
+                                                    </select>
+                                                </div>
+                                                <div>
+                                                    <label className="block text-xs font-medium text-gray-500 mb-1.5">Commercial responsable</label>
+                                                    <select value={salespersonIdFilter} onChange={e => setSalespersonIdFilter(e.target.value ? Number(e.target.value) : '')}
+                                                        className="w-full text-sm text-gray-700 bg-white border border-gray-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-sage-400 cursor-pointer">
+                                                        <option value="">Tous</option>
+                                                        {commercialEmployees.map(s => (
+                                                            <option key={s.id} value={s.id}>{[s.name, s.last_name].filter(Boolean).join(' ')}</option>
+                                                        ))}
+                                                    </select>
+                                                </div>
+                                            </div>
+
+                                            {/* Liste de prix + Ville */}
+                                            <div className="grid grid-cols-2 gap-3">
+                                                <div>
+                                                    <label className="block text-xs font-medium text-gray-500 mb-1.5">Liste de prix</label>
+                                                    <select value={priceListIdFilter} onChange={e => setPriceListIdFilter(e.target.value ? Number(e.target.value) : '')}
+                                                        className="w-full text-sm text-gray-700 bg-white border border-gray-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-sage-400 cursor-pointer">
+                                                        <option value="">Toutes</option>
+                                                        {(masterData?.price_lists ?? []).map(pl => (
+                                                            <option key={pl.id} value={pl.id}>{pl.code} — {pl.name}</option>
+                                                        ))}
+                                                    </select>
+                                                </div>
+                                                <div>
+                                                    <label className="block text-xs font-medium text-gray-500 mb-1.5">Ville</label>
+                                                    <input type="text" value={cityFilter} onChange={e => setCityFilter(e.target.value)}
+                                                        placeholder="Ex: Casablanca"
+                                                        className="w-full text-sm text-gray-700 bg-white border border-gray-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-sage-400" />
+                                                </div>
+                                            </div>
+
+                                            {/* Compte B2B + TVA */}
+                                            <div className="grid grid-cols-2 gap-3">
+                                                <div>
+                                                    <label className="block text-xs font-medium text-gray-500 mb-1.5">Compte B2B</label>
+                                                    <select value={hasBizAccountFilter} onChange={e => setHasBizAccountFilter(e.target.value as any)}
+                                                        className="w-full text-sm text-gray-700 bg-white border border-gray-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-sage-400 cursor-pointer">
+                                                        <option value="">Tous</option>
+                                                        <option value="1">Avec compte B2B</option>
+                                                        <option value="0">Sans compte B2B</option>
+                                                    </select>
+                                                </div>
+                                                <div>
+                                                    <label className="block text-xs font-medium text-gray-500 mb-1.5">TVA</label>
+                                                    <select value={taxExemptFilter} onChange={e => setTaxExemptFilter(e.target.value as any)}
+                                                        className="w-full text-sm text-gray-700 bg-white border border-gray-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-sage-400 cursor-pointer">
+                                                        <option value="">Tous</option>
+                                                        <option value="1">Exonérés TVA</option>
+                                                        <option value="0">Assujettis TVA</option>
+                                                    </select>
+                                                </div>
+                                            </div>
+
+                                            {/* ICE */}
+                                            <div className="grid grid-cols-2 gap-3">
+                                                <div>
+                                                    <label className="block text-xs font-medium text-gray-500 mb-1.5">N° ICE</label>
+                                                    <input type="text" value={taxIceFilter} onChange={e => setTaxIceFilter(e.target.value)}
+                                                        placeholder="Recherche partielle..."
+                                                        className="w-full text-sm text-gray-700 bg-white border border-gray-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-sage-400" />
+                                                </div>
+                                                <div>
+                                                    <label className="block text-xs font-medium text-gray-500 mb-1.5">Groupe client</label>
+                                                    <select value={clientGroupIdFilter} onChange={e => setClientGroupIdFilter(e.target.value ? Number(e.target.value) : '')}
+                                                        className="w-full text-sm text-gray-700 bg-white border border-gray-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-sage-400 cursor-pointer">
+                                                        <option value="">Tous</option>
+                                                        {(masterData?.client_groups ?? []).filter(g => g.is_active).map(g => (
+                                                            <option key={g.id} value={g.id}>{g.name} ({g.code})</option>
+                                                        ))}
+                                                    </select>
+                                                </div>
+                                            </div>
+
+                                            {/* Custom fields */}
+                                            {(masterData?.custom_fields ?? []).length > 0 && (
+                                                <div className="space-y-3 pt-3 border-t border-gray-100">
+                                                    <span className="block text-xs font-semibold text-gray-400 uppercase tracking-wider">Champs personnalisés</span>
+                                                    <div className="grid grid-cols-2 gap-3">
+                                                        {(masterData?.custom_fields ?? []).map((cf: any) => (
+                                                            <div key={cf.field_name}>
+                                                                <label className="block text-xs font-medium text-gray-500 mb-1.5">{cf.field_label}</label>
+                                                                <input type="text"
+                                                                    value={customFieldFilters[cf.field_name] ?? ''}
+                                                                    onChange={e => setCustomFieldFilters(prev => ({ ...prev, [cf.field_name]: e.target.value }))}
+                                                                    placeholder={cf.placeholder || 'Rechercher...'}
+                                                                    className="w-full text-sm text-gray-700 bg-white border border-gray-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-sage-400" />
+                                                            </div>
+                                                        ))}
+                                                    </div>
+                                                </div>
+                                            )}
+
+                                            {/* Tri */}
+                                            <div className="space-y-1.5 pt-3 border-t border-gray-100">
+                                                <label className="block text-xs font-medium text-gray-500">Trier par</label>
+                                                <div className="flex gap-2">
+                                                    <select value={sortByFilter} onChange={e => setSortByFilter(e.target.value as any)}
+                                                        className="flex-1 text-sm text-gray-700 bg-white border border-gray-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-sage-400 cursor-pointer min-w-0">
+                                                        <option value="">Défaut</option>
+                                                        <option value="name">Nom</option>
+                                                        <option value="code">Code</option>
+                                                        <option value="created_at">Date création</option>
+                                                        <option value="last_order_date">Dernière commande</option>
+                                                        <option value="total_orders_value">CA total</option>
+                                                        <option value="total_orders_count">Nb. commandes</option>
+                                                    </select>
+                                                    {sortByFilter && (
+                                                        <button onClick={() => setSortDirFilter(d => d === 'asc' ? 'desc' : 'asc')}
+                                                            className="px-3 py-2 bg-white border border-gray-200 rounded-lg text-sm text-gray-600 hover:bg-gray-50 font-medium whitespace-nowrap">
+                                                            {sortDirFilter === 'asc' ? '↑ Croissant' : '↓ Décroissant'}
+                                                        </button>
+                                                    )}
+                                                </div>
+                                            </div>
+                                        </div>
+
+                                        {/* Footer */}
+                                        <div className="px-5 py-3 border-t border-gray-100 shrink-0 flex items-center justify-between gap-3">
+                                            <button onClick={handleClearAllFilters}
+                                                className={cn(
+                                                    'text-xs font-medium transition-colors',
+                                                    activeFilterCount > 0
+                                                        ? 'text-red-500 hover:text-red-700'
+                                                        : 'text-gray-300 cursor-not-allowed'
+                                                )}
+                                                disabled={activeFilterCount === 0}>
+                                                Effacer tout{activeFilterCount > 0 ? ` (${activeFilterCount})` : ''}
+                                            </button>
+                                            <button onClick={() => setShowAdvancedFilters(false)}
+                                                className="px-5 py-2 text-sm font-semibold text-white bg-sage-500 hover:bg-sage-600 rounded-lg transition-colors shadow-sm">
+                                                Appliquer
+                                            </button>
+                                        </div>
+                                    </div>
+                                    <style>{`@keyframes modalIn{from{opacity:0;transform:scale(.96) translateY(8px)}to{opacity:1;transform:scale(1) translateY(0)}}`}</style>
+                                </div>,
+                                document.body
+                            )}
+
+                            {/* ── Active filter chips ───────────────── */}
+                            {activeFilterCount > 0 && !showAdvancedFilters && (() => {
+                                const chip = (label: string, onRemove: () => void, color = 'bg-sage-50 border-sage-200 text-sage-700') => (
+                                    <span key={label} className={`inline-flex items-center gap-1 px-2 py-0.5 border text-[10px] rounded-full ${color}`}>
+                                        {label}
+                                        <button onClick={onRemove}><X className="w-2.5 h-2.5" /></button>
+                                    </span>
+                                );
+                                return (
+                                    <div className="flex flex-wrap gap-1 mt-1.5">
+                                        {statusFilter && chip(
+                                            statusFilter === 'ACTIVE' ? 'Actif' : statusFilter === 'ON_HOLD' ? 'En attente' : statusFilter === 'BLOCKED' ? 'Bloqué' : 'Fermé',
+                                            () => setStatusFilter('')
+                                        )}
+                                        {channelFilter && chip(channelFilter, () => setChannelFilter(''), 'bg-indigo-50 border-indigo-200 text-indigo-700')}
+                                        {partnerTypeFilter && chip(
+                                            partnerTypeFilter === 'CUSTOMER' ? 'Client' : partnerTypeFilter === 'SUPPLIER' ? 'Fournisseur' : partnerTypeFilter,
+                                            () => setPartnerTypeFilter(''), 'bg-violet-50 border-violet-200 text-violet-700'
+                                        )}
+                                        {salespersonIdFilter && chip(
+                                            commercialEmployees.find(e => e.id === salespersonIdFilter)?.name || `Commercial #${salespersonIdFilter}`,
+                                            () => setSalespersonIdFilter(''), 'bg-amber-50 border-amber-200 text-amber-700'
+                                        )}
+                                        {priceListIdFilter && chip(
+                                            (masterData?.price_lists ?? []).find(pl => pl.id === priceListIdFilter)?.code || `Tarif #${priceListIdFilter}`,
+                                            () => setPriceListIdFilter(''), 'bg-teal-50 border-teal-200 text-teal-700'
+                                        )}
+                                        {cityFilter && chip(`Ville: ${cityFilter}`, () => setCityFilter(''))}
+                                        {taxIceFilter && chip(`ICE: ${taxIceFilter}`, () => setTaxIceFilter(''), 'bg-gray-100 border-gray-200 text-gray-600')}
+                                        {clientGroupIdFilter && chip(
+                                            `Groupe: ${(masterData?.client_groups ?? []).find(g => g.id === clientGroupIdFilter)?.name ?? clientGroupIdFilter}`,
+                                            () => setClientGroupIdFilter(''),
+                                            'bg-indigo-50 border-indigo-200 text-indigo-700'
+                                        )}
+                                        {taxExemptFilter && chip(taxExemptFilter === '1' ? 'Exonéré TVA' : 'Assujetti TVA', () => setTaxExemptFilter(''), 'bg-orange-50 border-orange-200 text-orange-700')}
+                                        {hasBizAccountFilter && chip(hasBizAccountFilter === '1' ? 'Avec B2B' : 'Sans B2B', () => setHasBizAccountFilter(''), 'bg-blue-50 border-blue-200 text-blue-700')}
+                                        {Object.entries(customFieldFilters).filter(([,v]) => v).map(([k, v]) => {
+                                            const cf = (masterData?.custom_fields ?? []).find((f: any) => f.field_name === k);
+                                            return chip(`${cf?.field_label ?? k}: ${v}`, () => setCustomFieldFilters(p => { const n = {...p}; delete n[k]; return n; }), 'bg-purple-50 border-purple-200 text-purple-700');
+                                        })}
+                                        {sortByFilter && chip(`↕ ${sortByFilter} ${sortDirFilter === 'asc' ? '↑' : '↓'}`, () => { setSortByFilter(''); setSortDirFilter('asc'); }, 'bg-gray-100 border-gray-200 text-gray-600')}
+                                    </div>
+                                );
+                            })()}
                         </div>
 
                         {/* ── Error banner ──────────────────────────────── */}
@@ -1856,27 +2252,78 @@ export const PartnerManagementPage = () => {
                         </div>
 
                         {/* ── Pagination ────────────────────────────────── */}
-                        {partnersData && (partnersData.last_page ?? 1) > 1 && (
-                            <div className="p-2 border-t border-gray-100 flex items-center justify-between text-xs text-gray-500 shrink-0">
-                                <span>Page {partnersData.current_page} / {partnersData.last_page}</span>
-                                <div className="flex gap-1">
-                                    <button
-                                        disabled={partnersData.current_page <= 1}
-                                        onClick={() => setFilters(prev => ({ ...prev, page: (prev.page || 1) - 1 }))}
-                                        className="px-2 py-1 rounded border border-gray-200 hover:bg-gray-50 disabled:opacity-40"
+                        {partnersData && (partnersData.last_page ?? 1) >= 1 && (() => {
+                            const cur = partnersData.current_page;
+                            const last = partnersData.last_page ?? 1;
+                            const total = partnersData.total ?? 0;
+                            const perPage = filters.per_page ?? 20;
+                            const from = Math.min((cur - 1) * perPage + 1, total);
+                            const to = Math.min(cur * perPage, total);
+                            const goTo = (p: number) => setFilters(prev => ({ ...prev, page: p }));
+
+                            // Build page number buttons: always show first, last, current ±1, with ellipsis
+                            const pages: (number | '…')[] = [];
+                            const add = (n: number) => { if (!pages.includes(n)) pages.push(n); };
+                            add(1);
+                            if (cur - 2 > 2) pages.push('…');
+                            for (let i = Math.max(2, cur - 1); i <= Math.min(last - 1, cur + 1); i++) add(i);
+                            if (cur + 2 < last - 1) pages.push('…');
+                            if (last > 1) add(last);
+
+                            return (
+                                <div className="px-3 py-2 border-t border-gray-100 shrink-0 flex items-center justify-between gap-2">
+                                    {/* Left: record range */}
+                                    <span className="text-[11px] text-gray-400 whitespace-nowrap">
+                                        {from}–{to} <span className="text-gray-300">sur</span> <span className="font-medium text-gray-500">{total.toLocaleString()}</span>
+                                    </span>
+
+                                    {/* Center: page buttons */}
+                                    <div className="flex items-center gap-0.5">
+                                        {/* Prev */}
+                                        <button
+                                            disabled={cur <= 1}
+                                            onClick={() => goTo(cur - 1)}
+                                            className="w-7 h-7 flex items-center justify-center rounded-lg text-gray-500 hover:bg-gray-100 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+                                        >
+                                            <ChevronLeft className="w-3.5 h-3.5" />
+                                        </button>
+
+                                        {pages.map((p, i) =>
+                                            p === '…'
+                                                ? <span key={`ellipsis-${i}`} className="w-6 text-center text-[11px] text-gray-300 select-none">…</span>
+                                                : <button
+                                                    key={p}
+                                                    onClick={() => goTo(p as number)}
+                                                    className={cn(
+                                                        'w-7 h-7 flex items-center justify-center rounded-lg text-[11px] font-medium transition-colors',
+                                                        p === cur
+                                                            ? 'bg-sage-500 text-white shadow-sm'
+                                                            : 'text-gray-500 hover:bg-gray-100'
+                                                    )}
+                                                >{p}</button>
+                                        )}
+
+                                        {/* Next */}
+                                        <button
+                                            disabled={cur >= last}
+                                            onClick={() => goTo(cur + 1)}
+                                            className="w-7 h-7 flex items-center justify-center rounded-lg text-gray-500 hover:bg-gray-100 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+                                        >
+                                            <ChevronRight className="w-3.5 h-3.5" />
+                                        </button>
+                                    </div>
+
+                                    {/* Right: per-page selector */}
+                                    <select
+                                        value={perPage}
+                                        onChange={e => setFilters(prev => ({ ...prev, per_page: Number(e.target.value), page: 1 }))}
+                                        className="text-[11px] text-gray-500 bg-transparent border border-gray-200 rounded-lg px-1.5 py-1 focus:outline-none focus:ring-1 focus:ring-sage-400 cursor-pointer"
                                     >
-                                        &larr;
-                                    </button>
-                                    <button
-                                        disabled={partnersData.current_page >= (partnersData.last_page ?? 1)}
-                                        onClick={() => setFilters(prev => ({ ...prev, page: (prev.page || 1) + 1 }))}
-                                        className="px-2 py-1 rounded border border-gray-200 hover:bg-gray-50 disabled:opacity-40"
-                                    >
-                                        &rarr;
-                                    </button>
+                                        {[10, 20, 50, 100].map(n => <option key={n} value={n}>{n} / page</option>)}
+                                    </select>
                                 </div>
-                            </div>
-                        )}
+                            );
+                        })()}
                     </div>
                 }
 
@@ -1905,9 +2352,19 @@ export const PartnerManagementPage = () => {
                                             <button onClick={() => setShowDetailPanel(false)} className="p-1.5 rounded-md hover:bg-gray-100 transition-colors shrink-0" title="Retour">
                                                 <X className="w-5 h-5 text-gray-600" />
                                             </button>
-                                            <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-sage-500 to-sage-600 flex items-center justify-center text-white font-bold text-sm shrink-0">
-                                                {partnerDetail.name?.charAt(0)?.toUpperCase() || 'P'}
-                                            </div>
+                                            {detailData?.thumb_url ? (
+                                                <div className="relative w-16 h-16 rounded-xl shrink-0 overflow-hidden border border-gray-100 bg-white shadow-sm">
+                                                    <img
+                                                        src={detailData.thumb_url}
+                                                        alt={partnerDetail.name}
+                                                        className="w-full h-full object-contain p-0.5"
+                                                    />
+                                                </div>
+                                            ) : (
+                                                <div className="w-10 h-10 rounded-xl shrink-0 bg-gradient-to-br from-sage-500 to-sage-600 flex items-center justify-center">
+                                                    <span className="text-white font-bold text-sm">{partnerDetail.name?.charAt(0)?.toUpperCase() || 'P'}</span>
+                                                </div>
+                                            )}
                                             <div className="min-w-0 flex-1">
                                                 <div className="flex items-center gap-2 flex-wrap">
                                                     <h1 className="text-lg sm:text-xl font-bold text-gray-900 truncate">{partnerDetail.name}</h1>
@@ -1970,12 +2427,150 @@ export const PartnerManagementPage = () => {
                                 {/* ── Scrollable sections (scroll-spy) ── */}
                                 <div ref={containerRef} className="flex-1 overflow-y-auto p-3 sm:p-4 space-y-3 scroll-smooth bg-slate-50">
 
-                                    {/* ── Identité ─────────────────────── */}
-                                    <div ref={el => { sectionRefs.current['identite'] = el; }}>
+                                    {/* ── Aperçu 360 ───────────────────── */}
+                                    <div ref={el => { sectionRefs.current['apercu'] = el; }}>
+                                        {loading360 ? (
+                                            <div className="flex items-center justify-center py-6 text-gray-400 text-xs"><Loader2 className="w-4 h-4 animate-spin mr-2" /> Chargement aperçu...</div>
+                                        ) : data360 ? (() => {
+                                            const creditStatusCfg = {
+                                                ALLOWED:    { cls: 'bg-emerald-50 text-emerald-700 border-emerald-100', dot: 'bg-emerald-500', label: 'Crédit OK' },
+                                                WARNING:    { cls: 'bg-amber-50 text-amber-700 border-amber-100',       dot: 'bg-amber-500',   label: 'Vigilance' },
+                                                SOFT_BLOCK: { cls: 'bg-orange-50 text-orange-700 border-orange-100',    dot: 'bg-orange-500',  label: 'Blocage partiel' },
+                                                HARD_BLOCK: { cls: 'bg-red-50 text-red-700 border-red-100',             dot: 'bg-red-500',     label: 'Bloqué' },
+                                            } as const;
+                                            const cs = creditStatusCfg[data360.credit.status] ?? creditStatusCfg.ALLOWED;
+                                            const fmtAmt = (n: number) => n.toLocaleString('fr-MA', { minimumFractionDigits: 0, maximumFractionDigits: 0 });
+                                            const pctUsed = data360.credit.credit_limit > 0 ? Math.min(100, (data360.credit.total_exposure / data360.credit.credit_limit) * 100) : 0;
+                                            return (
+                                                <div className="space-y-3">
+                                                    {/* Identity banner — group + subsidiaries + dates */}
+                                                    <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+                                                        <div className="grid grid-cols-2 divide-x divide-gray-100">
+                                                            <div className="px-4 py-3">
+                                                                <div className="flex items-center justify-between mb-1">
+                                                                    <div className="text-[10px] text-gray-400 uppercase tracking-wider">Groupe client</div>
+                                                                    <button
+                                                                        onClick={() => navigate('/partners/client-groups')}
+                                                                        className="text-[9px] text-sage-500 hover:text-sage-700 hover:underline transition-colors"
+                                                                    >Gérer ↗</button>
+                                                                </div>
+                                                                {data360.partner.client_group
+                                                                    ? <button
+                                                                        onClick={() => navigate(`/partners/client-groups?group_id=${data360.partner.client_group!.id}`)}
+                                                                        className="text-[11px] px-2 py-0.5 bg-sage-50 text-sage-700 rounded-full border border-sage-200 font-semibold hover:bg-sage-100 transition-colors cursor-pointer"
+                                                                      >{data360.partner.client_group.name} ↗</button>
+                                                                    : <button
+                                                                        onClick={() => navigate(`/partners/client-groups${partnerDetail?.code ? `?partner_code=${partnerDetail.code}` : ''}`)}
+                                                                        className="text-xs text-gray-400 hover:text-sage-600 transition-colors"
+                                                                      >— Assigner</button>}
+                                                            </div>
+                                                            <div className="px-4 py-3">
+                                                                <div className="text-[10px] text-gray-400 uppercase tracking-wider mb-1">Filiales</div>
+                                                                <span className="text-sm font-bold text-gray-900">{data360.partner.subsidiaries_count}</span>
+                                                            </div>
+                                                        </div>
+                                                        <div className="grid grid-cols-2 divide-x divide-gray-100 border-t border-gray-100">
+                                                            <div className="px-4 py-2.5">
+                                                                <div className="text-[10px] text-gray-400 mb-0.5">Dernière commande</div>
+                                                                <div className="text-xs font-semibold text-gray-800">{data360.partner.last_order_date ? fmtDate(data360.partner.last_order_date) : '—'}</div>
+                                                            </div>
+                                                            <div className="px-4 py-2.5">
+                                                                <div className="text-[10px] text-gray-400 mb-0.5">Dernier paiement</div>
+                                                                <div className="text-xs font-semibold text-gray-800">{data360.partner.last_payment_date ? fmtDate(data360.partner.last_payment_date) : '—'}</div>
+                                                            </div>
+                                                        </div>
+                                                    </div>
+
+                                                    {/* Billing via payer banner */}
+                                                    {data360.billing.is_billed_via_payer && data360.billing.billing_partner && (
+                                                        <div className="flex items-start gap-2 p-3 bg-indigo-50 border border-indigo-100 rounded-xl text-xs text-indigo-800">
+                                                            <Banknote className="w-3.5 h-3.5 shrink-0 mt-0.5 text-indigo-500" />
+                                                            <span>Facturation centralisée chez <strong>{data360.billing.billing_partner.name}</strong> — les chiffres reflètent le groupe.</span>
+                                                        </div>
+                                                    )}
+
+                                                    {/* Credit health card */}
+                                                    <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+                                                        <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100">
+                                                            <div className="flex items-center gap-2">
+                                                                <CreditCard className="w-3.5 h-3.5 text-gray-400" />
+                                                                <span className="text-xs font-semibold text-gray-700">Santé crédit</span>
+                                                            </div>
+                                                            <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full border flex items-center gap-1 ${cs.cls}`}>
+                                                                <span className={`w-1.5 h-1.5 rounded-full ${cs.dot}`} />{cs.label}
+                                                            </span>
+                                                        </div>
+                                                        <div className="p-4 space-y-3">
+                                                            <div className="grid grid-cols-3 gap-2 text-center">
+                                                                <div>
+                                                                    <div className="text-[10px] text-gray-400 uppercase tracking-wider mb-0.5">Limite</div>
+                                                                    <div className="text-sm font-bold text-gray-900 tabular-nums">{fmtAmt(data360.credit.credit_limit)}</div>
+                                                                </div>
+                                                                <div>
+                                                                    <div className="text-[10px] text-gray-400 uppercase tracking-wider mb-0.5">Exposition</div>
+                                                                    <div className="text-sm font-bold text-amber-600 tabular-nums">{fmtAmt(data360.credit.total_exposure)}</div>
+                                                                </div>
+                                                                <div>
+                                                                    <div className="text-[10px] text-gray-400 uppercase tracking-wider mb-0.5">Disponible</div>
+                                                                    <div className={`text-sm font-bold tabular-nums ${data360.credit.available_credit <= 0 ? 'text-red-600' : 'text-emerald-600'}`}>{fmtAmt(data360.credit.available_credit)}</div>
+                                                                </div>
+                                                            </div>
+                                                            {/* Progress bar */}
+                                                            <div>
+                                                                <div className="h-2 bg-gray-100 rounded-full overflow-hidden">
+                                                                    <div className={`h-full rounded-full transition-all ${pctUsed >= 90 ? 'bg-red-500' : pctUsed >= 70 ? 'bg-amber-500' : 'bg-emerald-500'}`}
+                                                                        style={{ width: `${pctUsed}%` }} />
+                                                                </div>
+                                                                <div className="flex justify-between mt-0.5 text-[10px] text-gray-400">
+                                                                    <span>{pctUsed.toFixed(0)}% utilisé</span>
+                                                                    {data360.credit.overdue_invoice_count > 0 && (
+                                                                        <span className="text-red-600 font-semibold">{data360.credit.overdue_invoice_count} facture(s) en retard</span>
+                                                                    )}
+                                                                </div>
+                                                            </div>
+                                                        </div>
+                                                    </div>
+
+                                                    {/* Activity strip */}
+                                                    <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+                                                        <div className="flex items-center gap-2 px-4 py-3 border-b border-gray-100">
+                                                            <Activity className="w-3.5 h-3.5 text-gray-400" />
+                                                            <span className="text-xs font-semibold text-gray-700">Activité</span>
+                                                        </div>
+                                                        <div className="grid grid-cols-3 divide-x divide-gray-100">
+                                                            {[
+                                                                { label: 'Commandes',  value: data360.activity.orders_count,    cls: 'text-indigo-700' },
+                                                                { label: 'Livraisons', value: data360.activity.deliveries_count, cls: 'text-sage-700'   },
+                                                                { label: 'Factures',   value: data360.activity.invoices_count,   cls: 'text-gray-900'   },
+                                                            ].map(k => (
+                                                                <div key={k.label} className="px-3 py-3 text-center">
+                                                                    <div className="text-[10px] text-gray-400 uppercase tracking-wider mb-0.5">{k.label}</div>
+                                                                    <div className={`text-lg font-bold tabular-nums ${k.cls}`}>{k.value}</div>
+                                                                </div>
+                                                            ))}
+                                                        </div>
+                                                    </div>
+
+                                                    {/* Overdue alert */}
+                                                    {data360.overdue_invoices.length > 0 && (
+                                                        <div className="flex items-start gap-2 p-3 bg-red-50 border border-red-100 rounded-xl text-xs text-red-800">
+                                                            <AlertTriangle className="w-3.5 h-3.5 shrink-0 mt-0.5 text-red-500" />
+                                                            <span><strong>{data360.overdue_invoices.length} facture(s) en retard</strong> — voir onglet Documents pour le détail.</span>
+                                                        </div>
+                                                    )}
+                                                </div>
+                                            );
+                                        })() : (
+                                            <div className="text-center py-6 text-xs text-gray-400">Données 360 indisponibles pour ce partenaire.</div>
+                                        )}
+                                    </div>
+
+                                    {/* ── Profil ───────────────────────── */}
+                                    <div ref={el => { sectionRefs.current['profil'] = el; }}>
                                         <SageCollapsible
-                                            title="Identité"
-                                            isOpen={openSections['identite']}
-                                            onOpenChange={open => toggleSection('identite', open)}
+                                            title="Profil"
+                                            isOpen={openSections['profil']}
+                                            onOpenChange={open => toggleSection('profil', open)}
                                         >
                                             <div className="space-y-3">
                                                 {/* Blocking alert */}
@@ -2013,27 +2608,65 @@ export const PartnerManagementPage = () => {
                                                     <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
                                                         <div className="flex items-center gap-2 px-4 py-3 border-b border-gray-100">
                                                             <FileText className="w-3.5 h-3.5 text-gray-400" />
-                                                            <span className="text-xs font-semibold text-gray-700">Identification</span>
+                                                            <span className="text-xs font-semibold text-gray-700">Identification légale</span>
                                                         </div>
                                                         <div className="divide-y divide-gray-50">
                                                             {[
-                                                                { label: 'Code',       value: partnerDetail.code,              mono: true  },
-                                                                { label: 'Raison soc.',value: partnerDetail.name,              mono: false },
-                                                                { label: 'Type',       value: partnerDetail.partner_type,      mono: false },
-                                                                { label: 'ICE',        value: partnerDetail.tax_number_ice,    mono: true  },
-                                                                { label: 'IF',         value: partnerDetail.tax_number_if,     mono: true  },
+                                                                { label: 'Code',        value: partnerDetail.code,           mono: true  },
+                                                                { label: 'Raison soc.', value: partnerDetail.name,           mono: false },
+                                                                { label: 'Type',        value: partnerDetail.partner_type,   mono: false },
+                                                                { label: 'ICE',         value: partnerDetail.tax_number_ice, mono: true  },
+                                                                { label: 'IF',          value: partnerDetail.tax_number_if,  mono: true  },
+                                                                { label: 'Groupe TVA',  value: partnerDetail.vat_group_code, mono: true  },
                                                             ].map(row => row.value ? (
                                                                 <div key={row.label} className="flex items-center justify-between px-4 py-2.5 gap-3">
-                                                                    <span className="text-xs text-gray-400 shrink-0 w-20">{row.label}</span>
+                                                                    <span className="text-xs text-gray-400 shrink-0 w-24">{row.label}</span>
                                                                     <span className={`text-xs font-medium text-gray-900 truncate text-right ${row.mono ? 'font-mono' : ''}`}>{row.value}</span>
                                                                 </div>
                                                             ) : null)}
+                                                            {/* Groupe client — always shown, chip when set */}
                                                             <div className="flex items-center justify-between px-4 py-2.5 gap-3">
-                                                                <span className="text-xs text-gray-400 shrink-0 w-20">Exo. TVA</span>
+                                                                <span className="text-xs text-gray-400 shrink-0 w-24">Groupe client</span>
+                                                                {partnerDetail.client_group
+                                                                    ? <button
+                                                                        onClick={() => navigate(`/partners/client-groups?group_id=${partnerDetail.client_group!.id}`)}
+                                                                        className="text-[10px] px-2 py-0.5 bg-sage-50 text-sage-700 rounded-full border border-sage-200 font-semibold hover:bg-sage-100 transition-colors cursor-pointer"
+                                                                      >{partnerDetail.client_group.name} ↗</button>
+                                                                    : <button
+                                                                        onClick={() => navigate(`/partners/client-groups${partnerDetail.code ? `?partner_code=${partnerDetail.code}` : ''}`)}
+                                                                        className="text-xs text-gray-300 hover:text-sage-500 transition-colors"
+                                                                      >Non assigné — Assigner ↗</button>}
+                                                            </div>
+                                                            {/* Exo. TVA */}
+                                                            <div className="flex items-center justify-between px-4 py-2.5 gap-3">
+                                                                <span className="text-xs text-gray-400 shrink-0 w-24">Exo. TVA</span>
                                                                 <span className={`text-xs font-medium ${partnerDetail.tax_exempt ? 'text-emerald-600' : 'text-gray-400'}`}>
                                                                     {partnerDetail.tax_exempt ? 'Oui' : 'Non'}
                                                                 </span>
                                                             </div>
+                                                            {/* Stamp duty */}
+                                                            <div
+                                                                className={`flex items-center justify-between px-4 py-2.5 gap-3 cursor-pointer transition-colors ${stampDutyLoading ? 'opacity-60 pointer-events-none' : 'hover:bg-gray-50'}`}
+                                                                onClick={() => handleToggleStampDuty(!partnerDetail.waive_stamp_duty)}
+                                                            >
+                                                                <div className="flex items-center gap-2 min-w-0">
+                                                                    {partnerDetail.waive_stamp_duty
+                                                                        ? <ToggleRight className="w-5 h-5 text-emerald-500 shrink-0" />
+                                                                        : <ToggleLeft  className="w-5 h-5 text-gray-300 shrink-0" />
+                                                                    }
+                                                                    <span className="text-xs text-gray-600 leading-tight">Timbre 0.25% pris en charge</span>
+                                                                </div>
+                                                                {stampDutyLoading && <Loader2 className="w-3.5 h-3.5 animate-spin text-gray-400 shrink-0" />}
+                                                            </div>
+                                                            {/* Risk score */}
+                                                            {partnerDetail.risk_score !== undefined && (
+                                                                <div className="flex items-center justify-between px-4 py-2.5 gap-3">
+                                                                    <span className="text-xs text-gray-400 shrink-0 w-24">Score risque</span>
+                                                                    <span className={`text-xs font-bold ${partnerDetail.risk_score >= 7 ? 'text-red-600' : partnerDetail.risk_score >= 4 ? 'text-amber-600' : 'text-emerald-600'}`}>
+                                                                        {partnerDetail.risk_score}/10
+                                                                    </span>
+                                                                </div>
+                                                            )}
                                                             <div className="px-4 py-2 text-[10px] text-gray-300">
                                                                 Créé {fmtDate(partnerDetail.created_at)} · MàJ {fmtDate(partnerDetail.updated_at)}
                                                             </div>
@@ -2186,8 +2819,8 @@ export const PartnerManagementPage = () => {
                                         </SageCollapsible>
                                     </div>
 
-                                    {/* ── Adresses ─────────────────────── */}
-                                    <div ref={el => { sectionRefs.current['adresses'] = el; }}>
+                                    {/* ── Coordonnées : Adresses + Contacts */}
+                                    <div ref={el => { sectionRefs.current['coordonnees'] = el; }}>
                                         <SageCollapsible
                                             title="Adresses"
                                             isOpen={openSections['adresses']}
@@ -2252,6 +2885,9 @@ export const PartnerManagementPage = () => {
                                                                         {contact.is_primary && (
                                                                             <span className="text-[9px] px-1.5 py-0.5 bg-indigo-50 text-indigo-700 rounded-full font-semibold border border-indigo-100">Principal</span>
                                                                         )}
+                                                                        {contact.is_billing_contact && (
+                                                                            <span className="text-[9px] px-1.5 py-0.5 bg-emerald-50 text-emerald-700 rounded-full font-semibold border border-emerald-100 flex items-center gap-0.5"><Receipt className="w-2.5 h-2.5" />Facturation</span>
+                                                                        )}
                                                                     </div>
                                                                     {contact.job_title && <div className="text-[10px] text-gray-400 mt-0.5">{contact.job_title}</div>}
                                                                     <div className="flex items-center gap-3 mt-1 flex-wrap">
@@ -2266,7 +2902,18 @@ export const PartnerManagementPage = () => {
                                                                             <Star className="w-3.5 h-3.5" />
                                                                         </button>
                                                                     )}
-                                                                    <button onClick={() => { setEditingContact(contact); setContactForm({ name: contact.name, job_title: contact.job_title ?? undefined, phone: contact.phone ?? undefined, email: contact.email ?? undefined, notes: contact.notes ?? undefined, is_primary: contact.is_primary }); setShowContactForm(true); }}
+                                                                    {!contact.is_billing_contact && (
+                                                                        <button
+                                                                            onClick={async () => {
+                                                                                if (!partnerDetail) return;
+                                                                                try { await updateContactFn({ partnerId: partnerDetail.id, contactId: contact.id, data: { is_billing_contact: true } }); refetchContacts(); }
+                                                                                catch { toast.error('Erreur'); }
+                                                                            }}
+                                                                            className="p-1 rounded text-gray-400 hover:text-emerald-600 hover:bg-emerald-50 transition-colors" title="Désigner comme contact facturation">
+                                                                            <Receipt className="w-3.5 h-3.5" />
+                                                                        </button>
+                                                                    )}
+                                                                    <button onClick={() => { setEditingContact(contact); setContactForm({ name: contact.name, job_title: contact.job_title ?? undefined, phone: contact.phone ?? undefined, email: contact.email ?? undefined, notes: contact.notes ?? undefined, is_primary: contact.is_primary, is_billing_contact: contact.is_billing_contact }); setShowContactForm(true); }}
                                                                         className="p-1 rounded text-gray-400 hover:text-blue-600 hover:bg-blue-50 transition-colors">
                                                                         <Edit2 className="w-3.5 h-3.5" />
                                                                     </button>
@@ -2316,11 +2963,18 @@ export const PartnerManagementPage = () => {
                                                                     placeholder="contact@exemple.com" className="w-full text-xs border border-gray-200 rounded px-2 py-1.5 bg-gray-50 focus:outline-none focus:ring-1 focus:ring-indigo-400" />
                                                             </div>
                                                         </div>
-                                                        <label className="flex items-center gap-2 text-xs text-gray-600 cursor-pointer">
-                                                            <input type="checkbox" checked={contactForm.is_primary ?? false} onChange={e => setContactForm(f => ({ ...f, is_primary: e.target.checked }))}
-                                                                className="w-3.5 h-3.5 rounded border-gray-300 text-indigo-600" />
-                                                            Contact principal
-                                                        </label>
+                                                        <div className="flex gap-4">
+                                                            <label className="flex items-center gap-2 text-xs text-gray-600 cursor-pointer">
+                                                                <input type="checkbox" checked={contactForm.is_primary ?? false} onChange={e => setContactForm(f => ({ ...f, is_primary: e.target.checked }))}
+                                                                    className="w-3.5 h-3.5 rounded border-gray-300 text-indigo-600" />
+                                                                Contact principal
+                                                            </label>
+                                                            <label className="flex items-center gap-2 text-xs text-gray-600 cursor-pointer">
+                                                                <input type="checkbox" checked={contactForm.is_billing_contact ?? false} onChange={e => setContactForm(f => ({ ...f, is_billing_contact: e.target.checked }))}
+                                                                    className="w-3.5 h-3.5 rounded border-gray-300 text-emerald-600" />
+                                                                Destinataire factures
+                                                            </label>
+                                                        </div>
                                                         <div className="flex gap-2">
                                                             <button onClick={handleSaveContact} disabled={!contactForm.name.trim() || creatingContact || updatingContact}
                                                                 className="flex-1 flex items-center justify-center gap-1 px-3 py-1.5 text-xs bg-indigo-600 text-white rounded-md hover:bg-indigo-700 disabled:opacity-40">
@@ -2546,15 +3200,67 @@ export const PartnerManagementPage = () => {
                                         </SageCollapsible>
                                     </div>
 
-                                    {/* ── Paiement & Crédit ────────────── */}
-                                    <div ref={el => { sectionRefs.current['credit'] = el; }}>
+                                    {/* ── Facturation & Crédit ─────────── */}
+                                    <div ref={el => { sectionRefs.current['facturation'] = el; }}>
                                         <SageCollapsible
-                                            title="Paiement & Crédit"
+                                            title="Facturation & Crédit"
                                             isOpen={openSections['credit']}
                                             onOpenChange={open => toggleSection('credit', open)}
                                         >
 
                                             <div className="space-y-3">
+                                                {/* ── Payer billing redirect banner ── */}
+                                                {/* Guard on payer_partner_id (immediately available) — payer name loads in parallel */}
+                                                {partnerDetail.payer_partner_id && (
+                                                    <div className="flex items-start gap-3 px-4 py-3 bg-indigo-50 border border-indigo-100 rounded-xl">
+                                                        <AlertTriangle className="w-4 h-4 text-indigo-500 shrink-0 mt-0.5" />
+                                                        <div className="flex-1 min-w-0">
+                                                            <p className="text-xs font-semibold text-indigo-800">
+                                                                Facturation centralisée{payerData?.payer ? ` chez ${payerData.payer.name}` : ''}
+                                                            </p>
+                                                            <p className="text-[10px] text-indigo-600 mt-0.5">Les nouvelles factures et le solde consolidé sont rattachés au compte payeur — les chiffres ci-dessous reflètent uniquement les transactions directes.</p>
+                                                        </div>
+                                                    </div>
+                                                )}
+                                                {/* ── Invoicing mode card ── */}
+                                                {(() => {
+                                                    const mode = partnerDetail.invoicing_mode ?? '1_FAC_PER_BL';
+                                                    const MODES = {
+                                                        '1_FAC_PER_BL':          { label: 'Facture immédiate par livraison',    desc: 'Une facture générée dès qu\'un bon de livraison est confirmé.',                                                                                icon: Zap,        iconCls: 'text-emerald-500', bg: 'bg-emerald-50', border: 'border-emerald-100' },
+                                                        '1_FAC_PER_ORDER':       { label: 'Facture groupée par commande',       desc: 'Attend que tous les BL d\'une commande soient livrés avant de facturer.',                                                                   icon: FileText,   iconCls: 'text-indigo-500',  bg: 'bg-indigo-50',  border: 'border-indigo-100'  },
+                                                        'PERIODIC_FIN_DE_MOIS':  { label: 'Facturation mensuelle (grands comptes)', desc: 'Facture consolidée le 1er du mois suivant — plusieurs commandes regroupées. Les BL livrés n\'apparaîtront pas en facture avant le batch.', icon: Calendar,   iconCls: 'text-amber-500',   bg: 'bg-amber-50',   border: 'border-amber-100'   },
+                                                    } as const;
+                                                    const m = MODES[mode as keyof typeof MODES] ?? MODES['1_FAC_PER_BL'];
+                                                    const Icon = m.icon;
+                                                    return (
+                                                        <div className={`rounded-xl border ${m.border} ${m.bg} overflow-hidden`}>
+                                                            <div className="flex items-center gap-2 px-4 py-3 border-b border-white/60">
+                                                                <Banknote className="w-3.5 h-3.5 text-gray-400" />
+                                                                <span className="text-xs font-semibold text-gray-700">Mode de facturation</span>
+                                                                <button onClick={handleOpenInvoicingModal}
+                                                                    className="ml-auto flex items-center gap-1 px-2 py-0.5 text-[10px] bg-white/70 text-gray-600 hover:bg-white rounded-md transition-colors">
+                                                                    <Edit2 className="w-2.5 h-2.5" /> Modifier
+                                                                </button>
+                                                            </div>
+                                                            <div className="flex items-start gap-3 px-4 py-3">
+                                                                <div className={`w-8 h-8 rounded-lg bg-white/70 flex items-center justify-center shrink-0`}>
+                                                                    <Icon className={`w-4 h-4 ${m.iconCls}`} />
+                                                                </div>
+                                                                <div className="flex-1 min-w-0">
+                                                                    <p className="text-xs font-semibold text-gray-900">{m.label}</p>
+                                                                    <p className="text-[10px] text-gray-500 mt-0.5 leading-snug">{m.desc}</p>
+                                                                    {mode === 'PERIODIC_FIN_DE_MOIS' && (
+                                                                        <div className="flex items-center gap-1.5 mt-2 text-[10px] text-amber-700 font-medium">
+                                                                            <AlertTriangle className="w-3 h-3 shrink-0" />
+                                                                            Batch mensuel — 1er du mois à 1h. PDF non disponible pour ce mode.
+                                                                        </div>
+                                                                    )}
+                                                                </div>
+                                                            </div>
+                                                        </div>
+                                                    );
+                                                })()}
+
                                                 {/* KPI strip */}
                                                 <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
                                                     <div className="grid grid-cols-3 divide-x divide-gray-100">
@@ -3043,24 +3749,127 @@ export const PartnerManagementPage = () => {
                                         </SageCollapsible>
                                     </div>)}
 
-                                    {/* ── Info. suppl. ─────────────────── */}
-                                    <div ref={el => { sectionRefs.current['info'] = el; }}>
+                                    {/* ── Documents ────────────────────── */}
+                                    <div ref={el => { sectionRefs.current['documents'] = el; }}>
                                         <SageCollapsible
-                                            title="Info. suppl."
+                                            title="Documents & Soldes"
+                                            isOpen={openSections['documents'] ?? true}
+                                            onOpenChange={open => toggleSection('documents', open)}
+                                        >
+                                            {loading360 ? (
+                                                <div className="flex items-center justify-center py-6 text-gray-400 text-xs"><Loader2 className="w-4 h-4 animate-spin mr-2" /> Chargement...</div>
+                                            ) : data360 ? (() => {
+                                                const fmtAmt = (n: number) => n.toLocaleString('fr-MA', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+                                                const fmtDateShort = (s: string) => new Date(s).toLocaleDateString('fr-MA', { day: '2-digit', month: '2-digit', year: '2-digit' });
+                                                const invoiceStatusCls: Record<string, string> = {
+                                                    overdue: 'bg-red-50 text-red-700 border-red-100',
+                                                    pending: 'bg-amber-50 text-amber-700 border-amber-100',
+                                                    partial: 'bg-blue-50 text-blue-700 border-blue-100',
+                                                    paid:    'bg-emerald-50 text-emerald-700 border-emerald-100',
+                                                };
+                                                return (
+                                                    <div className="space-y-3">
+                                                        {/* Summary KPIs */}
+                                                        <div className="grid grid-cols-3 divide-x divide-gray-100 bg-white rounded-xl border border-gray-200 overflow-hidden">
+                                                            <div className="px-3 py-3 text-center">
+                                                                <div className="text-[10px] text-gray-400 uppercase tracking-wider mb-1">Factures ouvertes</div>
+                                                                <div className="text-base font-bold text-indigo-700">{data360.open_invoices.length}</div>
+                                                            </div>
+                                                            <div className="px-3 py-3 text-center">
+                                                                <div className="text-[10px] text-gray-400 uppercase tracking-wider mb-1">En retard</div>
+                                                                <div className={`text-base font-bold ${data360.overdue_invoices.length > 0 ? 'text-red-600' : 'text-gray-400'}`}>{data360.overdue_invoices.length}</div>
+                                                            </div>
+                                                            <div className="px-3 py-3 text-center">
+                                                                <div className="text-[10px] text-gray-400 uppercase tracking-wider mb-1">Jours max retard</div>
+                                                                <div className={`text-base font-bold ${(data360.credit.oldest_overdue_days ?? 0) > 0 ? 'text-red-600' : 'text-gray-400'}`}>
+                                                                    {data360.credit.oldest_overdue_days ?? '—'}
+                                                                </div>
+                                                            </div>
+                                                        </div>
+
+                                                        {/* Overdue invoices */}
+                                                        {data360.overdue_invoices.length > 0 && (
+                                                            <div className="bg-white rounded-xl border border-red-200 overflow-hidden">
+                                                                <div className="flex items-center gap-2 px-4 py-3 border-b border-red-100 bg-red-50">
+                                                                    <AlertTriangle className="w-3.5 h-3.5 text-red-500" />
+                                                                    <span className="text-xs font-semibold text-red-700">Factures en retard ({data360.overdue_invoices.length})</span>
+                                                                </div>
+                                                                <div className="divide-y divide-gray-50">
+                                                                    <div className="grid grid-cols-4 gap-2 px-4 py-2 bg-gray-50 text-[10px] text-gray-400 uppercase tracking-wider font-semibold">
+                                                                        <span>N° facture</span><span>Date</span><span>Échéance</span><span className="text-right">Reste dû</span>
+                                                                    </div>
+                                                                    {data360.overdue_invoices.map(inv => (
+                                                                        <div key={inv.id} className="grid grid-cols-4 gap-2 px-4 py-2.5 items-center text-xs">
+                                                                            <span className="font-mono text-gray-800 font-semibold">{inv.invoice_number}</span>
+                                                                            <span className="text-gray-500">{fmtDateShort(inv.invoice_date)}</span>
+                                                                            <span className="text-red-600 font-medium">{fmtDateShort(inv.due_date)}</span>
+                                                                            <span className="text-right font-bold text-red-700 tabular-nums">{fmtAmt(inv.remaining_amount)}</span>
+                                                                        </div>
+                                                                    ))}
+                                                                </div>
+                                                            </div>
+                                                        )}
+
+                                                        {/* Open invoices */}
+                                                        {data360.open_invoices.length > 0 ? (
+                                                            <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+                                                                <div className="flex items-center gap-2 px-4 py-3 border-b border-gray-100">
+                                                                    <FileText className="w-3.5 h-3.5 text-indigo-500" />
+                                                                    <span className="text-xs font-semibold text-gray-700">Factures ouvertes (20 dernières)</span>
+                                                                </div>
+                                                                <div className="divide-y divide-gray-50">
+                                                                    <div className="grid grid-cols-4 gap-2 px-4 py-2 bg-gray-50 text-[10px] text-gray-400 uppercase tracking-wider font-semibold">
+                                                                        <span>N° facture</span><span>Date</span><span>Statut</span><span className="text-right">Reste dû</span>
+                                                                    </div>
+                                                                    {data360.open_invoices.map(inv => (
+                                                                        <div key={inv.id} className="grid grid-cols-4 gap-2 px-4 py-2.5 items-center text-xs">
+                                                                            <span className="font-mono text-gray-800">{inv.invoice_number}</span>
+                                                                            <span className="text-gray-500">{fmtDateShort(inv.invoice_date)}</span>
+                                                                            <span className={`text-[10px] px-1.5 py-0.5 rounded-full border font-medium self-start ${invoiceStatusCls[inv.status] ?? 'bg-gray-50 text-gray-500 border-gray-100'}`}>{inv.status}</span>
+                                                                            <span className="text-right font-semibold text-indigo-700 tabular-nums">{fmtAmt(inv.remaining_amount)}</span>
+                                                                        </div>
+                                                                    ))}
+                                                                </div>
+                                                            </div>
+                                                        ) : (
+                                                            <div className="text-center py-8 border border-dashed border-gray-200 rounded-xl">
+                                                                <CheckCircle2 className="w-8 h-8 mx-auto mb-2 text-emerald-300" />
+                                                                <p className="text-xs text-gray-400 font-medium">Aucune facture ouverte</p>
+                                                                <p className="text-[10px] text-gray-300 mt-0.5">Solde à jour</p>
+                                                            </div>
+                                                        )}
+                                                    </div>
+                                                );
+                                            })() : (
+                                                <div className="text-center py-8 border border-dashed border-gray-200 rounded-xl">
+                                                    <FileText className="w-8 h-8 mx-auto mb-2 text-gray-200" />
+                                                    <p className="text-xs text-gray-400">Données documents indisponibles</p>
+                                                </div>
+                                            )}
+                                        </SageCollapsible>
+                                    </div>
+
+                                    {/* ── Analyse ──────────────────────── */}
+                                    <div ref={el => { sectionRefs.current['analyse'] = el; }}>
+                                        <SageCollapsible
+                                            title="Analyse & Activité"
                                             isOpen={openSections['info']}
                                             onOpenChange={open => toggleSection('info', open)}
                                         >
                                             <div className="space-y-3">
                                                 {/* Activité stats */}
-                                                <div className="grid grid-cols-2 divide-x divide-gray-100 bg-white rounded-xl border border-gray-200 overflow-hidden">
-                                                    <div className="px-3 py-3 text-center">
-                                                        <div className="text-[10px] text-gray-400 uppercase tracking-wider mb-1">Nb. commandes</div>
-                                                        <div className="text-sm font-bold text-gray-900">{partnerDetail.total_orders_count ?? '—'}</div>
-                                                    </div>
-                                                    <div className="px-3 py-3 text-center">
-                                                        <div className="text-[10px] text-gray-400 uppercase tracking-wider mb-1">CA total</div>
-                                                        <div className="text-sm font-bold text-emerald-700">{toNum(partnerDetail.total_orders_value) > 0 ? fmtNumber(partnerDetail.total_orders_value) : '—'}</div>
-                                                    </div>
+                                                <div className="grid grid-cols-2 sm:grid-cols-4 divide-x divide-gray-100 bg-white rounded-xl border border-gray-200 overflow-hidden">
+                                                    {[
+                                                        { label: 'Nb. commandes', value: partnerDetail.total_orders_count ?? '—', cls: 'text-indigo-700' },
+                                                        { label: 'CA total',       value: toNum(partnerDetail.total_orders_value) > 0 ? fmtNumber(partnerDetail.total_orders_value) : '—', cls: 'text-emerald-700' },
+                                                        { label: 'Panier moyen',  value: toNum(partnerDetail.average_order_value) > 0 ? fmtNumber(partnerDetail.average_order_value) : '—', cls: 'text-gray-900' },
+                                                        { label: 'Dernière cmd',  value: partnerDetail.last_order_date ? fmtDate(partnerDetail.last_order_date) : '—', cls: 'text-gray-700' },
+                                                    ].map(k => (
+                                                        <div key={k.label} className="px-3 py-3 text-center">
+                                                            <div className="text-[10px] text-gray-400 uppercase tracking-wider mb-1">{k.label}</div>
+                                                            <div className={`text-sm font-bold ${k.cls}`}>{k.value}</div>
+                                                        </div>
+                                                    ))}
                                                 </div>
 
                                                 {/* Risque & scoring */}
@@ -3227,6 +4036,119 @@ export const PartnerManagementPage = () => {
                     />
                 )
             }
+
+            {/* ── Payer confirmation modal ─────────────────────────────────── */}
+            {/* ── Invoicing mode modal ─────────────────────────────────────── */}
+            {pendingInvoicingMode && partnerDetail && ReactDOM.createPortal(
+                <div className="fixed inset-0 z-[9995] flex items-center justify-center p-4"
+                    style={{ backgroundColor: 'rgba(15,23,42,0.5)', backdropFilter: 'blur(3px)' }}>
+                    <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm overflow-hidden"
+                        style={{ animation: 'modalIn 150ms cubic-bezier(.16,1,.3,1)' }}>
+                        <div className="p-5 space-y-4">
+                            <div className="flex items-start gap-3">
+                                <div className="w-9 h-9 rounded-xl bg-indigo-50 flex items-center justify-center shrink-0">
+                                    <Banknote className="w-5 h-5 text-indigo-500" />
+                                </div>
+                                <div>
+                                    <h3 className="text-sm font-bold text-gray-900">Modifier le mode de facturation</h3>
+                                    <p className="text-xs text-gray-500 mt-0.5">{partnerDetail.name}</p>
+                                </div>
+                            </div>
+                            <div>
+                                <label className="block text-xs font-medium text-gray-700 mb-1.5">Mode</label>
+                                <select
+                                    value={pendingInvoicingMode.value ?? '1_FAC_PER_BL'}
+                                    onChange={e => setPendingInvoicingMode(p => p ? { ...p, value: e.target.value as any } : p)}
+                                    className="w-full text-xs border border-gray-200 rounded-xl px-3 py-2.5 focus:outline-none focus:ring-2 focus:ring-indigo-400 bg-white">
+                                    <option value="1_FAC_PER_BL">Facture immédiate par livraison</option>
+                                    <option value="1_FAC_PER_ORDER">Facture groupée par commande</option>
+                                    <option value="PERIODIC_FIN_DE_MOIS">Facturation mensuelle (fin de mois)</option>
+                                </select>
+                                {pendingInvoicingMode.value === 'PERIODIC_FIN_DE_MOIS' && (
+                                    <div className="flex items-start gap-1.5 mt-2 text-[10px] text-amber-700 bg-amber-50 border border-amber-100 rounded-lg p-2">
+                                        <AlertTriangle className="w-3 h-3 shrink-0 mt-0.5" />
+                                        <span>Batch mensuel — aucune facture avant le 1er du mois suivant.</span>
+                                    </div>
+                                )}
+                            </div>
+                            <div>
+                                <label className="block text-xs font-medium text-gray-700 mb-1.5">Motif du changement <span className="text-red-400">*</span></label>
+                                <textarea
+                                    value={pendingInvoicingMode.reason}
+                                    onChange={e => setPendingInvoicingMode(p => p ? { ...p, reason: e.target.value } : p)}
+                                    rows={2}
+                                    placeholder="Ex : Client demande une facture unique par commande…"
+                                    className="w-full text-xs border border-gray-200 rounded-xl px-3 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-400 resize-none"
+                                />
+                                {pendingInvoicingMode.reason.trim().length > 0 && pendingInvoicingMode.reason.trim().length < 5 && (
+                                    <p className="text-[10px] text-red-500 mt-1">Minimum 5 caractères requis.</p>
+                                )}
+                            </div>
+                        </div>
+                        <div className="px-5 pb-5 flex gap-2">
+                            <button onClick={() => setPendingInvoicingMode(null)}
+                                className="flex-1 py-2.5 text-sm font-medium text-gray-600 bg-gray-100 hover:bg-gray-200 rounded-xl transition-colors">
+                                Annuler
+                            </button>
+                            <button onClick={confirmInvoicingMode} disabled={updatingInvoicingMode || pendingInvoicingMode.reason.trim().length < 5}
+                                className="flex-1 py-2.5 text-sm font-semibold text-white bg-indigo-500 hover:bg-indigo-600 rounded-xl transition-colors disabled:opacity-60 flex items-center justify-center gap-2">
+                                {updatingInvoicingMode && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
+                                Enregistrer
+                            </button>
+                        </div>
+                    </div>
+                </div>,
+                document.body
+            )}
+
+            {pendingPayerId && partnerDetail && ReactDOM.createPortal(
+                <div className="fixed inset-0 z-[9995] flex items-center justify-center p-4"
+                    style={{ backgroundColor: 'rgba(15,23,42,0.5)', backdropFilter: 'blur(3px)' }}>
+                    <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm overflow-hidden"
+                        style={{ animation: 'modalIn 150ms cubic-bezier(.16,1,.3,1)' }}>
+                        <div className="p-5">
+                            <div className="flex items-start gap-3 mb-4">
+                                <div className="w-9 h-9 rounded-xl bg-amber-50 flex items-center justify-center shrink-0">
+                                    <AlertTriangle className="w-5 h-5 text-amber-500" />
+                                </div>
+                                <div>
+                                    <h3 className="text-sm font-bold text-gray-900">Confirmer la facturation centralisée</h3>
+                                    <p className="text-xs text-gray-500 mt-0.5">Ce changement a un impact financier immédiat</p>
+                                </div>
+                            </div>
+                            <div className="bg-amber-50 border border-amber-100 rounded-xl p-3 space-y-1.5 text-xs text-amber-800 mb-4">
+                                <p>Les <strong>prochaines factures</strong> de <strong>{partnerDetail.name}</strong> seront automatiquement rattachées au compte de <strong>{pendingPayerId.name}</strong>.</p>
+                                <p>Le solde et l'historique de facturation de ce partenaire s'afficheront désormais sous le compte payeur.</p>
+                            </div>
+                            <div>
+                                <label className="block text-xs font-medium text-gray-700 mb-1.5">Motif du changement <span className="text-red-400">*</span></label>
+                                <textarea
+                                    value={payerChangeReason}
+                                    onChange={e => setPayerChangeReason(e.target.value)}
+                                    rows={2}
+                                    placeholder="Ex : Centralisation facturation suite accord commercial…"
+                                    className="w-full text-xs border border-gray-200 rounded-xl px-3 py-2 focus:outline-none focus:ring-2 focus:ring-amber-400 resize-none"
+                                />
+                                {payerChangeReason.trim().length > 0 && payerChangeReason.trim().length < 5 && (
+                                    <p className="text-[10px] text-red-500 mt-1">Minimum 5 caractères requis.</p>
+                                )}
+                            </div>
+                        </div>
+                        <div className="px-5 pb-5 flex gap-2">
+                            <button onClick={() => { setPendingPayerId(null); setPayerChangeReason(''); }}
+                                className="flex-1 py-2.5 text-sm font-medium text-gray-600 bg-gray-100 hover:bg-gray-200 rounded-xl transition-colors">
+                                Annuler
+                            </button>
+                            <button onClick={confirmSetPayer} disabled={updatingPayer || payerChangeReason.trim().length < 5}
+                                className="flex-1 py-2.5 text-sm font-semibold text-white bg-amber-500 hover:bg-amber-600 rounded-xl transition-colors disabled:opacity-60 flex items-center justify-center gap-2">
+                                {updatingPayer && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
+                                Confirmer
+                            </button>
+                        </div>
+                    </div>
+                </div>,
+                document.body
+            )}
         </>
     );
 };

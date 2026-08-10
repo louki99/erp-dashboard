@@ -72,7 +72,8 @@ export const usePartnersList = (filters: PartnerFilters) => {
         } finally {
             setLoading(false);
         }
-    }, [filters.page, filters.per_page, filters.q, filters.status, filters.partner_type, filters.channel, filters.channel_id, filters.price_list_id, filters.salesperson_id, filters.sort_by, filters.sort_dir]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [filters.page, filters.per_page, filters.q, filters.status, filters.partner_type, filters.channel, filters.channel_id, filters.price_list_id, filters.salesperson_id, filters.sort_by, filters.sort_dir, filters.city, filters.region, filters.geo_area_id, filters.tax_number_ice, filters.tax_exempt, filters.has_b2b_account, filters.client_group_id, JSON.stringify(filters.custom_fields)]);
 
     useEffect(() => { fetch(); }, [fetch]);
 
@@ -594,7 +595,7 @@ export const usePartnerContacts = (partnerId: number | null) => {
     const fetch = useCallback(async (id: number) => {
         setLoading(true);
         try { setData(await partnerApi.getPartnerContacts(id)); }
-        catch { /* ignore */ }
+        catch (e) { console.error('getPartnerContacts error:', e); }
         finally { setLoading(false); }
     }, []);
     useEffect(() => { if (partnerId) fetch(partnerId); else setData([]); }, [partnerId, fetch]);
@@ -637,6 +638,6 @@ export const usePartnerPayer = (partnerId: number | null) => {
 };
 
 export const useUpdatePartnerPayer = () => useMutation(
-    ({ partnerId, payerPartnerId }: { partnerId: number; payerPartnerId: number | null }) =>
-        partnerApi.updatePartnerPayer(partnerId, payerPartnerId)
+    ({ partnerId, payerPartnerId, changeReason }: { partnerId: number; payerPartnerId: number | null; changeReason: string }) =>
+        partnerApi.updatePartnerPayer(partnerId, payerPartnerId, changeReason)
 );

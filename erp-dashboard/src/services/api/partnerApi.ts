@@ -30,6 +30,7 @@ import type {
     PartnerContact,
     PartnerContactPayload,
     PartnerPayerResponse,
+    Partner360Response,
 } from '../../types/partner.types';
 
 const BASE_PATH = '/api/backend/partners';
@@ -41,7 +42,14 @@ const PAYMENT_OVERRIDES_PATH = '/api/backend/payment-overrides';
 // ─── List & Search ──────────────────────────────────────────────────────────
 
 export const getPartners = async (filters: PartnerFilters): Promise<{ partners: PaginatedPartners; priceLists: { id: number; code: string; name: string }[] }> => {
-    const response = await apiClient.get<PartnerListResponse>(BASE_PATH, { params: filters });
+    const { custom_fields, ...rest } = filters;
+    const params: Record<string, any> = { ...rest };
+    if (custom_fields) {
+        Object.entries(custom_fields).forEach(([k, v]) => {
+            params[`custom_fields[${k}]`] = v;
+        });
+    }
+    const response = await apiClient.get<PartnerListResponse>(BASE_PATH, { params });
     return { partners: response.data.partners, priceLists: response.data.priceLists || [] };
 };
 
@@ -158,6 +166,11 @@ export const unblockPartner = async (id: number) => {
     return response.data;
 };
 
+export const setStampDutyWaiver = async (id: number, waive: boolean): Promise<{ success: boolean; message: string; partner_id: number; waive_stamp_duty: boolean }> => {
+    const response = await apiClient.patch(`${BASE_PATH}/${id}/stamp-duty-waiver`, { waive_stamp_duty: waive });
+    return response.data;
+};
+
 // ─── Credit ─────────────────────────────────────────────────────────────────
 
 export const updateCredit = async (id: number, data: UpdateCreditRequest) => {
@@ -258,8 +271,12 @@ export const removeFromItinerary = async (itineraryId: number, itineraryPartnerI
 // ─── Contacts ───────────────────────────────────────────────────────────────
 
 export const getPartnerContacts = async (partnerId: number): Promise<PartnerContact[]> => {
-    const response = await apiClient.get<PartnerContact[] | { data: PartnerContact[] }>(`${BASE_PATH}/${partnerId}/contacts`);
-    return Array.isArray(response.data) ? response.data : ((response.data as any)?.data ?? []);
+    const response = await apiClient.get(`${BASE_PATH}/${partnerId}/contacts`);
+    const d = response.data;
+    if (Array.isArray(d)) return d;
+    if (Array.isArray(d?.contacts)) return d.contacts;
+    if (Array.isArray(d?.data)) return d.data;
+    return [];
 };
 
 export const createPartnerContact = async (partnerId: number, data: PartnerContactPayload): Promise<PartnerContact> => {
@@ -287,8 +304,36 @@ export const getPartnerPayer = async (partnerId: number): Promise<PartnerPayerRe
     return response.data;
 };
 
-export const updatePartnerPayer = async (partnerId: number, payerPartnerId: number | null): Promise<void> => {
-    await apiClient.patch(`${BASE_PATH}/${partnerId}/payer`, { payer_partner_id: payerPartnerId });
+export const updatePartnerPayer = async (partnerId: number, payerPartnerId: number | null, changeReason: string): Promise<void> => {
+    await apiClient.patch(`${BASE_PATH}/${partnerId}/payer`, { payer_partner_id: payerPartnerId, change_reason: changeReason });
+};
+
+export const updatePartnerInvoicingMode = async (
+    partnerId: number,
+    invoicingMode: '1_FAC_PER_BL' | '1_FAC_PER_ORDER' | 'PERIODIC_FIN_DE_MOIS' | null,
+    changeReason: string,
+): Promise<{ success: boolean; message: string; partner_id: number; invoicing_mode: string | null }> => {
+    const response = await apiClient.patch(`${BASE_PATH}/${partnerId}/invoicing-mode`, {
+        invoicing_mode: invoicingMode,
+        change_reason: changeReason,
+    });
+    return response.data;
+};
+
+export const getPartner360 = async (partnerId: number): Promise<Partner360Response> => {
+    const response = await apiClient.get<Partner360Response>(`${BASE_PATH}/${partnerId}/360`);
+    return response.data;
+};
+
+export const assignPartnerToGroup = async (
+    partner: { id: number; name: string; price_list_id?: number | null },
+    clientGroupId: number | null,
+): Promise<void> => {
+    await apiClient.patch(`${BASE_PATH}/${partner.id}`, {
+        name: partner.name,
+        price_list_id: partner.price_list_id ?? null,
+        client_group_id: clientGroupId,
+    });
 };
 
 // ─── Partner Balances (§11) ─────────────────────────────────────────────────
@@ -317,10 +362,10 @@ export const getNearbyPartners = async (lat: number | string, lng: number | stri
     return Array.isArray(response.data) ? response.data : ((response.data as any)?.data ?? []);
 };
 
-export const uploadPartnerImage = async (id: number, file: File): Promise<{ success: boolean; url?: string }> => {
+export const uploadPartnerImage = async (id: number, file: File): Promise<{ success: boolean; image_url: string | null; thumb_url: string | null }> => {
     const form = new FormData();
     form.append('image', file);
-    const response = await apiClient.post<{ success: boolean; url?: string }>(`${BASE_PATH}/${id}/image`, form, {
+    const response = await apiClient.post(`${BASE_PATH}/${id}/image`, form, {
         headers: { 'Content-Type': 'multipart/form-data' },
     });
     return response.data;

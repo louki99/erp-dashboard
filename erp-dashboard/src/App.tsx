@@ -11,6 +11,7 @@ import { MaintenanceBanner } from '@/components/layout/MaintenanceBanner';
 import { PERMISSIONS } from '@/lib/rbac/permissions';
 import { Login } from '@/pages/Login';
 import { PartnerManagementPage } from '@/pages/partners/PartnerManagementPage';
+import ClientGroupsPage from '@/pages/partners/ClientGroupsPage';
 import { OrdersPage } from '@/pages/OrdersPage';
 import { PartnerBalancesPage } from '@/pages/partners/PartnerBalancesPage';
 import { Dashboard } from '@/pages/Dashboard';
@@ -169,6 +170,12 @@ function AppRoutes() {
       <Route path="/partners/balances" element={
         <ProtectedRoute requiredPermission={PERMISSIONS.PARTNERS.INDEX}>
           <PartnerBalancesPage />
+        </ProtectedRoute>
+      } />
+
+      <Route path="/partners/client-groups" element={
+        <ProtectedRoute requiredPermission={PERMISSIONS.PARTNERS.INDEX}>
+          <ClientGroupsPage />
         </ProtectedRoute>
       } />
 

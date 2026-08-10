@@ -6,7 +6,7 @@ import {
     FileText, Tag, User, Lock, AlertCircle, CheckCircle2,
     Briefcase, Truck, BookOpen, LogOut,
     Upload, Download, Settings, Globe, UserCheck, Clock,
-    ToggleLeft, ToggleRight,
+    ToggleLeft, ToggleRight, Banknote, AlertTriangle,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 
@@ -21,6 +21,7 @@ import { PartnerFileImportDialog } from '@/components/partners/PartnerFileImport
 import { PartnerChronologiesEditor } from '@/components/partners/PartnerChronologiesEditor';
 import { getChannels } from '@/services/api/pricingApi';
 import { getCommercialEmployees, type CommercialEmployee } from '@/services/api/partnerApi';
+import { getClientGroups } from '@/services/api/clientGroupsApi';
 import {
     serializeToPartnerFile,
     downloadPartnerFile,
@@ -38,6 +39,7 @@ import type {
     AuthFormData,
     CreatePartnerFullPayload,
     PartnerSavePayload,
+    ClientGroup,
 } from '@/types/partner.types';
 
 // ─── Constants ───────────────────────────────────────────────────────────────
@@ -379,6 +381,8 @@ export const PartnerFormPanel: React.FC<PartnerFormPanelProps> = ({
                 tax_number_if: partner.tax_number_if || '',
                 tax_exempt: partner.tax_exempt || false,
                 vat_group_code: partner.vat_group_code || '',
+                client_group_id: partner.client_group_id ?? null,
+                invoicing_mode: partner.invoicing_mode ?? null,
                 // Contact
                 email: partner.email || '',
                 phone: partner.phone || '',
@@ -484,13 +488,25 @@ export const PartnerFormPanel: React.FC<PartnerFormPanelProps> = ({
     }, [masterData?.salespersons, commercialUsers]);
 
     const vatGroupOptions = useMemo<SelectOption[]>(() =>
-        (masterData?.vat_taxes ?? []).map(v => ({
-            value: v.type,
-            label: v.name,
-            badge: `${v.percentage}%`,
-        })),
+        (masterData?.vat_taxes ?? [])
+            .filter(v => v.code && !v.code.endsWith('_INCLUSIVE'))
+            .map(v => ({
+                value: v.code,
+                label: v.name,
+                badge: `${v.percentage}%`,
+            })),
         [masterData?.vat_taxes]
     );
+
+    // Client groups — fetched independently (not in for-partner-form masterdata endpoint)
+    const [clientGroups, setClientGroups] = useState<ClientGroup[]>(masterData?.client_groups ?? []);
+    useEffect(() => {
+        if ((masterData?.client_groups ?? []).length > 0) {
+            setClientGroups(masterData!.client_groups);
+            return;
+        }
+        getClientGroups().then(setClientGroups).catch(() => {});
+    }, [masterData?.client_groups]);
 
     // Used in the Account tab (user geo_area_code, not partner geo_area_code)
     const geoAreaOptions = useMemo<SelectOption[]>(() =>
@@ -731,11 +747,12 @@ export const PartnerFormPanel: React.FC<PartnerFormPanelProps> = ({
             default_discount_rate:  pForm.default_discount_rate,
             default_discount_amount: pForm.default_discount_amount,
             max_discount_rate:      pForm.max_discount_rate,
-            // Tax
+            // Tax / Groupes
             tax_number_ice: pForm.tax_number_ice || undefined,
             tax_number_if:  pForm.tax_number_if  || undefined,
-            tax_exempt:     pForm.tax_exempt,
-            vat_group_code: (pForm as any).vat_group_code || undefined,
+            vat_group_code: (pForm as any).vat_group_code || null,
+            client_group_id: (pForm as any).client_group_id || null,
+            invoicing_mode:  (pForm as any).invoicing_mode || null,
             // Contact
             phone:    pForm.phone    || undefined,
             whatsapp: pForm.whatsapp || undefined,
@@ -1253,6 +1270,12 @@ export const PartnerFormPanel: React.FC<PartnerFormPanelProps> = ({
         </div>
     );
 
+    const INVOICING_MODES = [
+        { value: '1_FAC_PER_BL',          label: 'Facture immédiate par livraison',      hint: 'Une facture générée dès qu\'un bon de livraison est confirmé.' },
+        { value: '1_FAC_PER_ORDER',        label: 'Facture groupée par commande',         hint: 'Attend que tous les BL d\'une commande (y compris reliquats) soient livrés avant de facturer.' },
+        { value: 'PERIODIC_FIN_DE_MOIS',   label: 'Facturation mensuelle (grands comptes)', hint: 'Une facture consolidée le 1er du mois suivant — plusieurs commandes regroupées.' },
+    ];
+
     const renderFiscalTab = () => (
         <div className="space-y-4">
             <SectionCard icon={FileText} title="Identifiants fiscaux" color="text-purple-500">
@@ -1267,28 +1290,71 @@ export const PartnerFormPanel: React.FC<PartnerFormPanelProps> = ({
                     </FormField>
                 </div>
                 <div className="mb-4">
-                    <FormField label="Groupe TVA" hint="Enregistré mais non encore branché sur le moteur de facturation — aucun effet sur les factures actuelles">
+                    <FormField label="Groupe TVA" hint="Sélectionner VAT_EXEMPT pour exonérer ce partenaire. L'exonération est calculée automatiquement depuis ce champ.">
                         <SearchableSelect
                             options={vatGroupOptions}
-                            value={(pForm as any).vat_group_code}
-                            onChange={v => up('vat_group_code', v)}
-                            placeholder="— Aucun groupe TVA —"
+                            value={(pForm as any).vat_group_code ?? ''}
+                            onChange={v => up('vat_group_code', v || null)}
+                            placeholder="— Taux du produit (par défaut) —"
                             clearable
                         />
                     </FormField>
                 </div>
-                <div
-                    className="flex items-center gap-3 pt-3 mt-1 border-t border-gray-100 cursor-pointer"
-                    onClick={() => up('tax_exempt', !pForm.tax_exempt)}
-                >
-                    {pForm.tax_exempt
-                        ? <ToggleRight className="w-6 h-6 text-emerald-500 shrink-0" />
-                        : <ToggleLeft  className="w-6 h-6 text-gray-300 shrink-0" />
-                    }
-                    <div>
-                        <p className="text-sm font-medium text-gray-700">Exonéré de TVA</p>
-                        <p className="text-xs text-gray-400">Non encore branché sur la facturation — aucun effet actuel</p>
+                <div>
+                    <FormField label="Groupe client" hint="Groupe de consolidation Sage X3 (grands comptes, KAM). Géré via Administration → Groupes clients.">
+                        <SearchableSelect
+                            options={clientGroups
+                                .filter(g => g.is_active !== false || g.id === (pForm as any).client_group_id)
+                                .map(g => ({ value: String(g.id), label: g.name, badge: g.code }))}
+                            value={String((pForm as any).client_group_id ?? '')}
+                            onChange={v => up('client_group_id', v ? Number(v) : null)}
+                            placeholder="— Aucun groupe —"
+                            clearable
+                        />
+                    </FormField>
+                </div>
+            </SectionCard>
+
+            <SectionCard icon={Banknote} title="Mode de facturation" color="text-indigo-500">
+                <div className="space-y-3">
+                    {/* Mode select */}
+                    <div className="space-y-1.5">
+                        {INVOICING_MODES.map(m => {
+                            const active = ((pForm as any).invoicing_mode ?? '1_FAC_PER_BL') === m.value;
+                            return (
+                                <button
+                                    key={m.value}
+                                    type="button"
+                                    onClick={() => up('invoicing_mode', active && m.value === '1_FAC_PER_BL' ? null : m.value)}
+                                    className={`w-full flex items-start gap-3 px-3 py-2.5 rounded-xl border text-left transition-colors ${
+                                        active
+                                            ? 'bg-indigo-50 border-indigo-200'
+                                            : 'bg-white border-gray-150 hover:bg-gray-50'
+                                    }`}
+                                >
+                                    <div className={`mt-0.5 w-4 h-4 rounded-full border-2 flex items-center justify-center shrink-0 ${active ? 'border-indigo-500' : 'border-gray-300'}`}>
+                                        {active && <div className="w-2 h-2 rounded-full bg-indigo-500" />}
+                                    </div>
+                                    <div>
+                                        <p className={`text-xs font-semibold ${active ? 'text-indigo-800' : 'text-gray-700'}`}>{m.label}</p>
+                                        <p className="text-[10px] text-gray-400 mt-0.5 leading-snug">{m.hint}</p>
+                                    </div>
+                                </button>
+                            );
+                        })}
                     </div>
+
+                    {/* Warning for PERIODIC mode */}
+                    {(pForm as any).invoicing_mode === 'PERIODIC_FIN_DE_MOIS' && (
+                        <div className="flex items-start gap-2.5 px-3 py-2.5 bg-amber-50 border border-amber-100 rounded-xl">
+                            <AlertTriangle className="w-4 h-4 text-amber-500 shrink-0 mt-0.5" />
+                            <div className="text-[10px] text-amber-800 leading-snug space-y-1">
+                                <p className="font-semibold">Facturation différée — batch mensuel</p>
+                                <p>Les factures ne seront générées qu'à la prochaine échéance mensuelle (1er du mois, 1h), pas immédiatement à la livraison. Les BL livrés n'apparaîtront pas en facture avant ce passage.</p>
+                                <p className="text-amber-600">Note : le PDF de facture n'est pas encore disponible pour ce mode — prévoir un état "PDF non disponible" sur l'écran de facture.</p>
+                            </div>
+                        </div>
+                    )}
                 </div>
             </SectionCard>
         </div>
