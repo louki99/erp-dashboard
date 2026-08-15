@@ -13,6 +13,8 @@ import { Login } from '@/pages/Login';
 import { PartnerManagementPage } from '@/pages/partners/PartnerManagementPage';
 import ClientGroupsPage from '@/pages/partners/ClientGroupsPage';
 import ComptoirPage from '@/pages/gcom/ComptoirPage';
+import FacturesPage from '@/pages/gcom/FacturesPage';
+import BonCommandePage from '@/pages/gcom/BonCommandePage';
 import { OrdersPage } from '@/pages/OrdersPage';
 import { PartnerBalancesPage } from '@/pages/partners/PartnerBalancesPage';
 import { Dashboard } from '@/pages/Dashboard';
@@ -184,6 +186,18 @@ function AppRoutes() {
       <Route path="/gcom/comptoir" element={
         <ProtectedRoute requiredPermission={PERMISSIONS.DYNAMIC.MANAGE_GCOM}>
           <ComptoirPage />
+        </ProtectedRoute>
+      } />
+
+      <Route path="/gcom/factures" element={
+        <ProtectedRoute requiredPermission={PERMISSIONS.DYNAMIC.MANAGE_GCOM}>
+          <FacturesPage />
+        </ProtectedRoute>
+      } />
+
+      <Route path="/gcom/bons-commande" element={
+        <ProtectedRoute requiredPermission={PERMISSIONS.DYNAMIC.MANAGE_GCOM}>
+          <BonCommandePage />
         </ProtectedRoute>
       } />
 

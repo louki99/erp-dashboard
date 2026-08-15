@@ -323,11 +323,26 @@ invoice yet.
 → `200`, `{ "success": true, "message": "Order cancelled", "order": { "bc_status": "cancelled", "cancellation_reason_code": "...", ... } }`
 → `422` if a BL or invoice already exists, or the BC isn't `confirmed`.
 
+**`POST /orders/{order}/lines`** 🔁 — adds a brand-new product line to an
+existing BC, same "before any BL/invoice" guard as the other line-level
+actions below.
+```json
+{ "product_id": 77, "quantity": 4 }
+```
+Price is resolved fresh via the same pricing engine `POST /orders` uses —
+not something the client computes. Rejects a `product_id` already on the
+order (`422`) — use the `PATCH` update-line endpoint below to change an
+existing line's quantity instead. For a credit-sale BC, adding a line
+always grows the total, so the credit limit is unconditionally re-checked.
+→ `201`, `{ "success": true, "message": "Order line added", "order": {...} }`
+→ `422` if the product is already on the order, `quantity` is missing/≤ 0,
+a BL/invoice already exists, or the new total breaches the credit limit.
+
 **`POST /orders/{order}/lines/{orderProduct}/cancel`** 🔁 — partial or
 full single-line cancellation, same "before any BL/invoice" guard.
-`orderProduct` is the `OrderProduct` row id (from `order.products[].pivot.id`
-or `order.products[].id` depending on how you loaded it — see §14 for the
-exact response shape gotcha here).
+`orderProduct` is the `OrderProduct` row id — `order.products[].pivot.id`
+in every GCOM order response (see §14 for the gotcha this used to be
+before the 2026-08-15 fix).
 ```json
 { "quantity": 2, "reason": "Le client a réduit sa commande" }
 ```
@@ -335,6 +350,25 @@ exact response shape gotcha here).
 entirely. Removing the last remaining line cancels the whole BC (same
 effect as the whole-order cancel above).
 → `200`, `{ "success": true, "message": "Order line cancelled", "order": {...} }`
+
+**`PATCH /orders/{order}/lines/{orderProduct}`** 🔁 — changes a BC line's
+quantity in **either** direction (the cancel endpoint above only ever
+reduces/removes). Same "before any BL/invoice" guard, same `orderProduct`
+id gotcha as above.
+```json
+{ "quantity": 15 }
+```
+Price is re-resolved fresh for the new quantity (not linearly rescaled),
+so a price-list change since the BC was created is picked up — other,
+untouched lines on the same order keep their original creation-time price.
+For a credit-sale BC, the credit limit is re-checked only when the new
+total is **higher** than before a reduction never needs re-checking.
+Stock is **not** touched — a GCOM BC never touches stock either way (see
+§3); there is nothing to reflect until the BC is converted to a BL/invoice.
+→ `200`, `{ "success": true, "message": "Order line updated", "order": {...} }`
+→ `422` if `quantity` is missing/≤ 0 (use the cancel endpoint to remove a
+line), a BL/invoice already exists, or the new total breaches the
+partner's credit limit.
 
 ### Delivery Notes (BL)
 
@@ -538,6 +572,39 @@ whole BC. There is no equivalent for BL/invoice lines — once a BL exists,
 cancel the whole BL (restocks everything); once invoiced, use an avoir
 (§ below).
 
+**Line quantity update (`GcomOrderService::updateOrderLine()`)** — the
+missing "increase" counterpart to partial cancellation above: sets a BC
+line's quantity to any new value, in either direction, before any
+BL/invoice exists. Unlike `cancelOrderLine()`, price is **re-resolved**
+via `GcomPricingCalculator` for the new quantity rather than linearly
+rescaled from the old line total — picks up a price-list change since BC
+creation the same way a fresh order would. Order totals are recomputed the
+same "sum(lines), never decrement" way. For a credit-sale BC, the credit
+limit (normally checked once, at BC creation — see §3) is re-checked only
+when the new total is higher than before, since a reduction can't violate
+a limit that already passed at the higher amount. Stock is never touched
+either way — a plain BC never does (§3), so there's nothing to reconcile
+until the BC is converted to a BL/invoice, at which point stock reacts to
+whatever quantities are on the order at that moment.
+
+**Adding a new line (`GcomOrderService::addOrderLine()`)** — completes the
+trio: a partner adds a product they didn't originally order, still before
+any BL/invoice. Same guard, same fresh-pricing approach as
+`updateOrderLine()`. A `product_id` already on the order is rejected
+rather than merged — ambiguous otherwise (merge quantities? re-price as
+one combined line?), and `updateOrderLine()` already owns "change an
+existing line's quantity" unambiguously. Unlike `updateOrderLine()`,
+adding a line can only ever grow the total, so a credit-sale BC's limit
+is unconditionally re-checked rather than only on growth.
+
+**Why none of the three (cancel/update/add) exist for an already-invoiced
+BC/BL** — this is where GCOM's "no cancelling once an invoice exists" rule
+(see Known Gaps, §11) applies just as much to line-level edits as to the
+whole document: an issued invoice is a fiscal snapshot, not a draft.
+Needing to add an item after invoicing means creating a **new** BC/Facture
+for that item, not reopening the old one — see §11 for the worked example
+of why, and what to do instead.
+
 **Avoir (`GcomCreditNoteService::createCreditNote()`, new)** — for
 documents that already have an invoice. This is the first mechanism
 anywhere in the codebase that makes a `CreditNote` actually reduce
@@ -671,6 +738,20 @@ history is traceable rather than silently vanishing from the doc):
   2026-08-14** — see §9.
 - ~~No partial-BC-line cancellation.~~ **Built 2026-08-14** —
   `GcomOrderService::cancelOrderLine()`, see §8/§9.
+- ~~No way to increase a BC line's quantity (only reduce/remove).~~
+  **Built 2026-08-15** — `GcomOrderService::updateOrderLine()`,
+  `PATCH /orders/{order}/lines/{orderProduct}`, see §8/§9.
+- ~~No way to add a brand-new product line to an existing BC.~~ **Built
+  2026-08-15** — `GcomOrderService::addOrderLine()`,
+  `POST /orders/{order}/lines`, see §8/§9.
+- ~~`order.products[].pivot.id` didn't actually exist on any GCOM order
+  response.~~ **Fixed 2026-08-15** — found by the UI team wiring the
+  line-cancel button: `Order::products()`'s `withPivot([...])` never
+  listed `id`, so Laravel never hydrated it on `POST /orders`, `GET
+  /orders/{order}`, or the cancel-line/update-line responses. The doc's
+  own §14 gotcha note was itself wrong (claimed `GET` used a different,
+  flat shape) — never actually verified against a live response. One
+  real `pivot.id` now, same shape everywhere. See §14.
 - ~~`role:admin|root` gating, not a dedicated permission.~~ **Narrowed
   2026-08-14** — `permission:manage-gcom` (see banner at the top of this
   doc). Still only granted to `root`/`admin` by the seeder; create and
@@ -684,11 +765,24 @@ Still open:
   practice since GCOM and SFA are already on fully separate route surfaces
   (a GCOM client simply never calls the SFA sync/bootstrap endpoint), but
   not formally confirmed.
-- **No cancelling a BC/BL once an invoice exists** — a full avoir against
-  the invoice is the only path at that point, by design (matches real
-  accounting practice — a validated invoice is credited, never un-issued —
-  but worth calling out explicitly for anyone expecting a symmetric
-  cancel-anything-anytime API).
+- **No cancelling — or editing — a BC/BL once an invoice exists.** No
+  add-line/update-line/cancel-line endpoint reaches an invoiced document,
+  by design: an issued invoice is a fiscal snapshot, not something that
+  gets silently rewritten after the fact (matches real accounting practice
+  — a validated invoice is credited, never un-issued). Worked example:
+  Facture `FAC-2026-00042` is issued for 10× product A. The client then
+  asks for 3× product B on top.
+  - **Wrong**: looking for a "add line to invoice" endpoint — none exists,
+    and none should; it would mean silently changing a number that may
+    already be printed/sent/reported.
+  - **Right**: create a **new** BC (`POST /orders`) for the 3× product B,
+    then convert it to its own invoice the normal way (§3). The client
+    ends up with two invoices instead of one amended invoice — this is
+    the expected, correct outcome, not a workaround.
+  - If the original 10× product A was wrong (not just "needs more added")
+    — e.g. wrong quantity or wrong product entirely — that's a correction,
+    not an addition: issue an avoir against `FAC-2026-00042` for the
+    incorrect part (§9), then create a fresh, correct BC/Facture.
 - **Origin-document tracking is relational, not a stored polymorphic
   field.** Works today (see §2) but requires a join to walk backward from
   an invoice to its quote. Revisit only if a single-query "full document
@@ -713,12 +807,14 @@ Still open:
 | `tests/Feature/Gcom/GcomConsultationEndpointsTest.php` | List/show endpoints — GET /orders, /delivery-notes, /invoices, /payments, canal/partner scoping, cross-tenant 404s |
 | `tests/Feature/Gcom/GcomCancellationAndCreditNoteTest.php` | §9 — BC/BL cancellation + restocking, full/partial avoir, the total_amount-vs-remaining_amount split (refund_amount path), HTTP layer for cancel + credit-note endpoints |
 | `tests/Feature/Gcom/GcomOrderLineCancellationTest.php` | Partial/full single-line BC cancellation, order-total recomputation, HTTP layer |
+| `tests/Feature/Gcom/GcomOrderLineUpdateTest.php` | BC line quantity increase/decrease, re-pricing, stock untouched, credit re-check on increase only, HTTP layer |
+| `tests/Feature/Gcom/GcomOrderLineAdditionTest.php` | Adding a new product line to an existing BC, rejects duplicate product, stock untouched, credit re-check, HTTP layer |
 | `tests/Feature/Gcom/GcomInvoicePdfTest.php` | `GET /invoices/{invoice}/pdf` — real PDF bytes returned, correct `Content-Type`, 404 for non-GCOM invoices |
 | `tests/Feature/CompanySalesModeTest.php` | `sales_mode` GET/PUT, default value, invalid-mode rejection, permission gate |
 | `tests/Feature/Warehouse/InventoryCheckTest.php` | Generic (not GCOM-scoped) — inventaire lifecycle, included here since it shares `StockService`/`StockUpdateService` with GCOM |
 | `tests/Feature/Warehouse/PurchaseReceptionValidationTest.php` | Generic — stock reception validate/reverse, same reason |
 
-121 tests total across `tests/Feature/Gcom/` + `tests/Feature/Warehouse/` +
+136 tests total across `tests/Feature/Gcom/` + `tests/Feature/Warehouse/` +
 `tests/Feature/Payment/` + `tests/Feature/Partners/` +
 `tests/Feature/CompanySalesModeTest.php` passing together as of this doc —
 run all of these together when touching any GCOM shared service, since
@@ -846,6 +942,46 @@ itself — no second call:
   default. Use it to decide the *default* landing view/menu emphasis, not
   as an access-control check (that's what `can.access_gcom` is for).
 
+### Product picker with real partner pricing (HT/TVA/TTC)
+
+`GET /api/backend/products` (generic catalog browsing) deliberately does
+**not** resolve price list / partner-specific pricing — that's not its
+job. For "pick a partner, then show what they'd actually pay for each
+product," use the existing télévendeur catalog endpoint instead of
+anything under `/gcom/*`:
+
+```
+GET /api/backend/telesales/catalog/products?partner_id={id}&search=&per_page=20
+```
+
+Requires the `televendeur.view_products` permission (granted to
+`root`/`admin` — same as `manage-gcom`, so any GCOM admin already has it).
+Response per product:
+
+```json
+{
+  "id": 42, "code": "ORBIS-HV1L", "name": "Huile Végétale 1L",
+  "price": 22.5, "price_source": "partner",
+  "price_list": { "id": 3, "code": "ORBIS_STD", "name": "ORBIS — Tarif standard" },
+  "tax_rate": 20.0,
+  "stock_available": 498.0,
+  "packagings": [...], "flags": {...}
+}
+```
+
+- `price_source` is `"partner"` when `partner_id` was given and a real
+  override/price-list price resolved, `"generic"` otherwise (list price
+  fallback) — use this to decide whether to show "prix standard" vs "prix
+  négocié" in the UI.
+- `price` is already TTC. `tax_rate` (%) is what you need to back out
+  HT: `price_ht = price / (1 + tax_rate/100)`.
+- `partner_id` is optional — omit it to browse the catalog before a
+  partner is selected; the response shape doesn't change, only
+  `price_source` flips to `"generic"`.
+- This is the **same underlying pricing engine** (`PartnerProductPriceResolver`)
+  every GCOM document (Devis/BC/BL/Facture) uses server-side — the price
+  you show here is the price that endpoint will actually charge.
+
 ### Idempotency keys — how to generate them correctly
 
 Every mutating GCOM endpoint (all `POST` routes) requires
@@ -900,20 +1036,25 @@ the resource's plural name:
 There is no `400` in normal use and no `500` in any tested path — a
 `500` means a real bug, not a UI-side mistake to handle gracefully.
 
-### `orderProduct` id gotcha (line cancellation)
+### `orderProduct` id gotcha (line cancel/update)
 
-`POST /orders/{order}/lines/{orderProduct}/cancel` needs the
-`OrderProduct` row's own `id` (not the product's id). Depending on which
-endpoint populated your local order data, this shows up under a slightly
-different path:
+`POST /orders/{order}/lines/{orderProduct}/cancel` and
+`PATCH /orders/{order}/lines/{orderProduct}` both need the `OrderProduct`
+row's own `id` (not the product's id) as `{orderProduct}`.
 
-- From `GET /orders/{order}` (uses the `orderProducts` relation, loaded
-  as a plain array): `order.products[].id`
-- From `POST /orders` (uses the `products` belongs-to-many relation, which
-  Laravel wraps pivot data into `.pivot`): `order.products[].pivot.id`
+**Real bug, fixed 2026-08-15**: this doc previously claimed `GET
+/orders/{order}` exposed a flat `order.products[].id` for this — it
+didn't. Every GCOM order response (`POST /orders`, `GET /orders/{order}`,
+and the `order` object returned by the cancel-line/update-line endpoints
+themselves) loads the same `products` belongs-to-many relation, and
+`Order::products()`'s `withPivot([...])` never listed `id`, so Laravel
+never hydrated it — `pivot.id` was `undefined` everywhere, not just on
+one endpoint. One consistent shape now, everywhere:
 
-Check which shape your actual response has before wiring this up — don't
-assume one or the other from this doc alone; log the real payload once.
+```
+order.products[].id        → the Product's own id (name, code, etc. live at this level)
+order.products[].pivot.id  → the OrderProduct row's id — THIS is what {orderProduct} wants
+```
 
 ### Practical integration order
 
