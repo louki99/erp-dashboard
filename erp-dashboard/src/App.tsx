@@ -120,6 +120,7 @@ import { TranslationsPage } from '@/pages/translations/TranslationsPage';
 import { AuditPage } from '@/pages/audit/AuditPage';
 import { BackupPage } from '@/pages/backup/BackupPage';
 import { DispatcherNewOrderAlert } from '@/components/dispatcher/DispatcherNewOrderAlert';
+import SuperAdminPage from '@/pages/superadmin/SuperAdminPage';
 
 
 // Simple Navigation Wrapper to show active route in DevSwitcher style (optional, but let's stick to MegaMenu for now)
@@ -836,6 +837,13 @@ function AppRoutes() {
       <Route path="/translations" element={
         <ProtectedRoute requiredPermission="manage-master-data">
           <TranslationsPage />
+        </ProtectedRoute>
+      } />
+
+      {/* Super Admin — restricted to root / super_admin */}
+      <Route path="/super-admin" element={
+        <ProtectedRoute requiredRole={['root', 'super_admin', 'superadmin']}>
+          <SuperAdminPage />
         </ProtectedRoute>
       } />
 

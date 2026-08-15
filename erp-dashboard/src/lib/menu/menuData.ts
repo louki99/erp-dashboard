@@ -25,6 +25,7 @@ import {
   Settings,
   Shield,
   ShieldAlert,
+  ShieldCheck,
   ShoppingCart,
   Sliders,
   Star,
@@ -71,6 +72,29 @@ export interface MenuModule {
 // ---------------------------------------------------------------------------
 
 export const MENU_MODULES: MenuModule[] = [
+  {
+    id: 'superadmin',
+    label: 'Super Admin',
+    icon: ShieldCheck,
+    description: 'Gestion des tenants, domaines, licences et accès multi-tenant',
+    requiredRole: 'root',
+    categories: [
+      {
+        id: 'tenants',
+        title: 'Tenants & Domaines',
+        items: [
+          {
+            id: 'superadmin:tenants',
+            label: 'Gestion des Tenants',
+            route: '/super-admin',
+            icon: ShieldCheck,
+            description: 'Créer, bloquer, suspendre et tester les domaines des tenants',
+            keywords: ['tenant', 'domaine', 'domain', 'super', 'admin', 'bloquer', 'licence'],
+          },
+        ],
+      },
+    ],
+  },
   {
     id: 'purch',
     label: 'Achats',
