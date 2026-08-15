@@ -327,6 +327,7 @@ export const PERMISSIONS = {
         MANAGE_CHANNELS: 'manage-channels',
         MANAGE_CHRONOLOGIES: 'manage-chronologies',
         MANAGE_EMPLOYEES: 'manage-employees',
+        MANAGE_GCOM: 'manage-gcom',
     },
 
     // Settings

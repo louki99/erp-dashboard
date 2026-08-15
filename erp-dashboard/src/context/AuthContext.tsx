@@ -28,6 +28,12 @@ export interface User {
         address: string;
         phone: string;
     } | null;
+    company?: {
+        id: number;
+        name: string;
+        code: string;
+        sales_mode: 'GCOM' | 'SFA' | 'HYBRID';
+    } | null;
     geo_area?: any | null;
     roles: RoleDetails;
     permissions: UserPermissions;

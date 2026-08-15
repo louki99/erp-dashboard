@@ -55,6 +55,7 @@ export interface UserCapabilities {
     access_dispatcher: boolean;
     access_magasinier: boolean;
     access_admin: boolean;
+    access_gcom: boolean;
     is_root: boolean;
 }
 

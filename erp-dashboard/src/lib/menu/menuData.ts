@@ -999,6 +999,29 @@ export const MENU_MODULES: MenuModule[] = [
       },
     ],
   },
+  {
+    id: 'gcom',
+    label: 'GCOM',
+    icon: ShoppingCart,
+    description: 'Gestion Commerciale Pure — Ventes B2B/grossiste (Comptoir, BC, BL, Factures, Règlement)',
+    requiredPermission: 'manage-gcom',
+    categories: [
+      {
+        id: 'ventes',
+        title: 'Ventes',
+        items: [
+          {
+            id: 'gcom:comptoir',
+            label: 'Comptoir',
+            route: '/gcom/comptoir',
+            icon: ShoppingCart,
+            description: 'Facture directe comptoir — vente, stock et règlement en un clic',
+            keywords: ['comptoir', 'vente directe', 'facture directe', 'pos'],
+          },
+        ],
+      },
+    ],
+  },
 ];
 
 // Legacy route aliases for items that changed labels but must keep routing.

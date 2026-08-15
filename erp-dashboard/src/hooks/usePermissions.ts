@@ -156,6 +156,7 @@ export function usePermissions() {
             access_dispatcher: false,
             access_magasinier: false,
             access_admin: false,
+            access_gcom: false,
             is_root: false,
         };
     }, [user]);
@@ -191,5 +192,6 @@ export function usePermissions() {
         canAccessDispatcher: capabilities.access_dispatcher,
         canAccessMagasinier: capabilities.access_magasinier,
         canAccessAdmin: capabilities.access_admin,
+        canAccessGcom: capabilities.access_gcom,
     };
 }
