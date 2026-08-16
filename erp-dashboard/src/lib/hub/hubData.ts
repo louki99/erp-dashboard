@@ -505,6 +505,34 @@ export const BUSINESS_DOMAINS: BusinessDomain[] = [
             },
         ],
     },
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // 5. GCOM — Gestion Commerciale Pure (B2B / grossiste)
+    // ─────────────────────────────────────────────────────────────────────────
+    {
+        id: 'gcom',
+        label: 'GCOM',
+        description: 'Vente comptoir, commandes, livraisons, règlements et facturation B2B',
+        icon: ShoppingCart,
+        color: 'emerald',
+        permission: 'manage-gcom',
+        processes: [
+            {
+                id: 'gcom-ventes',
+                label: 'Ventes & Facturation',
+                description: 'Cycle complet — comptoir, BC, BL, règlement et consultation facture',
+                route: '/gcom/comptoir',
+                icon: ShoppingCart,
+                actions: [
+                    { id: 'gcom-comptoir',  label: 'Comptoir',          route: '/gcom/comptoir',       icon: Calculator    },
+                    { id: 'gcom-bc',        label: 'Bons de Commande',  route: '/gcom/bons-commande',  icon: ClipboardList },
+                    { id: 'gcom-bl',        label: 'Bons de Livraison', route: '/gcom/bons-livraison', icon: Truck         },
+                    { id: 'gcom-reglement', label: 'Règlement',         route: '/gcom/reglement',      icon: Banknote      },
+                    { id: 'gcom-factures',  label: 'Factures',          route: '/gcom/factures',       icon: FileText      },
+                ],
+            },
+        ],
+    },
 ];
 
 // ─── Quick Actions by Role ─────────────────────────────────────────────────────

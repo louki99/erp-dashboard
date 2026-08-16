@@ -15,6 +15,8 @@ import ClientGroupsPage from '@/pages/partners/ClientGroupsPage';
 import ComptoirPage from '@/pages/gcom/ComptoirPage';
 import FacturesPage from '@/pages/gcom/FacturesPage';
 import BonCommandePage from '@/pages/gcom/BonCommandePage';
+import BonLivraisonPage from '@/pages/gcom/BonLivraisonPage';
+import ReglementPage from '@/pages/gcom/ReglementPage';
 import { OrdersPage } from '@/pages/OrdersPage';
 import { PartnerBalancesPage } from '@/pages/partners/PartnerBalancesPage';
 import { Dashboard } from '@/pages/Dashboard';
@@ -198,6 +200,18 @@ function AppRoutes() {
       <Route path="/gcom/bons-commande" element={
         <ProtectedRoute requiredPermission={PERMISSIONS.DYNAMIC.MANAGE_GCOM}>
           <BonCommandePage />
+        </ProtectedRoute>
+      } />
+
+      <Route path="/gcom/bons-livraison" element={
+        <ProtectedRoute requiredPermission={PERMISSIONS.DYNAMIC.MANAGE_GCOM}>
+          <BonLivraisonPage />
+        </ProtectedRoute>
+      } />
+
+      <Route path="/gcom/reglement" element={
+        <ProtectedRoute requiredPermission={PERMISSIONS.DYNAMIC.MANAGE_GCOM}>
+          <ReglementPage />
         </ProtectedRoute>
       } />
 

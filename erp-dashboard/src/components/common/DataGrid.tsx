@@ -54,6 +54,13 @@ interface DataGridProps {
     headerHeight?: number;
     /** When true, columns keep their explicit widths and AG Grid shows a horizontal scrollbar */
     suppressAutoFit?: boolean;
+    /**
+     * Set while a row click is fetching its own detail (e.g. GET /invoices/{id}
+     * after selecting a row) — distinct from `loading`, which is for the grid's
+     * own row data. Shows a wait cursor over the grid and blocks further clicks
+     * until it resolves, so a slow connection doesn't look unresponsive.
+     */
+    rowActionLoading?: boolean;
 }
 
 // ─── Component ────────────────────────────────────────────────────────────────
@@ -77,6 +84,7 @@ export const DataGrid = forwardRef<AgGridReact, DataGridProps>(({
     rowHeight: customRowHeight,
     headerHeight: customHeaderHeight,
     suppressAutoFit = false,
+    rowActionLoading = false,
 }, ref) => {
     const [gridApi, setGridApi] = useState<any>(null);
     const isInitializingSelection = useRef(false);
@@ -155,7 +163,7 @@ export const DataGrid = forwardRef<AgGridReact, DataGridProps>(({
     }, [gridApi, rowData, defaultSelectedIds, rowSelection]);
 
     return (
-        <div className="h-full w-full">
+        <div className="h-full w-full relative">
             <AgGridReact
                 ref={ref}
                 theme={gridTheme}
@@ -195,6 +203,14 @@ export const DataGrid = forwardRef<AgGridReact, DataGridProps>(({
                 pagination={pagination}
                 overlayLoadingTemplate={'<span class="ag-overlay-loading-center">Chargement...</span>'}
             />
+            {rowActionLoading && (
+                // Transparent, on top of every AG Grid row — guarantees the wait
+                // cursor wins over the grid's own row-hover cursor (a descendant's
+                // own `cursor` always beats an ancestor's, so styling the wrapper
+                // alone wouldn't reliably show through). Also blocks re-clicking
+                // another row while the previous click's detail is still loading.
+                <div className="absolute inset-0 z-10" style={{ cursor: 'wait' }} />
+            )}
         </div>
     );
 });

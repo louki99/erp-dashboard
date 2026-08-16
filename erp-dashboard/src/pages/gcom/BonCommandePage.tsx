@@ -218,10 +218,11 @@ export default function BonCommandePage() {
     };
 
     // ── BC → BL conversion (delivery date + payment method confirmation) ────────
-    // NOTE: `POST /orders/{order}/convert-to-bl` is documented as taking no body.
-    // We send `delivery_date`/`payment_method` anyway (harmless if ignored) —
-    // asked backend to actually persist them, see chat. Until confirmed, treat
-    // these fields as UI-only until the API is confirmed to honor them.
+    // Backend fix 2026-08-15: delivery_date/payment_method are genuinely
+    // persisted now (verified live). Changing payment_method here re-triggers
+    // stamp duty recalculation and, when switching to a credit-family method,
+    // a real credit check — 422s surface via confirmConvertToBl's catch block
+    // same as everywhere else, no special-casing needed.
     const [blModalOpen, setBlModalOpen] = useState(false);
     const [blDeliveryDate, setBlDeliveryDate] = useState('');
     const [blPaymentMethod, setBlPaymentMethod] = useState<GcomPaymentMethod>('cash');
@@ -539,6 +540,7 @@ export default function BonCommandePage() {
                 onSubmit={handleCreateOrderSubmit}
                 onSubmitted={handleOrderCreated}
                 cancelActionItem={{ icon: X, label: 'Annuler', variant: 'warning', onClick: () => setFormMode('view') }}
+                confirmBeforeSubmit
             />
         );
     }
@@ -622,6 +624,7 @@ export default function BonCommandePage() {
                                 rowData={orders}
                                 columnDefs={columnDefs}
                                 loading={loading}
+                                rowActionLoading={detailLoading}
                                 rowSelection="single"
                                 onRowClicked={e => { if (e.data) selectOrder(e.data); }}
                                 defaultSelectedIds={row => row.id === selected?.id}
@@ -1043,17 +1046,23 @@ export default function BonCommandePage() {
                             >
                                 {PAYMENT_METHODS.map(m => <option key={m.value} value={m.value}>{m.label}</option>)}
                             </select>
+                            {blPaymentMethod !== (selected.financial_metadata?.payment_method ?? blPaymentMethod) && (
+                                <p className="flex items-start gap-1.5 text-[11px] text-amber-700 bg-amber-50 border border-amber-100 rounded-lg px-2.5 py-1.5 mt-2">
+                                    <AlertTriangle className="w-3.5 h-3.5 shrink-0 mt-0.5" />
+                                    Changement réel, pas juste une étiquette : le timbre sera recalculé, et passer vers un mode à crédit relance la vérification d'encours du client.
+                                </p>
+                            )}
                         </div>
                         <div className="flex gap-3">
                             <button
                                 onClick={confirmConvertToBl}
                                 disabled={convertingToBl}
-                                className="flex-1 flex items-center justify-center gap-2 py-2 bg-sage-600 text-white text-sm font-medium rounded-lg hover:bg-sage-700 disabled:opacity-50 transition-colors"
+                                className="flex-1 flex items-center justify-center gap-2 py-2 bg-sage-600 text-white text-sm font-medium rounded-lg hover:bg-sage-700 disabled:opacity-50 transition-colors whitespace-nowrap"
                             >
                                 {convertingToBl ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <CheckCircle2 className="w-3.5 h-3.5" />}
-                                Confirmer la conversion
+                                Confirmer
                             </button>
-                            <button onClick={closeConvertToBlModal} disabled={convertingToBl} className="flex-1 py-2 border border-gray-200 text-sm text-gray-600 rounded-lg hover:bg-gray-50 disabled:opacity-50 transition-colors">
+                            <button onClick={closeConvertToBlModal} disabled={convertingToBl} className="flex-1 py-2 border border-gray-200 text-sm text-gray-600 rounded-lg hover:bg-gray-50 disabled:opacity-50 transition-colors whitespace-nowrap">
                                 Annuler
                             </button>
                         </div>

@@ -31,6 +31,7 @@ import type {
     PartnerContactPayload,
     PartnerPayerResponse,
     Partner360Response,
+    PartnerCreditExposureV2,
 } from '../../types/partner.types';
 
 const BASE_PATH = '/api/backend/partners';
@@ -42,8 +43,12 @@ const PAYMENT_OVERRIDES_PATH = '/api/backend/payment-overrides';
 // ─── List & Search ──────────────────────────────────────────────────────────
 
 export const getPartners = async (filters: PartnerFilters): Promise<{ partners: PaginatedPartners; priceLists: { id: number; code: string; name: string }[] }> => {
-    const { custom_fields, ...rest } = filters;
+    const { custom_fields, search, q, ...rest } = filters;
     const params: Record<string, any> = { ...rest };
+    // `search` is silently ignored server-side (verified live) — only `q`
+    // actually filters. See the comment on PartnerFilters.search.
+    const effectiveQuery = q ?? search;
+    if (effectiveQuery) params.q = effectiveQuery;
     if (custom_fields) {
         Object.entries(custom_fields).forEach(([k, v]) => {
             params[`custom_fields[${k}]`] = v;
@@ -231,8 +236,23 @@ export const getCreditEvents = async (id: number): Promise<CreditEvent[]> => {
 };
 
 export const recalcCreditExposure = async (id: number) => {
-    const response = await apiClient.post<{ success: boolean; message: string }>(`${CREDIT_V2_PATH}/partners/${id}/recalculate`);
+    // Requires X-Idempotency-Key (verified live 2026-08-15, 422 without it) — was
+    // missing here, meaning this call previously always failed; the sole caller
+    // (PartnerManagementPage's "Recalculer" button) silently swallows the error.
+    const response = await apiClient.post<{ success: boolean; message: string }>(
+        `${CREDIT_V2_PATH}/partners/${id}/recalculate`,
+        {},
+        { headers: { 'X-Idempotency-Key': crypto.randomUUID() } },
+    );
     return response.data;
+};
+
+// Correctly-shaped counterpart to `getCreditExposure` above (see the comment on
+// `PartnerCreditExposureV2` in partner.types.ts for why a separate function exists).
+// Real response is `{ data: { ...PartnerCreditExposureV2 } }`.
+export const getCreditExposureBreakdown = async (id: number): Promise<PartnerCreditExposureV2> => {
+    const response = await apiClient.get<{ data: PartnerCreditExposureV2 }>(`${CREDIT_V2_PATH}/partners/${id}`);
+    return response.data.data;
 };
 
 export const evaluateCreditOrder = async (id: number, orderAmount: number): Promise<CreditEvaluateResponse> => {

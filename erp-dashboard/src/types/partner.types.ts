@@ -184,6 +184,39 @@ export interface CreditExposureResponse {
     last_recalculated_at: string;
 }
 
+// `CreditExposureResponse` above does NOT match the real `GET /credit-v2/partners/{id}`
+// response (verified live 2026-08-15): the server wraps everything one level deeper
+// under a `data` key, and the per-category amounts live under `breakdown.*` with
+// different field names (`breakdown.pending_cheques`, not `pending_cheques_amount`).
+// `getCreditExposure()`/`useCreditExposure()` return `response.data` typed as the flat
+// shape above, so every field read off it (incl. PartnerManagementPage's "Exposition
+// temps réel" panel) is actually `undefined` at runtime — a pre-existing bug, not
+// touched here since fixing the shared type would also require updating that page's
+// usage. `PartnerCreditExposureV2` below models the real shape for new call sites.
+export interface PartnerCreditExposureV2 {
+    partner_id: number;
+    partner_name?: string;
+    credit_limit: number;
+    total_exposure: number;
+    available_credit: number;
+    status: CreditExposureStatus;
+    breakdown: {
+        open_invoices: number;
+        pending_cheques: number;
+        pending_effets: number;
+        confirmed_orders: number;
+        delivered_not_invoiced: number;
+        validated_payments: number;
+        credit_notes: number;
+    };
+    overdue: {
+        count: number;
+        oldest_days: number | null;
+    };
+    risk_score: number;
+    last_recalculated_at: string;
+}
+
 export interface CreditEvent {
     id: number;
     event_type: string;
@@ -248,6 +281,17 @@ export interface PaymentTermOption {
     is_credit?: boolean;
     is_cash?: boolean;
     is_bank_transfer?: boolean;
+    // Non-null here is what GCOM's POST /payments actually uses to resolve a
+    // payment method for this term — `is_bank_transfer` is NOT a reliable
+    // proxy for "will this require bank_id" (verified live: a term with
+    // is_bank_transfer=false but payment_method_id set still required one).
+    payment_method_id?: number | null;
+    // Only present when this term comes from a partner's attached-terms list
+    // (paymentTerms/payment_terms), not the generic available-terms list.
+    // pivot.is_default marks the partner's configured default term.
+    pivot?: {
+        is_default?: boolean;
+    };
 }
 
 export interface PartnerPaymentTermsResponse {
@@ -286,6 +330,14 @@ export interface PartnerStatisticsResponse {
 
 export interface PartnerFilters {
     q?: string;
+    // Alias for `q` — verified live 2026-08-16: `GET /partners?search=X` is
+    // silently ignored (returns everything, unfiltered, no error), only `q`
+    // actually filters server-side. Every GCOM call site (and possibly others
+    // written before this was caught) passes `search`, not `q` — accepted here
+    // and translated in `getPartners()` rather than fixing every call site
+    // individually. Prefer `q` in new code; this only exists so the existing
+    // `{ search: '...' }` callers actually start filtering.
+    search?: string;
     status?: PartnerStatus | '';
     partner_type?: string;
     channel?: string;

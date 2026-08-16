@@ -1027,6 +1027,22 @@ export const MENU_MODULES: MenuModule[] = [
             keywords: ['bc', 'bon de commande', 'commande', 'order', 'devis'],
           },
           {
+            id: 'gcom:bons-livraison',
+            label: 'Bons de livraison',
+            route: '/gcom/bons-livraison',
+            icon: Truck,
+            description: 'BL GCOM — vente directe, conversion en Facture, annulation avec restock',
+            keywords: ['bl', 'bon de livraison', 'livraison', 'delivery'],
+          },
+          {
+            id: 'gcom:reglement',
+            label: 'Règlement',
+            route: '/gcom/reglement',
+            icon: Landmark,
+            description: 'Règlement GCOM — factures ouvertes, lettrage manuel ou automatique',
+            keywords: ['reglement', 'règlement', 'paiement', 'lettrage', 'payment'],
+          },
+          {
             id: 'gcom:factures',
             label: 'Factures',
             route: '/gcom/factures',

@@ -24,6 +24,28 @@ import type {
     GcomAddOrderLinePayload,
     GcomInstrumentInput,
     GcomDeliveryNoteRef,
+    GcomDeliveryNote,
+    GcomDeliveryNoteListFilters,
+    GcomDeliveryNoteListResponse,
+    GcomDeliveryNoteShowResponse,
+    GcomDeliveryNoteMutationResponse,
+    GcomCreateDeliveryNotePayload,
+    GcomCancelDeliveryNotePayload,
+    GcomOpenInvoicesResponse,
+    GcomOpenInvoice,
+    GcomPayment,
+    GcomPaymentListFilters,
+    GcomPaymentListResponse,
+    GcomRegisterPaymentPayload,
+    GcomRegisterPaymentResponse,
+    GcomFinancialInstrument,
+    GcomFinancialInstrumentsFilters,
+    GcomFinancialInstrumentsResponse,
+    GcomAccountStatement,
+    GcomAccountStatementResponse,
+    GcomLedgerEntry,
+    GcomLedgerFilters,
+    GcomLedgerResponse,
 } from '@/types/gcom.types';
 
 const BASE = '/api/backend/gcom';
@@ -103,9 +125,9 @@ export const gcomApi = {
             return response.data.invoice;
         },
 
-        // Flow #4's first hop — BC → BL. No body.
-        // §8 documents this route as taking no body — `payload` is sent anyway
-        // (delivery_date/payment_method) pending backend confirmation it's read.
+        // Flow #4's first hop — BC → BL. `delivery_date`/`payment_method` are
+        // both optional and genuinely persisted (verified live 2026-08-15) —
+        // see GcomConvertToBlPayload for the side effects of changing the method.
         convertToBl: async (orderId: number, payload?: GcomConvertToBlPayload): Promise<GcomDeliveryNoteRef> => {
             const response = await apiClient.post<GcomConvertToBlResponse>(
                 `${BASE}/orders/${orderId}/convert-to-bl`,
@@ -163,6 +185,23 @@ export const gcomApi = {
     },
 
     deliveryNotes: {
+        list: async (filters?: GcomDeliveryNoteListFilters): Promise<GcomPaginator<GcomDeliveryNote>> => {
+            const response = await apiClient.get<GcomDeliveryNoteListResponse>(`${BASE}/delivery-notes`, { params: filters });
+            return response.data.delivery_notes;
+        },
+
+        get: async (deliveryNoteId: number): Promise<GcomDeliveryNote> => {
+            const response = await apiClient.get<GcomDeliveryNoteShowResponse>(`${BASE}/delivery-notes/${deliveryNoteId}`);
+            return response.data.delivery_note;
+        },
+
+        // Flow #5 — BL Direct → Facture. Creates an underlying BC transparently,
+        // then the BL — stock deducts here (the only document that exists yet).
+        create: async (payload: GcomCreateDeliveryNotePayload): Promise<GcomDeliveryNote> => {
+            const response = await apiClient.post<GcomDeliveryNoteMutationResponse>(`${BASE}/delivery-notes`, payload, idempotent());
+            return response.data.delivery_note;
+        },
+
         // Flow #4's second hop — BC → BL → Facture. `instrument` required if the
         // underlying BC's payment_method is cheque/effet.
         convertToInvoice: async (deliveryNoteId: number, instrument?: GcomInstrumentInput | null): Promise<GcomInvoice> => {
@@ -172,6 +211,63 @@ export const gcomApi = {
                 idempotent(),
             );
             return response.data.invoice;
+        },
+
+        // Only allowed while the BL has no invoice yet. Restocks immediately.
+        cancel: async (deliveryNoteId: number, payload: GcomCancelDeliveryNotePayload): Promise<GcomDeliveryNote> => {
+            const response = await apiClient.post<GcomDeliveryNoteMutationResponse>(
+                `${BASE}/delivery-notes/${deliveryNoteId}/cancel`,
+                payload,
+                idempotent(),
+            );
+            return response.data.delivery_note;
+        },
+    },
+
+    partners: {
+        // Convenience lookup for building a "which invoices does this règlement
+        // cover" picker.
+        openInvoices: async (partnerId: number): Promise<GcomOpenInvoice[]> => {
+            const response = await apiClient.get<GcomOpenInvoicesResponse>(`${BASE}/partners/${partnerId}/open-invoices`);
+            return response.data.invoices;
+        },
+
+        // Real per-instrument chèque/effet portfolio (added 2026-08-16).
+        financialInstruments: async (partnerId: number, filters?: GcomFinancialInstrumentsFilters): Promise<GcomPaginator<GcomFinancialInstrument>> => {
+            const response = await apiClient.get<GcomFinancialInstrumentsResponse>(`${BASE}/partners/${partnerId}/financial-instruments`, { params: filters });
+            return response.data.financial_instruments;
+        },
+
+        // total_credit/current_balance have a known gap — see the comment on
+        // GcomAccountStatement in gcom.types.ts before using them for display.
+        statement: async (partnerId: number): Promise<GcomAccountStatement> => {
+            const response = await apiClient.get<GcomAccountStatementResponse>(`${BASE}/partners/${partnerId}/statement`);
+            return response.data.statement;
+        },
+
+        // "payment" entries share the same gap as statement.total_credit — see
+        // the comment on GcomAccountStatement in gcom.types.ts.
+        ledger: async (partnerId: number, filters?: GcomLedgerFilters): Promise<GcomLedgerEntry[]> => {
+            const response = await apiClient.get<GcomLedgerResponse>(`${BASE}/partners/${partnerId}/ledger`, { params: filters });
+            return response.data.ledger;
+        },
+    },
+
+    payments: {
+        // Channel-agnostic — every payment for the partner, not just GCOM-originated.
+        // `partner_id` is required by the API, no cross-partner feed exists.
+        listForPartner: async (filters: GcomPaymentListFilters): Promise<GcomPaginator<GcomPayment>> => {
+            const response = await apiClient.get<GcomPaymentListResponse>(`${BASE}/payments`, { params: filters });
+            return response.data.payments;
+        },
+
+        // Registers a règlement and letters it in one call — either against
+        // explicit `allocations`, or oldest-open-invoice-first via `auto_letter`.
+        // See GcomRegisterPaymentPayload for the payment_term_id/bank_id
+        // constraints verified live (not in the doc).
+        register: async (payload: GcomRegisterPaymentPayload): Promise<GcomPayment> => {
+            const response = await apiClient.post<GcomRegisterPaymentResponse>(`${BASE}/payments`, payload, idempotent());
+            return response.data.payment;
         },
     },
 };

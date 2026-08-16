@@ -143,6 +143,8 @@ export function getActiveDomainFromPath(pathname: string): string | null {
         '/translations':             'administration',
         '/audit':                    'administration',
         '/backup':                   'administration',
+        // GCOM workspace
+        '/gcom':                     'gcom',
     };
 
     for (const [prefix, domain] of Object.entries(map)) {

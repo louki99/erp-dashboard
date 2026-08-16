@@ -1,12 +1,15 @@
 import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import {
     ShoppingCart, Search, X, Trash2, Loader2,
-    User, Building2, AlertTriangle, Calendar, Warehouse, LayoutGrid, ListFilter,
+    User, Users, Building2, AlertTriangle, Calendar, Warehouse, LayoutGrid, ListFilter,
+    Maximize2, Minimize2,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 
 import { MasterLayout } from '@/components/layout/MasterLayout';
 import { ActionPanel, type ActionItemProps } from '@/components/layout/ActionPanel';
+import { ConfirmationModal } from '@/components/common/ConfirmationModal';
+import { PartnerPickerModal } from '@/components/gcom/PartnerPickerModal';
 import { useAuth } from '@/context/AuthContext';
 
 import { getPartners, getPaymentTerms } from '@/services/api/partnerApi';
@@ -64,6 +67,11 @@ export interface GcomCatalogEntryScreenProps<TResult> {
     onSubmitted?: (result: TResult) => void;
     /** Extra action shown alongside submit/clear — e.g. BC's "Annuler" back to the list. */
     cancelActionItem?: ActionItemProps;
+    /** Opt-in per caller — BC creation asked for a confirmation step before the
+     * document is actually created; Comptoir/BL default to submitting directly
+     * (Comptoir is deliberately a fast scan-and-pay flow, an extra dialog there
+     * would work against that). */
+    confirmBeforeSubmit?: boolean;
 }
 
 const EMPTY_INSTRUMENT: GcomInstrumentInput = { reference_number: '', due_date: '', bank_name: '', bank_account: '' };
@@ -79,6 +87,7 @@ export function GcomCatalogEntryScreen<TResult>({
     successActionItems,
     onSubmitted,
     cancelActionItem,
+    confirmBeforeSubmit = false,
 }: GcomCatalogEntryScreenProps<TResult>) {
     const { user } = useAuth();
 
@@ -87,6 +96,7 @@ export function GcomCatalogEntryScreen<TResult>({
     const [partnerResults, setPartnerResults] = useState<Partner[]>([]);
     const [searchingPartner, setSearchingPartner] = useState(false);
     const [selectedPartner, setSelectedPartner] = useState<Partner | null>(null);
+    const [showPartnerPicker, setShowPartnerPicker] = useState(false);
     const partnerDebounce = useRef<ReturnType<typeof setTimeout> | null>(null);
 
     const runPartnerSearch = useCallback(async (q: string) => {
@@ -120,7 +130,16 @@ export function GcomCatalogEntryScreen<TResult>({
         setPaymentTermId(null);
         setPartnerTerms([]);
         getPaymentTerms(p.id)
-            .then(res => setPartnerTerms(res.partner?.paymentTerms ?? res.partner?.payment_terms ?? res.availableTerms ?? res.available_terms ?? []))
+            .then(res => {
+                const terms = res.partner?.paymentTerms ?? res.partner?.payment_terms ?? res.availableTerms ?? res.available_terms ?? [];
+                setPartnerTerms(terms);
+                // Credit-eligible sales can only use credit terms — never a cash term.
+                // Pre-select the partner's configured default (pivot.is_default), or the
+                // first active credit term if the partner has no default set.
+                const creditTerms = terms.filter(t => t.is_credit && !t.is_cash);
+                const defaultTerm = creditTerms.find(t => t.pivot?.is_default) ?? creditTerms[0] ?? null;
+                setPaymentTermId(defaultTerm?.id ?? null);
+            })
             .catch(() => setPartnerTerms([]));
     };
 
@@ -186,6 +205,15 @@ export function GcomCatalogEntryScreen<TResult>({
     // ── Quantities ────────────────────────────────────────────────────────────
     const [quantities, setQuantities] = useState<Record<number, number>>({});
     const [showOnlySelected, setShowOnlySelected] = useState(false);
+    // Full-screen catalog toggle — takes over the whole viewport (client card,
+    // payment panel, action rail all hidden) for scanning/keying a long order.
+    const [isExpanded, setIsExpanded] = useState(false);
+    useEffect(() => {
+        if (!isExpanded) return;
+        const handler = (e: KeyboardEvent) => { if (e.key === 'Escape') setIsExpanded(false); };
+        window.addEventListener('keydown', handler);
+        return () => window.removeEventListener('keydown', handler);
+    }, [isExpanded]);
     const qtyRefs = useRef<(HTMLInputElement | null)[]>([]);
 
     const setQuantity = (productId: number, quantity: number) => {
@@ -240,6 +268,9 @@ export function GcomCatalogEntryScreen<TResult>({
 
     const methodDef = PAYMENT_METHODS.find(m => m.value === paymentMethod)!;
     const showInstrumentFields = needsInstrumentAtSubmit && methodDef.needsInstrument;
+    // Cash terms (e.g. "Comptant") must never be offered once a credit/transfer
+    // method is picked — only terms flagged is_credit are valid here.
+    const creditTerms = useMemo(() => partnerTerms.filter(t => t.is_credit && !t.is_cash), [partnerTerms]);
 
     // ── Totals (client-side estimate — real totals confirmed by the API response) ──
     // `product.price` is already TTC (partner-resolved when a client is selected —
@@ -259,16 +290,35 @@ export function GcomCatalogEntryScreen<TResult>({
     const [submitting, setSubmitting] = useState(false);
     const [result, setResult] = useState<TResult | null>(null);
 
-    const canSubmit = !!selectedPartner && selectedLines.length > 0 && !submitting &&
-        (!showInstrumentFields || (instrument.reference_number.trim() && instrument.due_date));
+    // Zero stock blocks the line entirely (input disabled below) — this is a
+    // defensive re-check at submit time for a line that was selected while
+    // stock was available and only dropped to 0 afterwards (catalogCache keeps
+    // stale rows visible in "Sélectionnés" across searches/pages).
+    const hasOutOfStockSelection = useMemo(
+        () => selectedLines.some(l => l.product.stock_available === 0),
+        [selectedLines],
+    );
 
-    const handleSubmit = async () => {
+    const canSubmit = !!selectedPartner && selectedLines.length > 0 && !submitting && !hasOutOfStockSelection &&
+        (!showInstrumentFields || (instrument.reference_number.trim() && instrument.due_date)) &&
+        (!methodDef.needsTerm || paymentTermId != null);
+
+    const [showConfirmModal, setShowConfirmModal] = useState(false);
+
+    const handleSubmit = () => {
         if (!selectedPartner) { toast.error('Sélectionnez un client'); return; }
         if (selectedLines.length === 0) { toast.error('Aucun article sélectionné'); return; }
+        if (hasOutOfStockSelection) { toast.error('Retirez les articles en rupture de stock avant de valider'); return; }
         if (showInstrumentFields && (!instrument.reference_number.trim() || !instrument.due_date)) {
             toast.error('Référence et échéance requises pour ce mode de paiement');
             return;
         }
+        if (confirmBeforeSubmit) { setShowConfirmModal(true); return; }
+        doSubmit();
+    };
+
+    const doSubmit = async () => {
+        if (!selectedPartner) return;
         setSubmitting(true);
         try {
             const created = await onSubmit({
@@ -279,6 +329,7 @@ export function GcomCatalogEntryScreen<TResult>({
                 notes: notes.trim() || undefined,
                 instrument: showInstrumentFields ? instrument : null,
             });
+            setShowConfirmModal(false);
             if (renderSuccess) setResult(created);
             onSubmitted?.(created);
         } catch (err: unknown) {
@@ -336,6 +387,7 @@ export function GcomCatalogEntryScreen<TResult>({
     // ─────────────────────────────────────────────────────────────────────────
 
     return (
+        <>
         <MasterLayout
             leftContent={
                 <div className="h-full bg-white border-r border-gray-200 flex flex-col overflow-y-auto">
@@ -363,7 +415,8 @@ export function GcomCatalogEntryScreen<TResult>({
                                 </div>
                             </div>
                         ) : (
-                            <div className="relative">
+                            <div className="flex items-stretch gap-1.5">
+                            <div className="relative flex-1 min-w-0">
                                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400" />
                                 <input
                                     value={partnerSearch}
@@ -402,6 +455,14 @@ export function GcomCatalogEntryScreen<TResult>({
                                     </div>
                                 )}
                             </div>
+                            <button
+                                onClick={() => setShowPartnerPicker(true)}
+                                title="Parcourir tous les clients"
+                                className="flex items-center justify-center w-[34px] shrink-0 border border-gray-200 rounded-lg text-gray-500 hover:text-sage-600 hover:bg-gray-50 transition-colors"
+                            >
+                                <Users className="w-3.5 h-3.5" />
+                            </button>
+                            </div>
                         )}
                     </div>
 
@@ -429,6 +490,7 @@ export function GcomCatalogEntryScreen<TResult>({
                         renderSuccess?.(result, { reset })
                     ) : (
                         <>
+                            <div className={isExpanded ? 'fixed inset-0 z-50 bg-gray-50 flex flex-col' : 'contents'}>
                             {/* ── Search bar + toggle ─────────────────────────── */}
                             <div className="px-4 pt-4 pb-3 bg-white border-b border-gray-200 shrink-0 flex items-center gap-3">
                                 <div className="relative flex-1">
@@ -466,6 +528,13 @@ export function GcomCatalogEntryScreen<TResult>({
                                         <ListFilter className="w-3.5 h-3.5" /> Sélectionnés ({selectedCount})
                                     </button>
                                 </div>
+                                <button
+                                    onClick={() => setIsExpanded(v => !v)}
+                                    title={isExpanded ? 'Réduire' : 'Plein écran'}
+                                    className="flex items-center justify-center w-9 h-9 shrink-0 text-gray-500 hover:text-sage-600 hover:bg-gray-100 rounded-lg transition-colors"
+                                >
+                                    {isExpanded ? <Minimize2 className="w-4 h-4" /> : <Maximize2 className="w-4 h-4" />}
+                                </button>
                             </div>
 
                             {/* ── Catalog grid ─────────────────────────────────── */}
@@ -489,13 +558,13 @@ export function GcomCatalogEntryScreen<TResult>({
                                     <>
                                         <table className="w-full bg-white rounded-xl border border-gray-200 overflow-hidden text-xs">
                                             <thead>
-                                                <tr className="bg-gray-50 border-b border-gray-200 text-[10px] uppercase tracking-wider text-gray-400">
+                                                <tr className="bg-gray-50 border-b border-gray-200 text-[10px] uppercase tracking-wider text-gray-400 whitespace-nowrap">
                                                     <th className="text-left font-semibold px-3 py-2 w-24">Code</th>
                                                     <th className="text-left font-semibold px-3 py-2">Article</th>
                                                     <th className="text-right font-semibold px-3 py-2 w-20">Stock</th>
-                                                    <th className="text-right font-semibold px-3 py-2 w-24">P.U. HT</th>
+                                                    <th className="text-right font-semibold px-3 py-2 w-28">P.U. HT</th>
                                                     <th className="text-center font-semibold px-3 py-2 w-24">Quantité</th>
-                                                    <th className="text-right font-semibold px-3 py-2 w-28">Total TTC</th>
+                                                    <th className="text-right font-semibold px-3 py-2 w-32">Total TTC</th>
                                                     <th className="w-10"></th>
                                                 </tr>
                                             </thead>
@@ -504,34 +573,39 @@ export function GcomCatalogEntryScreen<TResult>({
                                                     const quantity = quantities[row.id] ?? 0;
                                                     const lineTTC = (Number(row.price) || 0) * quantity;
                                                     const short = row.stock_available != null && quantity > row.stock_available;
+                                                    const outOfStock = row.stock_available === 0;
                                                     const selected = quantity > 0;
                                                     return (
-                                                        <tr key={row.id} className={selected ? 'bg-sage-50/40 hover:bg-sage-50/70' : 'hover:bg-gray-50/60'}>
-                                                            <td className="px-3 py-2 font-mono font-bold text-indigo-600">{row.code}</td>
+                                                        <tr key={row.id} className={outOfStock ? 'opacity-60' : selected ? 'bg-sage-50/40 hover:bg-sage-50/70' : 'hover:bg-gray-50/60'}>
+                                                            <td className="px-3 py-2 font-mono font-bold text-indigo-600 whitespace-nowrap">{row.code}</td>
                                                             <td className="px-3 py-2 font-medium text-gray-800">{row.name}</td>
-                                                            <td className={`px-3 py-2 text-right font-semibold ${short ? 'text-red-500' : row.stock_available != null ? 'text-gray-500' : 'text-gray-300'}`}>
+                                                            <td className={`px-3 py-2 text-right font-semibold whitespace-nowrap ${outOfStock ? 'text-red-500' : short ? 'text-red-500' : row.stock_available != null ? 'text-gray-500' : 'text-gray-300'}`}>
                                                                 {row.stock_available == null ? '—' : fmt(row.stock_available, 0)}
                                                             </td>
-                                                            <td className="px-3 py-2 text-right text-gray-600">
+                                                            <td className="px-3 py-2 text-right text-gray-600 whitespace-nowrap">
                                                                 {fmtMAD(priceHT(row))}
                                                                 {selectedPartner && row.price_source === 'generic' && (
                                                                     <span className="block text-[9px] text-amber-600 font-medium">générique</span>
                                                                 )}
                                                             </td>
                                                             <td className="px-2 py-1.5">
-                                                                <input
-                                                                    type="number"
-                                                                    min={0}
-                                                                    value={quantity === 0 ? '' : quantity}
-                                                                    placeholder="0"
-                                                                    disabled={!selectedPartner}
-                                                                    ref={el => { qtyRefs.current[idx] = el; }}
-                                                                    onChange={e => setQuantity(row.id, e.target.value === '' ? 0 : parseInt(e.target.value, 10) || 0)}
-                                                                    onKeyDown={e => handleQtyKeyDown(e, idx)}
-                                                                    className="w-full text-center px-2 py-1 text-xs border border-gray-200 rounded-md focus:outline-none focus:ring-1 focus:ring-sage-400 disabled:bg-gray-50 disabled:cursor-not-allowed"
-                                                                />
+                                                                {outOfStock ? (
+                                                                    <span className="block text-center text-[10px] font-semibold text-red-500 py-1.5">Rupture</span>
+                                                                ) : (
+                                                                    <input
+                                                                        type="number"
+                                                                        min={0}
+                                                                        value={quantity === 0 ? '' : quantity}
+                                                                        placeholder="0"
+                                                                        disabled={!selectedPartner}
+                                                                        ref={el => { qtyRefs.current[idx] = el; }}
+                                                                        onChange={e => setQuantity(row.id, e.target.value === '' ? 0 : parseInt(e.target.value, 10) || 0)}
+                                                                        onKeyDown={e => handleQtyKeyDown(e, idx)}
+                                                                        className="w-full text-center px-2 py-1 text-xs border border-gray-200 rounded-md focus:outline-none focus:ring-1 focus:ring-sage-400 disabled:bg-gray-50 disabled:cursor-not-allowed"
+                                                                    />
+                                                                )}
                                                             </td>
-                                                            <td className="px-3 py-2 text-right font-bold text-gray-900">{selected ? fmtMAD(lineTTC) : '—'}</td>
+                                                            <td className="px-3 py-2 text-right font-bold text-gray-900 whitespace-nowrap">{selected ? fmtMAD(lineTTC) : '—'}</td>
                                                             <td className="px-2 py-2 text-center">
                                                                 {selected && (
                                                                     <button onClick={() => setQuantity(row.id, 0)} className="text-red-400 hover:text-red-600">
@@ -560,6 +634,7 @@ export function GcomCatalogEntryScreen<TResult>({
                                 )}
                                 </div>
                             </div>
+                            </div>
 
                             {/* ── Bottom panel: totals + payment + validate ──── */}
                             <div className="shrink-0 bg-white border-t border-gray-200 px-5 py-4">
@@ -583,16 +658,21 @@ export function GcomCatalogEntryScreen<TResult>({
                                         </div>
 
                                         {methodDef.needsTerm && (
-                                            <select
-                                                value={paymentTermId ?? ''}
-                                                onChange={e => setPaymentTermId(e.target.value ? parseInt(e.target.value, 10) : null)}
-                                                className="w-full max-w-xs px-3 py-1.5 text-xs border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-sage-400 bg-white"
-                                            >
-                                                <option value="">Terme par défaut du client</option>
-                                                {partnerTerms.map(t => (
-                                                    <option key={t.id} value={t.id}>{t.name}</option>
-                                                ))}
-                                            </select>
+                                            creditTerms.length > 0 ? (
+                                                <select
+                                                    value={paymentTermId ?? ''}
+                                                    onChange={e => setPaymentTermId(e.target.value ? parseInt(e.target.value, 10) : null)}
+                                                    className="w-full max-w-xs px-3 py-1.5 text-xs border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-sage-400 bg-white"
+                                                >
+                                                    {creditTerms.map(t => (
+                                                        <option key={t.id} value={t.id}>{t.name}</option>
+                                                    ))}
+                                                </select>
+                                            ) : (
+                                                <p className="text-[11px] text-red-600 font-medium">
+                                                    Aucun terme de paiement à crédit configuré pour ce client — impossible de valider avec ce mode de paiement.
+                                                </p>
+                                            )
                                         )}
 
                                         {showInstrumentFields && (
@@ -672,5 +752,43 @@ export function GcomCatalogEntryScreen<TResult>({
 
             rightContent={<ActionPanel groups={actionGroups} />}
         />
+        {confirmBeforeSubmit && selectedPartner && (
+            <ConfirmationModal
+                isOpen={showConfirmModal}
+                onClose={() => setShowConfirmModal(false)}
+                onConfirm={doSubmit}
+                title={`Confirmer — ${submitLabel} ?`}
+                description={`Vérifiez les informations avant de valider. Cette action ${needsInstrumentAtSubmit ? 'facture' : 'crée'} le document immédiatement.`}
+                confirmText={submitLabel}
+                cancelText="Annuler"
+                variant="sage"
+                isLoading={submitting}
+            >
+                <div className="mt-1 space-y-1.5 text-xs bg-gray-50 border border-gray-100 rounded-lg p-3">
+                    <div className="flex items-center justify-between">
+                        <span className="text-gray-500">Client</span>
+                        <span className="font-semibold text-gray-900">{selectedPartner.name}</span>
+                    </div>
+                    <div className="flex items-center justify-between">
+                        <span className="text-gray-500">Articles</span>
+                        <span className="font-semibold text-gray-900">{selectedLines.length}</span>
+                    </div>
+                    <div className="flex items-center justify-between">
+                        <span className="text-gray-500">Mode de paiement</span>
+                        <span className="font-semibold text-gray-900">{methodDef.label}</span>
+                    </div>
+                    <div className="flex items-center justify-between pt-1.5 mt-1.5 border-t border-gray-200">
+                        <span className="text-gray-500">Total TTC</span>
+                        <span className="font-bold text-sage-700 text-sm">{fmtMAD(estimatedTTC)}</span>
+                    </div>
+                </div>
+            </ConfirmationModal>
+        )}
+        <PartnerPickerModal
+            isOpen={showPartnerPicker}
+            onClose={() => setShowPartnerPicker(false)}
+            onSelect={selectPartner}
+        />
+        </>
     );
 }

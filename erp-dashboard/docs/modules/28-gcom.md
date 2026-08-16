@@ -139,6 +139,21 @@ invoice is settled, replaced by "effets/chèques à recevoir" as the real
 remaining risk. Marking it `pending` too would double-count the same
 amount as both an open invoice and a pending instrument.
 
+**Treasury unification (2026-08-15)**: every Immediate and Instrument
+settlement — i.e. anything that closes `fully_paid` at document creation,
+cash/card/cheque/effet, never credit/transfer — now ALSO creates a real
+`payment_transfers` row (registered → validated) and a `letterings` row
+linking it to the invoice, via `GcomInstrumentRegistrar::recordSettlement()`.
+Before this, `payment_transfers`/`letterings` only ever got populated by a
+later règlement (§6) — a comptoir cash/cheque sale left both empty despite
+the invoice closing paid, which is what prompted this. `payment_transfers`
+is now the single source of truth for every GCOM cash inflow, comptoir or
+deferred, not just deferred ones. Cheque/effet still ALSO get a
+`FinancialInstrument` row — the two aren't redundant: `financial_instruments`
+tracks the physical document's own bank-clearing lifecycle (registered →
+deposited → cleared/rejected), `payment_transfers`/`letterings` is the
+accounting journal (who paid, how much, against which invoice).
+
 Stamp duty (`StampDutyService`, 0.25%) applies to `cash` only, by Moroccan
 law — computed once, at BC creation (`GcomOrderBuilder::build()`), not
 per-conversion-step.
@@ -191,7 +206,47 @@ closes that:
 
 This is how a `credit`/`transfer` GCOM invoice (left `pending` at creation)
 gets settled later — GCOM doesn't special-case this, it's the same
-mechanism every other credit invoice in the ERP uses.
+mechanism every other credit invoice in the ERP uses. It's also, since
+2026-08-15, the exact same register→validate→letter sequence an
+*immediate* settlement runs at document creation (§4) — same tables, same
+shape, whether the money arrived at the counter or three weeks later.
+
+**Per-partner financial views** (2026-08-15, `GcomPartnerFinanceController`)
+— three reads for a "vue financière complète par client" screen:
+
+- `GET /partners/{partner}/financial-instruments` — row-level cheque/effet
+  portfolio. Query: `status?` (`PENDING`/`DEPOSITED`/`CLEARED`/`REJECTED`/
+  `CANCELLED`), `instrument_type?` (`CHEQUE`/`EFFET`), `per_page?`. This
+  genuinely didn't exist anywhere before — checked first: the only other
+  `FinancialInstrument` endpoint in the whole codebase is a mobile
+  *create* action, no list/index anywhere.
+- `GET /partners/{partner}/statement` — `{ partner_id, total_debit,
+  total_credit, current_balance, pending_instruments_total, credit_limit,
+  available_credit }`. `credit_limit`/`available_credit` are read straight
+  from `CreditControlEngine::getCreditState()` — the same source
+  `GET /api/backend/credit-v2/partners/{partner}` and
+  `GET /api/backend/partners/{id}/balances` already use elsewhere in the
+  ERP (both pre-existing, both already reachable by a GCOM admin today —
+  checked before building anything, not reimplemented here). `total_debit`/
+  `total_credit`/`current_balance` are a genuinely different, LIFETIME
+  number (every invoice/payment/avoir ever, not the current open exposure
+  those two endpoints track), computed fresh from GCOM's own invoices/
+  letterings/credit-notes.
+- `GET /partners/{partner}/ledger` — chronological merged debit/credit
+  entries (`type`: `invoice`/`payment`/`credit_note`, plus a running
+  `running_balance`). Query: `from?`/`to?` (`YYYY-MM-DD`, filters each
+  entry's own date). Built directly from `Invoice`/`Lettering`/
+  `CreditNote` — deliberately NOT from `MsTransaction`, even though that
+  table already gets `partner_id`-tagged postings for invoices and
+  payments (`InvoiceService::postInvoiceFinancialPosting()`,
+  `PaymentTransferService::validatePayment()`): `GcomCreditNoteService`
+  never posts an `MsTransaction` entry for an avoir, so a ledger built
+  from that table would silently miss every credit note.
+
+All three scope by `order.partner_id`/`invoice.partner_id` directly — no
+multi-tier billing-partner indirection
+(`Partner::resolveBillingPartner()`), since no GCOM flow uses a payer
+partner today.
 
 ---
 
@@ -209,7 +264,7 @@ this session — two `CreditControlService`, two `PartnerCreditService`; see
 | `GcomSettlementClassifier` | Payment-method → behavior classification + the credit-limit check |
 | `GcomContextResolver` | Branch/company/central-warehouse/cash-term resolution |
 | `GcomOrderBuilder` | Builds the BC (`Order` + `OrderProduct` rows), no stock/invoice side effects |
-| `GcomInstrumentRegistrar` | Registers a `FinancialInstrument` (cheque/effet) + marks the invoice paid; `markPaidIfImmediate()` closes the gap where `InvoiceService::generateFromDeliveryNote()` always returns `'pending'` (no `is_credit_sale`-driven split, unlike `createFromPosOrder()`) |
+| `GcomInstrumentRegistrar` | Two responsibilities: `register()` — a `FinancialInstrument` (cheque/effet) + marks the invoice paid. `recordSettlement()` (2026-08-15) — a `payment_transfers`+`letterings` entry for any immediate settlement (cash/card/cheque/effet), the treasury-unification mechanism above; also closes the gap where `InvoiceService::generateFromDeliveryNote()` always returns `'pending'` (no `is_credit_sale`-driven split, unlike `createFromPosOrder()`) |
 | `GcomQuoteItemsExtractor` | Validates a quote is convertible (not already converted/expired) and extracts line items |
 
 `GcomOrderService`, `GcomDeliveryNoteService`, and
@@ -315,7 +370,34 @@ returns the existing invoice instead of erroring.
 → `200`, `{ "success": true, "message": "Order converted to invoice", "invoice": {...} }`
 
 **`POST /orders/{order}/convert-to-bl`** 🔁 — flow #4's first hop (BC → BL).
-No body. → `201`, `{ "success": true, "message": "Order converted to delivery note", "delivery_note": {...} }`
+Body is optional:
+```json
+{ "delivery_date": "2026-08-25", "payment_method": "cash" }
+```
+Both fields optional independently. `delivery_date` (`YYYY-MM-DD`) defaults
+to today, sets `delivery_note.delivery_date`. `payment_method` (one of
+`cash`/`card`/`credit`/`cheque`/`effet`/`transfer`) defaults to the BC's
+existing method; if it differs from that, it **replaces** the order's
+payment method at this point (`order.financial_metadata.payment_method`) —
+this is the last moment before stock/invoicing lock the order in, so it's
+the last chance to correct a payment method chosen wrong at BC creation.
+Changing it has real side effects, not just a label update:
+- **Stamp duty is recalculated**, not left frozen from BC creation —
+  moving to `cash` adds it, moving away from `cash` removes it
+  (`order.stamp_duty`/`total_amount`/`payable_amount` all update
+  accordingly; StampDutyService is cash-only by Moroccan law).
+- **Credit is re-checked** if moving from an immediate method
+  (`cash`/`card`, never checked at BC creation) to any other method —
+  `422 "Credit check failed: ..."` if it fails, same as at BC creation.
+- `order.is_credit_sale` and `order.payment_term_id` are re-synced when
+  the credit classification flips (`credit`/`transfer` vs. everything
+  else) — same resolution `POST /orders` itself uses, so `422` with "No
+  payment term resolved..." if the partner has no default term and one
+  wasn't already on the order.
+
+→ `201`, `{ "success": true, "message": "Order converted to delivery note", "delivery_note": {...} }`
+→ `422` on a malformed `delivery_date`, an invalid `payment_method`, a
+failed credit re-check, or a missing payment term for a new credit sale.
 
 **`POST /orders/{order}/cancel`** 🔁 — see §9. Body: `{ "reason": "..." }`
 (required, max 255 chars). Only allowed if the BC has no BL and no
@@ -437,7 +519,24 @@ concept beyond the endpoints already listed.
 `per_page?`.
 
 **`GET /invoices/{invoice}`** — 404 if not a GCOM invoice. Response
-includes `items`, `partner`, `order`, `order.deliveryNotes`.
+includes `items`, `partner` (full model), `order`, `order.deliveryNotes`,
+plus two attached fields (2026-08-15, real gap reported by the UI team):
+
+- `payments` — array, every `payment_transfers` row lettered against this
+  invoice (comptoir settlements from §4's treasury unification AND
+  deferred règlements from §6, same shape either way): `payment_transfer_id`,
+  `code`, `amount_applied` (this lettering's share — usually the full
+  invoice total, since GCOM never splits one payment across several
+  invoices today), `payment_total_amount`, `payment_method`, `status`,
+  `reference`, `bank`, `payment_date`, `lettering_date`, `notes`. Empty
+  array for a `credit`/`transfer` invoice not yet settled.
+- `financial_instrument` — object or `null`. The registered cheque/effet
+  for this invoice (§4), with its own bank-clearing lifecycle independent
+  of the invoice's own status: `id`, `instrument_type`, `reference_number`,
+  `status` (`pending`/`deposited`/`cleared`/`rejected`), `amount`,
+  `due_date`, `bank_name`, `bank_account`, `deposited_at`, `cleared_at`,
+  `rejected_at`, `rejection_reason`. Always `null` for cash/card/credit/
+  transfer.
 
 **`GET /invoices/{invoice}/pdf`** — streams the invoice PDF
 (`Content-Type: application/pdf`, `Content-Disposition: attachment`).
@@ -485,14 +584,32 @@ immediately).
   "partner_id": 12,
   "amount": 1250.00,
   "payment_term_id": 5,
+  "payment_method_id": 2,
   "reference": "VIR-2026-0042",
   "bank_id": 3,
   "maturity_date": null,
   "notes": "Virement reçu",
+  "instrument": null,
   "allocations": [{ "invoice_id": 88, "amount": 1250.00, "notes": "" }],
   "auto_letter": true
 }
 ```
+- `payment_method_id` (optional, 2026-08-17) — pick it from `GET
+  /api/backend/masterdata/payment-methods`. If omitted, it falls back
+  through the resolution chain documented just below. **This is the field
+  the "Nouveau Règlement" screen's method dropdown should actually submit
+  — not `payment_term_id`.** `payment_term_id` still controls the
+  échéance/timing side and is separately required either way.
+- `instrument` (required when `payment_method_id` resolves to
+  cheque/effet, same shape as everywhere else in GCOM: `{
+  reference_number, due_date, bank_name?, bank_account? }`) — a cheque/
+  effet received at règlement time, weeks after the original sale, now
+  gets the same bank-clearing lifecycle tracking (`financial_instruments`,
+  `PENDING → DEPOSITED → CLEARED/REJECTED`) as one handed over at the
+  counter. Linked via `financial_instruments.payment_transfer_id`, not
+  `invoice_id` — a single règlement can letter across several invoices, so
+  there's no one invoice to anchor it to. `422` if `payment_method_id`
+  resolves to cheque/effet and `instrument` is missing.
 - `allocations` present → letters exactly those invoices for exactly
   those amounts (explicit lettrage).
 - `allocations` omitted **and** `auto_letter` true (the default) → letters
@@ -503,9 +620,57 @@ immediately).
 
 → `201`, `{ "success": true, "message": "Payment registered and lettered", "payment": {...}, "lettering": { ... LetteringService::getPaymentLetteringSummary() shape ... } }`
 
+**`bank_id` is required** whenever `payment_term_id` resolves to a non-cash
+term (`PaymentTransferService::registerPayment()`'s own guard) — populate
+the picker from `GET /api/backend/masterdata/banks` (outside GCOM's own
+routes, same "no duplicate master-data endpoints" rule as partners/
+products — real gap found 2026-08-16, `Bank` the model already existed but
+no listing endpoint anywhere did). → `{ "success": true, "data": [{ "id": 3, "code": "...", "name": "Attijariwafa Bank", "swift_code": "...", "is_active": true }] }`
+
+**How `payment_method_id` is resolved** (real bug fixed 2026-08-16: every
+payment term genuinely attached to a real partner failed with either
+`"Bank is required for this payment method"` or `"Unable to resolve a
+payment method for this payment term."` depending on whether `bank_id`
+happened to be sent — both messages, same root cause). You never send
+`payment_method_id` yourself in normal use; `PaymentTransferService::
+registerPayment()` resolves it in this order:
+1. An explicit `payment_method_id` in the request, if you send one.
+2. The payment term's own `payment_method_id`, if it has one configured.
+3. If the term is a cash term (`is_cash=true`) — automatically resolved to
+   the system's cash `PaymentMethod`, deterministically, before step 4 (so
+   a partner's generic default can never override an explicitly-cash
+   règlement).
+4. The partner's `partner_financial_profiles.default_payment_method_id`
+   — the intended source of truth for credit-type terms per
+   `database/sql/04_partenaires_commerciaux.sql`'s own documented
+   architecture (payment_terms carry only timing logic; the settlement
+   method is a per-partner fact).
+
+`422 "Unable to resolve a payment method for this payment term."` now
+means exactly one thing: none of the four sources above resolved anything
+for this partner+term — check the partner's financial profile has a
+`default_payment_method_id` set (`GET`/`PUT
+/api/backend/partners/{id}/balances` or the equivalent admin screen; no
+GCOM-specific endpoint for this, it's partner master data). This no
+longer gets masked by the bank-requirement check — that's checked
+strictly after method resolution now, so it never produces a second,
+different-looking error for the same missing configuration.
+
 **`GET /partners/{partner}/open-invoices`** — convenience lookup for
 building a "which invoices does this règlement cover" picker.
 → `{ "success": true, "invoices": [{ "id": 88, "invoice_number": "INV-...", "invoice_date": "...", "due_date": "...", "total_amount": "...", "paid_amount": "...", "remaining_amount": "...", "status": "pending" }] }`
+
+### Per-partner financial views — see §6 for the full design rationale
+
+**`GET /partners/{partner}/financial-instruments`** — Query: `status?`,
+`instrument_type?`, `per_page?`.
+→ `{ "success": true, "financial_instruments": { "data": [{ "id": 1, "instrument_type": "CHEQUE", "reference_number": "CHQ-0001", "amount": "300.00", "status": "PENDING", "due_date": "2026-10-12", "bank_name": "...", ... }], ...pagination... } }`
+
+**`GET /partners/{partner}/statement`**
+→ `{ "success": true, "statement": { "partner_id": 1, "total_debit": 15000.00, "total_credit": 10797.20, "current_balance": 4202.80, "pending_instruments_total": 5359.20, "credit_limit": 50000.00, "available_credit": 40438.00 } }`
+
+**`GET /partners/{partner}/ledger`** — Query: `from?`, `to?` (`YYYY-MM-DD`).
+→ `{ "success": true, "partner_id": 1, "ledger": [{ "type": "invoice", "date": "2026-08-01", "reference": "INV-2026-00042", "debit": 1500.00, "credit": 0, "running_balance": 1500.00, "invoice_id": 88 }, { "type": "payment", "date": "2026-08-10", "reference": "PAY-2026-000004", "debit": 0, "credit": 1500.00, "running_balance": 0, "payment_transfer_id": 4 }, { "type": "credit_note", "date": "2026-08-12", "reference": "AV-2026-00003", "debit": 0, "credit": 200.00, "running_balance": -200.00, "credit_note_id": 3 }] }`
 
 ### Common request shapes
 
@@ -744,6 +909,69 @@ history is traceable rather than silently vanishing from the doc):
 - ~~No way to add a brand-new product line to an existing BC.~~ **Built
   2026-08-15** — `GcomOrderService::addOrderLine()`,
   `POST /orders/{order}/lines`, see §8/§9.
+- ~~`payment_transfers`/`letterings` were only ever populated by a later
+  règlement — a comptoir cash/cheque sale left both empty.~~ **Fixed
+  2026-08-15** — real gap reported by the UI team. See §4/§6/§7
+  ("Treasury unification") — `GcomInstrumentRegistrar::recordSettlement()`.
+- ~~No way to list a partner's pending cheques/effets, no debit/credit
+  statement, no chronological account ledger.~~ **Built 2026-08-16**
+  (requested by the UI team) — `GcomPartnerFinanceController`, see §6/§8.
+- ~~`POST /payments` rejected every payment term genuinely attached to a
+  real partner.~~ **Fixed 2026-08-16** — real bug reported by the UI team
+  (règlement screen unusable for any of the 3 ORBIS test partners,
+  regardless of which of their real terms was picked). Root causes: (1)
+  `payment_terms.payment_method_id` was missing from `PaymentTerm::
+  $fillable`, so every attempt to set it was silently dropped — including
+  `GcomDatabaseSeeder`'s own; (2) `PaymentTransferService::
+  registerPayment()` never fell back to
+  `partner_financial_profiles.default_payment_method_id`, the actual
+  source of truth for credit-type terms per this codebase's own
+  documented architecture (`database/sql/04_partenaires_commerciaux.sql`);
+  (3) `PaymentTerm::find()` was scoped (`HasDataScoping`+
+  `BelongsToCompany`), same trap already fixed once on
+  `GcomContextResolver::resolvePaymentTermId()` for the same model. See
+  §8 for the full resolution order and `tests/Feature/Payment/
+  PaymentTransferMethodResolutionTest.php`.
+- ~~`POST /payments` had no `payment_method_id`/`instrument` fields at
+  all — a cheque/effet received at DEFERRED règlement time (weeks after
+  the original credit sale) never got any bank-clearing lifecycle
+  tracking, only a plain `payment_transfers` row.~~ **Built 2026-08-17**
+  (UI team confirmed this was needed, no per-partner method restriction
+  needed) — `GcomInstrumentRegistrar::registerForPaymentTransfer()`,
+  linked via `financial_instruments.payment_transfer_id` rather than
+  `invoice_id` (a règlement can letter across several invoices). See §8.
+- ~~`GcomDirectInvoiceService::convertOrderToInvoice()` and
+  `convertDeliveryNoteToInvoice()` read `order.payment_method` (the
+  Attribute accessor), which always returns `null` for a GCOM order — it
+  casts through the legacy `PaymentMethod` enum (`CASH='Cash Payment'`
+  etc.), and GCOM's own lowercase vocabulary (`'cash'`, `'credit'`, ...)
+  never matches any case. Both silently fell back to `'cash'`
+  unconditionally.~~ **Fixed 2026-08-15**, found investigating the
+  `payment_transfers`/`financial_instruments`-always-empty report above.
+  Impact was **worse than empty tables**: on the BL→Facture path
+  specifically, `convertDeliveryNoteToInvoice()` used this value to decide
+  whether to force-close the invoice — meaning **every genuine credit-sale
+  invoice converted via BC→BL→Facture (or BL Direct→Facture) was being
+  silently marked `fully_paid`** instead of staying `pending`, losing its
+  credit exposure. `convertOrderToInvoice()` (BC→Facture, skips BL) wasn't
+  affected the same way — `InvoiceService::createFromPosOrder()` decides
+  paid/pending from `order.is_credit_sale` (a real column), not this
+  accessor — so only its `financial_instruments` registration was broken
+  there, not the invoice status. Both now read
+  `order.financialMetadata?->payment_method` directly, matching the
+  pattern already established in `GcomOrderService` for the same accessor
+  bug. See `tests/Feature/Gcom/GcomTreasuryUnificationTest.php ::
+  credit_sale_via_bl_stays_pending_not_paid` for the regression test.
+- ~~`convert-to-bl`'s `delivery_date`/`payment_method` body fields were
+  silently accepted and ignored.~~ **Fixed 2026-08-15** — real bug
+  reported by the UI team, confirmed live against order 15 (both fields
+  sent, neither had any effect: the BL got the request's real creation
+  timestamp, the order kept its original payment method). Neither field
+  existed in the controller's validation at all — anything sent there was
+  simply never read. Now wired through to
+  `GcomDeliveryNoteService::createDeliveryNoteFromOrder()`, including the
+  stamp-duty recalculation and credit re-check a payment-method change
+  requires. See §8.
 - ~~`order.products[].pivot.id` didn't actually exist on any GCOM order
   response.~~ **Fixed 2026-08-15** — found by the UI team wiring the
   line-cancel button: `Order::products()`'s `withPivot([...])` never
@@ -809,12 +1037,19 @@ Still open:
 | `tests/Feature/Gcom/GcomOrderLineCancellationTest.php` | Partial/full single-line BC cancellation, order-total recomputation, HTTP layer |
 | `tests/Feature/Gcom/GcomOrderLineUpdateTest.php` | BC line quantity increase/decrease, re-pricing, stock untouched, credit re-check on increase only, HTTP layer |
 | `tests/Feature/Gcom/GcomOrderLineAdditionTest.php` | Adding a new product line to an existing BC, rejects duplicate product, stock untouched, credit re-check, HTTP layer |
+| `tests/Feature/Gcom/GcomConvertToBlOptionsTest.php` | `convert-to-bl`'s `delivery_date`/`payment_method` body — explicit date honored, defaults, stamp-duty recalculation both directions, credit re-check on switching to a non-immediate method, `is_credit_sale`/`payment_term_id` re-sync, HTTP layer |
+| `tests/Feature/Gcom/GcomTreasuryUnificationTest.php` | Treasury unification (§4/§6/§7) — `payment_transfers`+`letterings` created for cash/card/cheque comptoir sales and BC→Facture/BL→Facture immediate settlements, none created for credit sales, cheque gets both a `FinancialInstrument` and a `payment_transfers` row, and the credit-sale-via-BL-was-wrongly-fully_paid regression |
+| `tests/Feature/Gcom/GcomInvoiceDetailPaymentInfoTest.php` | `GET /invoices/{invoice}`'s `payments`/`financial_instrument` fields — cash/cheque comptoir, empty for an unsettled credit invoice, populated once a deferred règlement lands |
+| `tests/Feature/Gcom/GcomPartnerFinanceControllerTest.php` | `GET /partners/{partner}/{financial-instruments,statement,ledger}` — instrument filtering + cross-partner isolation, statement debit/credit/balance/pending-instruments/credit-limit for cash and mixed credit+cheque scenarios, ledger entry types + running balance including a deferred règlement and an avoir |
+| `tests/Feature/Gcom/GcomDeferredChequeSettlementTest.php` | `POST /payments`'s `payment_method_id`/`instrument` fields — a deferred cheque/effet creates a `FinancialInstrument` linked via `payment_transfer_id` (not `invoice_id`), rejects a cheque with no instrument details, an explicit `payment_method_id` overrides the term's default |
 | `tests/Feature/Gcom/GcomInvoicePdfTest.php` | `GET /invoices/{invoice}/pdf` — real PDF bytes returned, correct `Content-Type`, 404 for non-GCOM invoices |
 | `tests/Feature/CompanySalesModeTest.php` | `sales_mode` GET/PUT, default value, invalid-mode rejection, permission gate |
 | `tests/Feature/Warehouse/InventoryCheckTest.php` | Generic (not GCOM-scoped) — inventaire lifecycle, included here since it shares `StockService`/`StockUpdateService` with GCOM |
 | `tests/Feature/Warehouse/PurchaseReceptionValidationTest.php` | Generic — stock reception validate/reverse, same reason |
+| `tests/Feature/MasterDataBanksTest.php` | Generic (not GCOM-scoped) — `GET /masterdata/banks`, active-only + name-ordered, feeds the `bank_id` picker `POST /gcom/payments` needs |
+| `tests/Feature/Payment/PaymentTransferMethodResolutionTest.php` | Generic (not GCOM-scoped) — `PaymentTransferService::registerPayment()`'s `payment_method_id` resolution order: term's own, cash-term auto-resolve takes priority over the partner's generic default, partner default for credit terms, and the single consistent error when nothing resolves |
 
-136 tests total across `tests/Feature/Gcom/` + `tests/Feature/Warehouse/` +
+168 tests total across `tests/Feature/Gcom/` + `tests/Feature/Warehouse/` +
 `tests/Feature/Payment/` + `tests/Feature/Partners/` +
 `tests/Feature/CompanySalesModeTest.php` passing together as of this doc —
 run all of these together when touching any GCOM shared service, since

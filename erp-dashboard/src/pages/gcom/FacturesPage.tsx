@@ -2,7 +2,7 @@ import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react'
 import type { ICellRendererParams, ValueGetterParams } from 'ag-grid-community';
 import {
     FileText, Search, X, Loader2, RefreshCw, Download, Building2,
-    Info, Package, RotateCcw, Calendar, Truck, ReceiptText,
+    Info, Package, RotateCcw, Calendar, Truck, ReceiptText, Banknote, Landmark, CreditCard,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 
@@ -53,8 +53,22 @@ const CREDIT_NOTE_STATUS_META: Record<string, { label: string; dot: string; text
 const TABS: TabItem[] = [
     { id: 'informations', label: 'Informations', icon: Info },
     { id: 'lignes', label: 'Lignes', icon: Package },
+    { id: 'reglement', label: 'Règlement', icon: Banknote },
     { id: 'avoirs', label: 'Avoirs', icon: RotateCcw },
 ];
+
+const PAYMENT_STATUS_META: Record<string, { label: string; dot: string; text: string }> = {
+    validated: { label: 'Validé', dot: 'bg-emerald-500', text: 'text-emerald-700' },
+    reconciled: { label: 'Rapproché', dot: 'bg-emerald-500', text: 'text-emerald-700' },
+    registered: { label: 'Enregistré', dot: 'bg-amber-500', text: 'text-amber-700' },
+};
+
+const INSTRUMENT_STATUS_META: Record<string, { label: string; dot: string; text: string }> = {
+    PENDING: { label: 'En attente', dot: 'bg-amber-500', text: 'text-amber-700' },
+    DEPOSITED: { label: 'Déposé', dot: 'bg-blue-500', text: 'text-blue-700' },
+    CLEARED: { label: 'Encaissé', dot: 'bg-emerald-500', text: 'text-emerald-700' },
+    REJECTED: { label: 'Rejeté', dot: 'bg-red-500', text: 'text-red-700' },
+};
 
 const PAGE_SIZE = 30;
 
@@ -142,7 +156,7 @@ export default function FacturesPage() {
 
     // Scroll-spy state (same pattern as ClientGroupsPage/PartnerManagementPage)
     const [activeTab, setActiveTab] = useState('informations');
-    const [openSections, setOpenSections] = useState<Record<string, boolean>>({ informations: true, lignes: true, avoirs: true });
+    const [openSections, setOpenSections] = useState<Record<string, boolean>>({ informations: true, lignes: true, reglement: true, avoirs: true });
     const sectionRefs = useRef<Record<string, HTMLDivElement | null>>({});
     const containerRef = useRef<HTMLDivElement>(null);
     const isScrollingRef = useRef(false);
@@ -157,8 +171,8 @@ export default function FacturesPage() {
         }
     };
     const toggleSection = (id: string, open: boolean) => setOpenSections(prev => ({ ...prev, [id]: open }));
-    const handleExpandAll = () => setOpenSections({ informations: true, lignes: true, avoirs: true });
-    const handleCollapseAll = () => setOpenSections({ informations: false, lignes: false, avoirs: false });
+    const handleExpandAll = () => setOpenSections({ informations: true, lignes: true, reglement: true, avoirs: true });
+    const handleCollapseAll = () => setOpenSections({ informations: false, lignes: false, reglement: false, avoirs: false });
 
     useEffect(() => {
         const container = containerRef.current;
@@ -384,6 +398,7 @@ export default function FacturesPage() {
                             rowData={invoices}
                             columnDefs={columnDefs}
                             loading={loading}
+                            rowActionLoading={detailLoading}
                             rowSelection="single"
                             onRowClicked={e => { if (e.data) selectInvoice(e.data); }}
                             defaultSelectedIds={row => row.id === selected?.id}
@@ -537,6 +552,77 @@ export default function FacturesPage() {
                                                 { key: 'total', header: 'Total', align: 'right', width: 'w-24', render: it => <span className="font-bold text-gray-900">{fmtMAD(it.line_total)}</span> },
                                             ]}
                                         />
+                                    </SageCollapsible>
+                                </div>
+
+                                {/* ── Règlement ───────────────────────────── */}
+                                <div ref={el => { sectionRefs.current['reglement'] = el; }}>
+                                    <SageCollapsible
+                                        title="Règlement"
+                                        isOpen={openSections['reglement']}
+                                        onOpenChange={open => toggleSection('reglement', open)}
+                                        rightContent={<span className="text-[10px] text-gray-400 mr-2">{selected.payments?.length ?? 0}</span>}
+                                    >
+                                        {selected.financial_instrument && (() => {
+                                            const fi = selected.financial_instrument;
+                                            const meta = INSTRUMENT_STATUS_META[fi.status] ?? { label: fi.status, dot: 'bg-gray-400', text: 'text-gray-500' };
+                                            return (
+                                                <div className="mb-3 rounded-lg border border-gray-100 bg-gray-50 px-3 py-2.5">
+                                                    <div className="flex items-center justify-between mb-1">
+                                                        <span className="flex items-center gap-1.5 text-xs font-semibold text-gray-700">
+                                                            <Landmark className="w-3.5 h-3.5 text-gray-400" />
+                                                            {fi.instrument_type} {fi.reference_number}
+                                                        </span>
+                                                        <span className={`inline-flex items-center gap-1 text-[10px] font-medium ${meta.text}`}>
+                                                            <span className={`w-1.5 h-1.5 rounded-full ${meta.dot}`} /> {meta.label}
+                                                        </span>
+                                                    </div>
+                                                    <div className="flex items-center justify-between text-[11px] text-gray-500">
+                                                        <span>{fi.bank_name ?? '—'} · échéance {fmtDate(fi.due_date)}</span>
+                                                        <span className="font-bold text-gray-900">{fmtMAD(fi.amount)}</span>
+                                                    </div>
+                                                </div>
+                                            );
+                                        })()}
+
+                                        {!selected.payments || selected.payments.length === 0 ? (
+                                            <div className="text-center py-8 text-xs text-gray-400">
+                                                <Banknote className="w-8 h-8 mx-auto mb-2 text-gray-200" />
+                                                {selected.status === 'pending'
+                                                    ? 'Facture pas encore réglée'
+                                                    : 'Aucune ligne de règlement distincte — réglée immédiatement (comptant/carte) au point de vente'}
+                                            </div>
+                                        ) : (
+                                            <div className="divide-y divide-gray-100 rounded-lg overflow-hidden border border-gray-100">
+                                                {selected.payments.map(p => {
+                                                    const meta = PAYMENT_STATUS_META[p.status] ?? { label: p.status, dot: 'bg-gray-400', text: 'text-gray-500' };
+                                                    return (
+                                                        <div key={p.payment_transfer_id} className="flex items-center justify-between px-3 py-2.5 bg-white">
+                                                            <div className="min-w-0">
+                                                                <div className="flex items-center gap-2">
+                                                                    <span className="text-xs font-mono font-semibold text-indigo-600">{p.code}</span>
+                                                                    <span className={`inline-flex items-center gap-1 text-[10px] font-medium ${meta.text}`}>
+                                                                        <span className={`w-1.5 h-1.5 rounded-full ${meta.dot}`} />
+                                                                        {meta.label}
+                                                                    </span>
+                                                                </div>
+                                                                <p className="text-[10px] text-gray-400 mt-0.5 flex items-center gap-1">
+                                                                    <CreditCard className="w-3 h-3" /> {p.payment_method} · {fmtDate(p.payment_date)}
+                                                                    {p.reference && ` · ${p.reference}`}
+                                                                    {p.bank && ` · ${p.bank}`}
+                                                                </p>
+                                                            </div>
+                                                            <div className="text-right shrink-0 ml-3">
+                                                                <p className="text-xs font-bold text-gray-900">{fmtMAD(p.amount_applied)}</p>
+                                                                {Number(p.payment_total_amount) !== Number(p.amount_applied) && (
+                                                                    <p className="text-[10px] text-gray-400">sur {fmtMAD(p.payment_total_amount)}</p>
+                                                                )}
+                                                            </div>
+                                                        </div>
+                                                    );
+                                                })}
+                                            </div>
+                                        )}
                                     </SageCollapsible>
                                 </div>
 

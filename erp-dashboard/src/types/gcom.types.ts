@@ -68,6 +68,45 @@ export interface GcomOrderFinancialMetadata {
     is_credit_sale?: boolean;
 }
 
+// Added 2026-08-16 (GET /invoices/{invoice}) — one entry per règlement applied to
+// this invoice, comptoir-immediate and deferred règlements in the same shape.
+// Verified live: this does NOT close the treasury-unification gap for pure
+// cash/card comptoir settlements — an invoice can be `fully_paid` with
+// `payments: []` (no payment_transfers row was ever created for it), while
+// cheque/effet and manually-registered règlements do appear correctly. Don't
+// treat an empty array as "not yet paid" without checking `status` first.
+export interface GcomInvoicePayment {
+    payment_transfer_id: number;
+    code: string;
+    amount_applied: number | string;
+    payment_total_amount: number | string;
+    payment_method: string;
+    status: string;
+    reference?: string | null;
+    bank?: string | null;
+    payment_date?: string | null;
+    lettering_date?: string | null;
+    notes?: string | null;
+}
+
+// Distinct from GcomFinancialInstrument (partners/{id}/financial-instruments) —
+// this is the subset embedded on the invoice itself (no partner_id/currency/
+// issue_date, but adds bank_account/deposited_at/cleared_at/rejected_at).
+export interface GcomInvoiceFinancialInstrument {
+    id: number;
+    instrument_type: GcomInstrumentType;
+    reference_number: string;
+    status: GcomInstrumentStatus;
+    amount: number | string;
+    due_date?: string | null;
+    bank_name?: string | null;
+    bank_account?: string | null;
+    deposited_at?: string | null;
+    cleared_at?: string | null;
+    rejected_at?: string | null;
+    rejection_reason?: string | null;
+}
+
 export interface GcomInvoice {
     id: number;
     invoice_number?: string;
@@ -79,9 +118,12 @@ export interface GcomInvoice {
     remaining_amount: number | string;
     invoice_date?: string;
     due_date?: string | null;
+    cancelled_at?: string | null;
     items?: GcomInvoiceItem[];
     partner?: { id: number; name: string; code?: string };
     order?: { id: number; order_code?: string; bc_status?: string; delivery_notes?: GcomDeliveryNoteRef[]; financial_metadata?: GcomOrderFinancialMetadata };
+    payments?: GcomInvoicePayment[];
+    financial_instrument?: GcomInvoiceFinancialInstrument | null;
 }
 
 export interface GcomDirectInvoiceResponse {
@@ -240,9 +282,14 @@ export interface GcomConvertToBlResponse {
     delivery_note: GcomDeliveryNoteRef;
 }
 
-// §8 documents `POST /orders/{order}/convert-to-bl` as taking no body — these
-// two fields are sent anyway (UI asks for them) pending backend confirmation
-// that they're actually read/persisted. Don't assume they take effect yet.
+// Backend fix 2026-08-15: both fields are now genuinely read and persisted
+// (verified live) — `delivery_date` defaults to today if omitted;
+// `payment_method` keeps the BC's existing method if omitted. Changing
+// `payment_method` here has real side effects, not just a label change:
+// stamp duty is added/removed (recalculated), and switching from cash/card
+// to credit/cheque/effet/transfer re-runs the credit check (never checked
+// for those two methods at BC creation) — can 422 with "Credit check
+// failed: ..." or "No payment term resolved...", same as BC creation.
 export interface GcomConvertToBlPayload {
     delivery_date?: string; // YYYY-MM-DD
     payment_method?: GcomPaymentMethod;
@@ -274,4 +321,264 @@ export interface GcomUpdateOrderLinePayload {
 export interface GcomAddOrderLinePayload {
     product_id: number;
     quantity: number;
+}
+
+// ─── Delivery Notes (BL) — see docs/modules/28-gcom.md §8 "Delivery Notes (BL)" ─
+//
+// Verified live 2026-08-15. Two gaps worth knowing before building UI on top
+// of this: (1) `items[]` carries `product_id` only, no product name/code —
+// unlike Order's `products[]` (full Product row) or Invoice's `items[]`
+// (product_name/product_code included). Fall back to `Produit #{id}` in the
+// UI. (2) the top-level `invoice_id` is a bare number, not a nested invoice
+// object — no `invoice_number` available here, only the id.
+export type GcomBlStatus = 'delivered' | 'cancelled';
+
+export interface GcomDeliveryNoteItem {
+    id: number;
+    product_id: number;
+    ordered_quantity: number | string;
+    delivered_quantity?: number | string;
+    unit_price?: number | string;
+    unit?: string;
+}
+
+export interface GcomDeliveryNote {
+    id: number;
+    delivery_number?: string;
+    order_id: number;
+    status: GcomBlStatus;
+    total_amount: number | string;
+    sub_total?: number | string; // proxied from the underlying order — see §8
+    tax_amount?: number | string; // same
+    delivery_date?: string;
+    notes?: string | null;
+    invoice_id?: number | null;
+    items?: GcomDeliveryNoteItem[];
+    partner?: { id: number; name: string; code?: string };
+    order?: { id: number; order_code?: string; bc_status?: string; financial_metadata?: GcomOrderFinancialMetadata };
+}
+
+export interface GcomDeliveryNoteListFilters {
+    partner_id?: number;
+    status?: GcomBlStatus;
+    per_page?: number;
+    page?: number;
+}
+
+export interface GcomDeliveryNoteListResponse {
+    success: boolean;
+    delivery_notes: GcomPaginator<GcomDeliveryNote>;
+}
+
+export interface GcomDeliveryNoteShowResponse {
+    success: boolean;
+    delivery_note: GcomDeliveryNote;
+}
+
+export interface GcomDeliveryNoteMutationResponse {
+    success: boolean;
+    message?: string;
+    delivery_note: GcomDeliveryNote;
+}
+
+// Flow #5 — BL Direct → Facture. Deducts stock immediately (the only
+// document that exists yet), unlike BC creation which never touches stock.
+export interface GcomCreateDeliveryNotePayload {
+    partner_id: number;
+    items: GcomItemInput[];
+    payment_method: GcomPaymentMethod;
+    payment_term_id?: number | null;
+    notes?: string;
+}
+
+export interface GcomCancelDeliveryNotePayload {
+    reason: string;
+}
+
+// ─── Règlement & Lettrage — see docs/modules/28-gcom.md §8 "Payments" ──────
+//
+// Verified live 2026-08-15 against ORBIS. Two real integration constraints
+// found that the doc doesn't call out:
+//  - `payment_term_id` must resolve to a real `payment_method_id` on the
+//    PaymentTerm record — a term with none (e.g. generic NET30) 422s with
+//    "Unable to resolve a payment method for this payment term." In
+//    practice: only use the partner's own attached payment terms here
+//    (same `getPaymentTerms(partnerId)` call already used by Comptoir/BC),
+//    not an arbitrary term id.
+//  - When the resolved payment method needs a bank, `bank_id` is required
+//    (422 "Bank is required for this payment method" otherwise) — and there
+//    is currently **no discoverable endpoint to list banks** (`/masterdata/banks`,
+//    `/banks`, `/finance/banks` all 404). The UI can only offer a raw numeric
+//    bank id input until backend adds a lookup endpoint — flagged, not a
+//    frontend bug.
+
+export interface GcomOpenInvoice {
+    id: number;
+    invoice_number?: string;
+    invoice_date?: string;
+    due_date?: string | null;
+    total_amount: number | string;
+    paid_amount?: number | string;
+    remaining_amount: number | string;
+    status: GcomInvoiceStatus;
+}
+
+export interface GcomOpenInvoicesResponse {
+    success: boolean;
+    invoices: GcomOpenInvoice[];
+}
+
+export interface GcomPayment {
+    id: number;
+    code?: string;
+    reference?: string | null;
+    partner_id: number;
+    payment_method_id?: number | null;
+    payment_term_id?: number | null;
+    bank_id?: number | null;
+    amount: number | string;
+    payment_date?: string;
+    maturity_date?: string | null;
+    status?: string;
+    is_reconciled?: boolean;
+    reconciled_amount?: number | string;
+    remaining_amount?: number | string;
+    notes?: string | null;
+}
+
+export interface GcomPaymentAllocationInput {
+    invoice_id: number;
+    amount: number;
+    notes?: string;
+}
+
+export interface GcomRegisterPaymentPayload {
+    partner_id: number;
+    amount: number;
+    payment_term_id: number;
+    // Added 2026-08-16 — the dropdown the "moyen de paiement" select actually
+    // submits now. payment_term_id (échéance) stays separate and still required
+    // — the two are NOT merged, per backend's explicit instruction.
+    payment_method_id?: number;
+    reference?: string;
+    bank_id?: number | null;
+    maturity_date?: string | null;
+    notes?: string;
+    // Required only when payment_method_id resolves to Chèque/Effet (verified
+    // live: masterdata's own `type: 'check'` reliably identifies these two —
+    // 422 with a clear message if omitted while a check-type method is chosen).
+    instrument?: GcomInstrumentInput;
+    allocations?: GcomPaymentAllocationInput[];
+    auto_letter?: boolean;
+}
+
+export interface GcomPaymentListFilters {
+    partner_id: number; // required — no cross-partner feed on this endpoint
+    status?: string;
+    per_page?: number;
+    page?: number;
+}
+
+export interface GcomPaymentListResponse {
+    success: boolean;
+    payments: GcomPaginator<GcomPayment>;
+}
+
+export interface GcomLetteringSummary {
+    total_amount: number | string;
+    lettered_amount: number | string;
+    remaining_amount: number | string;
+}
+
+export interface GcomRegisterPaymentResponse {
+    success: boolean;
+    message?: string;
+    payment: GcomPayment;
+    lettering?: GcomLetteringSummary;
+}
+
+// ─── Financial instruments / statement / ledger (added 2026-08-16) ─────────
+// Verified live: `/statement`'s total_credit/current_balance and `/ledger`'s
+// "payment" entries only reflect manually-registered règlements (POST
+// /payments) — NOT the "treasury unification" payment_transfers rows the
+// backend creates automatically for cash/card/cheque/effet settlements at
+// comptoir/BC/BL creation. Proof: a partner with 2 invoices both fully_paid
+// via comptoir cash, zero manual règlements, shows total_credit:0 and
+// current_balance == total_debit (i.e. reports the partner owing the full
+// invoiced amount despite already being paid). Do NOT use total_credit/
+// current_balance to show "how much does this client owe" — sum invoice
+// remaining_amount instead (verified correct). pending_instruments_total
+// IS correct (matches summing /financial-instruments directly) and
+// credit_limit is a static config value — both safe to use as-is.
+// available_credit inherits the same staleness caveat as the credit-v2
+// snapshot (same underlying engine per backend).
+export type GcomInstrumentType = 'CHEQUE' | 'EFFET';
+export type GcomInstrumentStatus = 'PENDING' | 'DEPOSITED' | 'CLEARED' | 'REJECTED';
+
+export interface GcomFinancialInstrument {
+    id: number;
+    partner_id: number;
+    instrument_type: GcomInstrumentType;
+    reference_number: string;
+    amount: number | string;
+    currency?: string;
+    issue_date?: string | null;
+    due_date: string | null;
+    bank_name?: string | null;
+    bank_account?: string | null;
+    status: GcomInstrumentStatus;
+    rejection_reason?: string | null;
+    invoice_id?: number | null;
+}
+
+export interface GcomFinancialInstrumentsFilters {
+    status?: GcomInstrumentStatus;
+    instrument_type?: GcomInstrumentType;
+    per_page?: number;
+    page?: number;
+}
+
+export interface GcomFinancialInstrumentsResponse {
+    success: boolean;
+    financial_instruments: GcomPaginator<GcomFinancialInstrument>;
+}
+
+export interface GcomAccountStatement {
+    partner_id: number;
+    total_debit: number;
+    total_credit: number; // see caveat above — excludes auto-settled comptoir/BC/BL payments
+    current_balance: number; // see caveat above — inherits total_credit's gap
+    pending_instruments_total: number;
+    credit_limit: number;
+    available_credit: number; // may be stale, see caveat above
+}
+
+export interface GcomAccountStatementResponse {
+    success: boolean;
+    statement: GcomAccountStatement;
+}
+
+export type GcomLedgerEntryType = 'invoice' | 'payment' | 'credit_note';
+
+export interface GcomLedgerEntry {
+    type: GcomLedgerEntryType;
+    date: string;
+    reference: string;
+    debit: number;
+    credit: number;
+    running_balance: number;
+    invoice_id?: number;
+    payment_transfer_id?: number;
+    credit_note_id?: number;
+}
+
+export interface GcomLedgerFilters {
+    from?: string; // YYYY-MM-DD
+    to?: string;
+}
+
+export interface GcomLedgerResponse {
+    success: boolean;
+    partner_id: number;
+    ledger: GcomLedgerEntry[];
 }
