@@ -3,7 +3,7 @@ import type { ICellRendererParams, ValueGetterParams } from 'ag-grid-community';
 import type { AgGridReact } from 'ag-grid-react';
 import {
     Landmark, Search, X, Loader2, RefreshCw, Plus,
-    Building2, AlertTriangle, FileText, Wallet, History, TrendingUp, TrendingDown, Scale,
+    Building2, FileText, Wallet, History, TrendingUp, TrendingDown, Scale,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 
@@ -31,7 +31,6 @@ const fmtMAD = (n: number | string | undefined | null) => `${fmt(n)} MAD`;
 const fmtDate = (d: string | null | undefined) => d ? new Date(d).toLocaleDateString('fr-MA', { day: '2-digit', month: 'short', year: 'numeric' }) : '—';
 
 const CLIENT_PAGE_SIZE = 20;
-const SOLDE_PAGE_CAP = 5; // bounds worst-case latency per row; covers realistic invoice counts
 
 // ─── Status badges ──────────────────────────────────────────────────────────
 
@@ -99,12 +98,6 @@ const KpiCard: React.FC<{
     );
 };
 
-const CaveatBanner: React.FC<{ children: React.ReactNode }> = ({ children }) => (
-    <div className="flex items-start gap-2 text-[11px] text-amber-700 bg-amber-50 border border-amber-100 rounded-lg px-3 py-2 mb-3">
-        <AlertTriangle className="w-3.5 h-3.5 shrink-0 mt-0.5" /> <span>{children}</span>
-    </div>
-);
-
 // ─── Component ───────────────────────────────────────────────────────────────
 
 export default function ReglementPage() {
@@ -116,16 +109,14 @@ export default function ReglementPage() {
     const [clientHasMore, setClientHasMore] = useState(false);
     const clientSearchDebounce = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-    // Solde Dû per client — no bulk endpoint returns this reliably (verified live:
-    // /statement.current_balance excludes comptoir/BC/BL cash-card auto-settlements
-    // and wildly overstates debt), so it's computed the same way as the header KPI
-    // below: summing each partner's own invoice remaining_amount. Bounded + cached
-    // per row since it's one extra call per visible client.
-    // Both are plain refs (not React state) so a solde resolving never forces a new
-    // `rowData` array reference on the grid — only `refreshCells()` below repaints
-    // the column in place. Regenerating `rowData` on every async solde update was
-    // suspected of destabilizing the grid (reported: shows all clients on load,
-    // then collapses to one shortly after) — this avoids that pattern entirely.
+    // Solde Dû per client — GET /partners/{id}/statement, verified live 2026-08-16
+    // as genuinely fixed (treasury-unification gap closed: a fresh comptoir cash
+    // sale now correctly nets to 0 balance, not the sale's full amount). One call
+    // per partner instead of paginating that partner's whole invoice history.
+    // Both caches are plain refs (not React state) so a solde resolving never
+    // forces a new `rowData` array reference on the grid — only `refreshCells()`
+    // below repaints the column in place, avoiding the rowData-churn pattern that
+    // previously destabilized this same grid (see memory).
     const soldeCache = useRef<Map<number, number>>(new Map());
     const soldeLoadingIds = useRef<Set<number>>(new Set());
     const clientGridRef = useRef<AgGridReact>(null);
@@ -137,17 +128,8 @@ export default function ReglementPage() {
         clientGridRef.current?.api?.refreshCells({ columns: ['solde'], force: true });
         await Promise.all(idsToFetch.map(async id => {
             try {
-                let due = 0, page = 1;
-                for (;;) {
-                    const res = await gcomApi.invoices.list({ partner_id: id, per_page: 100, page });
-                    for (const inv of res.data) {
-                        if (inv.cancelled_at) continue;
-                        due += Number(inv.remaining_amount) || 0;
-                    }
-                    if (page >= res.last_page || page >= SOLDE_PAGE_CAP) break;
-                    page += 1;
-                }
-                soldeCache.current.set(id, due);
+                const statement = await gcomApi.partners.statement(id);
+                soldeCache.current.set(id, statement.current_balance);
             } catch {
                 soldeCache.current.set(id, NaN);
             }
@@ -295,29 +277,21 @@ export default function ReglementPage() {
     }, []);
 
     // ── Header KPIs: Total Facturé / Total Réglé / Solde Dû ─────────────────────
-    // Derived by summing every (non-cancelled) GCOM invoice for the partner — same
-    // reasoning as the sidebar's Solde Dû (see comment above): /statement's
-    // total_credit/current_balance are unreliable, verified live.
+    // GET /partners/{id}/statement — verified live 2026-08-16 that the
+    // treasury-unification gap (comptoir cash/card auto-settlements missing from
+    // total_credit/current_balance) is genuinely fixed: a fresh comptoir cash
+    // sale now nets to a 0 balance immediately, and a mixed paid+pending scenario
+    // (two invoices, one cash-settled, one left on credit) correctly split
+    // total_debit/total_credit/current_balance. Replaces the earlier per-invoice
+    // pagination workaround — one call instead of looping every invoice page.
     const [accountSummary, setAccountSummary] = useState<{ invoiced: number; paid: number; due: number } | null>(null);
     const [loadingSummary, setLoadingSummary] = useState(false);
 
     const loadAccountSummary = useCallback(async (partnerId: number) => {
         setLoadingSummary(true);
         try {
-            let invoiced = 0, paid = 0, due = 0;
-            let page = 1;
-            for (;;) {
-                const res = await gcomApi.invoices.list({ partner_id: partnerId, per_page: 100, page });
-                for (const inv of res.data) {
-                    if (inv.cancelled_at) continue;
-                    invoiced += Number(inv.total_amount) || 0;
-                    paid += Number(inv.paid_amount) || 0;
-                    due += Number(inv.remaining_amount) || 0;
-                }
-                if (page >= res.last_page || page >= 25) break;
-                page += 1;
-            }
-            setAccountSummary({ invoiced, paid, due });
+            const statement = await gcomApi.partners.statement(partnerId);
+            setAccountSummary({ invoiced: statement.total_debit, paid: statement.total_credit, due: statement.current_balance });
         } catch {
             setAccountSummary(null);
         } finally {
@@ -643,9 +617,6 @@ export default function ReglementPage() {
 
                                 {activeTab === 'payments' && (
                                     <div className="flex-1 min-h-0 flex flex-col">
-                                        <CaveatBanner>
-                                            Règlements enregistrés manuellement via cet écran uniquement — les paiements automatiques des ventes comptant/carte/chèque au comptoir ou BC/BL n'apparaissent pas ici (endpoint API existant, limitation confirmée côté backend).
-                                        </CaveatBanner>
                                         <div className="flex-1 min-h-0">
                                             <DataGrid rowData={payments} columnDefs={paymentsColumnDefs} loading={loadingPayments} pagination paginationPageSize={20} />
                                         </div>
@@ -654,9 +625,6 @@ export default function ReglementPage() {
 
                                 {activeTab === 'ledger' && (
                                     <div className="flex-1 min-h-0 flex flex-col">
-                                        <CaveatBanner>
-                                            Les lignes "Paiement" ne couvrent que les règlements enregistrés manuellement — une facture réglée comptant/carte au comptoir apparaît en Débit sans ligne de Crédit correspondante, ce qui gonfle le solde progressif affiché ici. Utilisez le KPI "Solde Dû Actuel" ci-dessus pour le montant réellement dû.
-                                        </CaveatBanner>
                                         <div className="flex items-center gap-2 mb-3">
                                             <input type="date" value={ledgerFrom} onChange={e => setLedgerFrom(e.target.value)} className="px-2.5 py-1.5 text-xs border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-sage-400" />
                                             <span className="text-xs text-gray-400">→</span>

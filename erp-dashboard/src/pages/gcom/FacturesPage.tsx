@@ -2,7 +2,7 @@ import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react'
 import type { ICellRendererParams, ValueGetterParams } from 'ag-grid-community';
 import {
     FileText, Search, X, Loader2, RefreshCw, Download, Building2,
-    Info, Package, RotateCcw, Calendar, Truck, ReceiptText, Banknote, Landmark, CreditCard,
+    Info, Package, RotateCcw, Calendar, Truck, ReceiptText, Banknote, Landmark, CreditCard, CheckCircle2,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 
@@ -16,7 +16,7 @@ import { GcomLinesTable } from '@/components/gcom/GcomLinesTable';
 import { gcomApi } from '@/services/api/gcomApi';
 import { getPartners } from '@/services/api/partnerApi';
 import type { Partner } from '@/types/partner.types';
-import type { GcomInvoice, GcomInvoiceStatus, GcomCreditNote } from '@/types/gcom.types';
+import type { GcomInvoice, GcomInvoiceStatus, GcomInvoiceItem, GcomCreditNote } from '@/types/gcom.types';
 
 // ─── helpers ─────────────────────────────────────────────────────────────────
 
@@ -222,6 +222,56 @@ export default function FacturesPage() {
         if (selected) selectInvoice(selected);
     };
 
+    // ── Avoir (credit note) creation ─────────────────────────────────────────
+    // POST /invoices/{invoice}/credit-notes — omitting `amount` cancels the
+    // invoice for its full amount; checking items triggers restock for those lines.
+    const [avoirModalOpen, setAvoirModalOpen] = useState(false);
+    const [avoirAmount, setAvoirAmount] = useState('');
+    const [avoirReason, setAvoirReason] = useState('');
+    const [avoirItemSelected, setAvoirItemSelected] = useState<Record<number, boolean>>({});
+    const [avoirItemQty, setAvoirItemQty] = useState<Record<number, number>>({});
+    const [creatingAvoir, setCreatingAvoir] = useState(false);
+
+    const openAvoirModal = () => {
+        setAvoirAmount('');
+        setAvoirReason('');
+        setAvoirItemSelected({});
+        setAvoirItemQty({});
+        setAvoirModalOpen(true);
+    };
+    const closeAvoirModal = () => setAvoirModalOpen(false);
+
+    const toggleAvoirItem = (item: GcomInvoiceItem) => {
+        setAvoirItemSelected(prev => ({ ...prev, [item.id]: !prev[item.id] }));
+        setAvoirItemQty(prev => prev[item.id] ? prev : { ...prev, [item.id]: Number(item.quantity) || 1 });
+    };
+    const setAvoirItemQuantity = (itemId: number, quantity: number) => {
+        setAvoirItemQty(prev => ({ ...prev, [itemId]: Math.max(1, quantity) }));
+    };
+
+    const confirmCreateAvoir = async () => {
+        if (!selected || !avoirReason.trim()) { toast.error('Motif requis'); return; }
+        const selectedItems = (selected.items ?? []).filter(it => avoirItemSelected[it.id]);
+        setCreatingAvoir(true);
+        try {
+            await gcomApi.invoices.createCreditNote(selected.id, {
+                amount: avoirAmount.trim() ? parseFloat(avoirAmount) : undefined,
+                reason: avoirReason.trim(),
+                items: selectedItems.length > 0
+                    ? selectedItems.map(it => ({ product_id: it.product_id, quantity: avoirItemQty[it.id] ?? (Number(it.quantity) || 1) }))
+                    : undefined,
+            });
+            toast.success('Avoir créé');
+            setAvoirModalOpen(false);
+            refresh();
+        } catch (err: unknown) {
+            const msg = (err as { response?: { data?: { message?: string } } })?.response?.data?.message;
+            toast.error(msg ?? "Erreur lors de la création de l'avoir");
+        } finally {
+            setCreatingAvoir(false);
+        }
+    };
+
     // ── PDF ───────────────────────────────────────────────────────────────────
     const [pdfLoading, setPdfLoading] = useState(false);
     const openPdf = async () => {
@@ -297,20 +347,28 @@ export default function FacturesPage() {
 
     // ── Action panel ──────────────────────────────────────────────────────────
 
-    const actionGroups = useMemo((): { items: ActionItemProps[] }[] => [{
-        items: [
-            { icon: RefreshCw, label: 'Actualiser', variant: 'default', onClick: refresh, disabled: loading },
-            { icon: Download, label: 'Facture PDF', variant: 'primary', onClick: openPdf, disabled: !selected || pdfLoading },
-        ],
-    }],
+    const actionGroups = useMemo((): { items: ActionItemProps[] }[] => {
+        const groups: { items: ActionItemProps[] }[] = [{
+            items: [
+                { icon: RefreshCw, label: 'Actualiser', variant: 'default', onClick: refresh, disabled: loading },
+                { icon: Download, label: 'Facture PDF', variant: 'primary', onClick: openPdf, disabled: !selected || pdfLoading },
+            ],
+        }];
+        if (selected) {
+            groups.push({ items: [
+                { icon: RotateCcw, label: 'Émettre un avoir', variant: 'warning', onClick: openAvoirModal },
+            ] });
+        }
+        return groups;
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [loading, selected, pdfLoading]);
+    }, [loading, selected, pdfLoading]);
 
     // ─────────────────────────────────────────────────────────────────────────
     // RENDER
     // ─────────────────────────────────────────────────────────────────────────
 
     return (
+        <>
         <MasterLayout
             leftContent={
                 <div className="h-full bg-white border-r border-gray-200 flex flex-col">
@@ -590,7 +648,7 @@ export default function FacturesPage() {
                                                 <Banknote className="w-8 h-8 mx-auto mb-2 text-gray-200" />
                                                 {selected.status === 'pending'
                                                     ? 'Facture pas encore réglée'
-                                                    : 'Aucune ligne de règlement distincte — réglée immédiatement (comptant/carte) au point de vente'}
+                                                    : 'Aucune ligne de règlement enregistrée pour cette facture'}
                                             </div>
                                         ) : (
                                             <div className="divide-y divide-gray-100 rounded-lg overflow-hidden border border-gray-100">
@@ -632,14 +690,30 @@ export default function FacturesPage() {
                                         title="Avoirs"
                                         isOpen={openSections['avoirs']}
                                         onOpenChange={open => toggleSection('avoirs', open)}
-                                        rightContent={!creditNotesLoading && <span className="text-[10px] text-gray-400 mr-2">{creditNotes.length}</span>}
+                                        rightContent={!creditNotesLoading && (
+                                            <div className="flex items-center gap-2 mr-2">
+                                                <span className="text-[10px] text-gray-400">{creditNotes.length}</span>
+                                                <button
+                                                    onClick={e => { e.stopPropagation(); openAvoirModal(); }}
+                                                    className="flex items-center gap-1 px-2 py-1 text-[10px] font-semibold text-amber-700 bg-amber-50 border border-amber-200 rounded-md hover:bg-amber-100 transition-colors"
+                                                >
+                                                    <RotateCcw className="w-3 h-3" /> Émettre un avoir
+                                                </button>
+                                            </div>
+                                        )}
                                     >
                                         {creditNotesLoading ? (
                                             <div className="flex justify-center py-6"><Loader2 className="w-4 h-4 animate-spin text-gray-400" /></div>
                                         ) : creditNotes.length === 0 ? (
                                             <div className="text-center py-8 text-xs text-gray-400">
                                                 <RotateCcw className="w-8 h-8 mx-auto mb-2 text-gray-200" />
-                                                Aucun avoir émis pour cette facture
+                                                <p className="mb-3">Aucun avoir émis pour cette facture</p>
+                                                <button
+                                                    onClick={openAvoirModal}
+                                                    className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-white bg-amber-600 rounded-lg hover:bg-amber-700 transition-colors"
+                                                >
+                                                    <RotateCcw className="w-3.5 h-3.5" /> Émettre un avoir
+                                                </button>
                                             </div>
                                         ) : (
                                             <div className="divide-y divide-gray-100 rounded-lg overflow-hidden border border-gray-100">
@@ -680,5 +754,86 @@ export default function FacturesPage() {
 
             rightContent={<ActionPanel groups={actionGroups} />}
         />
+
+        {/* ── Create avoir modal ──────────────────────────────────────────── */}
+        {avoirModalOpen && selected && (
+            <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm">
+                <div className="bg-white rounded-2xl shadow-2xl p-6 max-w-lg w-full mx-4">
+                    <div className="flex items-center gap-3 mb-3">
+                        <div className="w-9 h-9 rounded-full bg-amber-100 flex items-center justify-center">
+                            <RotateCcw className="w-4 h-4 text-amber-600" />
+                        </div>
+                        <div>
+                            <h3 className="text-base font-semibold text-gray-900">Émettre un avoir</h3>
+                            <p className="text-[11px] text-gray-400">{selected.invoice_number ?? `#${selected.id}`} — {selected.partner?.name} — {fmtMAD(selected.total_amount)}</p>
+                        </div>
+                    </div>
+
+                    <div className="mb-3">
+                        <label className="block text-xs font-medium text-gray-600 mb-1">Montant (vide = avoir du montant total, annule la facture)</label>
+                        <input
+                            type="number" min={0} step={0.01}
+                            value={avoirAmount}
+                            onChange={e => setAvoirAmount(e.target.value)}
+                            placeholder={fmtMAD(selected.total_amount)}
+                            className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-sage-400"
+                        />
+                    </div>
+
+                    <div className="mb-3">
+                        <label className="block text-xs font-medium text-gray-600 mb-1">Motif *</label>
+                        <textarea
+                            value={avoirReason}
+                            onChange={e => setAvoirReason(e.target.value)}
+                            rows={2}
+                            maxLength={500}
+                            className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-sage-400 resize-none"
+                            placeholder="Marchandise retournée, erreur de facturation…"
+                        />
+                    </div>
+
+                    {(selected.items?.length ?? 0) > 0 && (
+                        <div className="mb-5">
+                            <label className="block text-xs font-medium text-gray-600 mb-1.5">Articles à restocker (optionnel)</label>
+                            <div className="max-h-48 overflow-y-auto divide-y divide-gray-100 rounded-lg border border-gray-100">
+                                {selected.items!.map(it => (
+                                    <div key={it.id} className="flex items-center gap-2 px-3 py-2 bg-white">
+                                        <input
+                                            type="checkbox"
+                                            checked={!!avoirItemSelected[it.id]}
+                                            onChange={() => toggleAvoirItem(it)}
+                                            className="rounded border-gray-300 text-sage-600 focus:ring-sage-400"
+                                        />
+                                        <span className="flex-1 text-xs text-gray-700 truncate">{it.product_name ?? `Produit #${it.product_id}`}</span>
+                                        <input
+                                            type="number" min={1} max={Number(it.quantity) || undefined}
+                                            value={avoirItemQty[it.id] ?? (Number(it.quantity) || 1)}
+                                            onChange={e => setAvoirItemQuantity(it.id, parseInt(e.target.value, 10) || 1)}
+                                            onFocus={() => { if (!avoirItemSelected[it.id]) toggleAvoirItem(it); }}
+                                            className="w-16 text-center px-1 py-1 text-xs border border-gray-200 rounded-md focus:outline-none focus:ring-1 focus:ring-sage-400"
+                                        />
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+                    )}
+
+                    <div className="flex gap-3">
+                        <button
+                            onClick={confirmCreateAvoir}
+                            disabled={creatingAvoir || !avoirReason.trim()}
+                            className="flex-1 flex items-center justify-center gap-2 py-2 bg-sage-600 text-white text-sm font-medium rounded-lg hover:bg-sage-700 disabled:opacity-50 transition-colors"
+                        >
+                            {creatingAvoir ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <CheckCircle2 className="w-3.5 h-3.5" />}
+                            Confirmer
+                        </button>
+                        <button onClick={closeAvoirModal} disabled={creatingAvoir} className="flex-1 py-2 border border-gray-200 text-sm text-gray-600 rounded-lg hover:bg-gray-50 disabled:opacity-50 transition-colors">
+                            Annuler
+                        </button>
+                    </div>
+                </div>
+            </div>
+        )}
+        </>
     );
 }

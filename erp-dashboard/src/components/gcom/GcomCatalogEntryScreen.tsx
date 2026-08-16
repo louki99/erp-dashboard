@@ -53,6 +53,8 @@ export interface GcomCatalogEntrySubmitPayload {
     payment_term_id: number | null;
     notes?: string;
     instrument: GcomInstrumentInput | null;
+    /** Only meaningful when `showExpiresAt` is set on the screen (Devis). */
+    expires_at?: string;
 }
 
 export interface GcomCatalogEntryScreenProps<TResult> {
@@ -72,6 +74,11 @@ export interface GcomCatalogEntryScreenProps<TResult> {
      * (Comptoir is deliberately a fast scan-and-pay flow, an extra dialog there
      * would work against that). */
     confirmBeforeSubmit?: boolean;
+    /** Devis creation collects no payment info at all (chosen later, at convert
+     * time) — hides the payment method/term/instrument block entirely. */
+    hidePaymentSection?: boolean;
+    /** Devis-only: shows an optional "expires_at" date field next to notes. */
+    showExpiresAt?: boolean;
 }
 
 const EMPTY_INSTRUMENT: GcomInstrumentInput = { reference_number: '', due_date: '', bank_name: '', bank_account: '' };
@@ -88,6 +95,8 @@ export function GcomCatalogEntryScreen<TResult>({
     onSubmitted,
     cancelActionItem,
     confirmBeforeSubmit = false,
+    hidePaymentSection = false,
+    showExpiresAt = false,
 }: GcomCatalogEntryScreenProps<TResult>) {
     const { user } = useAuth();
 
@@ -265,6 +274,7 @@ export function GcomCatalogEntryScreen<TResult>({
     const [paymentMethod, setPaymentMethod] = useState<GcomPaymentMethod>('cash');
     const [instrument, setInstrument] = useState<GcomInstrumentInput>(EMPTY_INSTRUMENT);
     const [notes, setNotes] = useState('');
+    const [expiresAt, setExpiresAt] = useState('');
 
     const methodDef = PAYMENT_METHODS.find(m => m.value === paymentMethod)!;
     const showInstrumentFields = needsInstrumentAtSubmit && methodDef.needsInstrument;
@@ -328,6 +338,7 @@ export function GcomCatalogEntryScreen<TResult>({
                 payment_term_id: methodDef.needsTerm ? paymentTermId : null,
                 notes: notes.trim() || undefined,
                 instrument: showInstrumentFields ? instrument : null,
+                expires_at: showExpiresAt ? (expiresAt || undefined) : undefined,
             });
             setShowConfirmModal(false);
             if (renderSuccess) setResult(created);
@@ -346,6 +357,7 @@ export function GcomCatalogEntryScreen<TResult>({
         setPaymentMethod('cash');
         setInstrument(EMPTY_INSTRUMENT);
         setNotes('');
+        setExpiresAt('');
         setShowOnlySelected(false);
         loadCatalog(catalogQuery, 1, false); // refresh stock levels
         setTimeout(() => searchInputRef.current?.focus(), 0);
@@ -641,6 +653,7 @@ export function GcomCatalogEntryScreen<TResult>({
                                 <div className="flex items-start gap-6">
                                     {/* Payment method + conditional fields */}
                                     <div className="flex-1 space-y-3">
+                                        {!hidePaymentSection && (
                                         <div className="flex flex-wrap items-center gap-1.5">
                                             {PAYMENT_METHODS.map(m => (
                                                 <button
@@ -656,8 +669,9 @@ export function GcomCatalogEntryScreen<TResult>({
                                                 </button>
                                             ))}
                                         </div>
+                                        )}
 
-                                        {methodDef.needsTerm && (
+                                        {!hidePaymentSection && methodDef.needsTerm && (
                                             creditTerms.length > 0 ? (
                                                 <select
                                                     value={paymentTermId ?? ''}
@@ -675,7 +689,7 @@ export function GcomCatalogEntryScreen<TResult>({
                                             )
                                         )}
 
-                                        {showInstrumentFields && (
+                                        {!hidePaymentSection && showInstrumentFields && (
                                             <div className="grid grid-cols-2 gap-2 bg-amber-50/50 border border-amber-100 rounded-lg p-2.5 max-w-md">
                                                 <input
                                                     value={instrument.reference_number}
@@ -704,12 +718,25 @@ export function GcomCatalogEntryScreen<TResult>({
                                             </div>
                                         )}
 
-                                        <input
-                                            value={notes}
-                                            onChange={e => setNotes(e.target.value)}
-                                            placeholder="Notes (optionnel)…"
-                                            className="w-full max-w-md px-3 py-1.5 text-xs border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-sage-400"
-                                        />
+                                        <div className="flex items-center gap-2">
+                                            <input
+                                                value={notes}
+                                                onChange={e => setNotes(e.target.value)}
+                                                placeholder="Notes (optionnel)…"
+                                                className="w-full max-w-md px-3 py-1.5 text-xs border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-sage-400"
+                                            />
+                                            {showExpiresAt && (
+                                                <div className="shrink-0">
+                                                    <input
+                                                        type="date"
+                                                        value={expiresAt}
+                                                        onChange={e => setExpiresAt(e.target.value)}
+                                                        title="Date d'expiration (optionnel)"
+                                                        className="px-3 py-1.5 text-xs border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-sage-400"
+                                                    />
+                                                </div>
+                                            )}
+                                        </div>
 
                                         {!selectedPartner && (
                                             <div className="flex items-center gap-1.5 text-[11px] text-amber-700">

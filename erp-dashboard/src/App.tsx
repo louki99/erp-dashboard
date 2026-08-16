@@ -12,6 +12,7 @@ import { PERMISSIONS } from '@/lib/rbac/permissions';
 import { Login } from '@/pages/Login';
 import { PartnerManagementPage } from '@/pages/partners/PartnerManagementPage';
 import ClientGroupsPage from '@/pages/partners/ClientGroupsPage';
+import DevisPage from '@/pages/gcom/DevisPage';
 import ComptoirPage from '@/pages/gcom/ComptoirPage';
 import FacturesPage from '@/pages/gcom/FacturesPage';
 import BonCommandePage from '@/pages/gcom/BonCommandePage';
@@ -182,6 +183,12 @@ function AppRoutes() {
       <Route path="/partners/client-groups" element={
         <ProtectedRoute requiredPermission={PERMISSIONS.PARTNERS.INDEX}>
           <ClientGroupsPage />
+        </ProtectedRoute>
+      } />
+
+      <Route path="/gcom/devis" element={
+        <ProtectedRoute requiredPermission={PERMISSIONS.DYNAMIC.MANAGE_GCOM}>
+          <DevisPage />
         </ProtectedRoute>
       } />
 

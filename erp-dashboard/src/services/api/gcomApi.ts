@@ -9,6 +9,18 @@ import type {
     GcomPaginator,
     GcomCreditNote,
     GcomCreditNotesListResponse,
+    GcomCreateCreditNotePayload,
+    GcomCreateCreditNoteResponse,
+    GcomQuote,
+    GcomQuoteListFilters,
+    GcomQuoteListResponse,
+    GcomQuoteShowResponse,
+    GcomQuoteMutationResponse,
+    GcomCreateQuotePayload,
+    GcomConvertQuotePayload,
+    GcomConvertQuoteResponse,
+    GcomConvertQuoteToOrderPayload,
+    GcomConvertQuoteToOrderResponse,
     GcomOrder,
     GcomOrderListFilters,
     GcomOrderListResponse,
@@ -86,6 +98,17 @@ export const gcomApi = {
             return response.data.credit_notes;
         },
 
+        // Omitting `amount` cancels the invoice for its full amount. `items`
+        // presence triggers restock of those specific lines.
+        createCreditNote: async (invoiceId: number, payload: GcomCreateCreditNotePayload): Promise<GcomCreditNote> => {
+            const response = await apiClient.post<GcomCreateCreditNoteResponse>(
+                `${BASE}/invoices/${invoiceId}/credit-notes`,
+                payload,
+                idempotent(),
+            );
+            return response.data.credit_note;
+        },
+
         // Auth is a Bearer token (not a cookie), so a plain <a href> can't carry it —
         // fetch as a blob and hand the caller an object URL to open/download instead.
         getPdfBlobUrl: async (invoiceId: number): Promise<string> => {
@@ -93,6 +116,46 @@ export const gcomApi = {
                 responseType: 'blob',
             });
             return URL.createObjectURL(response.data as Blob);
+        },
+    },
+
+    quotes: {
+        // Own-quotes only — `Quote.user_id = current user`, no cross-user listing.
+        list: async (filters?: GcomQuoteListFilters): Promise<GcomPaginator<GcomQuote>> => {
+            const response = await apiClient.get<GcomQuoteListResponse>(`${BASE}/quotes`, { params: filters });
+            return response.data.quotes;
+        },
+
+        get: async (quoteId: number): Promise<GcomQuote> => {
+            const response = await apiClient.get<GcomQuoteShowResponse>(`${BASE}/quotes/${quoteId}`);
+            return response.data.quote;
+        },
+
+        // Flow #1/#2's entry point — no payment info collected here, just the
+        // client/articles/notes/expiry. Payment is chosen at convert time.
+        create: async (payload: GcomCreateQuotePayload): Promise<GcomQuote> => {
+            const response = await apiClient.post<GcomQuoteMutationResponse>(`${BASE}/quotes`, payload, idempotent());
+            return response.data.quote;
+        },
+
+        // Flow #2 — Devis → Facture Directe, skips the BC stage entirely.
+        convert: async (quoteId: number, payload?: GcomConvertQuotePayload): Promise<GcomConvertQuoteResponse> => {
+            const response = await apiClient.post<GcomConvertQuoteResponse>(
+                `${BASE}/quotes/${quoteId}/convert`,
+                payload ?? {},
+                idempotent(),
+            );
+            return response.data;
+        },
+
+        // Flow #1, first hop — Devis → BC.
+        convertToOrder: async (quoteId: number, payload?: GcomConvertQuoteToOrderPayload): Promise<GcomConvertQuoteToOrderResponse> => {
+            const response = await apiClient.post<GcomConvertQuoteToOrderResponse>(
+                `${BASE}/quotes/${quoteId}/convert-to-order`,
+                payload ?? {},
+                idempotent(),
+            );
+            return response.data;
         },
     },
 
@@ -238,15 +301,13 @@ export const gcomApi = {
             return response.data.financial_instruments;
         },
 
-        // total_credit/current_balance have a known gap — see the comment on
-        // GcomAccountStatement in gcom.types.ts before using them for display.
+        // Treasury-unification gap fixed 2026-08-17 — see the comment on
+        // GcomAccountStatement in gcom.types.ts. Safe to use directly.
         statement: async (partnerId: number): Promise<GcomAccountStatement> => {
             const response = await apiClient.get<GcomAccountStatementResponse>(`${BASE}/partners/${partnerId}/statement`);
             return response.data.statement;
         },
 
-        // "payment" entries share the same gap as statement.total_credit — see
-        // the comment on GcomAccountStatement in gcom.types.ts.
         ledger: async (partnerId: number, filters?: GcomLedgerFilters): Promise<GcomLedgerEntry[]> => {
             const response = await apiClient.get<GcomLedgerResponse>(`${BASE}/partners/${partnerId}/ledger`, { params: filters });
             return response.data.ledger;

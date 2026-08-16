@@ -524,6 +524,7 @@ export const BUSINESS_DOMAINS: BusinessDomain[] = [
                 route: '/gcom/comptoir',
                 icon: ShoppingCart,
                 actions: [
+                    { id: 'gcom-devis',     label: 'Devis',             route: '/gcom/devis',          icon: FileSearch    },
                     { id: 'gcom-comptoir',  label: 'Comptoir',          route: '/gcom/comptoir',       icon: Calculator    },
                     { id: 'gcom-bc',        label: 'Bons de Commande',  route: '/gcom/bons-commande',  icon: ClipboardList },
                     { id: 'gcom-bl',        label: 'Bons de Livraison', route: '/gcom/bons-livraison', icon: Truck         },

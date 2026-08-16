@@ -298,6 +298,14 @@ Query: `status?` (`draft`|`sent`|`accepted`|`expired`|`converted`), `per_page?`
 
 **`GET /quotes/{id}`** — 403 if the quote belongs to a different user.
 
+**`GET /quotes/{id}/pdf`** — streams the Devis PDF (`Content-Type:
+application/pdf`). `?download=1` for an attachment instead of inline. Same
+generic document pipeline as BC/BL below (`App\Services\DocumentService`,
+type `devis`) — genuinely new as of 2026-08-17, no document type anywhere
+in the codebase rendered a Quote before this. Not a JSON endpoint — point
+a browser `<a href>`/download button directly at this URL (with the auth
+header), same caveat as every other PDF endpoint in this module.
+
 **`POST /quotes`**
 ```json
 {
@@ -344,6 +352,12 @@ practice only `confirmed`|`cancelled` ever appear — see §13),
 
 **`GET /orders/{order}`** — 404 if the order isn't a GCOM order. Response
 includes `products` (line items), `partner`, `invoices`, `deliveryNotes`.
+
+**`GET /orders/{order}/pdf`** — streams the BC PDF (`Content-Type:
+application/pdf`). `?download=1` for an attachment. 2026-08-17: reuses the
+ERP's generic document pipeline (`App\Services\DocumentService`, type
+`bc`) — the same one `Backend\DocumentController` already exposes for
+other channels, not a GCOM-specific renderer. Not a JSON endpoint.
 
 **`POST /orders`** 🔁 — flow #1 (second hop, if not started from a quote)
 / #3 / #4's BC leg.
@@ -468,6 +482,11 @@ GCOM — no separate confirm/load/transit steps, a BL is `delivered` the
 moment it's created; see §13), `per_page?`.
 
 **`GET /delivery-notes/{deliveryNote}`** — 404 if not from a GCOM order.
+
+**`GET /delivery-notes/{deliveryNote}/pdf`** — streams the BL PDF
+(`Content-Type: application/pdf`). `?download=1` for an attachment. Same
+generic document pipeline as BC above (`App\Services\DocumentService`,
+type `bl`). Not a JSON endpoint.
 
 **`POST /delivery-notes`** 🔁 — flow #5 (BL Direct → Facture). Creates an
 underlying BC transparently, then the BL — stock deducts **here**, at BL
@@ -940,6 +959,45 @@ history is traceable rather than silently vanishing from the doc):
   needed) — `GcomInstrumentRegistrar::registerForPaymentTransfer()`,
   linked via `financial_instruments.payment_transfer_id` rather than
   `invoice_id` (a règlement can letter across several invoices). See §8.
+- ~~No PDF for BC (`GET /orders/{order}/pdf`), Devis
+  (`GET /quotes/{id}/pdf`), or BL (`GET /delivery-notes/{deliveryNote}/pdf`)
+  — only the invoice had one.~~ **Built 2026-08-17.** BC and BL needed no
+  new template work at all — `App\Services\DocumentService` +
+  `App\Documents\DocumentDataResolver` (a second, already-generic
+  document pipeline, separate from `InvoiceDocumentService`, already
+  exposed for other channels via `Backend\DocumentController` at
+  `/api/backend/documents/{bc,bl}/{id}`) already had full resolver cases
+  and Blade templates (`documents/bc.blade.php`, `documents/bl.blade.php`)
+  for both — this just wires the existing pipeline into GCOM's own routes
+  with the usual `canal !== 'GCOM'` → 404 guard, same pattern as the
+  invoice PDF. Devis was the one genuinely missing piece — no document
+  type anywhere rendered a Quote before this — added `resolveDevis()` +
+  `documents/devis.blade.php`, modeled closely on the BC resolver/template.
+  Also fixed a real dormant bug found while touching `resolveBc()`: the
+  commercial's name was stored under the key `'preSelling'`, but
+  `bc.blade.php` reads `$data['sales_rep']` — silently blank on every BC
+  PDF ever generated, in both the info box and the signature line.
+  These templates (logo/letterhead, colored branded header, status badge,
+  bordered totals box, dashed notes block, two-column signature grid with
+  "Signature & Cachet" lines, legal footer with Capital social/RC/IF/ICE,
+  watermark support) are considerably more polished than the invoice's own
+  `documents.invoice_v1` template — worth considering migrating the
+  invoice PDF onto the same `documents._layout` family for visual
+  consistency across the whole GCOM document set, but that's a separate,
+  deliberately-not-done-here change (the invoice PDF already works and
+  wasn't reported broken).
+- ~~Seeded GCOM products never had `is_active` set, hidden from any
+  "active only" consumer despite `Product::updateOrCreate()` otherwise
+  succeeding.~~ **Fixed 2026-08-17** — GCOM's own order-creation paths
+  never filter by `is_active` (`findOrFail` only), so this stayed
+  unnoticed until `GET /telesales/catalog/products` (reused by GCOM,
+  which does filter) returned zero products for reasons that had nothing
+  to do with `company_id`/partner scoping.
+- ~~`GET /telesales/catalog/products`'s `stock_available` was silently
+  always `0` for GCOM stock once a warehouse had any storage location
+  configured.~~ **Fixed 2026-08-17** — see the product-picker section in
+  §14 for the full explanation (SFA vs. GCOM stock-recording convention
+  mismatch).
 - ~~`GcomDirectInvoiceService::convertOrderToInvoice()` and
   `convertDeliveryNoteToInvoice()` read `order.payment_method` (the
   Attribute accessor), which always returns `null` for a GCOM order — it
@@ -1033,6 +1091,7 @@ Still open:
 | `tests/Feature/Gcom/GcomFlexibleDocumentFlowTest.php` | BC/BL flows (#1, #3, #4, #5) — the stock-deduction-timing invariant, credit checks at BC creation, Devis→BC |
 | `tests/Feature/Gcom/GcomFlexibleDocumentControllerTest.php` | HTTP layer for BC/BL flows |
 | `tests/Feature/Gcom/GcomConsultationEndpointsTest.php` | List/show endpoints — GET /orders, /delivery-notes, /invoices, /payments, canal/partner scoping, cross-tenant 404s |
+| `tests/Feature/Gcom/GcomAdminCanUseTelesalesCatalogTest.php` | GCOM reuse of `GET /telesales/catalog/products` — partner-aware pricing, permission gate, and `stock_available` correctly found under the bare warehouse code even when a storage location exists for that warehouse |
 | `tests/Feature/Gcom/GcomCancellationAndCreditNoteTest.php` | §9 — BC/BL cancellation + restocking, full/partial avoir, the total_amount-vs-remaining_amount split (refund_amount path), HTTP layer for cancel + credit-note endpoints |
 | `tests/Feature/Gcom/GcomOrderLineCancellationTest.php` | Partial/full single-line BC cancellation, order-total recomputation, HTTP layer |
 | `tests/Feature/Gcom/GcomOrderLineUpdateTest.php` | BC line quantity increase/decrease, re-pricing, stock untouched, credit re-check on increase only, HTTP layer |
@@ -1043,13 +1102,14 @@ Still open:
 | `tests/Feature/Gcom/GcomPartnerFinanceControllerTest.php` | `GET /partners/{partner}/{financial-instruments,statement,ledger}` — instrument filtering + cross-partner isolation, statement debit/credit/balance/pending-instruments/credit-limit for cash and mixed credit+cheque scenarios, ledger entry types + running balance including a deferred règlement and an avoir |
 | `tests/Feature/Gcom/GcomDeferredChequeSettlementTest.php` | `POST /payments`'s `payment_method_id`/`instrument` fields — a deferred cheque/effet creates a `FinancialInstrument` linked via `payment_transfer_id` (not `invoice_id`), rejects a cheque with no instrument details, an explicit `payment_method_id` overrides the term's default |
 | `tests/Feature/Gcom/GcomInvoicePdfTest.php` | `GET /invoices/{invoice}/pdf` — real PDF bytes returned, correct `Content-Type`, 404 for non-GCOM invoices |
+| `tests/Feature/Gcom/GcomDocumentPdfTest.php` | `GET /orders/{order}/pdf`, `/delivery-notes/{deliveryNote}/pdf`, `/quotes/{id}/pdf` — real PDF bytes for BC/BL/Devis, 404 for non-GCOM BC/BL, 403 for someone else's Devis |
 | `tests/Feature/CompanySalesModeTest.php` | `sales_mode` GET/PUT, default value, invalid-mode rejection, permission gate |
 | `tests/Feature/Warehouse/InventoryCheckTest.php` | Generic (not GCOM-scoped) — inventaire lifecycle, included here since it shares `StockService`/`StockUpdateService` with GCOM |
 | `tests/Feature/Warehouse/PurchaseReceptionValidationTest.php` | Generic — stock reception validate/reverse, same reason |
 | `tests/Feature/MasterDataBanksTest.php` | Generic (not GCOM-scoped) — `GET /masterdata/banks`, active-only + name-ordered, feeds the `bank_id` picker `POST /gcom/payments` needs |
 | `tests/Feature/Payment/PaymentTransferMethodResolutionTest.php` | Generic (not GCOM-scoped) — `PaymentTransferService::registerPayment()`'s `payment_method_id` resolution order: term's own, cash-term auto-resolve takes priority over the partner's generic default, partner default for credit terms, and the single consistent error when nothing resolves |
 
-168 tests total across `tests/Feature/Gcom/` + `tests/Feature/Warehouse/` +
+175 tests total across `tests/Feature/Gcom/` + `tests/Feature/Warehouse/` +
 `tests/Feature/Payment/` + `tests/Feature/Partners/` +
 `tests/Feature/CompanySalesModeTest.php` passing together as of this doc —
 run all of these together when touching any GCOM shared service, since
@@ -1216,6 +1276,19 @@ Response per product:
 - This is the **same underlying pricing engine** (`PartnerProductPriceResolver`)
   every GCOM document (Devis/BC/BL/Facture) uses server-side — the price
   you show here is the price that endpoint will actually charge.
+
+**`stock_available` was silently always `0` for GCOM stock — fixed
+2026-08-17.** Real bug: this endpoint's stock lookup (shared with the SFA
+télévendeur channel) preferred a warehouse's storage-location codes over
+its own bare code whenever ANY active sellable/depot `StorageLocation` was
+configured for that warehouse — correct for SFA's own convention, but
+GCOM's stock (`StockService::deductForDirectSale()`, `GcomContextResolver`,
+and manually-entered stock) is always written under the warehouse's bare
+code, with no location granularity. If a warehouse happened to also have
+a storage location configured for an unrelated WMS reason, every product's
+real stock became invisible in this response. Now queries both the bare
+warehouse code and any location codes — no client-side change needed,
+`stock_available` just reflects real numbers now.
 
 ### Idempotency keys — how to generate them correctly
 

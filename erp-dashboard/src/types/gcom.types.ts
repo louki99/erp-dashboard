@@ -70,11 +70,11 @@ export interface GcomOrderFinancialMetadata {
 
 // Added 2026-08-16 (GET /invoices/{invoice}) — one entry per règlement applied to
 // this invoice, comptoir-immediate and deferred règlements in the same shape.
-// Verified live: this does NOT close the treasury-unification gap for pure
-// cash/card comptoir settlements — an invoice can be `fully_paid` with
-// `payments: []` (no payment_transfers row was ever created for it), while
-// cheque/effet and manually-registered règlements do appear correctly. Don't
-// treat an empty array as "not yet paid" without checking `status` first.
+// Treasury-unification gap fixed 2026-08-17 (verified live) — a comptoir
+// cash/card settlement now correctly produces a payment_transfers row, so
+// `fully_paid` invoices reliably carry a populated `payments[]`. An empty
+// array on a non-`pending` invoice should now only happen for legacy
+// pre-fix data, not the expected norm it used to be.
 export interface GcomInvoicePayment {
     payment_transfer_id: number;
     code: string;
@@ -185,6 +185,115 @@ export interface GcomCreditNote {
 export interface GcomCreditNotesListResponse {
     success: boolean;
     credit_notes: GcomCreditNote[];
+}
+
+// POST /invoices/{invoice}/credit-notes — `amount` omitted means full-amount
+// (invoice cancellation); `items` presence triggers restock of those lines.
+export interface GcomCreateCreditNotePayload {
+    amount?: number;
+    reason: string;
+    items?: { product_id: number; quantity: number }[];
+}
+
+export interface GcomCreateCreditNoteResponse {
+    success: boolean;
+    message?: string;
+    credit_note: GcomCreditNote;
+}
+
+// ─── Quotes (Devis) — see docs/modules/28-gcom.md §8 "Quotes (Devis)" ──────
+// Flow #1 (Devis → BC → Facture) and #2 (Devis → Facture Directe). `GET
+// /quotes` only ever returns the authenticated user's own quotes — there is
+// no cross-user listing on this endpoint (Quote.user_id = current user).
+
+export type GcomQuoteStatus = 'draft' | 'sent' | 'accepted' | 'expired' | 'converted';
+
+export interface GcomQuoteItem {
+    id: number;
+    product_id: number;
+    quantity: number | string;
+    unit_price_ht?: number | string;
+    // Verified live 2026-08-16: the field is `line_total_ttc`, NOT `total_price`
+    // (unlike GcomOrderProductPivot's `total_price` — quotes don't follow that
+    // naming). `price` (unit TTC) and `line_total_ht`/`line_tax_amount` also exist.
+    line_total_ttc?: number | string;
+    product?: { id: number; name: string; code?: string };
+}
+
+export interface GcomQuote {
+    id: number;
+    // Verified live 2026-08-16: the real field is `quote_number`, not `quote_code`
+    // (unlike GcomOrder's `order_code`) — don't assume GCOM documents share a
+    // naming convention across endpoints, check each one.
+    quote_number?: string;
+    status: GcomQuoteStatus;
+    sub_total?: number | string;
+    tax_amount?: number | string;
+    total_amount: number | string;
+    notes?: string | null;
+    expires_at?: string | null;
+    created_at?: string;
+    items?: GcomQuoteItem[];
+    partner?: { id: number; name: string; code?: string };
+    converted_order_id?: number | null;
+}
+
+export interface GcomCreateQuotePayload {
+    partner_id: number;
+    items: GcomItemInput[];
+    notes?: string;
+    expires_at?: string; // ISO datetime
+}
+
+export interface GcomQuoteListFilters {
+    status?: GcomQuoteStatus;
+    per_page?: number;
+    page?: number;
+}
+
+export interface GcomQuoteListResponse {
+    success: boolean;
+    quotes: GcomPaginator<GcomQuote>;
+}
+
+export interface GcomQuoteShowResponse {
+    success: boolean;
+    quote: GcomQuote;
+}
+
+export interface GcomQuoteMutationResponse {
+    success: boolean;
+    message?: string;
+    quote: GcomQuote;
+}
+
+// POST /quotes/{id}/convert — Devis → Facture Directe (flow #2). All fields
+// optional, `payment_method` defaults to "cash". `instrument` required when
+// `payment_method` is cheque/effet.
+export interface GcomConvertQuotePayload {
+    payment_method?: GcomPaymentMethod;
+    payment_term_id?: number | null;
+    instrument?: GcomInstrumentInput | null;
+}
+
+export interface GcomConvertQuoteResponse {
+    success: boolean;
+    message?: string;
+    invoice: GcomInvoice;
+    quote: GcomQuote;
+}
+
+// POST /quotes/{id}/convert-to-order — Devis → BC (flow #1, first hop).
+export interface GcomConvertQuoteToOrderPayload {
+    payment_method?: GcomPaymentMethod;
+    payment_term_id?: number | null;
+}
+
+export interface GcomConvertQuoteToOrderResponse {
+    success: boolean;
+    message?: string;
+    order: GcomOrder;
+    quote: GcomQuote;
 }
 
 // ─── Orders (BC) — see docs/modules/28-gcom.md §8 "Orders (BC)" ────────────
@@ -498,20 +607,15 @@ export interface GcomRegisterPaymentResponse {
 }
 
 // ─── Financial instruments / statement / ledger (added 2026-08-16) ─────────
-// Verified live: `/statement`'s total_credit/current_balance and `/ledger`'s
-// "payment" entries only reflect manually-registered règlements (POST
-// /payments) — NOT the "treasury unification" payment_transfers rows the
-// backend creates automatically for cash/card/cheque/effet settlements at
-// comptoir/BC/BL creation. Proof: a partner with 2 invoices both fully_paid
-// via comptoir cash, zero manual règlements, shows total_credit:0 and
-// current_balance == total_debit (i.e. reports the partner owing the full
-// invoiced amount despite already being paid). Do NOT use total_credit/
-// current_balance to show "how much does this client owe" — sum invoice
-// remaining_amount instead (verified correct). pending_instruments_total
-// IS correct (matches summing /financial-instruments directly) and
-// credit_limit is a static config value — both safe to use as-is.
-// available_credit inherits the same staleness caveat as the credit-v2
-// snapshot (same underlying engine per backend).
+// `/statement`'s total_credit/current_balance and `/ledger`'s "payment"
+// entries originally only reflected manually-registered règlements, missing
+// the "treasury unification" auto-settlements from comptoir/BC/BL cash/card/
+// cheque/effet sales — backend fixed 2026-08-17 (re-verified live: a fresh
+// comptoir cash sale now nets to a correct 0 balance immediately, and a mixed
+// paid+pending scenario across two invoices split total_debit/total_credit/
+// current_balance exactly right). Safe to use directly now — this is the
+// primary source for GCOM header/list balance figures, not a client-side
+// invoice-summing workaround.
 export type GcomInstrumentType = 'CHEQUE' | 'EFFET';
 export type GcomInstrumentStatus = 'PENDING' | 'DEPOSITED' | 'CLEARED' | 'REJECTED';
 
@@ -546,11 +650,11 @@ export interface GcomFinancialInstrumentsResponse {
 export interface GcomAccountStatement {
     partner_id: number;
     total_debit: number;
-    total_credit: number; // see caveat above — excludes auto-settled comptoir/BC/BL payments
-    current_balance: number; // see caveat above — inherits total_credit's gap
+    total_credit: number;
+    current_balance: number;
     pending_instruments_total: number;
     credit_limit: number;
-    available_credit: number; // may be stale, see caveat above
+    available_credit: number;
 }
 
 export interface GcomAccountStatementResponse {

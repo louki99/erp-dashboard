@@ -9,6 +9,7 @@ import {
   Database,
   DollarSign,
   Eye,
+  FileSignature,
   FileText,
   Globe,
   Grid3X3,
@@ -1010,6 +1011,14 @@ export const MENU_MODULES: MenuModule[] = [
         id: 'ventes',
         title: 'Ventes',
         items: [
+          {
+            id: 'gcom:devis',
+            label: 'Devis',
+            route: '/gcom/devis',
+            icon: FileSignature,
+            description: 'Devis GCOM — création, conversion en BC ou en Facture directe',
+            keywords: ['devis', 'quote', 'quotes', 'proposition'],
+          },
           {
             id: 'gcom:comptoir',
             label: 'Comptoir',
