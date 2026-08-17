@@ -13,6 +13,11 @@ import type {
     GcomCreateCreditNoteResponse,
     GcomReturnDeliveryNoteLinePayload,
     GcomReturnDeliveryNoteLineResponse,
+    GcomDeliveryNoteReturn,
+    GcomDeliveryNoteReturnsListResponse,
+    GcomInstrumentDepositPayload,
+    GcomInstrumentRejectPayload,
+    GcomFinancialInstrumentActionResponse,
     GcomQuote,
     GcomQuoteListFilters,
     GcomQuoteListResponse,
@@ -112,7 +117,9 @@ export const gcomApi = {
         },
 
         // Omitting `amount` cancels the invoice for its full amount. `items`
-        // presence triggers restock of those specific lines.
+        // presence triggers restock of those specific lines. 500 bug fixed
+        // 2026-08-18 (agency-code series resolution) — verified live, creates
+        // a real "AVR..." numbered credit note now.
         createCreditNote: async (invoiceId: number, payload: GcomCreateCreditNotePayload): Promise<GcomCreditNote> => {
             const response = await apiClient.post<GcomCreateCreditNoteResponse>(
                 `${BASE}/invoices/${invoiceId}/credit-notes`,
@@ -121,6 +128,11 @@ export const gcomApi = {
             );
             return response.data.credit_note;
         },
+
+        // Bon d'avoir — same DocumentService/documents._layout pipeline as
+        // BC/Devis/BL/Facture/bon de retour (2026-08-18).
+        getCreditNotePdfBlobUrl: (invoiceId: number, creditNoteId: number): Promise<string> =>
+            fetchPdfBlobUrl(`${BASE}/invoices/${invoiceId}/credit-notes/${creditNoteId}/pdf`),
 
         // Fixed 2026-08-17 — the invoice pdf now runs through the same
         // DocumentService/DocumentDataResolver pipeline as BC/Devis/BL (was
@@ -308,7 +320,8 @@ export const gcomApi = {
         },
 
         // CAS 1 of the returns architecture (§9bis) — partial line reduction
-        // before invoicing. 422 if already invoiced or quantity >= current.
+        // before invoicing. 422 if already invoiced, quantity >= current, or
+        // `reason` isn't one of the GcomReturnReason enum values.
         returnLine: async (deliveryNoteId: number, itemId: number, payload: GcomReturnDeliveryNoteLinePayload): Promise<GcomDeliveryNote> => {
             const response = await apiClient.post<GcomReturnDeliveryNoteLineResponse>(
                 `${BASE}/delivery-notes/${deliveryNoteId}/lines/${itemId}/return`,
@@ -317,6 +330,19 @@ export const gcomApi = {
             );
             return response.data.delivery_note;
         },
+
+        // Every CAS 1 return event recorded against this BL, newest first —
+        // 2026-08-18, closes the "no persisted return reason/history" gap.
+        listReturns: async (deliveryNoteId: number): Promise<GcomDeliveryNoteReturn[]> => {
+            const response = await apiClient.get<GcomDeliveryNoteReturnsListResponse>(`${BASE}/delivery-notes/${deliveryNoteId}/returns`);
+            return response.data.returns;
+        },
+
+        // Bon de retour — one row from listReturns() prints as one document
+        // (each return call only ever touches one line, no aggregation).
+        // Same DocumentService/documents._layout pipeline as BC/Devis/BL/Facture.
+        getReturnPdfBlobUrl: (deliveryNoteId: number, returnId: number): Promise<string> =>
+            fetchPdfBlobUrl(`${BASE}/delivery-notes/${deliveryNoteId}/returns/${returnId}/pdf`),
 
         // Default TTC if `priceMode` omitted (unchanged behavior).
         getPdfBlobUrl: (deliveryNoteId: number, priceMode?: GcomPdfPriceMode): Promise<string> =>
@@ -365,6 +391,45 @@ export const gcomApi = {
         register: async (payload: GcomRegisterPaymentPayload): Promise<GcomPayment> => {
             const response = await apiClient.post<GcomRegisterPaymentResponse>(`${BASE}/payments`, payload, idempotent());
             return response.data.payment;
+        },
+    },
+
+    // Lifecycle transitions for chèque/effet instruments (2026-08-18) — not
+    // partner-scoped, unlike partners.financialInstruments() (the list).
+    financialInstruments: {
+        // PENDING → DEPOSITED. Both fields optional (deposit_date defaults to today).
+        deposit: async (instrumentId: number, payload?: GcomInstrumentDepositPayload): Promise<GcomFinancialInstrument> => {
+            const response = await apiClient.post<GcomFinancialInstrumentActionResponse>(
+                `${BASE}/financial-instruments/${instrumentId}/deposit`,
+                payload ?? {},
+                idempotent(),
+            );
+            return response.data.financial_instrument;
+        },
+
+        // DEPOSITED → CLEARED. No body.
+        clear: async (instrumentId: number): Promise<GcomFinancialInstrument> => {
+            const response = await apiClient.post<GcomFinancialInstrumentActionResponse>(
+                `${BASE}/financial-instruments/${instrumentId}/clear`,
+                {},
+                idempotent(),
+            );
+            return response.data.financial_instrument;
+        },
+
+        // DEPOSITED → REJECTED. `reason` required. Known backend gap (not yet
+        // fixed, flagged 2026-08-18): rejecting does NOT reopen the invoice's
+        // debt — a GCOM cheque marks the invoice "paid" the moment it's
+        // registered, so a reject currently leaves the invoice showing "payée"
+        // even though the money never arrived. Surface this in the UI, don't
+        // silently imply the invoice balance is corrected.
+        reject: async (instrumentId: number, payload: GcomInstrumentRejectPayload): Promise<GcomFinancialInstrument> => {
+            const response = await apiClient.post<GcomFinancialInstrumentActionResponse>(
+                `${BASE}/financial-instruments/${instrumentId}/reject`,
+                payload,
+                idempotent(),
+            );
+            return response.data.financial_instrument;
         },
     },
 };

@@ -14,3 +14,8 @@ export const RETURN_CONDITIONS: ReturnConditionDef[] = [
     { value: 'damaged', label: 'Endommagé', hint: 'Cassé / périmé — mis de côté, jamais compté dans le stock vendable' },
     { value: 'technical', label: 'Technique / SAV', hint: 'Expertise à faire — mis en quarantaine, jamais compté dans le stock vendable' },
 ];
+
+export const RETURN_CONDITION_LABEL: Record<GcomReturnCondition, string> = RETURN_CONDITIONS.reduce(
+    (acc, c) => ({ ...acc, [c.value]: c.label }),
+    {} as Record<GcomReturnCondition, string>,
+);

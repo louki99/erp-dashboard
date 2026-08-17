@@ -293,6 +293,21 @@ export default function FacturesPage() {
         }
     };
 
+    // Bon d'avoir — one PDF per credit note (2026-08-18).
+    const [avoirPdfLoadingId, setAvoirPdfLoadingId] = useState<number | null>(null);
+    const openAvoirPdf = async (creditNoteId: number) => {
+        if (!selected) return;
+        setAvoirPdfLoadingId(creditNoteId);
+        try {
+            const url = await gcomApi.invoices.getCreditNotePdfBlobUrl(selected.id, creditNoteId);
+            window.open(url, '_blank');
+        } catch {
+            toast.error("Impossible de charger le PDF de l'avoir");
+        } finally {
+            setAvoirPdfLoadingId(null);
+        }
+    };
+
     // ── PDF ───────────────────────────────────────────────────────────────────
     // Same HT/TTC print modal as BC/Devis/BL — price_mode genuinely works here
     // now (fixed 2026-08-17: the invoice pdf runs through the same
@@ -756,7 +771,7 @@ export default function FacturesPage() {
                                                         <div key={cn.id} className="flex items-center justify-between px-3 py-2.5 bg-white">
                                                             <div className="min-w-0">
                                                                 <div className="flex items-center gap-2">
-                                                                    <span className="text-xs font-semibold text-gray-900">Avoir #{cn.id}</span>
+                                                                    <span className="text-xs font-semibold text-gray-900">{cn.credit_note_number ?? `Avoir #${cn.id}`}</span>
                                                                     <span className={`inline-flex items-center gap-1 text-[10px] font-medium ${meta.text}`}>
                                                                         <span className={`w-1.5 h-1.5 rounded-full ${meta.dot}`} />
                                                                         {meta.label}
@@ -764,11 +779,21 @@ export default function FacturesPage() {
                                                                 </div>
                                                                 {cn.reason && <p className="text-[10px] text-gray-400 truncate mt-0.5">{cn.reason}</p>}
                                                             </div>
-                                                            <div className="text-right shrink-0 ml-3">
-                                                                <p className="text-xs font-bold text-gray-900">{fmtMAD(cn.total_amount)}</p>
-                                                                {Number(cn.refund_amount) > 0 && (
-                                                                    <p className="text-[10px] text-amber-600">dont {fmtMAD(cn.refund_amount)} à rembourser</p>
-                                                                )}
+                                                            <div className="flex items-center gap-3 shrink-0 ml-3">
+                                                                <div className="text-right">
+                                                                    <p className="text-xs font-bold text-gray-900">{fmtMAD(cn.total_amount)}</p>
+                                                                    {Number(cn.refund_amount) > 0 && (
+                                                                        <p className="text-[10px] text-amber-600">dont {fmtMAD(cn.refund_amount)} à rembourser</p>
+                                                                    )}
+                                                                </div>
+                                                                <button
+                                                                    onClick={() => openAvoirPdf(cn.id)}
+                                                                    disabled={avoirPdfLoadingId === cn.id}
+                                                                    title="Avoir PDF"
+                                                                    className="text-gray-400 hover:text-sage-600 disabled:opacity-50"
+                                                                >
+                                                                    {avoirPdfLoadingId === cn.id ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Download className="w-3.5 h-3.5" />}
+                                                                </button>
                                                             </div>
                                                         </div>
                                                     );

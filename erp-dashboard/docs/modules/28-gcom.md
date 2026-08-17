@@ -521,18 +521,38 @@ immediately. Body: `{ "reason": "..." }` (required, max 255 chars).
 2026-08-18, see §9bis (CAS 1 of the returns architecture). `{item}` is the
 `DeliveryNoteItem` row id (`delivery_note.items[].id`).
 ```json
-{ "quantity": 3, "reason": "Client a refusé 3 unités", "condition": "damaged" }
+{ "quantity": 3, "reason": "DAMAGED", "condition": "damaged" }
 ```
 `condition` — `sellable` (default) | `damaged` | `technical` — see §9bis
-for exactly where each one lands. `quantity` must be strictly less than
-the line's current quantity (returning the whole line/BL isn't this
-endpoint's job — use `cancel` above for that, only possible before
-invoicing either way). Restocks immediately and recomputes the BL's
-`total_amount`; no separate step needed to bill the net quantity —
-`convert-to-invoice` already reads the line's live quantity.
+for exactly where each one lands. `reason` — **2026-08-18, was free text,
+now one of**: `DEFECTIVE`, `DAMAGED`, `WRONG_ITEM`, `CHANGE_MIND`,
+`NOT_AS_DESCRIBED`, `EXPIRED`, `CUSTOMER_REQUEST`, `DUPLICATE_ORDER`,
+`OTHER` (the same `App\Enums\ReturnReason` `credit_note_items` already
+uses) — breaking change, `422` for anything else now. `quantity` must be
+strictly less than the line's current quantity (returning the whole
+line/BL isn't this endpoint's job — use `cancel` above for that, only
+possible before invoicing either way). Restocks immediately and
+recomputes the BL's `total_amount`; no separate step needed to bill the
+net quantity — `convert-to-invoice` already reads the line's live
+quantity. Each call is now also persisted as its own row (see below) —
+previously `reason`/`condition` only ended up as freeform text buried in
+`StockMovement.notes`, unreachable from any GET.
 → `200`, `{ "success": true, "message": "Delivery note line reduced", "delivery_note": {...} }`
-→ `422` if the BL is already invoiced, or `quantity` is ≥ the line's
-current quantity.
+→ `422` if the BL is already invoiced, `quantity` is ≥ the line's current
+quantity, or `reason` isn't one of the values above.
+
+**`GET /delivery-notes/{deliveryNote}/returns`** — 2026-08-18. Every CAS 1
+return event recorded against this BL (any line), newest first.
+→ `{ "success": true, "returns": [{ "id": 7, "delivery_note_item_id": 12, "product": {"code": "P001", "name": "..."}, "quantity": "3.000", "condition": "damaged", "reason": "DAMAGED", "stock_location": "GCB01-DAMAGED", "returned_by": {"id": 3, "name": "..."}, "returned_at": "2026-08-18T10:30:00.000000Z" }] }`
+
+**`GET /delivery-notes/{deliveryNote}/returns/{return}/pdf`** — 2026-08-18,
+bon de retour. `{return}` is a row id from the list above (each `return`
+call already touches exactly one product/line, so one row prints cleanly
+as one document — no aggregation across multiple return events). Same
+generic pipeline as BC/Devis/BL/Facture (`App\Services\DocumentService`,
+type `return`), same design family (logo, info boxes, line table,
+signature block). `?download=1` for an attachment. `404` if `{return}`
+doesn't belong to `{deliveryNote}` or the BL isn't a GCOM one.
 
 ### Direct Invoice (Facture Directe / Comptoir)
 
@@ -582,8 +602,25 @@ plus two attached fields (2026-08-15, real gap reported by the UI team):
   transfer.
 
 **`GET /invoices/{invoice}/pdf`** — streams the invoice PDF
-(`Content-Type: application/pdf`, `Content-Disposition: attachment`).
-Same renderer used everywhere else in the ERP — no GCOM-specific layout.
+(`Content-Type: application/pdf`). Migrated 2026-08-18 onto the same
+`DocumentService`/`documents._layout` pipeline BC/Devis/BL already use
+(was `InvoiceDocumentService`/`documents.invoice_v1` — same plainer
+template still used, untouched, by `Backend\OrderController` and POS).
+Two real gaps this closed, both reported by the UI team after wiring a
+shared "Imprimer" (HT/TTC) button across all 4 GCOM screens:
+
+- `?price_mode=ht|ttc` — line-item prices HT or TTC. **Defaults to TTC**
+  if omitted (this endpoint's own pre-existing convention — unlike BC/Devis,
+  which default to HT), so existing callers see no behavior change.
+- `?download=1` — attachment instead of inline (same query param BC/Devis/BL
+  already use).
+- Visual design now matches BC/Devis/BL exactly (logo, status badge,
+  detailed CODE/DÉSIGNATION/UNITÉ/QTÉ/P.U./REM./MONTANT/TVA table, seller/
+  client info boxes incl. a payment box with due date + mode, a
+  payé/reste-à-payer breakdown when the invoice isn't fully settled,
+  signature grid, legal footer) — no longer the older, sparser
+  `invoice_v1` layout.
+
 Not a JSON endpoint: point a browser `<a href>`/download button directly
 at this URL (with the auth header), don't run it through your normal JSON
 fetch wrapper.
@@ -864,6 +901,30 @@ returned quantity must be less than the line's current quantity — to
 return an entire line/the whole BL, use the existing whole-BL
 cancellation instead (only possible before invoicing either way).
 
+**Persistence + printable bon de retour (2026-08-18)** — real gap
+reported by the UI team: `reason`/`condition` reached `StockService::
+restockForReturn()` from the start, but only ended up baked into
+`StockMovement.notes` as freeform text — unreachable from any GET, and
+unable to represent more than one return event on the same line (a line
+can be returned more than once). Each `reduceLineQuantity()` call now
+also writes a `DeliveryNoteReturn` row (`delivery_note_id`,
+`delivery_note_item_id`, `product_id`, `quantity`, `condition`, `reason`
+— the `ReturnReason` enum, see below — `stock_location`, `returned_by`,
+`returned_at`), exposed via `GET /delivery-notes/{deliveryNote}/returns`
+and printable one-per-row via
+`GET /delivery-notes/{deliveryNote}/returns/{return}/pdf` (see §8) —
+same `DocumentService`/`documents._layout` pipeline as BC/Devis/BL/
+Facture. `reason` moved from free text to the same `App\Enums\
+ReturnReason` enum `credit_note_items.return_reason` already declares
+(`DEFECTIVE`, `DAMAGED`, `WRONG_ITEM`, `CHANGE_MIND`,
+`NOT_AS_DESCRIBED`, `EXPIRED`, `CUSTOMER_REQUEST`, `DUPLICATE_ORDER`,
+`OTHER`) — a breaking validation change, done for consistency across
+return paths rather than leave CAS 1 as the one arbitrary-text outlier.
+Note this doesn't yet extend to CAS 2/3: `GcomCreditNoteService` still
+never populates `CreditNoteItem.return_reason` either (a pre-existing,
+separate gap — flagged, not fixed here, since it wasn't part of what was
+reported).
+
 **CAS 2 — return after invoicing (avoir + restock).** Already covered
 above — `POST /invoices/{id}/credit-notes` with `items` present.
 
@@ -1072,11 +1133,29 @@ history is traceable rather than silently vanishing from the doc):
   bordered totals box, dashed notes block, two-column signature grid with
   "Signature & Cachet" lines, legal footer with Capital social/RC/IF/ICE,
   watermark support) are considerably more polished than the invoice's own
-  `documents.invoice_v1` template — worth considering migrating the
+  `documents.invoice_v1` template — ~~worth considering migrating the
   invoice PDF onto the same `documents._layout` family for visual
   consistency across the whole GCOM document set, but that's a separate,
   deliberately-not-done-here change (the invoice PDF already works and
-  wasn't reported broken).
+  wasn't reported broken)~~. **Done — see below.**
+- ~~`price_mode` had no effect on the invoice PDF (BC/Devis/BL got the
+  toggle, the invoice didn't), and the invoice PDF's design didn't match
+  BC/Devis/BL (older, plainer `documents.invoice_v1` template — no logo,
+  no detailed line table, no signature block).~~ **Built 2026-08-18** —
+  real gaps reported by the UI team (evidence: a `pdftotext` diff across 3
+  live invoices proving `price_mode` was a total no-op, and a side-by-side
+  text-extract comparison against a BC for the same client/product showing
+  the layout gap) while wiring a shared "Imprimer" (HT/TTC) button across
+  all 4 GCOM screens. Both closed in one move: `GcomInvoiceController::
+  pdf()` now calls the same `DocumentService`/`DocumentDataResolver`
+  pipeline as BC/Devis/BL (type `'invoice'`) instead of the older
+  `InvoiceDocumentService` — new `DocumentDataResolver::resolveInvoice()`
+  + `documents/invoice.blade.php` (extends `documents._layout`, same as
+  the other three). `InvoiceDocumentService` itself is untouched —
+  `Backend\OrderController` and `POS\PosOrderController` still depend on
+  it and neither was reported broken. `price_mode` defaults to `ttc`
+  (this endpoint's own pre-existing convention) when omitted, so no
+  existing caller's output changes unless it opts in.
 - ~~No way to print a document HT or TTC — some clients need the
   tax-excluded figure for their own accounting, others need the final
   tax-included one.~~ **Built 2026-08-17** — `?price_mode=ht|ttc` on all
@@ -1164,6 +1243,19 @@ history is traceable rather than silently vanishing from the doc):
   doc). Still only granted to `root`/`admin` by the seeder; create and
   grant a narrower role when real GCOM back-office users need it (§14 has
   the exact API calls to do this).
+- ~~No printable document for a CAS 1 partial return (bon de retour) —
+  BC/Devis/BL/Facture all had PDFs, a physical return had none, and
+  nothing about the return (reason/condition/date) was persisted anywhere
+  queryable, only buried as freeform text in `StockMovement.notes`.~~
+  **Built 2026-08-18** — real gap reported by the UI team while wiring
+  the CAS 1 return flow, who correctly noted §9bis's design choice (no
+  dedicated `BonRetour` entity, `CreditNote`+`StockMovement` as the system
+  of record) doesn't by itself give a physical return anything to sign —
+  see §9bis and §8 for the full design (new `DeliveryNoteReturn` event
+  table + `GET .../returns` + `GET .../returns/{return}/pdf`, `reason`
+  moved to the shared `ReturnReason` enum). Deliberately still no
+  dedicated entity/workflow — this only adds a queryable record + a
+  printable view of data that already existed in principle.
 
 Still open:
 
@@ -1214,7 +1306,7 @@ Still open:
 | `tests/Feature/Gcom/GcomConsultationEndpointsTest.php` | List/show endpoints — GET /orders, /delivery-notes, /invoices, /payments, canal/partner scoping, cross-tenant 404s |
 | `tests/Feature/Gcom/GcomAdminCanUseTelesalesCatalogTest.php` | GCOM reuse of `GET /telesales/catalog/products` — partner-aware pricing, permission gate, and `stock_available` correctly found under the bare warehouse code even when a storage location exists for that warehouse |
 | `tests/Feature/Gcom/GcomCancellationAndCreditNoteTest.php` | §9 — BC/BL cancellation + restocking, full/partial avoir, the total_amount-vs-remaining_amount split (refund_amount path), HTTP layer for cancel + credit-note endpoints |
-| `tests/Feature/Gcom/GcomReturnsConditionTest.php` | §9bis — CAS 1 (BL partial return pre-invoice, net billing on convert), condition routing (sellable/damaged/technical → available/DAMAGED/QUARANTINE) shared by BL returns and credit-note restocks, guards (already invoiced, whole-line removal rejected), `CreditNoteItem.is_scrap`/`stock_location`, HTTP layer |
+| `tests/Feature/Gcom/GcomReturnsConditionTest.php` | §9bis — CAS 1 (BL partial return pre-invoice, net billing on convert), condition routing (sellable/damaged/technical → available/DAMAGED/QUARANTINE) shared by BL returns and credit-note restocks, guards (already invoiced, whole-line removal rejected, invalid `reason`), `CreditNoteItem.is_scrap`/`stock_location`, `DeliveryNoteReturn` persistence + `GET .../returns` + bon de retour PDF + cross-BL 404 (2026-08-18), HTTP layer |
 | `tests/Feature/Gcom/GcomOrderLineCancellationTest.php` | Partial/full single-line BC cancellation, order-total recomputation, HTTP layer |
 | `tests/Feature/Gcom/GcomOrderLineUpdateTest.php` | BC line quantity increase/decrease, re-pricing, stock untouched, credit re-check on increase only, HTTP layer |
 | `tests/Feature/Gcom/GcomOrderLineAdditionTest.php` | Adding a new product line to an existing BC, rejects duplicate product, stock untouched, credit re-check, HTTP layer |
@@ -1223,7 +1315,7 @@ Still open:
 | `tests/Feature/Gcom/GcomInvoiceDetailPaymentInfoTest.php` | `GET /invoices/{invoice}`'s `payments`/`financial_instrument` fields — cash/cheque comptoir, empty for an unsettled credit invoice, populated once a deferred règlement lands |
 | `tests/Feature/Gcom/GcomPartnerFinanceControllerTest.php` | `GET /partners/{partner}/{financial-instruments,statement,ledger}` — instrument filtering + cross-partner isolation, statement debit/credit/balance/pending-instruments/credit-limit for cash and mixed credit+cheque scenarios, ledger entry types + running balance including a deferred règlement and an avoir |
 | `tests/Feature/Gcom/GcomDeferredChequeSettlementTest.php` | `POST /payments`'s `payment_method_id`/`instrument` fields — a deferred cheque/effet creates a `FinancialInstrument` linked via `payment_transfer_id` (not `invoice_id`), rejects a cheque with no instrument details, an explicit `payment_method_id` overrides the term's default |
-| `tests/Feature/Gcom/GcomInvoicePdfTest.php` | `GET /invoices/{invoice}/pdf` — real PDF bytes returned, correct `Content-Type`, 404 for non-GCOM invoices |
+| `tests/Feature/Gcom/GcomInvoicePdfTest.php` | `GET /invoices/{invoice}/pdf` — real PDF bytes returned, correct `Content-Type`, 404 for non-GCOM invoices, HT vs. TTC renders differ and cache separately (2026-08-18, migration onto the BC/Devis/BL pipeline) |
 | `tests/Feature/Gcom/GcomDocumentPdfTest.php` | `GET /orders/{order}/pdf`, `/delivery-notes/{deliveryNote}/pdf`, `/quotes/{id}/pdf` — real PDF bytes for BC/BL/Devis, 404 for non-GCOM BC/BL, 403 for someone else's Devis, HT vs. TTC renders differ and cache separately |
 | `tests/Feature/CompanySalesModeTest.php` | `sales_mode` GET/PUT, default value, invalid-mode rejection, permission gate |
 | `tests/Feature/Warehouse/InventoryCheckTest.php` | Generic (not GCOM-scoped) — inventaire lifecycle, included here since it shares `StockService`/`StockUpdateService` with GCOM |
@@ -1231,7 +1323,7 @@ Still open:
 | `tests/Feature/MasterDataBanksTest.php` | Generic (not GCOM-scoped) — `GET /masterdata/banks`, active-only + name-ordered, feeds the `bank_id` picker `POST /gcom/payments` needs |
 | `tests/Feature/Payment/PaymentTransferMethodResolutionTest.php` | Generic (not GCOM-scoped) — `PaymentTransferService::registerPayment()`'s `payment_method_id` resolution order: term's own, cash-term auto-resolve takes priority over the partner's generic default, partner default for credit terms, and the single consistent error when nothing resolves |
 
-184 tests total across `tests/Feature/Gcom/` + `tests/Feature/Warehouse/` +
+188 tests total across `tests/Feature/Gcom/` + `tests/Feature/Warehouse/` +
 `tests/Feature/Payment/` + `tests/Feature/Partners/` +
 `tests/Feature/CompanySalesModeTest.php` passing together as of this doc —
 run all of these together when touching any GCOM shared service, since

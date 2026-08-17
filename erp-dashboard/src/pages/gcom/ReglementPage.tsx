@@ -4,6 +4,7 @@ import type { AgGridReact } from 'ag-grid-react';
 import {
     Landmark, Search, X, Loader2, RefreshCw, Plus,
     Building2, FileText, Wallet, History, TrendingUp, TrendingDown, Scale,
+    Upload, CheckCircle2, Ban, AlertTriangle, Lock,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 
@@ -221,6 +222,7 @@ export default function ReglementPage() {
     const [loadingInvoices, setLoadingInvoices] = useState(false);
     const [instruments, setInstruments] = useState<GcomFinancialInstrument[]>([]);
     const [loadingInstruments, setLoadingInstruments] = useState(false);
+    const [instrumentStatusFilter, setInstrumentStatusFilter] = useState<'all' | GcomInstrumentStatus>('all');
     const [payments, setPayments] = useState<GcomPayment[]>([]);
     const [loadingPayments, setLoadingPayments] = useState(false);
     const [ledger, setLedger] = useState<GcomLedgerEntry[]>([]);
@@ -241,10 +243,13 @@ export default function ReglementPage() {
         }
     }, []);
 
+    // No status filter here — the tab now needs every lifecycle stage visible
+    // (PENDING/DEPOSITED get actions, CLEARED/REJECTED are read-only history).
+    // The "Encours" KPI below filters this same list down to PENDING itself.
     const loadInstruments = useCallback(async (partnerId: number) => {
         setLoadingInstruments(true);
         try {
-            const res = await gcomApi.partners.financialInstruments(partnerId, { status: 'PENDING', per_page: 100 });
+            const res = await gcomApi.partners.financialInstruments(partnerId, { per_page: 100 });
             setInstruments(res.data);
         } catch {
             setInstruments([]);
@@ -303,9 +308,88 @@ export default function ReglementPage() {
     // summed from the same list rendered in the "Chèques & Effets" tab so the
     // header figure and the tab always agree.
     const pendingInstrumentsTotal = useMemo(
-        () => instruments.reduce((sum, i) => sum + (Number(i.amount) || 0), 0),
+        () => instruments.filter(i => i.status === 'PENDING').reduce((sum, i) => sum + (Number(i.amount) || 0), 0),
         [instruments],
     );
+
+    const displayedInstruments = useMemo(
+        () => instrumentStatusFilter === 'all' ? instruments : instruments.filter(i => i.status === instrumentStatusFilter),
+        [instruments, instrumentStatusFilter],
+    );
+
+    // ── Chèque/effet lifecycle actions (2026-08-18) ──────────────────────────
+    const [depositTarget, setDepositTarget] = useState<GcomFinancialInstrument | null>(null);
+    const [depositDate, setDepositDate] = useState('');
+    const [depositReference, setDepositReference] = useState('');
+    const [depositing, setDepositing] = useState(false);
+
+    const openDeposit = (fi: GcomFinancialInstrument) => {
+        setDepositTarget(fi);
+        setDepositDate(new Date().toISOString().slice(0, 10));
+        setDepositReference('');
+    };
+    const closeDeposit = () => setDepositTarget(null);
+
+    const confirmDeposit = async () => {
+        if (!depositTarget) return;
+        setDepositing(true);
+        try {
+            await gcomApi.financialInstruments.deposit(depositTarget.id, {
+                deposit_date: depositDate || undefined,
+                deposit_reference: depositReference.trim() || undefined,
+            });
+            toast.success('Instrument remis en banque');
+            setDepositTarget(null);
+            refresh();
+        } catch (err: unknown) {
+            const msg = (err as { response?: { data?: { message?: string } } })?.response?.data?.message;
+            toast.error(msg ?? 'Erreur lors de la remise en banque');
+        } finally {
+            setDepositing(false);
+        }
+    };
+
+    const [clearTarget, setClearTarget] = useState<GcomFinancialInstrument | null>(null);
+    const [clearing, setClearing] = useState(false);
+
+    const confirmClear = async () => {
+        if (!clearTarget) return;
+        setClearing(true);
+        try {
+            await gcomApi.financialInstruments.clear(clearTarget.id);
+            toast.success('Instrument encaissé');
+            setClearTarget(null);
+            refresh();
+        } catch (err: unknown) {
+            const msg = (err as { response?: { data?: { message?: string } } })?.response?.data?.message;
+            toast.error(msg ?? "Erreur lors de l'encaissement");
+        } finally {
+            setClearing(false);
+        }
+    };
+
+    const [rejectTarget, setRejectTarget] = useState<GcomFinancialInstrument | null>(null);
+    const [rejectReason, setRejectReason] = useState('');
+    const [rejecting, setRejecting] = useState(false);
+
+    const openReject = (fi: GcomFinancialInstrument) => { setRejectTarget(fi); setRejectReason(''); };
+    const closeReject = () => setRejectTarget(null);
+
+    const confirmReject = async () => {
+        if (!rejectTarget || !rejectReason.trim()) { toast.error('Motif requis'); return; }
+        setRejecting(true);
+        try {
+            await gcomApi.financialInstruments.reject(rejectTarget.id, { reason: rejectReason.trim() });
+            toast.success('Instrument déclaré impayé');
+            setRejectTarget(null);
+            refresh();
+        } catch (err: unknown) {
+            const msg = (err as { response?: { data?: { message?: string } } })?.response?.data?.message;
+            toast.error(msg ?? 'Erreur lors du rejet');
+        } finally {
+            setRejecting(false);
+        }
+    };
 
     const selectPartner = (p: Partner) => {
         setSelectedPartner(p);
@@ -408,6 +492,47 @@ export default function ReglementPage() {
             field: 'status', headerName: 'Statut', width: 120, filter: 'agSetColumnFilter',
             cellRenderer: (p: ICellRendererParams<GcomFinancialInstrument>) => p.data ? <InstrumentStatusBadge status={p.data.status} /> : null,
         },
+        {
+            colId: 'actions', headerName: 'Actions', width: 220, sortable: false, filter: false, pinned: 'right',
+            cellRenderer: (p: ICellRendererParams<GcomFinancialInstrument>) => {
+                if (!p.data) return null;
+                const fi = p.data;
+                if (fi.status === 'PENDING') {
+                    return (
+                        <button
+                            onClick={() => openDeposit(fi)}
+                            className="flex items-center gap-1 px-2 py-1 text-[10px] font-semibold text-blue-700 bg-blue-50 border border-blue-200 rounded-md hover:bg-blue-100 transition-colors"
+                        >
+                            <Upload className="w-3 h-3" /> Déposer en banque
+                        </button>
+                    );
+                }
+                if (fi.status === 'DEPOSITED') {
+                    return (
+                        <div className="flex items-center gap-1.5">
+                            <button
+                                onClick={() => setClearTarget(fi)}
+                                className="flex items-center gap-1 px-2 py-1 text-[10px] font-semibold text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-md hover:bg-emerald-100 transition-colors"
+                            >
+                                <CheckCircle2 className="w-3 h-3" /> Encaisser
+                            </button>
+                            <button
+                                onClick={() => openReject(fi)}
+                                className="flex items-center gap-1 px-2 py-1 text-[10px] font-semibold text-red-700 bg-red-50 border border-red-200 rounded-md hover:bg-red-100 transition-colors"
+                            >
+                                <Ban className="w-3 h-3" /> Rejeter
+                            </button>
+                        </div>
+                    );
+                }
+                // CLEARED / REJECTED — terminal states, read-only.
+                return (
+                    <span className="flex items-center gap-1 text-[10px] text-gray-400" title="État terminal">
+                        <Lock className="w-3 h-3" /> —
+                    </span>
+                );
+            },
+        },
     ], []);
 
     const paymentsColumnDefs = useMemo<import('ag-grid-community').ColDef[]>(() => [
@@ -470,6 +595,7 @@ export default function ReglementPage() {
     // ─────────────────────────────────────────────────────────────────────────
 
     return (
+        <>
         <MasterLayout
             leftContent={
                 <div className="h-full bg-white border-r border-gray-200 flex flex-col overflow-hidden">
@@ -610,8 +736,29 @@ export default function ReglementPage() {
                                 )}
 
                                 {activeTab === 'instruments' && (
-                                    <div className="flex-1 min-h-0">
-                                        <DataGrid rowData={instruments} columnDefs={instrumentsColumnDefs} loading={loadingInstruments} pagination paginationPageSize={20} />
+                                    <div className="flex-1 min-h-0 flex flex-col">
+                                        <div className="flex flex-wrap gap-1 mb-3 shrink-0">
+                                            {([
+                                                { value: 'all', label: 'Tous' },
+                                                { value: 'PENDING', label: 'En attente' },
+                                                { value: 'DEPOSITED', label: 'Déposé' },
+                                                { value: 'CLEARED', label: 'Encaissé' },
+                                                { value: 'REJECTED', label: 'Rejeté' },
+                                            ] as const).map(f => (
+                                                <button
+                                                    key={f.value}
+                                                    onClick={() => setInstrumentStatusFilter(f.value)}
+                                                    className={`px-2.5 py-1 text-[11px] font-medium rounded-md border transition-colors ${
+                                                        instrumentStatusFilter === f.value ? 'bg-sage-600 border-sage-600 text-white' : 'bg-white border-gray-200 text-gray-500 hover:bg-gray-50'
+                                                    }`}
+                                                >
+                                                    {f.label}
+                                                </button>
+                                            ))}
+                                        </div>
+                                        <div className="flex-1 min-h-0">
+                                            <DataGrid rowData={displayedInstruments} columnDefs={instrumentsColumnDefs} loading={loadingInstruments} pagination paginationPageSize={20} />
+                                        </div>
                                     </div>
                                 )}
 
@@ -644,5 +791,129 @@ export default function ReglementPage() {
 
             rightContent={<ActionPanel groups={actionGroups} />}
         />
+
+        {/* ── Déposer en banque ────────────────────────────────────────────── */}
+        {depositTarget && (
+            <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm">
+                <div className="bg-white rounded-2xl shadow-2xl p-6 max-w-sm w-full mx-4">
+                    <div className="flex items-center gap-3 mb-3">
+                        <div className="w-9 h-9 rounded-full bg-blue-100 flex items-center justify-center">
+                            <Upload className="w-4 h-4 text-blue-600" />
+                        </div>
+                        <h3 className="text-base font-semibold text-gray-900">Déposer en banque</h3>
+                    </div>
+                    <p className="text-sm text-gray-600 mb-3">
+                        <strong>{depositTarget.instrument_type} {depositTarget.reference_number}</strong> — {fmtMAD(depositTarget.amount)}
+                    </p>
+                    <div className="mb-3">
+                        <label className="block text-xs font-medium text-gray-600 mb-1">Date de remise</label>
+                        <input
+                            type="date"
+                            value={depositDate}
+                            onChange={e => setDepositDate(e.target.value)}
+                            className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-sage-400"
+                        />
+                    </div>
+                    <div className="mb-5">
+                        <label className="block text-xs font-medium text-gray-600 mb-1">N° Bordereau (optionnel)</label>
+                        <input
+                            value={depositReference}
+                            onChange={e => setDepositReference(e.target.value)}
+                            placeholder="BORD-2026-001"
+                            className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-sage-400"
+                        />
+                    </div>
+                    <div className="flex gap-3">
+                        <button
+                            onClick={confirmDeposit}
+                            disabled={depositing}
+                            className="flex-1 flex items-center justify-center gap-2 py-2 bg-sage-600 text-white text-sm font-medium rounded-lg hover:bg-sage-700 disabled:opacity-50 transition-colors"
+                        >
+                            {depositing ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Upload className="w-3.5 h-3.5" />}
+                            Confirmer
+                        </button>
+                        <button onClick={closeDeposit} disabled={depositing} className="flex-1 py-2 border border-gray-200 text-sm text-gray-600 rounded-lg hover:bg-gray-50 disabled:opacity-50 transition-colors">
+                            Annuler
+                        </button>
+                    </div>
+                </div>
+            </div>
+        )}
+
+        {/* ── Encaisser ────────────────────────────────────────────────────── */}
+        {clearTarget && (
+            <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm">
+                <div className="bg-white rounded-2xl shadow-2xl p-6 max-w-sm w-full mx-4">
+                    <div className="flex items-center gap-3 mb-3">
+                        <div className="w-9 h-9 rounded-full bg-emerald-100 flex items-center justify-center">
+                            <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+                        </div>
+                        <h3 className="text-base font-semibold text-gray-900">Confirmer l'encaissement</h3>
+                    </div>
+                    <p className="text-sm text-gray-600 mb-5">
+                        <strong>{clearTarget.instrument_type} {clearTarget.reference_number}</strong> — {fmtMAD(clearTarget.amount)} — le fonds a bien été crédité en banque ?
+                    </p>
+                    <div className="flex gap-3">
+                        <button
+                            onClick={confirmClear}
+                            disabled={clearing}
+                            className="flex-1 flex items-center justify-center gap-2 py-2 bg-sage-600 text-white text-sm font-medium rounded-lg hover:bg-sage-700 disabled:opacity-50 transition-colors"
+                        >
+                            {clearing ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <CheckCircle2 className="w-3.5 h-3.5" />}
+                            Confirmer
+                        </button>
+                        <button onClick={() => setClearTarget(null)} disabled={clearing} className="flex-1 py-2 border border-gray-200 text-sm text-gray-600 rounded-lg hover:bg-gray-50 disabled:opacity-50 transition-colors">
+                            Annuler
+                        </button>
+                    </div>
+                </div>
+            </div>
+        )}
+
+        {/* ── Rejeter ──────────────────────────────────────────────────────── */}
+        {rejectTarget && (
+            <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm">
+                <div className="bg-white rounded-2xl shadow-2xl p-6 max-w-sm w-full mx-4">
+                    <div className="flex items-center gap-3 mb-3">
+                        <div className="w-9 h-9 rounded-full bg-red-100 flex items-center justify-center">
+                            <Ban className="w-4 h-4 text-red-600" />
+                        </div>
+                        <h3 className="text-base font-semibold text-gray-900">Rejeter</h3>
+                    </div>
+                    <p className="text-sm text-gray-600 mb-3">
+                        <strong>{rejectTarget.instrument_type} {rejectTarget.reference_number}</strong> — {fmtMAD(rejectTarget.amount)}
+                    </p>
+                    <div className="flex items-start gap-2 text-[11px] text-amber-700 bg-amber-50 border border-amber-100 rounded-lg px-2.5 py-2 mb-3">
+                        <AlertTriangle className="w-3.5 h-3.5 shrink-0 mt-0.5" />
+                        Le rejet ne rouvre pas automatiquement la dette de la facture liée — c'est une limite connue, pas encore corrigée côté backend. Pensez à vérifier/ajuster le solde de la facture manuellement si besoin.
+                    </div>
+                    <div className="mb-5">
+                        <label className="block text-xs font-medium text-gray-600 mb-1">Motif *</label>
+                        <textarea
+                            value={rejectReason}
+                            onChange={e => setRejectReason(e.target.value)}
+                            rows={2}
+                            maxLength={255}
+                            className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-sage-400 resize-none"
+                            placeholder="Provision insuffisante…"
+                        />
+                    </div>
+                    <div className="flex gap-3">
+                        <button
+                            onClick={confirmReject}
+                            disabled={rejecting || !rejectReason.trim()}
+                            className="flex-1 flex items-center justify-center gap-2 py-2 bg-red-600 text-white text-sm font-medium rounded-lg hover:bg-red-700 disabled:opacity-50 transition-colors"
+                        >
+                            {rejecting ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Ban className="w-3.5 h-3.5" />}
+                            Confirmer
+                        </button>
+                        <button onClick={closeReject} disabled={rejecting} className="flex-1 py-2 border border-gray-200 text-sm text-gray-600 rounded-lg hover:bg-gray-50 disabled:opacity-50 transition-colors">
+                            Annuler
+                        </button>
+                    </div>
+                </div>
+            </div>
+        )}
+        </>
     );
 }

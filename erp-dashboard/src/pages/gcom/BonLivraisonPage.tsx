@@ -19,10 +19,11 @@ import { PdfPriceModeModal } from '@/components/gcom/PdfPriceModeModal';
 
 import { gcomApi } from '@/services/api/gcomApi';
 import { getPartners } from '@/services/api/partnerApi';
-import { RETURN_CONDITIONS } from '@/lib/gcom/returnConditions';
+import { RETURN_CONDITIONS, RETURN_CONDITION_LABEL } from '@/lib/gcom/returnConditions';
+import { RETURN_REASONS, RETURN_REASON_LABEL } from '@/lib/gcom/returnReasons';
 import type { Partner } from '@/types/partner.types';
 import type {
-    GcomDeliveryNote, GcomDeliveryNoteItem, GcomBlStatus, GcomInstrumentInput, GcomPdfPriceMode, GcomReturnCondition,
+    GcomDeliveryNote, GcomDeliveryNoteItem, GcomBlStatus, GcomInstrumentInput, GcomPdfPriceMode, GcomReturnCondition, GcomReturnReason, GcomDeliveryNoteReturn,
 } from '@/types/gcom.types';
 
 // ─── helpers ─────────────────────────────────────────────────────────────────
@@ -66,6 +67,7 @@ const StatusBadge = ({ status }: { status: GcomBlStatus }) => {
 const TABS: TabItem[] = [
     { id: 'informations', label: 'Informations', icon: Info },
     { id: 'lignes', label: 'Lignes', icon: Package },
+    { id: 'retours', label: 'Retours', icon: RotateCcw },
 ];
 
 const PAGE_SIZE = 30;
@@ -141,7 +143,7 @@ export default function BonLivraisonPage() {
     const [detailLoading, setDetailLoading] = useState(false);
 
     const [activeTab, setActiveTab] = useState('informations');
-    const [openSections, setOpenSections] = useState<Record<string, boolean>>({ informations: true, lignes: true });
+    const [openSections, setOpenSections] = useState<Record<string, boolean>>({ informations: true, lignes: true, retours: true });
     const sectionRefs = useRef<Record<string, HTMLDivElement | null>>({});
     const containerRef = useRef<HTMLDivElement>(null);
     const isScrollingRef = useRef(false);
@@ -156,8 +158,8 @@ export default function BonLivraisonPage() {
         }
     };
     const toggleSection = (id: string, open: boolean) => setOpenSections(prev => ({ ...prev, [id]: open }));
-    const handleExpandAll = () => setOpenSections({ informations: true, lignes: true });
-    const handleCollapseAll = () => setOpenSections({ informations: false, lignes: false });
+    const handleExpandAll = () => setOpenSections({ informations: true, lignes: true, retours: true });
+    const handleCollapseAll = () => setOpenSections({ informations: false, lignes: false, retours: false });
 
     useEffect(() => {
         const container = containerRef.current;
@@ -180,17 +182,29 @@ export default function BonLivraisonPage() {
         return () => container.removeEventListener('scroll', onScroll);
     }, [openSections, activeTab]);
 
+    const [returns, setReturns] = useState<GcomDeliveryNoteReturn[]>([]);
+    const [returnsLoading, setReturnsLoading] = useState(false);
+
     const selectNote = useCallback(async (row: GcomDeliveryNote) => {
         setFormMode('view');
         setSelected(row);
         setActiveTab('informations');
         setDetailLoading(true);
+        setReturns([]);
         try {
             setSelected(await gcomApi.deliveryNotes.get(row.id));
         } catch {
             toast.error('Erreur chargement du bon de livraison');
         } finally {
             setDetailLoading(false);
+        }
+        setReturnsLoading(true);
+        try {
+            setReturns(await gcomApi.deliveryNotes.listReturns(row.id));
+        } catch {
+            setReturns([]);
+        } finally {
+            setReturnsLoading(false);
         }
     }, []);
 
@@ -222,6 +236,22 @@ export default function BonLivraisonPage() {
             toast.error('Impossible de charger le PDF');
         } finally {
             setPdfLoading(false);
+        }
+    };
+
+    // Bon de retour — one PDF per return event (each `return` call only ever
+    // touches one line, no aggregation across events needed).
+    const [returnPdfLoadingId, setReturnPdfLoadingId] = useState<number | null>(null);
+    const openReturnPdf = async (returnId: number) => {
+        if (!selected) return;
+        setReturnPdfLoadingId(returnId);
+        try {
+            const url = await gcomApi.deliveryNotes.getReturnPdfBlobUrl(selected.id, returnId);
+            window.open(url, '_blank');
+        } catch {
+            toast.error('Impossible de charger le bon de retour');
+        } finally {
+            setReturnPdfLoadingId(null);
         }
     };
 
@@ -322,7 +352,7 @@ export default function BonLivraisonPage() {
     const [returnBatchOpen, setReturnBatchOpen] = useState(false);
     const [returnBatchQty, setReturnBatchQty] = useState<Record<number, number | ''>>({});
     const [returnBatchCondition, setReturnBatchCondition] = useState<Record<number, GcomReturnCondition>>({});
-    const [returnBatchReason, setReturnBatchReason] = useState<Record<number, string>>({});
+    const [returnBatchReason, setReturnBatchReason] = useState<Record<number, GcomReturnReason | ''>>({});
     const [returningBatch, setReturningBatch] = useState(false);
 
     const openReturnBatch = () => {
@@ -335,7 +365,7 @@ export default function BonLivraisonPage() {
 
     const setBatchQty = (itemId: number, value: number | '') => setReturnBatchQty(prev => ({ ...prev, [itemId]: value }));
     const setBatchCondition = (itemId: number, value: GcomReturnCondition) => setReturnBatchCondition(prev => ({ ...prev, [itemId]: value }));
-    const setBatchReason = (itemId: number, value: string) => setReturnBatchReason(prev => ({ ...prev, [itemId]: value }));
+    const setBatchReason = (itemId: number, value: GcomReturnReason | '') => setReturnBatchReason(prev => ({ ...prev, [itemId]: value }));
 
     const confirmReturnBatch = async () => {
         if (!selected) return;
@@ -350,7 +380,7 @@ export default function BonLivraisonPage() {
         for (const it of lines) {
             const qty = Number(returnBatchQty[it.id]) || 0;
             const currentQty = currentLineQty(it);
-            const reason = (returnBatchReason[it.id] ?? '').trim();
+            const reason = returnBatchReason[it.id] || '';
             const label = it.product_id ? `Produit #${it.product_id}` : `Ligne #${it.id}`;
             if (qty >= currentQty) {
                 failures.push(`${label} : quantité invalide (doit être < ${fmt(currentQty, 0)})`);
@@ -723,9 +753,8 @@ export default function BonLivraisonPage() {
                                                     {
                                                         key: 'qty', header: 'Qté', align: 'right', width: 'w-20',
                                                         render: (it: GcomDeliveryNoteItem) => {
-                                                            // The backend doesn't persist any return reason/log anywhere on the
-                                                            // BL or its items (verified live) — this gap between the original
-                                                            // and live quantity is the only signal a return ever happened.
+                                                            // Full history (reason/condition/who/when) is in the Retours tab
+                                                            // below — this is just a quick at-a-glance signal in the Lignes list.
                                                             const original = Number(it.ordered_quantity) || 0;
                                                             const current = currentLineQty(it);
                                                             const returned = original - current;
@@ -743,6 +772,54 @@ export default function BonLivraisonPage() {
                                                     { key: 'total', header: 'Total', align: 'right', width: 'w-24', render: (it: GcomDeliveryNoteItem) => <span className="font-bold text-gray-900">{fmtMAD((Number(it.unit_price) || 0) * currentLineQty(it))}</span> },
                                                 ]}
                                             />
+                                        </SageCollapsible>
+                                    </div>
+
+                                    {/* ── Retours ─────────────────────────────── */}
+                                    <div ref={el => { sectionRefs.current['retours'] = el; }}>
+                                        <SageCollapsible
+                                            title="Retours"
+                                            isOpen={openSections['retours']}
+                                            onOpenChange={open => toggleSection('retours', open)}
+                                            rightContent={!returnsLoading && <span className="text-[10px] text-gray-400 mr-2">{returns.length}</span>}
+                                        >
+                                            {returnsLoading ? (
+                                                <div className="flex justify-center py-6"><Loader2 className="w-4 h-4 animate-spin text-gray-400" /></div>
+                                            ) : returns.length === 0 ? (
+                                                <div className="text-center py-8 text-xs text-gray-400">
+                                                    <RotateCcw className="w-8 h-8 mx-auto mb-2 text-gray-200" />
+                                                    Aucun retour enregistré pour ce BL
+                                                </div>
+                                            ) : (
+                                                <div className="divide-y divide-gray-100 rounded-lg overflow-hidden border border-gray-100">
+                                                    {returns.map(r => (
+                                                        <div key={r.id} className="flex items-center justify-between px-3 py-2.5 bg-white">
+                                                            <div className="min-w-0">
+                                                                <div className="flex items-center gap-2">
+                                                                    <span className="text-xs font-semibold text-gray-900">{r.product?.name ?? `Produit #${r.delivery_note_item_id}`}</span>
+                                                                    <span className="text-[10px] text-gray-400">{RETURN_CONDITION_LABEL[r.condition] ?? r.condition}</span>
+                                                                </div>
+                                                                <p className="text-[10px] text-gray-400 mt-0.5">
+                                                                    {RETURN_REASON_LABEL[r.reason] ?? r.reason}
+                                                                    {r.returned_by?.name && ` · ${r.returned_by.name}`}
+                                                                    {r.returned_at && ` · ${fmtDate(r.returned_at)}`}
+                                                                </p>
+                                                            </div>
+                                                            <div className="flex items-center gap-3 shrink-0 ml-3">
+                                                                <span className="text-xs font-bold text-gray-900">{fmt(r.quantity, 0)}</span>
+                                                                <button
+                                                                    onClick={() => openReturnPdf(r.id)}
+                                                                    disabled={returnPdfLoadingId === r.id}
+                                                                    title="Bon de retour PDF"
+                                                                    className="text-gray-400 hover:text-sage-600 disabled:opacity-50"
+                                                                >
+                                                                    {returnPdfLoadingId === r.id ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Download className="w-3.5 h-3.5" />}
+                                                                </button>
+                                                            </div>
+                                                        </div>
+                                                    ))}
+                                                </div>
+                                            )}
                                         </SageCollapsible>
                                     </div>
 
@@ -891,15 +968,15 @@ export default function BonLivraisonPage() {
                                                     </select>
                                                 </td>
                                                 <td className="px-2 py-1.5">
-                                                    <input
-                                                        type="text"
+                                                    <select
                                                         disabled={!returnable}
-                                                        maxLength={255}
                                                         value={returnBatchReason[it.id] ?? ''}
-                                                        placeholder={returnable ? 'Motif du retour…' : 'Qté = 1, annulez le BL pour retourner cette ligne'}
-                                                        onChange={e => setBatchReason(it.id, e.target.value)}
-                                                        className="w-full px-2 py-1 text-xs border border-gray-200 rounded-md focus:outline-none focus:ring-1 focus:ring-sage-400 disabled:bg-gray-50 disabled:cursor-not-allowed"
-                                                    />
+                                                        onChange={e => setBatchReason(it.id, e.target.value as GcomReturnReason | '')}
+                                                        className="w-full px-2 py-1 text-xs border border-gray-200 rounded-md focus:outline-none focus:ring-1 focus:ring-sage-400 bg-white disabled:bg-gray-50 disabled:cursor-not-allowed"
+                                                    >
+                                                        <option value="">{returnable ? '— Motif —' : 'Qté = 1, annulez le BL'}</option>
+                                                        {RETURN_REASONS.map(opt => <option key={opt.value} value={opt.value}>{opt.label}</option>)}
+                                                    </select>
                                                 </td>
                                             </tr>
                                         );

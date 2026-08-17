@@ -176,10 +176,17 @@ export interface GcomCreditNoteItem {
     product_id: number;
     quantity: number;
     is_restocked?: boolean;
+    // Auto-populated from the item's `condition` at creation (2026-08-18 fix,
+    // same day the 500 on credit-note creation was fixed) — no separate field
+    // to send, just now readable back from the API.
+    return_reason?: GcomReturnReason | null;
 }
 
 export interface GcomCreditNote {
     id: number;
+    // "AVR..." prefix — real agency-series number (2026-08-18 fix, was 500ing
+    // before due to a series-resolution bug, now fixed).
+    credit_note_number?: string;
     status: GcomCreditNoteStatus;
     total_amount: number | string;
     refund_amount: number | string;
@@ -198,6 +205,15 @@ export interface GcomCreditNotesListResponse {
 // post-invoice) — `sellable` (default) goes straight back to sellable stock,
 // `damaged`/`technical` land in a dedicated (invisible-to-sales) location.
 export type GcomReturnCondition = 'sellable' | 'damaged' | 'technical';
+
+// `App\Enums\ReturnReason` — 2026-08-18, CAS 1's `reason` moved from free
+// text to this enum (breaking change, 422 for anything else). CAS 2/3's
+// top-level `GcomCreateCreditNotePayload.reason` is a DIFFERENT field (a
+// free-text note on the credit note itself) and is NOT affected by this.
+export type GcomReturnReason =
+    | 'DEFECTIVE' | 'DAMAGED' | 'WRONG_ITEM' | 'CHANGE_MIND'
+    | 'NOT_AS_DESCRIBED' | 'EXPIRED' | 'CUSTOMER_REQUEST'
+    | 'DUPLICATE_ORDER' | 'OTHER';
 
 // POST /invoices/{invoice}/credit-notes — `amount` omitted means full-amount
 // (invoice cancellation); `items` presence triggers restock of those lines.
@@ -226,7 +242,7 @@ export interface GcomCreateCreditNoteResponse {
 // extra step needed.
 export interface GcomReturnDeliveryNoteLinePayload {
     quantity: number;
-    reason: string;
+    reason: GcomReturnReason;
     condition?: GcomReturnCondition;
 }
 
@@ -234,6 +250,27 @@ export interface GcomReturnDeliveryNoteLineResponse {
     success: boolean;
     message?: string;
     delivery_note: GcomDeliveryNote;
+}
+
+// GET /delivery-notes/{deliveryNote}/returns — 2026-08-18. Every CAS 1 return
+// event is now its own persisted row (was previously baked as freeform text
+// into StockMovement.notes, unreachable from any GET, and unable to
+// represent more than one return on the same line) — newest first.
+export interface GcomDeliveryNoteReturn {
+    id: number;
+    delivery_note_item_id: number;
+    product?: { code?: string; name?: string };
+    quantity: number | string;
+    condition: GcomReturnCondition;
+    reason: GcomReturnReason;
+    stock_location?: string;
+    returned_by?: { id: number; name: string };
+    returned_at?: string;
+}
+
+export interface GcomDeliveryNoteReturnsListResponse {
+    success: boolean;
+    returns: GcomDeliveryNoteReturn[];
 }
 
 // ─── Quotes (Devis) — see docs/modules/28-gcom.md §8 "Quotes (Devis)" ──────
@@ -657,6 +694,7 @@ export type GcomInstrumentStatus = 'PENDING' | 'DEPOSITED' | 'CLEARED' | 'REJECT
 export interface GcomFinancialInstrument {
     id: number;
     partner_id: number;
+    payment_method_id?: number | null;
     instrument_type: GcomInstrumentType;
     reference_number: string;
     amount: number | string;
@@ -665,9 +703,37 @@ export interface GcomFinancialInstrument {
     due_date: string | null;
     bank_name?: string | null;
     bank_account?: string | null;
+    bank_id?: number | null;
     status: GcomInstrumentStatus;
     rejection_reason?: string | null;
     invoice_id?: number | null;
+    payment_transfer_id?: number | null;
+    // Lifecycle timestamps + the deposit reference field added 2026-08-18
+    // alongside the 3 transition endpoints below.
+    deposited_at?: string | null;
+    cleared_at?: string | null;
+    rejected_at?: string | null;
+    deposit_reference?: string | null;
+}
+
+// Lifecycle transitions (2026-08-18) — FinancialInstrumentService existed
+// already, just never wired to an HTTP route before. All 3 return
+// `{ success, message?, financial_instrument }` and require
+// X-Idempotency-Key. A 422 (not 500) on an invalid transition (e.g. clear on
+// a still-PENDING instrument) carries a real explanatory message.
+export interface GcomInstrumentDepositPayload {
+    deposit_date?: string; // YYYY-MM-DD, defaults to today if omitted
+    deposit_reference?: string;
+}
+
+export interface GcomInstrumentRejectPayload {
+    reason: string;
+}
+
+export interface GcomFinancialInstrumentActionResponse {
+    success: boolean;
+    message?: string;
+    financial_instrument: GcomFinancialInstrument;
 }
 
 export interface GcomFinancialInstrumentsFilters {
