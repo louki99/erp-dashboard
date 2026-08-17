@@ -299,12 +299,15 @@ Query: `status?` (`draft`|`sent`|`accepted`|`expired`|`converted`), `per_page?`
 **`GET /quotes/{id}`** — 403 if the quote belongs to a different user.
 
 **`GET /quotes/{id}/pdf`** — streams the Devis PDF (`Content-Type:
-application/pdf`). `?download=1` for an attachment instead of inline. Same
-generic document pipeline as BC/BL below (`App\Services\DocumentService`,
-type `devis`) — genuinely new as of 2026-08-17, no document type anywhere
-in the codebase rendered a Quote before this. Not a JSON endpoint — point
-a browser `<a href>`/download button directly at this URL (with the auth
-header), same caveat as every other PDF endpoint in this module.
+application/pdf`). `?download=1` for an attachment instead of inline,
+`?price_mode=ht|ttc` for whether line items print HT or TTC (see the
+HT/TTC print toggle note below §8 — defaults to `ht`, this document's own
+existing convention, if omitted). Same generic document pipeline as BC/BL
+below (`App\Services\DocumentService`, type `devis`) — genuinely new as of
+2026-08-17, no document type anywhere in the codebase rendered a Quote
+before this. Not a JSON endpoint — point a browser `<a href>`/download
+button directly at this URL (with the auth header), same caveat as every
+other PDF endpoint in this module.
 
 **`POST /quotes`**
 ```json
@@ -354,10 +357,12 @@ practice only `confirmed`|`cancelled` ever appear — see §13),
 includes `products` (line items), `partner`, `invoices`, `deliveryNotes`.
 
 **`GET /orders/{order}/pdf`** — streams the BC PDF (`Content-Type:
-application/pdf`). `?download=1` for an attachment. 2026-08-17: reuses the
-ERP's generic document pipeline (`App\Services\DocumentService`, type
-`bc`) — the same one `Backend\DocumentController` already exposes for
-other channels, not a GCOM-specific renderer. Not a JSON endpoint.
+application/pdf`). `?download=1` for an attachment, `?price_mode=ht|ttc`
+for whether line items print HT or TTC (defaults to `ht` if omitted).
+2026-08-17: reuses the ERP's generic document pipeline
+(`App\Services\DocumentService`, type `bc`) — the same one
+`Backend\DocumentController` already exposes for other channels, not a
+GCOM-specific renderer. Not a JSON endpoint.
 
 **`POST /orders`** 🔁 — flow #1 (second hop, if not started from a quote)
 / #3 / #4's BC leg.
@@ -484,9 +489,11 @@ moment it's created; see §13), `per_page?`.
 **`GET /delivery-notes/{deliveryNote}`** — 404 if not from a GCOM order.
 
 **`GET /delivery-notes/{deliveryNote}/pdf`** — streams the BL PDF
-(`Content-Type: application/pdf`). `?download=1` for an attachment. Same
-generic document pipeline as BC above (`App\Services\DocumentService`,
-type `bl`). Not a JSON endpoint.
+(`Content-Type: application/pdf`). `?download=1` for an attachment,
+`?price_mode=ht|ttc` for whether line items print HT or TTC (defaults to
+`ttc` if omitted — the opposite default from BC/Devis, this document's own
+existing convention). Same generic document pipeline as BC above
+(`App\Services\DocumentService`, type `bl`). Not a JSON endpoint.
 
 **`POST /delivery-notes`** 🔁 — flow #5 (BL Direct → Facture). Creates an
 underlying BC transparently, then the BL — stock deducts **here**, at BL
@@ -509,6 +516,23 @@ second hop / #5's only hop. Body: `{ "instrument"? }`.
 immediately. Body: `{ "reason": "..." }` (required, max 255 chars).
 → `200`, `{ "success": true, "message": "Delivery note cancelled", "delivery_note": {...} }`
 → `422` if an invoice already exists for this BL.
+
+**`POST /delivery-notes/{deliveryNote}/lines/{item}/return`** 🔁 —
+2026-08-18, see §9bis (CAS 1 of the returns architecture). `{item}` is the
+`DeliveryNoteItem` row id (`delivery_note.items[].id`).
+```json
+{ "quantity": 3, "reason": "Client a refusé 3 unités", "condition": "damaged" }
+```
+`condition` — `sellable` (default) | `damaged` | `technical` — see §9bis
+for exactly where each one lands. `quantity` must be strictly less than
+the line's current quantity (returning the whole line/BL isn't this
+endpoint's job — use `cancel` above for that, only possible before
+invoicing either way). Restocks immediately and recomputes the BL's
+`total_amount`; no separate step needed to bill the net quantity —
+`convert-to-invoice` already reads the line's live quantity.
+→ `200`, `{ "success": true, "message": "Delivery note line reduced", "delivery_note": {...} }`
+→ `422` if the BL is already invoiced, or `quantity` is ≥ the line's
+current quantity.
 
 ### Direct Invoice (Facture Directe / Comptoir)
 
@@ -575,13 +599,17 @@ against one invoice.
 {
   "amount": null,
   "reason": "Retour marchandise défectueuse",
-  "items": [{ "product_id": 42, "quantity": 1 }]
+  "items": [{ "product_id": 42, "quantity": 1, "condition": "damaged" }]
 }
 ```
 - `amount` omitted → full `total_amount` (this **is** how a GCOM invoice
   gets cancelled after the fact — no separate "cancel invoice" endpoint).
 - `items` present → also restocks (a physical "retour"); `items` omitted
   → pure financial correction, no stock movement.
+- `items[].condition` — 2026-08-18, `sellable` (default) | `damaged` |
+  `technical` — see §9bis for exactly where each one lands. Omit entirely
+  for a plain sellable return, no behavior change from before this field
+  existed.
 - `reason` is required, max 500 chars.
 
 → `201`, `{ "success": true, "message": "Credit note created", "credit_note": {...}, "invoice": { "remaining_amount": "0.00", "status": "fully_paid", ... } }`
@@ -818,6 +846,69 @@ invoice's debt.
 - Auto-approved immediately (`CreditNoteStatus::APPROVED`) — GCOM has no
   derogation/approval workflow anywhere else either.
 
+### 9bis. Returns architecture — 3 use cases, condition routing (2026-08-18)
+
+Agreed and built with the UI team as a single coherent design across BC/BL/avoir:
+
+**CAS 1 — return before invoicing (no avoir needed).** A BL is created,
+the client refuses/returns part of it before the BL is ever converted.
+`GcomDeliveryNoteService::reduceLineQuantity()` — see §8
+(`POST /delivery-notes/{deliveryNote}/lines/{item}/return`) — reduces the
+line's own quantity, restocks the returned amount immediately
+(condition-aware, below), and recomputes the BL's `total_amount`.
+`convertToInvoice()`/`InvoiceService::generateFromDeliveryNote()` already
+read live `DeliveryNoteItem` quantities, not a snapshot taken at BL
+creation — so a later conversion bills exactly the net quantity with
+**zero changes needed on the invoicing side**. Strictly a reduction: the
+returned quantity must be less than the line's current quantity — to
+return an entire line/the whole BL, use the existing whole-BL
+cancellation instead (only possible before invoicing either way).
+
+**CAS 2 — return after invoicing (avoir + restock).** Already covered
+above — `POST /invoices/{id}/credit-notes` with `items` present.
+
+**CAS 3 — pure financial avoir (no stock movement).** Already covered
+above — `POST /invoices/{id}/credit-notes` with `items` omitted.
+
+**Condition routing** — shared by CAS 1 and CAS 2's restock path, both
+ultimately call `StockService::restockForReturn()`, which now accepts an
+optional `condition` per item (`sellable` default, `damaged`, or
+`technical` — omit entirely for the exact prior behavior, fully backward
+compatible):
+
+| `condition` | Destination | Sellable stock impact |
+|---|---|---|
+| `sellable` (default) | The warehouse's own aggregate stock — immediately available for sale | `available_quantity` increases |
+| `damaged` | A dedicated `StorageLocationType::DAMAGED` location, auto-provisioned per warehouse on first use | **Untouched** — invisible to every normal stock-availability lookup |
+| `technical` | A dedicated `StorageLocationType::QUARANTINE` location (SAV / expertise interne), auto-provisioned per warehouse on first use | **Untouched**, same as `damaged` |
+
+Non-sellable stock is tracked under its OWN `Stock` row, keyed by the
+destination location's `location_code` rather than the real warehouse
+code (`Stock.storage_location_id` set to that location's id) — this is
+what makes it invisible to `bulkStock()`/pricing/order-creation without
+having to touch any of those call sites: they only ever query the real
+warehouse code. Matches the pre-existing inter-location transfer guard
+elsewhere in `StockService` (a `DAMAGED`-location product must pass
+through `QUARANTINE`/`SCRAP` before it can become sellable again) — this
+restock path only ever places non-sellable returns into `DAMAGED` or
+`QUARANTINE`, never directly back into sellable stock.
+
+For CAS 2, `condition` is per `items[]` entry
+(`POST /invoices/{id}/credit-notes` — see §8) and is also recorded on
+`CreditNoteItem`: `is_scrap = true` for `damaged`, and `stock_location`
+set to wherever it actually landed (resolved via the same
+`StockService::resolveConditionLocation()` the restock itself uses, so
+the two can never disagree).
+
+**Explicitly decided against**: reusing the legacy `BonRetour` system for
+a dedicated physical "bon de retour" document — its final stock-writing
+step calls methods that don't exist on the class it depends on
+(`StockService::addStock()`/`writeOffStock()`, neither of which is
+real), so it's not a working reference to extend. `CreditNote` +
+`StockMovement` (already battle-tested, already covers CAS 2/3 in full)
+is the system of record for GCOM returns; no separate return-document
+entity was introduced.
+
 ---
 
 ## 10. Real Bugs Found Building This
@@ -986,6 +1077,36 @@ history is traceable rather than silently vanishing from the doc):
   consistency across the whole GCOM document set, but that's a separate,
   deliberately-not-done-here change (the invoice PDF already works and
   wasn't reported broken).
+- ~~No way to print a document HT or TTC — some clients need the
+  tax-excluded figure for their own accounting, others need the final
+  tax-included one.~~ **Built 2026-08-17** — `?price_mode=ht|ttc` on all
+  three new PDF endpoints (§8). Each document keeps its own prior default
+  when the param is omitted (BC/Devis: `ht`, BL: `ttc`) — fully backward
+  compatible, existing bookmarked/embedded PDF links keep behaving exactly
+  as before. Real caching bug found and fixed while wiring this: the PDF
+  cache was keyed on document type+id **only** — a `?price_mode=ttc`
+  request right after the default one would have silently been served the
+  stale HT bytes back. `DocumentService::storagePath()` now folds every
+  render-affecting option (`price_mode`, `show_prices`, `watermark`) into
+  the cache path itself, and is now `public` so
+  `DocumentController::url()` — which used to hardcode its own
+  independent copy of the same path logic — calls it instead rather than
+  risking the two drifting apart again.
+- ~~No way to reduce a BL line's quantity before invoicing (partial return
+  at delivery, no avoir should be needed since no invoice exists yet), and
+  no condition/destination targeting on any restock (everything always
+  went back to sellable stock at the central warehouse, no way to route
+  damaged/technical returns elsewhere).~~ **Built 2026-08-18** — full plan
+  agreed with the UI team first (§9bis has the complete design):
+  `GcomDeliveryNoteService::reduceLineQuantity()` for CAS 1,
+  `StockService::restockForReturn()` extended with a per-item `condition`
+  (shared by CAS 1 and the existing CAS 2 avoir restock), routing
+  `damaged`/`technical` returns into dedicated `DAMAGED`/`QUARANTINE`
+  `StorageLocation`s instead of sellable stock. Explicitly decided
+  **against** reviving the legacy `BonRetour` system for this (its final
+  stock-writing step calls methods that don't exist on the class it
+  depends on) — `CreditNote` + `StockMovement` remains the system of
+  record.
 - ~~Seeded GCOM products never had `is_active` set, hidden from any
   "active only" consumer despite `Product::updateOrCreate()` otherwise
   succeeding.~~ **Fixed 2026-08-17** — GCOM's own order-creation paths
@@ -1093,6 +1214,7 @@ Still open:
 | `tests/Feature/Gcom/GcomConsultationEndpointsTest.php` | List/show endpoints — GET /orders, /delivery-notes, /invoices, /payments, canal/partner scoping, cross-tenant 404s |
 | `tests/Feature/Gcom/GcomAdminCanUseTelesalesCatalogTest.php` | GCOM reuse of `GET /telesales/catalog/products` — partner-aware pricing, permission gate, and `stock_available` correctly found under the bare warehouse code even when a storage location exists for that warehouse |
 | `tests/Feature/Gcom/GcomCancellationAndCreditNoteTest.php` | §9 — BC/BL cancellation + restocking, full/partial avoir, the total_amount-vs-remaining_amount split (refund_amount path), HTTP layer for cancel + credit-note endpoints |
+| `tests/Feature/Gcom/GcomReturnsConditionTest.php` | §9bis — CAS 1 (BL partial return pre-invoice, net billing on convert), condition routing (sellable/damaged/technical → available/DAMAGED/QUARANTINE) shared by BL returns and credit-note restocks, guards (already invoiced, whole-line removal rejected), `CreditNoteItem.is_scrap`/`stock_location`, HTTP layer |
 | `tests/Feature/Gcom/GcomOrderLineCancellationTest.php` | Partial/full single-line BC cancellation, order-total recomputation, HTTP layer |
 | `tests/Feature/Gcom/GcomOrderLineUpdateTest.php` | BC line quantity increase/decrease, re-pricing, stock untouched, credit re-check on increase only, HTTP layer |
 | `tests/Feature/Gcom/GcomOrderLineAdditionTest.php` | Adding a new product line to an existing BC, rejects duplicate product, stock untouched, credit re-check, HTTP layer |
@@ -1102,14 +1224,14 @@ Still open:
 | `tests/Feature/Gcom/GcomPartnerFinanceControllerTest.php` | `GET /partners/{partner}/{financial-instruments,statement,ledger}` — instrument filtering + cross-partner isolation, statement debit/credit/balance/pending-instruments/credit-limit for cash and mixed credit+cheque scenarios, ledger entry types + running balance including a deferred règlement and an avoir |
 | `tests/Feature/Gcom/GcomDeferredChequeSettlementTest.php` | `POST /payments`'s `payment_method_id`/`instrument` fields — a deferred cheque/effet creates a `FinancialInstrument` linked via `payment_transfer_id` (not `invoice_id`), rejects a cheque with no instrument details, an explicit `payment_method_id` overrides the term's default |
 | `tests/Feature/Gcom/GcomInvoicePdfTest.php` | `GET /invoices/{invoice}/pdf` — real PDF bytes returned, correct `Content-Type`, 404 for non-GCOM invoices |
-| `tests/Feature/Gcom/GcomDocumentPdfTest.php` | `GET /orders/{order}/pdf`, `/delivery-notes/{deliveryNote}/pdf`, `/quotes/{id}/pdf` — real PDF bytes for BC/BL/Devis, 404 for non-GCOM BC/BL, 403 for someone else's Devis |
+| `tests/Feature/Gcom/GcomDocumentPdfTest.php` | `GET /orders/{order}/pdf`, `/delivery-notes/{deliveryNote}/pdf`, `/quotes/{id}/pdf` — real PDF bytes for BC/BL/Devis, 404 for non-GCOM BC/BL, 403 for someone else's Devis, HT vs. TTC renders differ and cache separately |
 | `tests/Feature/CompanySalesModeTest.php` | `sales_mode` GET/PUT, default value, invalid-mode rejection, permission gate |
 | `tests/Feature/Warehouse/InventoryCheckTest.php` | Generic (not GCOM-scoped) — inventaire lifecycle, included here since it shares `StockService`/`StockUpdateService` with GCOM |
 | `tests/Feature/Warehouse/PurchaseReceptionValidationTest.php` | Generic — stock reception validate/reverse, same reason |
 | `tests/Feature/MasterDataBanksTest.php` | Generic (not GCOM-scoped) — `GET /masterdata/banks`, active-only + name-ordered, feeds the `bank_id` picker `POST /gcom/payments` needs |
 | `tests/Feature/Payment/PaymentTransferMethodResolutionTest.php` | Generic (not GCOM-scoped) — `PaymentTransferService::registerPayment()`'s `payment_method_id` resolution order: term's own, cash-term auto-resolve takes priority over the partner's generic default, partner default for credit terms, and the single consistent error when nothing resolves |
 
-175 tests total across `tests/Feature/Gcom/` + `tests/Feature/Warehouse/` +
+184 tests total across `tests/Feature/Gcom/` + `tests/Feature/Warehouse/` +
 `tests/Feature/Payment/` + `tests/Feature/Partners/` +
 `tests/Feature/CompanySalesModeTest.php` passing together as of this doc —
 run all of these together when touching any GCOM shared service, since

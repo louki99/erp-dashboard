@@ -1,4 +1,5 @@
 import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import type { ICellRendererParams, ValueGetterParams } from 'ag-grid-community';
 import {
     FileText, Search, X, Loader2, RefreshCw, Download, Building2,
@@ -12,11 +13,13 @@ import { DataGrid } from '@/components/common/DataGrid';
 import { SageTabs, type TabItem } from '@/components/common/SageTabs';
 import { SageCollapsible } from '@/components/common/SageCollapsible';
 import { GcomLinesTable } from '@/components/gcom/GcomLinesTable';
+import { PdfPriceModeModal } from '@/components/gcom/PdfPriceModeModal';
 
 import { gcomApi } from '@/services/api/gcomApi';
 import { getPartners } from '@/services/api/partnerApi';
+import { RETURN_CONDITIONS } from '@/lib/gcom/returnConditions';
 import type { Partner } from '@/types/partner.types';
-import type { GcomInvoice, GcomInvoiceStatus, GcomInvoiceItem, GcomCreditNote } from '@/types/gcom.types';
+import type { GcomInvoice, GcomInvoiceStatus, GcomInvoiceItem, GcomCreditNote, GcomPdfPriceMode, GcomReturnCondition } from '@/types/gcom.types';
 
 // ─── helpers ─────────────────────────────────────────────────────────────────
 
@@ -85,6 +88,9 @@ const StatusBadge = ({ status }: { status: GcomInvoiceStatus }) => {
 // ─── Component ───────────────────────────────────────────────────────────────
 
 export default function FacturesPage() {
+    const navigate = useNavigate();
+    const [searchParams] = useSearchParams();
+
     // ── Filters ───────────────────────────────────────────────────────────────
     const [statusFilter, setStatusFilter] = useState<'all' | GcomInvoiceStatus>('all');
     const [partnerFilter, setPartnerFilter] = useState<Partner | null>(null);
@@ -222,6 +228,14 @@ export default function FacturesPage() {
         if (selected) selectInvoice(selected);
     };
 
+    // Deep-link from another GCOM document's "Documents liés"/"Origine" chip (?id=123).
+    useEffect(() => {
+        const idParam = searchParams.get('id');
+        const id = idParam ? parseInt(idParam, 10) : NaN;
+        if (!Number.isNaN(id)) selectInvoice({ id } as GcomInvoice);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []);
+
     // ── Avoir (credit note) creation ─────────────────────────────────────────
     // POST /invoices/{invoice}/credit-notes — omitting `amount` cancels the
     // invoice for its full amount; checking items triggers restock for those lines.
@@ -230,6 +244,7 @@ export default function FacturesPage() {
     const [avoirReason, setAvoirReason] = useState('');
     const [avoirItemSelected, setAvoirItemSelected] = useState<Record<number, boolean>>({});
     const [avoirItemQty, setAvoirItemQty] = useState<Record<number, number>>({});
+    const [avoirItemCondition, setAvoirItemCondition] = useState<Record<number, GcomReturnCondition>>({});
     const [creatingAvoir, setCreatingAvoir] = useState(false);
 
     const openAvoirModal = () => {
@@ -237,6 +252,7 @@ export default function FacturesPage() {
         setAvoirReason('');
         setAvoirItemSelected({});
         setAvoirItemQty({});
+        setAvoirItemCondition({});
         setAvoirModalOpen(true);
     };
     const closeAvoirModal = () => setAvoirModalOpen(false);
@@ -244,6 +260,7 @@ export default function FacturesPage() {
     const toggleAvoirItem = (item: GcomInvoiceItem) => {
         setAvoirItemSelected(prev => ({ ...prev, [item.id]: !prev[item.id] }));
         setAvoirItemQty(prev => prev[item.id] ? prev : { ...prev, [item.id]: Number(item.quantity) || 1 });
+        setAvoirItemCondition(prev => prev[item.id] ? prev : { ...prev, [item.id]: 'sellable' });
     };
     const setAvoirItemQuantity = (itemId: number, quantity: number) => {
         setAvoirItemQty(prev => ({ ...prev, [itemId]: Math.max(1, quantity) }));
@@ -258,7 +275,11 @@ export default function FacturesPage() {
                 amount: avoirAmount.trim() ? parseFloat(avoirAmount) : undefined,
                 reason: avoirReason.trim(),
                 items: selectedItems.length > 0
-                    ? selectedItems.map(it => ({ product_id: it.product_id, quantity: avoirItemQty[it.id] ?? (Number(it.quantity) || 1) }))
+                    ? selectedItems.map(it => ({
+                        product_id: it.product_id,
+                        quantity: avoirItemQty[it.id] ?? (Number(it.quantity) || 1),
+                        condition: avoirItemCondition[it.id] ?? 'sellable',
+                    }))
                     : undefined,
             });
             toast.success('Avoir créé');
@@ -273,13 +294,18 @@ export default function FacturesPage() {
     };
 
     // ── PDF ───────────────────────────────────────────────────────────────────
+    // Same HT/TTC print modal as BC/Devis/BL — price_mode genuinely works here
+    // now (fixed 2026-08-17: the invoice pdf runs through the same
+    // DocumentService pipeline as the other 3 documents), defaults to TTC.
+    const [pdfModalOpen, setPdfModalOpen] = useState(false);
     const [pdfLoading, setPdfLoading] = useState(false);
-    const openPdf = async () => {
+    const openPdf = async (priceMode: GcomPdfPriceMode) => {
         if (!selected) return;
         setPdfLoading(true);
         try {
-            const url = await gcomApi.invoices.getPdfBlobUrl(selected.id);
+            const url = await gcomApi.invoices.getPdfBlobUrl(selected.id, priceMode);
             window.open(url, '_blank');
+            setPdfModalOpen(false);
         } catch {
             toast.error('Impossible de charger le PDF');
         } finally {
@@ -351,7 +377,7 @@ export default function FacturesPage() {
         const groups: { items: ActionItemProps[] }[] = [{
             items: [
                 { icon: RefreshCw, label: 'Actualiser', variant: 'default', onClick: refresh, disabled: loading },
-                { icon: Download, label: 'Facture PDF', variant: 'primary', onClick: openPdf, disabled: !selected || pdfLoading },
+                { icon: Download, label: 'Imprimer', variant: 'primary', onClick: () => setPdfModalOpen(true), disabled: !selected || pdfLoading },
             ],
         }];
         if (selected) {
@@ -574,15 +600,22 @@ export default function FacturesPage() {
                                                 <div className="bg-gray-50 rounded-lg p-3 border border-gray-100">
                                                     <p className="text-[10px] text-gray-400 uppercase tracking-wider mb-2">Origine</p>
                                                     <div className="flex flex-wrap items-center gap-2">
-                                                        <span className="flex items-center gap-1 text-xs font-medium text-gray-700 bg-white border border-gray-200 rounded-md px-2 py-1">
+                                                        <button
+                                                            onClick={() => navigate(`/gcom/bons-commande?id=${selected.order!.id}`)}
+                                                            className="flex items-center gap-1 text-xs font-medium text-gray-700 bg-white border border-gray-200 rounded-md px-2 py-1 hover:bg-sage-50 hover:border-sage-200 hover:text-sage-700 transition-colors"
+                                                        >
                                                             <ReceiptText className="w-3 h-3 text-gray-400" /> {selected.order.order_code ?? `BC #${selected.order.id}`}
                                                             {selected.order.bc_status && <span className="text-[10px] text-gray-400">({selected.order.bc_status})</span>}
-                                                        </span>
+                                                        </button>
                                                         {selected.order.delivery_notes?.map(bl => (
-                                                            <span key={bl.id} className="flex items-center gap-1 text-xs font-medium text-gray-700 bg-white border border-gray-200 rounded-md px-2 py-1">
+                                                            <button
+                                                                key={bl.id}
+                                                                onClick={() => navigate(`/gcom/bons-livraison?id=${bl.id}`)}
+                                                                className="flex items-center gap-1 text-xs font-medium text-gray-700 bg-white border border-gray-200 rounded-md px-2 py-1 hover:bg-sage-50 hover:border-sage-200 hover:text-sage-700 transition-colors"
+                                                            >
                                                                 <Truck className="w-3 h-3 text-gray-400" /> BL #{bl.id}
                                                                 {bl.status && <span className="text-[10px] text-gray-400">({bl.status})</span>}
-                                                            </span>
+                                                            </button>
                                                         ))}
                                                     </div>
                                                 </div>
@@ -795,23 +828,43 @@ export default function FacturesPage() {
                     {(selected.items?.length ?? 0) > 0 && (
                         <div className="mb-5">
                             <label className="block text-xs font-medium text-gray-600 mb-1.5">Articles à restocker (optionnel)</label>
-                            <div className="max-h-48 overflow-y-auto divide-y divide-gray-100 rounded-lg border border-gray-100">
+                            <div className="max-h-64 overflow-y-auto divide-y divide-gray-100 rounded-lg border border-gray-100">
                                 {selected.items!.map(it => (
-                                    <div key={it.id} className="flex items-center gap-2 px-3 py-2 bg-white">
-                                        <input
-                                            type="checkbox"
-                                            checked={!!avoirItemSelected[it.id]}
-                                            onChange={() => toggleAvoirItem(it)}
-                                            className="rounded border-gray-300 text-sage-600 focus:ring-sage-400"
-                                        />
-                                        <span className="flex-1 text-xs text-gray-700 truncate">{it.product_name ?? `Produit #${it.product_id}`}</span>
-                                        <input
-                                            type="number" min={1} max={Number(it.quantity) || undefined}
-                                            value={avoirItemQty[it.id] ?? (Number(it.quantity) || 1)}
-                                            onChange={e => setAvoirItemQuantity(it.id, parseInt(e.target.value, 10) || 1)}
-                                            onFocus={() => { if (!avoirItemSelected[it.id]) toggleAvoirItem(it); }}
-                                            className="w-16 text-center px-1 py-1 text-xs border border-gray-200 rounded-md focus:outline-none focus:ring-1 focus:ring-sage-400"
-                                        />
+                                    <div key={it.id} className="px-3 py-2 bg-white space-y-1.5">
+                                        <div className="flex items-center gap-2">
+                                            <input
+                                                type="checkbox"
+                                                checked={!!avoirItemSelected[it.id]}
+                                                onChange={() => toggleAvoirItem(it)}
+                                                className="rounded border-gray-300 text-sage-600 focus:ring-sage-400"
+                                            />
+                                            <span className="flex-1 text-xs text-gray-700 truncate">{it.product_name ?? `Produit #${it.product_id}`}</span>
+                                            <input
+                                                type="number" min={1} max={Number(it.quantity) || undefined}
+                                                value={avoirItemQty[it.id] ?? (Number(it.quantity) || 1)}
+                                                onChange={e => setAvoirItemQuantity(it.id, parseInt(e.target.value, 10) || 1)}
+                                                onFocus={() => { if (!avoirItemSelected[it.id]) toggleAvoirItem(it); }}
+                                                className="w-16 text-center px-1 py-1 text-xs border border-gray-200 rounded-md focus:outline-none focus:ring-1 focus:ring-sage-400"
+                                            />
+                                        </div>
+                                        {avoirItemSelected[it.id] && (
+                                            <div className="flex items-center gap-1.5 pl-6">
+                                                {RETURN_CONDITIONS.map(opt => (
+                                                    <button
+                                                        key={opt.value}
+                                                        onClick={() => setAvoirItemCondition(prev => ({ ...prev, [it.id]: opt.value }))}
+                                                        title={opt.hint}
+                                                        className={`px-2 py-0.5 text-[10px] font-medium rounded-md border transition-colors ${
+                                                            (avoirItemCondition[it.id] ?? 'sellable') === opt.value
+                                                                ? 'bg-sage-600 border-sage-600 text-white'
+                                                                : 'bg-white border-gray-200 text-gray-500 hover:bg-gray-50'
+                                                        }`}
+                                                    >
+                                                        {opt.label}
+                                                    </button>
+                                                ))}
+                                            </div>
+                                        )}
                                     </div>
                                 ))}
                             </div>
@@ -834,6 +887,15 @@ export default function FacturesPage() {
                 </div>
             </div>
         )}
+
+        <PdfPriceModeModal
+            isOpen={pdfModalOpen}
+            onClose={() => setPdfModalOpen(false)}
+            onConfirm={openPdf}
+            defaultMode="ttc"
+            documentLabel="facture"
+            loading={pdfLoading}
+        />
         </>
     );
 }

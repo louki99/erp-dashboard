@@ -1,9 +1,10 @@
 import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import type { ICellRendererParams, ValueGetterParams } from 'ag-grid-community';
 import {
     Truck, Search, X, Plus, Loader2, CheckCircle2,
     RefreshCw, Building2, AlertTriangle, Info, Package,
-    FileText, Ban, Calendar,
+    FileText, Ban, Calendar, Download, RotateCcw,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 
@@ -14,12 +15,14 @@ import { SageTabs, type TabItem } from '@/components/common/SageTabs';
 import { SageCollapsible } from '@/components/common/SageCollapsible';
 import { GcomCatalogEntryScreen, type GcomCatalogEntrySubmitPayload } from '@/components/gcom/GcomCatalogEntryScreen';
 import { GcomLinesTable } from '@/components/gcom/GcomLinesTable';
+import { PdfPriceModeModal } from '@/components/gcom/PdfPriceModeModal';
 
 import { gcomApi } from '@/services/api/gcomApi';
 import { getPartners } from '@/services/api/partnerApi';
+import { RETURN_CONDITIONS } from '@/lib/gcom/returnConditions';
 import type { Partner } from '@/types/partner.types';
 import type {
-    GcomDeliveryNote, GcomDeliveryNoteItem, GcomBlStatus, GcomInstrumentInput,
+    GcomDeliveryNote, GcomDeliveryNoteItem, GcomBlStatus, GcomInstrumentInput, GcomPdfPriceMode, GcomReturnCondition,
 } from '@/types/gcom.types';
 
 // ─── helpers ─────────────────────────────────────────────────────────────────
@@ -30,6 +33,14 @@ const fmt = (n: number | string | undefined | null, decimals = 2) => {
 };
 const fmtMAD = (n: number | string | undefined | null) => `${fmt(n)} MAD`;
 const fmtDate = (d: string | null | undefined) => d ? new Date(d).toLocaleDateString('fr-MA', { day: '2-digit', month: 'short', year: 'numeric' }) : '—';
+
+// `ordered_quantity` is a fixed snapshot taken at BL creation — a CAS 1 return
+// (§9bis) reduces `delivered_quantity` instead, verified live: after
+// returning 1 of 2 units, `ordered_quantity` stayed "2.000" while
+// `delivered_quantity` dropped to "1.000". Always read the live quantity
+// through this helper, never `ordered_quantity` directly, for display,
+// totals, or the return modal's max/validation.
+const currentLineQty = (it: GcomDeliveryNoteItem): number => Number(it.delivered_quantity ?? it.ordered_quantity) || 0;
 
 const BL_STATUS_META: Record<GcomBlStatus, { label: string; dot: string; text: string }> = {
     delivered: { label: 'Livré', dot: 'bg-emerald-500', text: 'text-emerald-700' },
@@ -63,6 +74,9 @@ const EMPTY_INSTRUMENT: GcomInstrumentInput = { reference_number: '', due_date: 
 // ─── Component ───────────────────────────────────────────────────────────────
 
 export default function BonLivraisonPage() {
+    const navigate = useNavigate();
+    const [searchParams] = useSearchParams();
+
     // ── List filters ─────────────────────────────────────────────────────────
     const [blStatusFilter, setBlStatusFilter] = useState<'all' | GcomBlStatus>('all');
     const [partnerFilter, setPartnerFilter] = useState<Partner | null>(null);
@@ -185,6 +199,32 @@ export default function BonLivraisonPage() {
         if (selected) selectNote(selected);
     };
 
+    // Deep-link from another GCOM document's "Documents liés" chip (?id=123).
+    useEffect(() => {
+        const idParam = searchParams.get('id');
+        const id = idParam ? parseInt(idParam, 10) : NaN;
+        if (!Number.isNaN(id)) selectNote({ id } as GcomDeliveryNote);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []);
+
+    // ── PDF (defaults TTC if `priceMode` omitted — this document's convention,
+    // the opposite default from BC/Devis) ────────────────────────────────────
+    const [pdfModalOpen, setPdfModalOpen] = useState(false);
+    const [pdfLoading, setPdfLoading] = useState(false);
+    const openPdf = async (priceMode: GcomPdfPriceMode) => {
+        if (!selected) return;
+        setPdfLoading(true);
+        try {
+            const url = await gcomApi.deliveryNotes.getPdfBlobUrl(selected.id, priceMode);
+            window.open(url, '_blank');
+            setPdfModalOpen(false);
+        } catch {
+            toast.error('Impossible de charger le PDF');
+        } finally {
+            setPdfLoading(false);
+        }
+    };
+
     const openCreate = () => setFormMode('create');
 
     const handleCreateNoteSubmit = async (payload: GcomCatalogEntrySubmitPayload): Promise<GcomDeliveryNote> => {
@@ -270,6 +310,80 @@ export default function BonLivraisonPage() {
         }
     };
 
+    // ── Return — CAS 1 of the returns architecture (§9bis), batch entry ─────────
+    // Only possible before the BL is invoiced (same guard as convert/cancel) —
+    // once invoiced, a return goes through the invoice's avoir instead (CAS 2,
+    // on FacturesPage), not this endpoint. Per explicit UX request: a single
+    // "Effectuer un retour partiel" action opens one grid covering every line
+    // instead of a per-line button+modal — the API itself is still one call per
+    // line (no batch endpoint exists), fired sequentially like BC's "Ajouter des
+    // articles" modal, same reason (parallel POSTs mutating the same BL's line
+    // list risk a server-side race) and same partial-success reporting.
+    const [returnBatchOpen, setReturnBatchOpen] = useState(false);
+    const [returnBatchQty, setReturnBatchQty] = useState<Record<number, number | ''>>({});
+    const [returnBatchCondition, setReturnBatchCondition] = useState<Record<number, GcomReturnCondition>>({});
+    const [returnBatchReason, setReturnBatchReason] = useState<Record<number, string>>({});
+    const [returningBatch, setReturningBatch] = useState(false);
+
+    const openReturnBatch = () => {
+        setReturnBatchQty({});
+        setReturnBatchCondition({});
+        setReturnBatchReason({});
+        setReturnBatchOpen(true);
+    };
+    const closeReturnBatch = () => setReturnBatchOpen(false);
+
+    const setBatchQty = (itemId: number, value: number | '') => setReturnBatchQty(prev => ({ ...prev, [itemId]: value }));
+    const setBatchCondition = (itemId: number, value: GcomReturnCondition) => setReturnBatchCondition(prev => ({ ...prev, [itemId]: value }));
+    const setBatchReason = (itemId: number, value: string) => setReturnBatchReason(prev => ({ ...prev, [itemId]: value }));
+
+    const confirmReturnBatch = async () => {
+        if (!selected) return;
+        const lines = (selected.items ?? []).filter(it => (Number(returnBatchQty[it.id]) || 0) > 0);
+        if (lines.length === 0) { toast.error('Renseignez au moins une quantité à retourner'); return; }
+
+        setReturningBatch(true);
+        let successCount = 0;
+        const failures: string[] = [];
+        // Sequential, not Promise.all — each call mutates the same BL's line
+        // list, parallel calls risk a server-side race on the same row.
+        for (const it of lines) {
+            const qty = Number(returnBatchQty[it.id]) || 0;
+            const currentQty = currentLineQty(it);
+            const reason = (returnBatchReason[it.id] ?? '').trim();
+            const label = it.product_id ? `Produit #${it.product_id}` : `Ligne #${it.id}`;
+            if (qty >= currentQty) {
+                failures.push(`${label} : quantité invalide (doit être < ${fmt(currentQty, 0)})`);
+                continue;
+            }
+            if (!reason) {
+                failures.push(`${label} : motif requis`);
+                continue;
+            }
+            try {
+                await gcomApi.deliveryNotes.returnLine(selected.id, it.id, {
+                    quantity: qty,
+                    reason,
+                    condition: returnBatchCondition[it.id] ?? 'sellable',
+                });
+                successCount++;
+            } catch (err: unknown) {
+                const msg = (err as { response?: { data?: { message?: string } } })?.response?.data?.message;
+                failures.push(`${label} : ${msg ?? 'erreur'}`);
+            }
+        }
+        setReturningBatch(false);
+        if (successCount > 0) {
+            toast.success(`${successCount} ligne${successCount > 1 ? 's' : ''} retournée${successCount > 1 ? 's' : ''} — stock réintégré`);
+            refresh();
+        }
+        if (failures.length > 0) {
+            toast.error(failures.join(' • '));
+        } else {
+            setReturnBatchOpen(false);
+        }
+    };
+
     // ── DataGrid columns ──────────────────────────────────────────────────────
 
     const columnDefs = useMemo<import('ag-grid-community').ColDef[]>(() => [
@@ -317,6 +431,7 @@ export default function BonLivraisonPage() {
 
     const canConvertToInvoice = selected?.status === 'delivered' && !selected.invoice_id;
     const canCancel = selected?.status === 'delivered' && !selected.invoice_id;
+    const canReturn = canCancel && (selected?.items ?? []).some(it => currentLineQty(it) > 1);
 
     const actionGroups = useMemo((): { items: ActionItemProps[] }[] => {
         const base: ActionItemProps[] = [
@@ -324,7 +439,12 @@ export default function BonLivraisonPage() {
             { icon: RefreshCw, label: 'Actualiser', variant: 'default', onClick: refresh, disabled: loading },
         ];
         if (!selected) return [{ items: base }];
-        const detailItems: ActionItemProps[] = [];
+        const detailItems: ActionItemProps[] = [
+            { icon: Download, label: 'Imprimer', variant: 'default', onClick: () => setPdfModalOpen(true) },
+        ];
+        if (canReturn) {
+            detailItems.push({ icon: RotateCcw, label: 'Effectuer un retour partiel', variant: 'warning', onClick: openReturnBatch });
+        }
         if (canConvertToInvoice) {
             detailItems.push({ icon: FileText, label: 'Convertir en Facture', variant: 'primary', onClick: openConvertToInvoice, disabled: convertingToInvoice });
         }
@@ -333,7 +453,7 @@ export default function BonLivraisonPage() {
         }
         return [{ items: base }, { items: detailItems }];
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [selected, canConvertToInvoice, canCancel, loading, convertingToInvoice]);
+    }, [selected, canConvertToInvoice, canCancel, canReturn, loading, convertingToInvoice]);
 
     // ─────────────────────────────────────────────────────────────────────────
     // RENDER
@@ -521,6 +641,13 @@ export default function BonLivraisonPage() {
                                         </div>
                                     )}
 
+                                    {selected.status === 'delivered' && selected.invoice_id && (
+                                        <div className="flex items-center gap-2 text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
+                                            <RotateCcw className="w-3.5 h-3.5 text-amber-500 shrink-0" />
+                                            BL déjà facturé — pour un retour de marchandise, utilisez l'avoir sur la facture liée (onglet Factures).
+                                        </div>
+                                    )}
+
                                     {/* ── Informations ─────────────────────── */}
                                     <div ref={el => { sectionRefs.current['informations'] = el; }}>
                                         <SageCollapsible title="Informations" isOpen={openSections['informations']} onOpenChange={open => toggleSection('informations', open)}>
@@ -550,14 +677,20 @@ export default function BonLivraisonPage() {
                                                         <p className="text-[10px] text-gray-400 uppercase tracking-wider mb-2">Documents liés</p>
                                                         <div className="flex flex-wrap items-center gap-2">
                                                             {selected.order && (
-                                                                <span className="flex items-center gap-1 text-xs font-medium text-gray-700 bg-white border border-gray-200 rounded-md px-2 py-1">
+                                                                <button
+                                                                    onClick={() => navigate(`/gcom/bons-commande?id=${selected.order!.id}`)}
+                                                                    className="flex items-center gap-1 text-xs font-medium text-gray-700 bg-white border border-gray-200 rounded-md px-2 py-1 hover:bg-sage-50 hover:border-sage-200 hover:text-sage-700 transition-colors"
+                                                                >
                                                                     <Package className="w-3 h-3 text-gray-400" /> {selected.order.order_code ?? `BC #${selected.order.id}`}
-                                                                </span>
+                                                                </button>
                                                             )}
                                                             {selected.invoice_id && (
-                                                                <span className="flex items-center gap-1 text-xs font-medium text-gray-700 bg-white border border-gray-200 rounded-md px-2 py-1">
+                                                                <button
+                                                                    onClick={() => navigate(`/gcom/factures?id=${selected.invoice_id}`)}
+                                                                    className="flex items-center gap-1 text-xs font-medium text-gray-700 bg-white border border-gray-200 rounded-md px-2 py-1 hover:bg-sage-50 hover:border-sage-200 hover:text-sage-700 transition-colors"
+                                                                >
                                                                     <FileText className="w-3 h-3 text-gray-400" /> Facture #{selected.invoice_id}
-                                                                </span>
+                                                                </button>
                                                             )}
                                                         </div>
                                                     </div>
@@ -587,9 +720,27 @@ export default function BonLivraisonPage() {
                                                 emptyIcon={Package}
                                                 columns={[
                                                     { key: 'article', header: 'Article', render: (it: GcomDeliveryNoteItem) => <span className="font-medium text-gray-800">{`Produit #${it.product_id}`}</span> },
-                                                    { key: 'qty', header: 'Qté', align: 'right', width: 'w-16', render: (it: GcomDeliveryNoteItem) => <span className="text-gray-600">{fmt(it.ordered_quantity, 0)}</span> },
+                                                    {
+                                                        key: 'qty', header: 'Qté', align: 'right', width: 'w-20',
+                                                        render: (it: GcomDeliveryNoteItem) => {
+                                                            // The backend doesn't persist any return reason/log anywhere on the
+                                                            // BL or its items (verified live) — this gap between the original
+                                                            // and live quantity is the only signal a return ever happened.
+                                                            const original = Number(it.ordered_quantity) || 0;
+                                                            const current = currentLineQty(it);
+                                                            const returned = original - current;
+                                                            return (
+                                                                <div>
+                                                                    <span className="text-gray-600">{fmt(current, 0)}</span>
+                                                                    {returned > 0 && (
+                                                                        <p className="text-[9px] text-amber-600 font-medium">-{fmt(returned, 0)} retourné{returned > 1 ? 's' : ''}</p>
+                                                                    )}
+                                                                </div>
+                                                            );
+                                                        },
+                                                    },
                                                     { key: 'pu', header: 'P.U.', align: 'right', width: 'w-24', render: (it: GcomDeliveryNoteItem) => <span className="text-gray-600">{fmtMAD(it.unit_price)}</span> },
-                                                    { key: 'total', header: 'Total', align: 'right', width: 'w-24', render: (it: GcomDeliveryNoteItem) => <span className="font-bold text-gray-900">{fmtMAD((Number(it.unit_price) || 0) * (Number(it.ordered_quantity) || 0))}</span> },
+                                                    { key: 'total', header: 'Total', align: 'right', width: 'w-24', render: (it: GcomDeliveryNoteItem) => <span className="font-bold text-gray-900">{fmtMAD((Number(it.unit_price) || 0) * currentLineQty(it))}</span> },
                                                 ]}
                                             />
                                         </SageCollapsible>
@@ -669,6 +820,104 @@ export default function BonLivraisonPage() {
                                 Confirmer
                             </button>
                             <button onClick={closeCancel} disabled={cancelling} className="flex-1 py-2 border border-gray-200 text-sm text-gray-600 rounded-lg hover:bg-gray-50 disabled:opacity-50 transition-colors">
+                                Annuler
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            <PdfPriceModeModal
+                isOpen={pdfModalOpen}
+                onClose={() => setPdfModalOpen(false)}
+                onConfirm={openPdf}
+                defaultMode="ttc"
+                documentLabel="bon de livraison"
+                loading={pdfLoading}
+            />
+
+            {/* ── Batch return modal — all lines in one grid, one submit ───────── */}
+            {returnBatchOpen && selected && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm">
+                    <div className="bg-white rounded-2xl shadow-2xl p-6 max-w-3xl w-full mx-4">
+                        <div className="flex items-center gap-3 mb-4">
+                            <div className="w-9 h-9 rounded-full bg-amber-100 flex items-center justify-center">
+                                <RotateCcw className="w-4 h-4 text-amber-600" />
+                            </div>
+                            <div>
+                                <h3 className="text-base font-semibold text-gray-900">Retour partiel</h3>
+                                <p className="text-[11px] text-gray-400">Renseignez la quantité retournée pour chaque article concerné.</p>
+                            </div>
+                        </div>
+
+                        <div className="max-h-[26rem] overflow-y-auto rounded-lg border border-gray-100">
+                            <table className="w-full text-xs">
+                                <thead className="sticky top-0 bg-gray-50 border-b border-gray-200">
+                                    <tr className="text-[10px] uppercase tracking-wider text-gray-400">
+                                        <th className="text-left font-semibold px-3 py-2">Article</th>
+                                        <th className="text-right font-semibold px-3 py-2 w-20">Qté livrée</th>
+                                        <th className="text-center font-semibold px-3 py-2 w-24">Qté à retourner</th>
+                                        <th className="text-left font-semibold px-3 py-2 w-40">État</th>
+                                        <th className="text-left font-semibold px-3 py-2">Motif</th>
+                                    </tr>
+                                </thead>
+                                <tbody className="divide-y divide-gray-100">
+                                    {(selected.items ?? []).map(it => {
+                                        const current = currentLineQty(it);
+                                        const returnable = current > 1;
+                                        const qty = returnBatchQty[it.id] ?? '';
+                                        return (
+                                            <tr key={it.id} className={!returnable ? 'opacity-50' : (Number(qty) || 0) > 0 ? 'bg-amber-50/40' : undefined}>
+                                                <td className="px-3 py-2 font-medium text-gray-800">{`Produit #${it.product_id}`}</td>
+                                                <td className="px-3 py-2 text-right text-gray-600">{fmt(current, 0)}</td>
+                                                <td className="px-2 py-1.5">
+                                                    <input
+                                                        type="number" min={0} max={returnable ? current - 1 : 0}
+                                                        disabled={!returnable}
+                                                        value={qty}
+                                                        placeholder="0"
+                                                        onChange={e => setBatchQty(it.id, e.target.value === '' ? '' : parseInt(e.target.value, 10))}
+                                                        className="w-full text-center px-2 py-1 text-xs border border-gray-200 rounded-md focus:outline-none focus:ring-1 focus:ring-sage-400 disabled:bg-gray-50 disabled:cursor-not-allowed"
+                                                    />
+                                                </td>
+                                                <td className="px-2 py-1.5">
+                                                    <select
+                                                        disabled={!returnable}
+                                                        value={returnBatchCondition[it.id] ?? 'sellable'}
+                                                        onChange={e => setBatchCondition(it.id, e.target.value as GcomReturnCondition)}
+                                                        className="w-full px-2 py-1 text-xs border border-gray-200 rounded-md focus:outline-none focus:ring-1 focus:ring-sage-400 bg-white disabled:bg-gray-50 disabled:cursor-not-allowed"
+                                                    >
+                                                        {RETURN_CONDITIONS.map(opt => <option key={opt.value} value={opt.value}>{opt.label}</option>)}
+                                                    </select>
+                                                </td>
+                                                <td className="px-2 py-1.5">
+                                                    <input
+                                                        type="text"
+                                                        disabled={!returnable}
+                                                        maxLength={255}
+                                                        value={returnBatchReason[it.id] ?? ''}
+                                                        placeholder={returnable ? 'Motif du retour…' : 'Qté = 1, annulez le BL pour retourner cette ligne'}
+                                                        onChange={e => setBatchReason(it.id, e.target.value)}
+                                                        className="w-full px-2 py-1 text-xs border border-gray-200 rounded-md focus:outline-none focus:ring-1 focus:ring-sage-400 disabled:bg-gray-50 disabled:cursor-not-allowed"
+                                                    />
+                                                </td>
+                                            </tr>
+                                        );
+                                    })}
+                                </tbody>
+                            </table>
+                        </div>
+
+                        <div className="flex gap-3 mt-5">
+                            <button
+                                onClick={confirmReturnBatch}
+                                disabled={returningBatch}
+                                className="flex-1 flex items-center justify-center gap-2 py-2 bg-sage-600 text-white text-sm font-medium rounded-lg hover:bg-sage-700 disabled:opacity-50 transition-colors"
+                            >
+                                {returningBatch ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <CheckCircle2 className="w-3.5 h-3.5" />}
+                                Confirmer le retour
+                            </button>
+                            <button onClick={closeReturnBatch} disabled={returningBatch} className="flex-1 py-2 border border-gray-200 text-sm text-gray-600 rounded-lg hover:bg-gray-50 disabled:opacity-50 transition-colors">
                                 Annuler
                             </button>
                         </div>

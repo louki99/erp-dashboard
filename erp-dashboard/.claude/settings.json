@@ -208,7 +208,11 @@
       "Bash(curl -s 'http://localhost:8000/api/backend/telesales/catalog/products?partner_id=2&per_page=3' -H 'Authorization: Bearer __CMDSUB_OUTPUT__' -H 'Accept: application/json')",
       "Bash(curl -s -X POST http://localhost:8000/api/backend/gcom/direct-invoices -H 'Authorization: Bearer __CMDSUB_OUTPUT__' -H 'Content-Type: application/json' -H 'Accept: application/json' -H 'X-Idempotency-Key: __TRACKED_VAR__' -d '{\"partner_id\":2,\"items\":[{\"product_id\":225,\"quantity\":1}],\"payment_method\":\"cash\",\"notes\":\"test treasury unification\"}')",
       "Bash(curl -s -X POST http://localhost:8000/api/backend/gcom/direct-invoices -H 'Authorization: Bearer __CMDSUB_OUTPUT__' -H 'Content-Type: application/json' -H 'Accept: application/json' -H 'X-Idempotency-Key: __TRACKED_VAR__' -d '{\"partner_id\":2,\"items\":[{\"product_id\":225,\"quantity\":1}],\"payment_method\":\"credit\",\"payment_term_id\":10,\"notes\":\"test deferred\"}')",
-      "Bash(curl -s 'http://localhost:8000/api/backend/gcom/payments?partner_id=2&per_page=50' -H 'Authorization: Bearer __CMDSUB_OUTPUT__' -H 'Accept: application/json')"
+      "Bash(curl -s 'http://localhost:8000/api/backend/gcom/payments?partner_id=2&per_page=50' -H 'Authorization: Bearer __CMDSUB_OUTPUT__' -H 'Accept: application/json')",
+      "Bash(python3 -c \"print\\('python3 ok'\\)\")",
+      "Bash(python -c \"print\\('python ok'\\)\")",
+      "Bash(pdftotext /tmp/inv22_def.pdf -)",
+      "Bash(pdftotext /tmp/bc_ttc.pdf -)"
     ],
     "additionalDirectories": [
       "C:\\Users\\louki\\.claude\\projects\\d--project--avenir-omni360-omin360__mobile-erp-dashboard\\memory",

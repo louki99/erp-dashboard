@@ -11,6 +11,8 @@ import type {
     GcomCreditNotesListResponse,
     GcomCreateCreditNotePayload,
     GcomCreateCreditNoteResponse,
+    GcomReturnDeliveryNoteLinePayload,
+    GcomReturnDeliveryNoteLineResponse,
     GcomQuote,
     GcomQuoteListFilters,
     GcomQuoteListResponse,
@@ -58,6 +60,7 @@ import type {
     GcomLedgerEntry,
     GcomLedgerFilters,
     GcomLedgerResponse,
+    GcomPdfPriceMode,
 } from '@/types/gcom.types';
 
 const BASE = '/api/backend/gcom';
@@ -68,6 +71,16 @@ const genIdempotencyKey = () =>
         : `${Date.now()}-${Math.random().toString(36).slice(2)}`;
 
 const idempotent = () => ({ headers: { 'X-Idempotency-Key': genIdempotencyKey() } });
+
+// Auth is a Bearer token (not a cookie), so a plain <a href> can't carry it —
+// fetch as a blob and hand the caller an object URL to open/download instead.
+const fetchPdfBlobUrl = async (url: string, priceMode?: GcomPdfPriceMode): Promise<string> => {
+    const response = await apiClient.get(url, {
+        responseType: 'blob',
+        params: priceMode ? { price_mode: priceMode } : undefined,
+    });
+    return URL.createObjectURL(response.data as Blob);
+};
 
 export const gcomApi = {
     directInvoices: {
@@ -109,14 +122,14 @@ export const gcomApi = {
             return response.data.credit_note;
         },
 
-        // Auth is a Bearer token (not a cookie), so a plain <a href> can't carry it —
-        // fetch as a blob and hand the caller an object URL to open/download instead.
-        getPdfBlobUrl: async (invoiceId: number): Promise<string> => {
-            const response = await apiClient.get(`${BASE}/invoices/${invoiceId}/pdf`, {
-                responseType: 'blob',
-            });
-            return URL.createObjectURL(response.data as Blob);
-        },
+        // Fixed 2026-08-17 — the invoice pdf now runs through the same
+        // DocumentService/DocumentDataResolver pipeline as BC/Devis/BL (was
+        // the older InvoiceDocumentService before, which didn't know about
+        // price_mode or the modern documents._layout template — a real
+        // architecture gap, not a one-off bug). `price_mode` genuinely
+        // affects the rendered output now, defaults to `ttc` if omitted.
+        getPdfBlobUrl: (invoiceId: number, priceMode?: GcomPdfPriceMode): Promise<string> =>
+            fetchPdfBlobUrl(`${BASE}/invoices/${invoiceId}/pdf`, priceMode),
     },
 
     quotes: {
@@ -157,6 +170,10 @@ export const gcomApi = {
             );
             return response.data;
         },
+
+        // Default HT if `priceMode` omitted (unchanged behavior).
+        getPdfBlobUrl: (quoteId: number, priceMode?: GcomPdfPriceMode): Promise<string> =>
+            fetchPdfBlobUrl(`${BASE}/quotes/${quoteId}/pdf`, priceMode),
     },
 
     orders: {
@@ -245,6 +262,10 @@ export const gcomApi = {
             );
             return response.data.order;
         },
+
+        // Default HT if `priceMode` omitted (unchanged behavior).
+        getPdfBlobUrl: (orderId: number, priceMode?: GcomPdfPriceMode): Promise<string> =>
+            fetchPdfBlobUrl(`${BASE}/orders/${orderId}/pdf`, priceMode),
     },
 
     deliveryNotes: {
@@ -285,6 +306,21 @@ export const gcomApi = {
             );
             return response.data.delivery_note;
         },
+
+        // CAS 1 of the returns architecture (§9bis) — partial line reduction
+        // before invoicing. 422 if already invoiced or quantity >= current.
+        returnLine: async (deliveryNoteId: number, itemId: number, payload: GcomReturnDeliveryNoteLinePayload): Promise<GcomDeliveryNote> => {
+            const response = await apiClient.post<GcomReturnDeliveryNoteLineResponse>(
+                `${BASE}/delivery-notes/${deliveryNoteId}/lines/${itemId}/return`,
+                payload,
+                idempotent(),
+            );
+            return response.data.delivery_note;
+        },
+
+        // Default TTC if `priceMode` omitted (unchanged behavior).
+        getPdfBlobUrl: (deliveryNoteId: number, priceMode?: GcomPdfPriceMode): Promise<string> =>
+            fetchPdfBlobUrl(`${BASE}/delivery-notes/${deliveryNoteId}/pdf`, priceMode),
     },
 
     partners: {

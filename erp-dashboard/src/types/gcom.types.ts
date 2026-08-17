@@ -15,6 +15,12 @@
 
 export type GcomPaymentMethod = 'cash' | 'card' | 'credit' | 'cheque' | 'effet' | 'transfer';
 
+// `?price_mode=` on the BC/Devis/BL pdf endpoints — controls only the per-line
+// unit price/amount column basis; the HT/TVA/TTC totals block at the bottom
+// always shows the full breakdown regardless. Omit to keep each document's
+// own default (BC/Devis: HT, BL: TTC) — invoices have no price_mode param.
+export type GcomPdfPriceMode = 'ht' | 'ttc';
+
 export interface GcomInstrumentInput {
     reference_number: string;
     due_date: string; // YYYY-MM-DD
@@ -187,18 +193,47 @@ export interface GcomCreditNotesListResponse {
     credit_notes: GcomCreditNote[];
 }
 
+// ─── Returns architecture (§9bis, 2026-08-18) ─────────────────────────────
+// Shared by CAS 1 (BL line return, pre-invoice) and CAS 2 (avoir restock,
+// post-invoice) — `sellable` (default) goes straight back to sellable stock,
+// `damaged`/`technical` land in a dedicated (invisible-to-sales) location.
+export type GcomReturnCondition = 'sellable' | 'damaged' | 'technical';
+
 // POST /invoices/{invoice}/credit-notes — `amount` omitted means full-amount
 // (invoice cancellation); `items` presence triggers restock of those lines.
+// `items[].condition` added 2026-08-18 — omit for the pre-existing plain
+// sellable-restock behavior.
 export interface GcomCreateCreditNotePayload {
     amount?: number;
     reason: string;
-    items?: { product_id: number; quantity: number }[];
+    items?: { product_id: number; quantity: number; condition?: GcomReturnCondition }[];
 }
 
 export interface GcomCreateCreditNoteResponse {
     success: boolean;
     message?: string;
     credit_note: GcomCreditNote;
+    invoice?: GcomInvoice;
+}
+
+// POST /delivery-notes/{deliveryNote}/lines/{item}/return — CAS 1: reduces a
+// BL line's quantity before it's ever been invoiced (only allowed then —
+// 422 if the BL is already invoiced). `{item}` is the DeliveryNoteItem row
+// id. `quantity` must be strictly less than the line's current quantity —
+// for a full line/whole-BL return, use the existing `cancel` endpoint
+// instead. Restocks immediately (condition-aware) and recomputes the BL's
+// total_amount; a later convert-to-invoice bills the net quantity with no
+// extra step needed.
+export interface GcomReturnDeliveryNoteLinePayload {
+    quantity: number;
+    reason: string;
+    condition?: GcomReturnCondition;
+}
+
+export interface GcomReturnDeliveryNoteLineResponse {
+    success: boolean;
+    message?: string;
+    delivery_note: GcomDeliveryNote;
 }
 
 // ─── Quotes (Devis) — see docs/modules/28-gcom.md §8 "Quotes (Devis)" ──────

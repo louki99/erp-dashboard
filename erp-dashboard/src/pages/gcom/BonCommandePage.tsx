@@ -1,9 +1,10 @@
 import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import type { ICellRendererParams, ValueGetterParams } from 'ag-grid-community';
 import {
     ClipboardList, Search, X, Plus, Loader2, CheckCircle2,
     RefreshCw, Building2, AlertTriangle, Info, Package, Truck,
-    FileText, Ban, Calendar, Edit2,
+    FileText, Ban, Calendar, Edit2, Download,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 
@@ -14,6 +15,7 @@ import { SageTabs, type TabItem } from '@/components/common/SageTabs';
 import { SageCollapsible } from '@/components/common/SageCollapsible';
 import { GcomCatalogEntryScreen, type GcomCatalogEntrySubmitPayload } from '@/components/gcom/GcomCatalogEntryScreen';
 import { GcomLinesTable } from '@/components/gcom/GcomLinesTable';
+import { PdfPriceModeModal } from '@/components/gcom/PdfPriceModeModal';
 
 import { gcomApi } from '@/services/api/gcomApi';
 import { getPartners } from '@/services/api/partnerApi';
@@ -22,7 +24,7 @@ import { PAYMENT_METHODS } from '@/lib/gcom/paymentMethods';
 import type { Partner } from '@/types/partner.types';
 import type { CatalogProduct } from '@/types/telesalesAgent.types';
 import type {
-    GcomPaymentMethod, GcomOrder, GcomOrderProduct, GcomBcStatus, GcomInstrumentInput,
+    GcomPaymentMethod, GcomOrder, GcomOrderProduct, GcomBcStatus, GcomInstrumentInput, GcomPdfPriceMode,
 } from '@/types/gcom.types';
 
 // ─── helpers ─────────────────────────────────────────────────────────────────
@@ -68,6 +70,9 @@ type ConvertTarget = { type: 'order'; id: number } | { type: 'bl'; id: number };
 // ─── Component ───────────────────────────────────────────────────────────────
 
 export default function BonCommandePage() {
+    const navigate = useNavigate();
+    const [searchParams] = useSearchParams();
+
     // ── List filters ─────────────────────────────────────────────────────────
     const [bcStatusFilter, setBcStatusFilter] = useState<'all' | GcomBcStatus>('all');
     const [partnerFilter, setPartnerFilter] = useState<Partner | null>(null);
@@ -190,6 +195,33 @@ export default function BonCommandePage() {
     const refresh = () => {
         loadOrders(1, false);
         if (selected) selectOrder(selected);
+    };
+
+    // Deep-link from another GCOM document's "Documents liés" chip
+    // (?id=123) — fetches directly by id regardless of which list page/filter
+    // it'd otherwise fall under, same pattern every selectXxx already re-fetches.
+    useEffect(() => {
+        const idParam = searchParams.get('id');
+        const id = idParam ? parseInt(idParam, 10) : NaN;
+        if (!Number.isNaN(id)) selectOrder({ id } as GcomOrder);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []);
+
+    // ── PDF (defaults HT if `priceMode` omitted — this document's convention) ──
+    const [pdfModalOpen, setPdfModalOpen] = useState(false);
+    const [pdfLoading, setPdfLoading] = useState(false);
+    const openPdf = async (priceMode: GcomPdfPriceMode) => {
+        if (!selected) return;
+        setPdfLoading(true);
+        try {
+            const url = await gcomApi.orders.getPdfBlobUrl(selected.id, priceMode);
+            window.open(url, '_blank');
+            setPdfModalOpen(false);
+        } catch {
+            toast.error('Impossible de charger le PDF');
+        } finally {
+            setPdfLoading(false);
+        }
     };
 
     const openCreate = () => setFormMode('create');
@@ -510,7 +542,9 @@ export default function BonCommandePage() {
             { icon: RefreshCw, label: 'Actualiser', variant: 'default', onClick: refresh, disabled: loading },
         ];
         if (!selected) return [{ items: base }];
-        const detailItems: ActionItemProps[] = [];
+        const detailItems: ActionItemProps[] = [
+            { icon: Download, label: 'Imprimer', variant: 'default', onClick: () => setPdfModalOpen(true) },
+        ];
         if (noDocumentsYet) {
             detailItems.push(
                 { icon: Plus, label: 'Ajouter une ligne', variant: 'sage', onClick: openAddLineModal },
@@ -753,14 +787,22 @@ export default function BonCommandePage() {
                                                         <p className="text-[10px] text-gray-400 uppercase tracking-wider mb-2">Documents liés</p>
                                                         <div className="flex flex-wrap items-center gap-2">
                                                             {selected.delivery_notes?.map(bl => (
-                                                                <span key={bl.id} className="flex items-center gap-1 text-xs font-medium text-gray-700 bg-white border border-gray-200 rounded-md px-2 py-1">
+                                                                <button
+                                                                    key={bl.id}
+                                                                    onClick={() => navigate(`/gcom/bons-livraison?id=${bl.id}`)}
+                                                                    className="flex items-center gap-1 text-xs font-medium text-gray-700 bg-white border border-gray-200 rounded-md px-2 py-1 hover:bg-sage-50 hover:border-sage-200 hover:text-sage-700 transition-colors"
+                                                                >
                                                                     <Truck className="w-3 h-3 text-gray-400" /> BL #{bl.id} {bl.status && <span className="text-[10px] text-gray-400">({bl.status})</span>}
-                                                                </span>
+                                                                </button>
                                                             ))}
                                                             {selected.invoices?.map(inv => (
-                                                                <span key={inv.id} className="flex items-center gap-1 text-xs font-medium text-gray-700 bg-white border border-gray-200 rounded-md px-2 py-1">
+                                                                <button
+                                                                    key={inv.id}
+                                                                    onClick={() => navigate(`/gcom/factures?id=${inv.id}`)}
+                                                                    className="flex items-center gap-1 text-xs font-medium text-gray-700 bg-white border border-gray-200 rounded-md px-2 py-1 hover:bg-sage-50 hover:border-sage-200 hover:text-sage-700 transition-colors"
+                                                                >
                                                                     <FileText className="w-3 h-3 text-gray-400" /> {inv.invoice_number ?? `Facture #${inv.id}`}
-                                                                </span>
+                                                                </button>
                                                             ))}
                                                         </div>
                                                     </div>
@@ -1099,6 +1141,15 @@ export default function BonCommandePage() {
                     </div>
                 </div>
             )}
+
+            <PdfPriceModeModal
+                isOpen={pdfModalOpen}
+                onClose={() => setPdfModalOpen(false)}
+                onConfirm={openPdf}
+                defaultMode="ht"
+                documentLabel="bon de commande"
+                loading={pdfLoading}
+            />
         </>
     );
 }
