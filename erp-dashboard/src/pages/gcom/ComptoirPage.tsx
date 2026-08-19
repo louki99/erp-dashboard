@@ -61,6 +61,7 @@ export default function ComptoirPage() {
             submitLabel="Valider & Imprimer"
             submitIcon={Printer}
             needsInstrumentAtSubmit
+            showSoucheKindSelector
             onSubmit={handleSubmit}
             renderSuccess={(invoice) => (
                 <div className="flex-1 flex flex-col items-center justify-center p-8 text-center">
@@ -70,6 +71,9 @@ export default function ComptoirPage() {
                     <h2 className="text-lg font-bold text-gray-900 mb-1">Vente enregistrée</h2>
                     <p className="text-xs text-gray-500 mb-6">
                         Facture {invoice.invoice_number ?? `#${invoice.id}`} — {invoice.status === 'fully_paid' ? 'payée' : 'en attente de règlement'} · impression envoyée
+                        {invoice.souche_kind === 'internal' && (
+                            <span className="ml-1.5 inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold bg-indigo-50 text-indigo-700 align-middle">Souche interne</span>
+                        )}
                     </p>
                     <div className="bg-white border border-gray-200 rounded-xl p-5 w-full max-w-sm space-y-2 text-left">
                         <div className="flex justify-between text-xs"><span className="text-gray-400">Sous-total HT</span><span className="font-medium text-gray-900">{fmtMAD(invoice.subtotal)}</span></div>

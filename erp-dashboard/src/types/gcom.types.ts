@@ -33,6 +33,13 @@ export interface GcomItemInput {
     quantity: number;
 }
 
+// §17, built 2026-08-25/26 — 'declared' (fiscal-export series, must stay
+// gap-free) vs 'internal' (tracked for stock/caisse/encours only, never
+// exported). Omit to fall back to the PaymentTerm-derived default
+// (`'declared'` unless the resolved term is flagged is_internal_souche).
+// An explicit value always wins over that default, even if they disagree.
+export type GcomSoucheKind = 'declared' | 'internal';
+
 export interface GcomDirectInvoicePayload {
     partner_id: number;
     items: GcomItemInput[];
@@ -40,6 +47,7 @@ export interface GcomDirectInvoicePayload {
     notes?: string;
     payment_term_id?: number | null;
     instrument?: GcomInstrumentInput | null;
+    souche_kind?: GcomSoucheKind | null;
 }
 
 export interface GcomInvoiceItem {
@@ -130,6 +138,11 @@ export interface GcomInvoice {
     order?: { id: number; order_code?: string; bc_status?: string; delivery_notes?: GcomDeliveryNoteRef[]; financial_metadata?: GcomOrderFinancialMetadata };
     payments?: GcomInvoicePayment[];
     financial_instrument?: GcomInvoiceFinancialInstrument | null;
+    // §17 (2026-08-25) — captured at generation time, always present on a
+    // freshly-created/converted invoice regardless of whether souche_kind
+    // was explicitly sent or auto-derived from the PaymentTerm.
+    souche_kind?: GcomSoucheKind;
+    token_serie_id?: number;
 }
 
 export interface GcomDirectInvoiceResponse {
@@ -714,6 +727,10 @@ export interface GcomFinancialInstrument {
     cleared_at?: string | null;
     rejected_at?: string | null;
     deposit_reference?: string | null;
+    // Only present on the company-wide list (GET /financial-instruments) —
+    // the per-partner list omits it since the partner is already known
+    // from the URL.
+    partner?: { id: number; name: string; code?: string };
 }
 
 // Lifecycle transitions (2026-08-18) — FinancialInstrumentService existed
@@ -746,6 +763,44 @@ export interface GcomFinancialInstrumentsFilters {
 export interface GcomFinancialInstrumentsResponse {
     success: boolean;
     financial_instruments: GcomPaginator<GcomFinancialInstrument>;
+}
+
+// Company-wide "Portefeuille" (built 2026-08-24) — distinct from the
+// per-partner list above. financial_instruments has neither company_id nor
+// branch_id as a column: company scope is 100% reliable (partner_id →
+// partners.company_id), branch_id is best-effort (only resolvable for an
+// at-sale instrument via invoice_id → order.branch_id — a deferred
+// règlement's instrument never has one, not a bug).
+export interface GcomFinancialInstrumentsGlobalFilters {
+    status?: GcomInstrumentStatus;
+    instrument_type?: GcomInstrumentType;
+    bank_id?: number;
+    due_date_from?: string;
+    due_date_to?: string;
+    branch_id?: number;
+    per_page?: number;
+    page?: number;
+}
+
+// "Remise en banque groupée" — one deposit_date/deposit_reference applied
+// to the whole selection in a single bordereau.
+export interface GcomBatchDepositPayload {
+    instrument_ids: number[];
+    deposit_date?: string;
+    deposit_reference?: string;
+}
+
+// Best-effort, not all-or-nothing (same shape as §16's closeAllForBranch) —
+// always 200 even on partial failure; a malformed request (e.g. no
+// instrument_ids) still 422s as usual. An id from another company is
+// reported in errors as not-found, never silently processed.
+export interface GcomBatchDepositResponse {
+    success: boolean;
+    message?: string;
+    data: {
+        deposited: GcomFinancialInstrument[];
+        errors: { id: number; message: string }[];
+    };
 }
 
 export interface GcomAccountStatement {

@@ -24,7 +24,7 @@ import { PAYMENT_METHODS } from '@/lib/gcom/paymentMethods';
 import type { Partner } from '@/types/partner.types';
 import type { CatalogProduct } from '@/types/telesalesAgent.types';
 import type {
-    GcomPaymentMethod, GcomOrder, GcomOrderProduct, GcomBcStatus, GcomInstrumentInput, GcomPdfPriceMode,
+    GcomPaymentMethod, GcomOrder, GcomOrderProduct, GcomBcStatus, GcomInstrumentInput, GcomPdfPriceMode, GcomSoucheKind,
 } from '@/types/gcom.types';
 
 // ─── helpers ─────────────────────────────────────────────────────────────────
@@ -290,10 +290,13 @@ export default function BonCommandePage() {
     const [invoiceConfirmOpen, setInvoiceConfirmOpen] = useState(false); // plain confirmation otherwise
     const [convertInstrument, setConvertInstrument] = useState<GcomInstrumentInput>(EMPTY_INSTRUMENT);
     const [convertingToInvoice, setConvertingToInvoice] = useState(false);
+    // §17 — explicit override, 'declared' is the safe/common default.
+    const [convertSoucheKind, setConvertSoucheKind] = useState<GcomSoucheKind>('declared');
 
     const openConvertToInvoice = (target: ConvertTarget) => {
         if (!selected) return;
         setConvertTarget(target);
+        setConvertSoucheKind('declared');
         const method = selected.financial_metadata?.payment_method;
         const needsInstrument = method === 'cheque' || method === 'effet';
         if (needsInstrument) {
@@ -310,9 +313,9 @@ export default function BonCommandePage() {
         setConvertingToInvoice(true);
         try {
             const invoice = target.type === 'order'
-                ? await gcomApi.orders.convertToInvoice(target.id, instrument)
-                : await gcomApi.deliveryNotes.convertToInvoice(target.id, instrument);
-            toast.success(`Facture ${invoice.invoice_number ?? `#${invoice.id}`} créée`);
+                ? await gcomApi.orders.convertToInvoice(target.id, instrument, convertSoucheKind)
+                : await gcomApi.deliveryNotes.convertToInvoice(target.id, instrument, convertSoucheKind);
+            toast.success(`Facture ${invoice.invoice_number ?? `#${invoice.id}`} créée${invoice.souche_kind === 'internal' ? ' (souche interne)' : ''}`);
             setConvertPanelOpen(false);
             setInvoiceConfirmOpen(false);
             setConvertTarget(null);
@@ -725,6 +728,20 @@ export default function BonCommandePage() {
                                                 <input value={convertInstrument.bank_name} onChange={e => setConvertInstrument(p => ({ ...p, bank_name: e.target.value }))} placeholder="Banque" className="px-2 py-1.5 text-xs border border-gray-200 rounded-md" />
                                                 <input value={convertInstrument.bank_account} onChange={e => setConvertInstrument(p => ({ ...p, bank_account: e.target.value }))} placeholder="N° compte" className="px-2 py-1.5 text-xs border border-gray-200 rounded-md" />
                                             </div>
+                                            <div className="flex items-center gap-1.5">
+                                                <span className="text-[10px] text-gray-500 mr-0.5">Souche :</span>
+                                                {(['declared', 'internal'] as GcomSoucheKind[]).map(k => (
+                                                    <button
+                                                        key={k}
+                                                        onClick={() => setConvertSoucheKind(k)}
+                                                        className={`px-2.5 py-1 rounded-lg border text-[11px] font-medium transition-colors ${
+                                                            convertSoucheKind === k ? 'bg-indigo-600 border-indigo-600 text-white' : 'bg-white border-gray-200 text-gray-600 hover:bg-gray-50'
+                                                        }`}
+                                                    >
+                                                        {k === 'declared' ? 'Déclarée' : 'Interne'}
+                                                    </button>
+                                                ))}
+                                            </div>
                                             <div className="flex gap-2">
                                                 <button
                                                     onClick={() => {
@@ -1122,9 +1139,23 @@ export default function BonCommandePage() {
                             </div>
                             <h3 className="text-base font-semibold text-gray-900">Convertir en facture</h3>
                         </div>
-                        <p className="text-sm text-gray-600 mb-5">
+                        <p className="text-sm text-gray-600 mb-3">
                             Confirmez-vous la conversion {convertTarget.type === 'bl' ? 'du BL' : `du BC ${selected.order_code ?? `#${selected.id}`}`} en facture pour <strong>{selected.partner?.name}</strong>, d'un montant de <strong>{fmtMAD(selected.total_amount)}</strong> ?
                         </p>
+                        <div className="flex items-center gap-1.5 mb-5">
+                            <span className="text-[10px] text-gray-500 mr-0.5">Souche :</span>
+                            {(['declared', 'internal'] as GcomSoucheKind[]).map(k => (
+                                <button
+                                    key={k}
+                                    onClick={() => setConvertSoucheKind(k)}
+                                    className={`px-2.5 py-1 rounded-lg border text-[11px] font-medium transition-colors ${
+                                        convertSoucheKind === k ? 'bg-indigo-600 border-indigo-600 text-white' : 'bg-white border-gray-200 text-gray-600 hover:bg-gray-50'
+                                    }`}
+                                >
+                                    {k === 'declared' ? 'Déclarée' : 'Interne'}
+                                </button>
+                            ))}
+                        </div>
                         <div className="flex gap-3">
                             <button
                                 onClick={() => doConvertToInvoice(convertTarget, null)}

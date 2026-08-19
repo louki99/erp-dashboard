@@ -36,6 +36,7 @@ import {
   Warehouse,
   Box,
   Headset,
+  Wallet,
 } from 'lucide-react';
 
 export interface MenuItem {
@@ -1058,6 +1059,14 @@ export const MENU_MODULES: MenuModule[] = [
             icon: FileText,
             description: 'Consultation des factures GCOM — lignes, origine (BC/BL) et avoirs',
             keywords: ['facture', 'factures', 'invoice', 'consultation', 'avoir'],
+          },
+          {
+            id: 'gcom:instruments',
+            label: 'Chèques & Effets',
+            route: '/gcom/instruments',
+            icon: Wallet,
+            description: 'Portefeuille chèques & effets — vue globale entreprise, remise en banque groupée',
+            keywords: ['cheque', 'chèque', 'effet', 'portefeuille', 'bordereau', 'remise en banque', 'instrument'],
           },
         ],
       },

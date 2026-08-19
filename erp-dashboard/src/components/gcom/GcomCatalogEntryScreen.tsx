@@ -17,7 +17,7 @@ import { telesalesApi } from '@/services/api/telesalesApi';
 import { PAYMENT_METHODS } from '@/lib/gcom/paymentMethods';
 import type { Partner, PaymentTermOption } from '@/types/partner.types';
 import type { CatalogProduct } from '@/types/telesalesAgent.types';
-import type { GcomPaymentMethod, GcomInstrumentInput, GcomItemInput } from '@/types/gcom.types';
+import type { GcomPaymentMethod, GcomInstrumentInput, GcomItemInput, GcomSoucheKind } from '@/types/gcom.types';
 
 // ─── Shared "catalog quick-pad" entry experience ──────────────────────────────
 // Powers both the Comptoir (direct invoice) and BC creation screens: pick a
@@ -55,6 +55,8 @@ export interface GcomCatalogEntrySubmitPayload {
     instrument: GcomInstrumentInput | null;
     /** Only meaningful when `showExpiresAt` is set on the screen (Devis). */
     expires_at?: string;
+    /** Only meaningful when `showSoucheKindSelector` is set (Comptoir). §17. */
+    souche_kind?: GcomSoucheKind | null;
 }
 
 export interface GcomCatalogEntryScreenProps<TResult> {
@@ -79,6 +81,11 @@ export interface GcomCatalogEntryScreenProps<TResult> {
     hidePaymentSection?: boolean;
     /** Devis-only: shows an optional "expires_at" date field next to notes. */
     showExpiresAt?: boolean;
+    /** Comptoir-only (§17) — a cash/cheque sale never carries a caller-chosen
+     * payment_term_id (the one global cash term is always resolved), so this
+     * is the only point-of-sale path that can mark a specific sale internal.
+     * Shows a 2-option "Déclarée"/"Interne" toggle next to payment method. */
+    showSoucheKindSelector?: boolean;
 }
 
 const EMPTY_INSTRUMENT: GcomInstrumentInput = { reference_number: '', due_date: '', bank_name: '', bank_account: '' };
@@ -97,6 +104,7 @@ export function GcomCatalogEntryScreen<TResult>({
     confirmBeforeSubmit = false,
     hidePaymentSection = false,
     showExpiresAt = false,
+    showSoucheKindSelector = false,
 }: GcomCatalogEntryScreenProps<TResult>) {
     const { user } = useAuth();
 
@@ -275,6 +283,9 @@ export function GcomCatalogEntryScreen<TResult>({
     const [instrument, setInstrument] = useState<GcomInstrumentInput>(EMPTY_INSTRUMENT);
     const [notes, setNotes] = useState('');
     const [expiresAt, setExpiresAt] = useState('');
+    // §17 — 'declared' is the safe/common default, matching the backend's own
+    // fallback when the field is omitted entirely.
+    const [soucheKind, setSoucheKind] = useState<GcomSoucheKind>('declared');
 
     const methodDef = PAYMENT_METHODS.find(m => m.value === paymentMethod)!;
     const showInstrumentFields = needsInstrumentAtSubmit && methodDef.needsInstrument;
@@ -339,6 +350,7 @@ export function GcomCatalogEntryScreen<TResult>({
                 notes: notes.trim() || undefined,
                 instrument: showInstrumentFields ? instrument : null,
                 expires_at: showExpiresAt ? (expiresAt || undefined) : undefined,
+                souche_kind: showSoucheKindSelector ? soucheKind : undefined,
             });
             setShowConfirmModal(false);
             if (renderSuccess) setResult(created);
@@ -358,6 +370,7 @@ export function GcomCatalogEntryScreen<TResult>({
         setInstrument(EMPTY_INSTRUMENT);
         setNotes('');
         setExpiresAt('');
+        setSoucheKind('declared');
         setShowOnlySelected(false);
         loadCatalog(catalogQuery, 1, false); // refresh stock levels
         setTimeout(() => searchInputRef.current?.focus(), 0);
@@ -669,6 +682,25 @@ export function GcomCatalogEntryScreen<TResult>({
                                                 </button>
                                             ))}
                                         </div>
+                                        )}
+
+                                        {showSoucheKindSelector && (
+                                            <div className="flex items-center gap-1.5">
+                                                <span className="text-[10px] text-gray-400 mr-0.5">Souche :</span>
+                                                {(['declared', 'internal'] as GcomSoucheKind[]).map(k => (
+                                                    <button
+                                                        key={k}
+                                                        onClick={() => setSoucheKind(k)}
+                                                        className={`px-2.5 py-1 rounded-lg border text-[11px] font-medium transition-colors ${
+                                                            soucheKind === k
+                                                                ? 'bg-indigo-600 border-indigo-600 text-white'
+                                                                : 'bg-white border-gray-200 text-gray-600 hover:bg-gray-50'
+                                                        }`}
+                                                    >
+                                                        {k === 'declared' ? 'Déclarée' : 'Interne'}
+                                                    </button>
+                                                ))}
+                                            </div>
                                         )}
 
                                         {!hidePaymentSection && methodDef.needsTerm && (

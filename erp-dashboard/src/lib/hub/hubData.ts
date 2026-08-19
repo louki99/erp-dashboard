@@ -7,7 +7,7 @@ import {
     Target, AlertTriangle, Import, GitBranch,
     Calculator, Globe, Cog, FileSearch, RotateCcw, ScanLine, Box,
     Activity, ShieldAlert, HardDrive, Trash2, CalendarClock,
-    Star, ListTodo, ShoppingCart, Hash, Key, Radio,
+    Star, ListTodo, ShoppingCart, Hash, Key, Radio, Landmark, Wallet,
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 
@@ -530,6 +530,8 @@ export const BUSINESS_DOMAINS: BusinessDomain[] = [
                     { id: 'gcom-bl',        label: 'Bons de Livraison', route: '/gcom/bons-livraison', icon: Truck         },
                     { id: 'gcom-reglement', label: 'Règlement',         route: '/gcom/reglement',      icon: Banknote      },
                     { id: 'gcom-factures',  label: 'Factures',          route: '/gcom/factures',       icon: FileText      },
+                    { id: 'gcom-treasury',  label: 'Trésorerie Agence', route: '/finance/journals?type=BRANCH_CAISSE', icon: Landmark },
+                    { id: 'gcom-instruments', label: 'Chèques & Effets', route: '/gcom/instruments', icon: Wallet },
                 ],
             },
         ],

@@ -59,9 +59,89 @@ export interface Transfer {
   rejected_at: string | null;
   cancelled_at: string | null;
   rejection_reason: string | null;
-  sourceJournal: { id: number; code: string; method_suffix: string };
-  destJournal: { id: number; code: string; method_suffix: string };
-  createdBy?: { id: number; name: string };
+  // Verified live 2026-08-18: the real field names are snake_case
+  // (source_journal/dest_journal), not the sourceJournal/destJournal this
+  // type originally declared — that mismatch crashed TransferDetail
+  // (`transfer.sourceJournal.code` on `undefined`) on every real transfer.
+  source_journal: { id: number; code: string; method_suffix: string };
+  dest_journal: { id: number; code: string; method_suffix: string };
+  // Also verified live: the API only ever returns a bare `created_by` id,
+  // never a nested user object — there is no name available to display.
+  created_by: number;
+}
+
+// Clôture de caisse (Z de caisse) — built 2026-08-21 (§16). One row per
+// (journal, business_date). Verified live: `business_date`/`opened_at`/
+// `closed_at` come back as full UTC datetimes even though business_date is
+// conceptually a plain date — format with the same fmtDate helper used
+// elsewhere, don't assume a bare YYYY-MM-DD string.
+export type TreasuryClosureStatus = 'OPEN' | 'CLOSED';
+
+export interface JournalClosure {
+  id: number;
+  journal_id: number;
+  business_date: string;
+  status: TreasuryClosureStatus;
+  opening_balance: string;
+  // Only present once CLOSED.
+  theoretical_closing_balance?: string;
+  counted_balance?: string;
+  // counted_balance - theoretical_closing_balance — positive = surplus, negative = shortage.
+  discrepancy?: string;
+  notes?: string | null;
+  opened_by: number;
+  opened_at: string;
+  closed_by?: number;
+  closed_at?: string;
+  // Correction (§16, built 2026-08-22) — POST .../closures/{closure}/correct.
+  // original_counted_balance/original_discrepancy are set ONCE, on the first
+  // correction only (survive every later correction unchanged) — read them
+  // to show "corrigé, valeur d'origine : X" rather than the current values.
+  correction_count?: number;
+  original_counted_balance?: string;
+  original_discrepancy?: string;
+  last_corrected_by?: number;
+  last_corrected_at?: string;
+  last_correction_reason?: string;
+}
+
+// Encaissements — every settlement that filled a given caisse, traceable
+// back to order_id. Verified live 2026-08-22 (`GET /finance/intake-lines?
+// journal_id=X`): amount/status are the raw API types (amount is a string
+// like everywhere else in this API; status is a bare numeric code, no enum
+// documented — display it as-is rather than guessing a label mapping).
+export interface IntakeLine {
+  id: number;
+  journal_id: number;
+  order_id: number | null;
+  amount: string;
+  status: number;
+  payment_method: string;
+  note: string | null;
+  created_by: number;
+  created_at: string;
+  journal?: { id: number; code: string; method_suffix: string; user_id: number | null };
+}
+
+// Full operations trail for one journal (every intake, transfer
+// request/approve/reject, auth check, caisse open/close/correct).
+// Verified live: `created_at` here is a plain "YYYY-MM-DD HH:mm:ss" string,
+// NOT the ISO 8601 the rest of this API uses elsewhere — still parses fine
+// via `new Date()`/the shared formatDateTime helper, just don't assume the
+// `T`/`Z` shape if this field is ever read raw. `metadata` shape varies by
+// `operation_type`, treat it as opaque/display-only.
+export interface AuditLogEntry {
+  id: number;
+  operation_type: string;
+  journal_code: string;
+  transfer_id: number | null;
+  user_id: number;
+  amount: string | null;
+  previous_state: string | null;
+  new_state: string | null;
+  ip_address: string | null;
+  metadata: Record<string, unknown>;
+  created_at: string;
 }
 
 export interface Settlement {

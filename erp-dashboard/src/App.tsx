@@ -18,6 +18,7 @@ import FacturesPage from '@/pages/gcom/FacturesPage';
 import BonCommandePage from '@/pages/gcom/BonCommandePage';
 import BonLivraisonPage from '@/pages/gcom/BonLivraisonPage';
 import ReglementPage from '@/pages/gcom/ReglementPage';
+import PortefeuilleInstrumentsPage from '@/pages/gcom/PortefeuilleInstrumentsPage';
 import { OrdersPage } from '@/pages/OrdersPage';
 import { PartnerBalancesPage } from '@/pages/partners/PartnerBalancesPage';
 import { Dashboard } from '@/pages/Dashboard';
@@ -219,6 +220,12 @@ function AppRoutes() {
       <Route path="/gcom/reglement" element={
         <ProtectedRoute requiredPermission={PERMISSIONS.DYNAMIC.MANAGE_GCOM}>
           <ReglementPage />
+        </ProtectedRoute>
+      } />
+
+      <Route path="/gcom/instruments" element={
+        <ProtectedRoute requiredPermission={PERMISSIONS.DYNAMIC.MANAGE_GCOM}>
+          <PortefeuilleInstrumentsPage />
         </ProtectedRoute>
       } />
 

@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, type ComponentType, type ReactNode } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { Search, BookOpen, RefreshCw, Calendar, Filter, RotateCcw, FileSpreadsheet } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import toast from 'react-hot-toast';
@@ -99,6 +100,7 @@ const AdjustModal = ({ entry, onClose, onDone }: AdjustModalProps) => {
 // ── Main Page ─────────────────────────────────────────────────────────────────
 export const LedgerPage = () => {
   const { t } = useTranslation();
+  const [searchParams] = useSearchParams();
   const [entries, setEntries] = useState<LedgerEntry[]>([]);
   const [totals, setTotals] = useState<LedgerTotals>({ total_debit: 0, total_credit: 0 });
   const [loading, setLoading] = useState(false);
@@ -107,7 +109,9 @@ export const LedgerPage = () => {
 
   const [fromDate, setFromDate] = useState('');
   const [toDate, setToDate] = useState('');
-  const [journalCode, setJournalCode] = useState('');
+  // Deep-link support (?journal=B8ESP) — a caisse's "Grand livre" tab links
+  // straight into this filtered view instead of duplicating a ledger screen.
+  const [journalCode, setJournalCode] = useState(searchParams.get('journal') ?? '');
   const [typeFilter, setTypeFilter] = useState<'ALL' | 'IN' | 'OUT'>('ALL');
   const [compteComptable, setCompteComptable] = useState('');
 
@@ -197,7 +201,7 @@ export const LedgerPage = () => {
       sortable: false,
       cellRenderer: (p: ICellRendererParams<LedgerEntry>) => (
         <button
-          onClick={() => setAdjustEntry(p.data)}
+          onClick={() => setAdjustEntry(p.data ?? null)}
           className="text-xs px-2 py-1 rounded border border-amber-300 text-amber-700 hover:bg-amber-50"
         >
           {t('modules.finance.counterEntry')}

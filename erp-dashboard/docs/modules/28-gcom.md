@@ -1,11 +1,30 @@
 # Mode GCOM (Gestion Commerciale Pure) — Complete Guide
 
-> **Version**: 2026-08-15 — updated for cancellation/avoir, PDF, partial
-> line cancel, dedicated permission, `sales_mode`, and the `GcomDatabaseSeeder`
-> demo tenant (see §13 for what's new since the initial build).
+> **Version**: 2026-08-24 — updated for cancellation/avoir, PDF, partial
+> line cancel, dedicated permission, `sales_mode`, the `GcomDatabaseSeeder`
+> demo tenant, returns architecture (§9bis), the financial-instrument
+> bank-clearing lifecycle (§8), and Treasury branch caisse journals (§16).
+> The Trésorerie story (§16) is now complete for both settlement paths —
+> immediate (comptoir/BC/BL) and deferred (règlement) — plus daily
+> closure (Z de caisse), its correction and batch-close paths, and
+> instrument-reject reversal; only Priorité 3 (bank-statement
+> reconciliation) remains deliberately paused — its full scope,
+> dependencies and open questions are now written up in §16's own
+> "Backlog" subsection so nothing is lost before it's picked up. Devis
+> numbering migrated onto branch-scoped `TokenSerie` and the login
+> bootstrap payload is now conditioned for GCOM-only companies (§11) —
+> GCOM is backend-feature-complete as of this version. §8 gained a
+> company-wide financial-instrument portfolio (list + batch deposit) for
+> the "Portefeuille Chèques & Effets" screen, and a "Relevé de Compte"
+> PDF export (`GET /partners/{partner}/ledger/pdf`) reusing the shared
+> document pipeline. §17 (new) adds multi-souche invoice numbering
+> (déclarée vs interne, Phase 1) — separate TokenSerie counters per
+> souche, `PaymentTerm`-driven routing plus an explicit per-request
+> `souche_kind` override on all three GCOM invoice-creation endpoints
+> (2026-08-26), Sage/FEC export itself deferred to Phase 2.
 > **Audience**: this doc is written for two readers — backend maintainers
 > (architecture/rationale, §1–7, §9–12) and **frontend/UI integrators**
-> (§8 API Reference and §13–15, which are self-contained — you can build a
+> (§8 API Reference and §13–16, which are self-contained — you can build a
 > GCOM UI from those sections alone without reading the rest).
 > **Branch**: `gcom` (isolated working branch off `feature/build-studio-document`)
 > **Services**: `App\Domains\Gcom\*` — `GcomDirectInvoiceService`, `GcomOrderService`, `GcomDeliveryNoteService`, `GcomCreditNoteService`, `GcomPaymentController`, plus shared helpers under `App\Domains\Gcom\Shared\Services`
@@ -30,6 +49,8 @@
 13. [Status & Enum Reference](#13-status--enum-reference)
 14. [Frontend Integration Notes](#14-frontend-integration-notes)
 15. [Getting a Test Tenant — GcomDatabaseSeeder](#15-getting-a-test-tenant--gcomdatabaseseeder)
+16. [Treasury Integration — Branch Caisse Journals](#16-treasury-integration--branch-caisse-journals)
+17. [Multi-Souche Invoice Numbering (Declared vs Internal)](#17-multi-souche-invoice-numbering-declared-vs-internal)
 
 ---
 
@@ -210,6 +231,11 @@ mechanism every other credit invoice in the ERP uses. It's also, since
 2026-08-15, the exact same register→validate→letter sequence an
 *immediate* settlement runs at document creation (§4) — same tables, same
 shape, whether the money arrived at the counter or three weeks later.
+Since 2026-08-21 that parity extends to Trésorerie too (§16): a règlement
+here seeds a `TreasuryIntakeLine` into the collecting actor's own branch
+caisse, same as an immediate settlement — the only difference is which
+branch it's attributed to (the actor's, not an order's, since a règlement
+has no single order to derive one from).
 
 **Per-partner financial views** (2026-08-15, `GcomPartnerFinanceController`)
 — three reads for a "vue financière complète par client" screen:
@@ -264,8 +290,9 @@ this session — two `CreditControlService`, two `PartnerCreditService`; see
 | `GcomSettlementClassifier` | Payment-method → behavior classification + the credit-limit check |
 | `GcomContextResolver` | Branch/company/central-warehouse/cash-term resolution |
 | `GcomOrderBuilder` | Builds the BC (`Order` + `OrderProduct` rows), no stock/invoice side effects |
-| `GcomInstrumentRegistrar` | Two responsibilities: `register()` — a `FinancialInstrument` (cheque/effet) + marks the invoice paid. `recordSettlement()` (2026-08-15) — a `payment_transfers`+`letterings` entry for any immediate settlement (cash/card/cheque/effet), the treasury-unification mechanism above; also closes the gap where `InvoiceService::generateFromDeliveryNote()` always returns `'pending'` (no `is_credit_sale`-driven split, unlike `createFromPosOrder()`) |
+| `GcomInstrumentRegistrar` | `register()`/`registerForPaymentTransfer()` — a `FinancialInstrument` (cheque/effet), at-sale or deferred. `recordSettlement()` (2026-08-15) — `payment_transfers`+`letterings`+branch-caisse `TreasuryIntakeLine` for any immediate settlement; also closes the gap where `generateFromDeliveryNote()` always returns `'pending'`. `recordDeferredSettlement()` (2026-08-21) — the same branch-caisse seeding for a règlement. `reverseSettlementForRejectedInstrument()` (2026-08-20) — undoes all of the above when an instrument is rejected. See §16 for the full Trésorerie picture |
 | `GcomQuoteItemsExtractor` | Validates a quote is convertible (not already converted/expired) and extracts line items |
+| `GcomPartnerLedgerBuilder` | Extracted 2026-08-24. Builds the chronological merged debit/credit ledger (invoice/payment/avoir + running balance) for a partner — the one implementation `GcomPartnerFinanceController::ledger()` (JSON) and `DocumentDataResolver::resolveStatement()` (Relevé de Compte PDF, §8) both read through, so they can never disagree |
 
 `GcomOrderService`, `GcomDeliveryNoteService`, and
 `GcomDirectInvoiceService` each compose these rather than duplicating any
@@ -383,10 +410,13 @@ falls back to `Partner.paymentTerm()`.
 Does **not** touch stock or create an invoice — see §3.
 
 **`POST /orders/{order}/convert-to-invoice`** 🔁 — flow #3 (BC → Facture,
-no BL). Body: `{ "instrument"? }` (same shape as quotes' convert, required
-for cheque/effet). Idempotent: calling again on an already-invoiced order
-returns the existing invoice instead of erroring.
-→ `200`, `{ "success": true, "message": "Order converted to invoice", "invoice": {...} }`
+no BL). Body: `{ "instrument"?, "souche_kind"? }` (`instrument` same shape
+as quotes' convert, required for cheque/effet; `souche_kind` — see §17,
+`'declared'`|`'internal'`, explicit override beating the PaymentTerm
+default for this one invoice, omit to use the default). Idempotent:
+calling again on an already-invoiced order returns the existing invoice
+instead of erroring.
+→ `200`, `{ "success": true, "message": "Order converted to invoice", "invoice": {...} }` (`invoice.souche_kind`/`invoice.token_serie_id` included)
 
 **`POST /orders/{order}/convert-to-bl`** 🔁 — flow #4's first hop (BC → BL).
 Body is optional:
@@ -509,8 +539,9 @@ creation, not later.
 → `201`, `{ "success": true, "message": "Delivery note created", "delivery_note": { "id": 5, "total_amount": "320.80", "sub_total": "268.91", "tax_amount": "51.09", ... } }`
 
 **`POST /delivery-notes/{deliveryNote}/convert-to-invoice`** 🔁 — flow #4
-second hop / #5's only hop. Body: `{ "instrument"? }`.
-→ `200`, `{ "success": true, "message": "Delivery note converted to invoice", "invoice": {...} }`
+second hop / #5's only hop. Body: `{ "instrument"?, "souche_kind"? }` (see
+§17 for `souche_kind`).
+→ `200`, `{ "success": true, "message": "Delivery note converted to invoice", "invoice": {...} }` (`invoice.souche_kind`/`invoice.token_serie_id` included)
 
 **`POST /delivery-notes/{deliveryNote}/cancel`** 🔁 — see §9. Restocks
 immediately. Body: `{ "reason": "..." }` (required, max 255 chars).
@@ -566,10 +597,18 @@ should call.
   "payment_method": "cash",
   "notes": "Vente comptoir",
   "payment_term_id": null,
-  "instrument": null
+  "instrument": null,
+  "souche_kind": null
 }
 ```
-→ `201`, `{ "success": true, "message": "Invoice created", "invoice": { "id": 88, "status": "fully_paid", "total_amount": "75.19", "remaining_amount": "0.00", "items": [...], "partner": {...}, "order": {...} } }`
+`souche_kind` — 2026-08-26, see §17 — `'declared'`|`'internal'`, optional.
+Explicit per-transaction override: a cash/cheque sale never carries a
+caller-chosen `payment_term_id` at all (the one global cash term is
+always resolved regardless of what's passed), so this is the only way to
+mark one specific comptoir sale internal. Omit to use the
+`PaymentTerm.is_internal_souche`-derived default (`'declared'` unless the
+resolved term is flagged internal).
+→ `201`, `{ "success": true, "message": "Invoice created", "invoice": { "id": 88, "status": "fully_paid", "total_amount": "75.19", "remaining_amount": "0.00", "souche_kind": "declared", "token_serie_id": 4, "items": [...], "partner": {...}, "order": {...} } }`
 
 ### Invoices (consultation only)
 
@@ -651,6 +690,12 @@ against one invoice.
 
 → `201`, `{ "success": true, "message": "Credit note created", "credit_note": {...}, "invoice": { "remaining_amount": "0.00", "status": "fully_paid", ... } }`
 → `422` if `amount` exceeds the invoice's `total_amount`.
+
+**`GET /invoices/{invoice}/credit-notes/{creditNote}/pdf`** — same
+binary-PDF pattern as every other document PDF route in this API (§ the
+common `withoutMiddleware('force.json')` note applies here too). `404`
+if the credit note doesn't belong to the given invoice (cross-invoice
+guard, same as every other nested-resource PDF route).
 
 ### Payments (Règlement & Lettrage)
 
@@ -755,6 +800,145 @@ building a "which invoices does this règlement cover" picker.
 
 **`GET /partners/{partner}/ledger`** — Query: `from?`, `to?` (`YYYY-MM-DD`).
 → `{ "success": true, "partner_id": 1, "ledger": [{ "type": "invoice", "date": "2026-08-01", "reference": "INV-2026-00042", "debit": 1500.00, "credit": 0, "running_balance": 1500.00, "invoice_id": 88 }, { "type": "payment", "date": "2026-08-10", "reference": "PAY-2026-000004", "debit": 0, "credit": 1500.00, "running_balance": 0, "payment_transfer_id": 4 }, { "type": "credit_note", "date": "2026-08-12", "reference": "AV-2026-00003", "debit": 0, "credit": 200.00, "running_balance": -200.00, "credit_note_id": 3 }] }`
+
+**`GET /partners/{partner}/ledger/pdf`** — "Relevé de Compte" export,
+built 2026-08-24. Query: `from?`, `to?` (same `YYYY-MM-DD` filters as
+the JSON endpoint above, applied identically since both read through
+the same `GcomPartnerLedgerBuilder` — the PDF can never disagree with
+what the JSON ledger shows on screen), `download?` (`1`/`true` for
+`Content-Disposition: attachment`, omitted/`0` for `inline`). Reuses
+the shared `DocumentService`/`DocumentDataResolver`/
+`documents._layout` pipeline (same one as BC/BL/Devis/Facture/Avoir),
+so it carries the same letterhead/legal footer and is generated the
+same way — `response()` with `Content-Type: application/pdf`, no JSON
+envelope. Cached per `partner_id` + date range (a `from`/`to`
+combination folds into the cache path, since — unlike `price_mode` or
+`watermark` — a statement's content genuinely changes with the date
+range; two different ranges never share a cached PDF).
+
+### Financial Instruments — Portefeuille (company-wide list + batch deposit)
+
+Built 2026-08-24, requested by the UI team: the per-partner listing
+below (§ next) turned out to be unusable for a comptable preparing one
+bank deposit slip spanning many clients — no way to see, or deposit,
+more than one client's cheques at a time.
+
+**Real architectural fact both endpoints rely on**: `financial_instruments`
+has **neither `company_id` nor `branch_id`** as a column. Company scope
+is 100% reliable — every row has a `partner_id`, and every partner has a
+`company_id`, so scoping is `partner_id → partners.company_id`. Branch
+scope is **best-effort by design**: only resolvable for an at-sale
+instrument (`invoice_id → invoices.order_id → orders.branch_id`). A
+deferred règlement's instrument has no `invoice_id` at all — it will
+never match a `branch_id` filter, not because of a bug, but because the
+branch was never stored anywhere on that settlement path in the first
+place (`GcomInstrumentRegistrar::recordDeferredSettlement()`, §16).
+
+**`GET /financial-instruments`** — every instrument across every
+partner of the acting user's company (fits §14 as a company-wide
+**Liste**, distinct from the per-partner one below). Filters: `status`,
+`instrument_type`, `bank_id`, `due_date_from`, `due_date_to`, `branch_id`
+(best-effort, see above), `per_page`.
+```json
+{ "success": true, "financial_instruments": { "data": [{ "id": 12, "instrument_type": "CHEQUE", "reference_number": "CHQ-0001", "amount": "300.00", "status": "PENDING", "due_date": "2026-09-15", "bank_id": 3, "partner": { "id": 7, "name": "...", "code": "..." } }], "total": 1, "...": "pagination" } }
+```
+
+**`POST /financial-instruments/batch-deposit`** 🔁 — the "remise en
+banque groupée" action.
+```json
+{ "instrument_ids": [12, 15, 18, 22], "deposit_date": "2026-08-24", "deposit_reference": "BORD-2026-0042" }
+```
+One `deposit_date`/`deposit_reference` applied to every listed
+instrument — a single bordereau for the whole batch, as requested.
+**Best-effort, not all-or-nothing** (same shape as §16's
+`closeAllForBranch()`): an instrument that isn't `PENDING` (already
+deposited, already rejected) doesn't block the others — it lands in
+`errors` instead of failing the whole request. An id belonging to
+another company is treated as **not found** and reported the same way
+in `errors`, never silently processed across the tenant boundary.
+```json
+{ "success": true, "message": "Deposited 3 of 4 instrument(s).",
+  "data": { "deposited": [ /* updated instruments */ ], "errors": [ { "id": 18, "message": "Invalid transition: cannot move from CLEARED to DEPOSITED..." } ] } }
+```
+Always `200` — read `data.deposited`/`data.errors`, not the HTTP status,
+to know what actually happened (a request with malformed input, e.g. no
+`instrument_ids` at all, still returns `422` as usual).
+
+**Screen shape** (§14 convention): a dedicated **Liste** (not folded
+into a single caisse's `Détail`, since this view spans partners by
+design — "qu'est-ce que j'ai à déposer" is a different question from
+"d'où vient l'argent de cette caisse") with a checkbox column, filter
+tabs on `status`, filter row for `instrument_type`/`bank_id`/due-date
+range. Selecting rows + one **Formulaire** (`Date de dépôt` + `N°
+bordereau`) submits the whole selection to `batch-deposit` in one call.
+Show the `deposited`/`errors` split directly in the result, not just a
+single success toast.
+
+### Financial Instruments — Bank-Clearing Lifecycle
+
+Built 2026-08-19 for the "Chèques & Effets" screen. Thin GCOM wrappers
+around `App\Domains\Payment\Treasury\Services\FinancialInstrumentService`
+— a pre-existing state machine that was never wired to any HTTP route
+before this. State machine: `PENDING → DEPOSITED → CLEARED|REJECTED`,
+`REJECTED → PENDING` (redeposit, built 2026-08-21, see below). Every
+`FinancialInstrument` a GCOM flow creates starts `PENDING` — see
+`register()`/`registerForPaymentTransfer()` above and in §6.
+
+Fits the §14 convention as **Actions** on the existing "Chèques &
+Effets" tab (already built, a `Liste` of instruments filtered by
+`status`/`instrument_type` inside a partner's `Détail`) — each row's
+available action button follows directly from its current `status`:
+`deposit` when `PENDING`, `clear`/`reject` when `DEPOSITED`, `redeposit`
+when `REJECTED`. No separate screen needed for any of these four.
+
+**`POST /financial-instruments/{financialInstrument}/deposit`** 🔁
+```json
+{ "deposit_date": "2026-08-15", "deposit_reference": "BORD-2026-001" }
+```
+`PENDING → DEPOSITED`. Both fields optional: `deposit_date` defaults to
+today, `deposit_reference` (N° bordereau) is free text.
+
+**`POST /financial-instruments/{financialInstrument}/clear`** 🔁 — no
+body. `DEPOSITED → CLEARED` (bank reconciliation confirmed, removes the
+instrument from `getExposureForPartner()`'s pending totals).
+
+**`POST /financial-instruments/{financialInstrument}/reject`** 🔁
+```json
+{ "reason": "Provision insuffisante" }
+```
+`DEPOSITED → REJECTED` (impayé). `reason` required. The instrument stays
+in exposure as a risk indicator (it does not vanish from the partner's
+pending totals the way `clear()` does).
+
+**`POST /financial-instruments/{financialInstrument}/redeposit`** 🔁 —
+no body. `REJECTED → PENDING` (built 2026-08-21, completes the state
+machine's HTTP surface). Resets `rejection_reason`/`rejected_at`/
+`deposited_at` to null. Does **not** re-close any invoice or re-credit
+any branch caisse — those were fully reversed on the original reject
+(below); if the retry actually clears, represent that with a fresh
+`deposit()`/`clear()` call, there's no automatic replay.
+
+All four return `{ "success": true, "message": "...", "financial_instrument": {...} }`
+(same shape as `GET /partners/{partner}/financial-instruments`'s rows).
+An invalid transition (e.g. `clear` on a still-`PENDING` instrument)
+returns `422 { "success": false, "message": "Invalid transition: cannot move from PENDING to CLEARED. Allowed: DEPOSITED, CANCELLED" }`
+instead of a 500.
+
+**Rejecting an instrument reopens the debt** (built 2026-08-20, see §11) —
+`reject()`'s `422`/success response is unchanged, but as a side effect
+(`InstrumentRejected` → `ReverseSettlementOnInstrumentRejected` listener,
+synchronous, same DB transaction as the status flip) every invoice that
+instrument's settlement touched goes back to open: `paid_amount` reverses,
+`remaining_amount` reopens, `status` recalculates (`pending` or `overdue`
+depending on the term — never stays `fully_paid`). The amount is also
+pulled back out of whichever branch caisse it landed in (§16) via a
+compensating negative `treasury_intake_lines` row (never mutates the
+original — append-only) — since 2026-08-21 this applies uniformly to
+**both** an at-sale cheque and a deferred règlement's cheque (§16's
+"Deferred règlement also feeds the branch caisse"), not just the former.
+No new fields on the reject response for the UI to read — this is
+entirely a backend consistency fix, poll `GET /invoices/{invoice}` again
+if the screen needs to reflect the reopened state immediately.
 
 ### Common request shapes
 
@@ -1256,14 +1440,93 @@ history is traceable rather than silently vanishing from the doc):
   moved to the shared `ReturnReason` enum). Deliberately still no
   dedicated entity/workflow — this only adds a queryable record + a
   printable view of data that already existed in principle.
+- ~~The pre-existing Treasury engine (`treasury_journals`,
+  `treasury_transfers`, `treasury_ledger_entries`...) had zero overlap
+  with GCOM — a comptoir cash/cheque sale closed the invoice and updated
+  `payment_transfers` (§4/§6's "Treasury unification") but never touched
+  a single Treasury table, so an admin building the "Gestion Trésorerie"
+  screen against a GCOM tenant would find every journal empty.~~ **Built
+  2026-08-20** — surfaced by the UI team's already-built "Chèques &
+  Effets" screen prompting the question "does GCOM feed the real
+  trésorerie". See §16 for the full design (one shared journal per
+  branch + payment method, not per-user) and the admin Finance API GCOM's
+  back-office screen should build against.
+- ~~Rejecting a financial instrument didn't reopen the invoice's debt or
+  touch the branch caisse it landed in — a bounced cheque left the
+  invoice `fully_paid` and the journal balance untouched, as if the money
+  had actually arrived.~~ **Fixed 2026-08-20** — PRIORITÉ 1 of the
+  trésorerie cadrage ("FEU VERT TOTAL" from the UI team). See §8's
+  "Financial Instruments" section and §16's cross-reference —
+  `ReverseSettlementOnInstrumentRejected` listener +
+  `GcomInstrumentRegistrar::reverseSettlementForRejectedInstrument()`.
+
+- ~~Deferred règlement doesn't feed a branch caisse journal.~~ **Fixed
+  2026-08-21** — the last structural gap in the Treasury story.
+  `GcomPaymentController::store()` (§6) has no order/invoice to derive a
+  branch from (a règlement is partner-level), so it's resolved from the
+  **collecting actor's own branch** instead
+  (`GcomContextResolver::resolveBranch()`) —
+  `GcomInstrumentRegistrar::recordDeferredSettlement()`, covering every
+  payment method (cash/cheque/effet/virement), not just cheque/effet.
+  Consequence for the reject fix above: rejecting a deferred cheque now
+  voids its branch-caisse entry too, exactly like an at-sale one — before
+  this it only reopened the invoice debt, since there was no intake line
+  yet to void. See §16.
 
 Still open:
 
-- **Setup/Bootstrap payload conditioning** (skip `device_parameters`/
-  `sync_settings`/`geofence_rules` for GCOM-only tenants) — likely moot in
-  practice since GCOM and SFA are already on fully separate route surfaces
-  (a GCOM client simply never calls the SFA sync/bootstrap endpoint), but
-  not formally confirmed.
+- ~~No "clôture de caisse" (Z de caisse) for GCOM.~~ **Built 2026-08-21**
+  — PRIORITÉ 2 of the trésorerie cadrage, schema validated before coding
+  per the established review-before-build pattern. See §16's own
+  "Clôture de caisse (Z de caisse)" subsection for the full design
+  (`treasury_journal_closures`, `TreasuryJournalClosureService`, the
+  admin endpoints, the strict same-day blocking guard).
+- **No bank-statement reconciliation** (matching `treasury_ledger_entries`
+  against an actually-imported bank statement — as opposed to lettrage,
+  which matches invoices to payments and is fully operational). Paused
+  2026-08-20 by explicit decision (Priorité 3, on hold) — lettrage +
+  branch caisse balances + transfers already give correct traceability
+  without it for now. Full scope/dependencies/open-questions written up
+  in §16's "Backlog — Rapprochement bancaire" subsection (2026-08-22) so
+  nothing here needs re-deriving when a real trigger eventually shows up.
+
+- ~~Devis (Quote) numbering doesn't use the branch-scoped `TokenSerie`
+  system.~~ **Fixed 2026-08-23** ("FEU VERT TOTAL") — the last GCOM
+  document type still on a random scheme (`DEV-{Ymd}-{random 6}`) is now
+  on `DocumentNumberingService`/`TokenSerie`, same as BC/BL/Facture/
+  Avoir/bon de retour. New `token_series.devis_prefix`/
+  `devis_next_number` columns (backfilled for every existing series —
+  live-verified on ORBIS's own series, no manual reconfiguration
+  needed), `TokenSerie::autoGenerate()` sets the pair for new series,
+  `DEV`/`DEVIS`/`QUOTE` mapped in `legacySeriesColumnsForDocumentType()`,
+  `DEV` registered in `document_types`. `QuoteService::
+  generateQuoteNumber()` now requires `$user->branch_code` — same
+  requirement `convertToOrder()` already enforced for this exact user
+  population's BC number a few steps later in the same lifecycle, so not
+  a new constraint in practice. Shared by SFA/télévendeur quote creation
+  too (`QuoteService` has zero canal coupling) — both channels get real
+  branch-scoped numbering now, not just GCOM. Existing `DEV-*` numbers
+  already in production keep their old shape (numbering migrations here
+  are never retroactive) — only new quotes get the new format.
+- ~~Setup/Bootstrap payload conditioning — not formally confirmed.~~
+  **Verified and fixed 2026-08-23.** The route-surface separation was
+  already correct (a GCOM client never calls any SFA sync/bootstrap
+  endpoint — that part really was moot). What the original phrasing got
+  wrong was *where* the actual leak lived: not named
+  `device_parameters`/`sync_settings`/`geofence_rules` blocks (those
+  don't exist anywhere in the code), but `POST /api/backend/login`'s
+  `auth_profile.settings` — `ProfileService::getAuthProfilePayload()`
+  unconditionally computed and returned all ~140 keys from
+  `config/data/sfa_parameter_definitions.php` (confirmed genuinely SFA/
+  vendeur-terrain-specific by inspection: sync, geofencing, van-selling
+  thresholds) on **every** login, regardless of `company.sales_mode`.
+  Never a boot-blocker (nothing downstream fails without them — traced
+  every caller), but real, confirmed payload/compute bloat for a
+  GCOM-only tenant. Now skipped for `sales_mode = 'GCOM'` companies only
+  (SFA/HYBRID untouched); the separate `ConfigurationSetting`-driven
+  override path (channel-agnostic, e.g. an explicit per-company override
+  on any registered key) is never skipped for anyone, so a GCOM company
+  keeps everything it could actually be using.
 - **No cancelling — or editing — a BC/BL once an invoice exists.** No
   add-line/update-line/cancel-line endpoint reaches an invoiced document,
   by design: an issued invoice is a fiscal snapshot, not something that
@@ -1315,8 +1578,18 @@ Still open:
 | `tests/Feature/Gcom/GcomInvoiceDetailPaymentInfoTest.php` | `GET /invoices/{invoice}`'s `payments`/`financial_instrument` fields — cash/cheque comptoir, empty for an unsettled credit invoice, populated once a deferred règlement lands |
 | `tests/Feature/Gcom/GcomPartnerFinanceControllerTest.php` | `GET /partners/{partner}/{financial-instruments,statement,ledger}` — instrument filtering + cross-partner isolation, statement debit/credit/balance/pending-instruments/credit-limit for cash and mixed credit+cheque scenarios, ledger entry types + running balance including a deferred règlement and an avoir |
 | `tests/Feature/Gcom/GcomDeferredChequeSettlementTest.php` | `POST /payments`'s `payment_method_id`/`instrument` fields — a deferred cheque/effet creates a `FinancialInstrument` linked via `payment_transfer_id` (not `invoice_id`), rejects a cheque with no instrument details, an explicit `payment_method_id` overrides the term's default |
+| `tests/Feature/Gcom/GcomFinancialInstrumentLifecycleTest.php` | §8 "Financial Instruments" — deposit with date+reference, deposit defaults to today, clear, reject with reason, reject requires a reason (422), invalid transition surfaces as a 422 through the GCOM HTTP layer |
+| `tests/Feature/Gcom/GcomTreasuryBranchCaisseTest.php` | §16 — cash settlement seeds an ESP intake line into the branch's `TYPE_BRANCH_CAISSE` journal, two sales accumulate in the same journal, cheque settlement seeds CHQ **and** still registers the PENDING `FinancialInstrument`, card maps to VIR, a credit sale seeds nothing at all |
+| `tests/Feature/Gcom/GcomInstrumentRejectReversalTest.php` | §8/§11 reject-reversal — an at-sale cheque's reject reopens the invoice (`paid_amount`/`remaining_amount`/`status`) and voids the branch caisse's intake line (compensating negative row, balance back to 0), `clear()` touches neither, a deferred cheque lettered across two invoices reopens both on reject |
+| `tests/Feature/Treasury/TreasuryJournalClosureTest.php` | §16 "Clôture de caisse" — auto-open on first sale, a second sale reuses the same session, explicit `open` is idempotent, `close` computes `theoretical_closing_balance`/`discrepancy` correctly and never touches `cached_balance`, a closed journal blocks a new same-day GCOM sale with a 422 (not a 500), closing an already-closed session is rejected, correcting a closed session updates the count and preserves `original_counted_balance`/`original_discrepancy`, a second correction doesn't overwrite those originals, correcting a still-`OPEN` session is rejected, correction requires a `reason`, batch-close closes every open journal for a branch in one call, reports a never-touched journal as `skipped` not an error, and is best-effort (one already-closed journal doesn't block closing the others) |
+| `tests/Feature/Gcom/GcomDeferredSettlementBranchCaisseTest.php` | §16 "Deferred règlement also feeds the branch caisse" — a deferred cash règlement seeds an ESP intake line into the collecting actor's branch, a deferred cheque seeds CHQ and links `intake_line_id` on the `FinancialInstrument`, a closed branch caisse blocks a new deferred règlement too, `redeposit()` moves a rejected instrument back to `PENDING` |
 | `tests/Feature/Gcom/GcomInvoicePdfTest.php` | `GET /invoices/{invoice}/pdf` — real PDF bytes returned, correct `Content-Type`, 404 for non-GCOM invoices, HT vs. TTC renders differ and cache separately (2026-08-18, migration onto the BC/Devis/BL pipeline) |
 | `tests/Feature/Gcom/GcomDocumentPdfTest.php` | `GET /orders/{order}/pdf`, `/delivery-notes/{deliveryNote}/pdf`, `/quotes/{id}/pdf` — real PDF bytes for BC/BL/Devis, 404 for non-GCOM BC/BL, 403 for someone else's Devis, HT vs. TTC renders differ and cache separately |
+| `tests/Feature/Gcom/GcomDocumentNumberingBranchScopingTest.php` | Locks in that BC/Devis/BL/bon de retour/Facture/Avoir each consume their own branch's `TokenSerie` series, never a coexisting generic wildcard default and never another branch's series (real bug this test was built to catch, §10) — Devis added 2026-08-23 once its numbering migrated off the random scheme |
+| `tests/Feature/Gcom/GcomBootstrapPayloadConditioningTest.php` | §11 "Setup/Bootstrap payload conditioning" — a GCOM-only company's login `settings` excludes the ~140 `sfa_parameter_definitions.php` keys, SFA/HYBRID companies still get the full set (unaffected), an explicit `ConfigurationSetting` override on a registered key still reaches a GCOM company's settings (extraKeys path never skipped) |
+| `tests/Feature/Gcom/GcomFinancialInstrumentPortfolioTest.php` | §8 "Portefeuille" — `GET /financial-instruments` lists across every partner of the company, never leaks another company's instruments, filters by `status`/`instrument_type`/`bank_id`/`due_date` range, `branch_id` best-effort matches an at-sale instrument; `POST /financial-instruments/batch-deposit` deposits every valid id in one call, is best-effort (one wrong-state instrument doesn't block the others), and treats another company's id as not found rather than processing it |
+| `tests/Feature/Gcom/GcomPartnerStatementPdfTest.php` | §8 "Relevé de Compte" PDF (2026-08-24) — `GET /partners/{partner}/ledger/pdf` returns real PDF bytes with `Content-Type: application/pdf`, `download` flag switches `Content-Disposition` inline/attachment, entries match the JSON `/ledger` endpoint exactly (shared `GcomPartnerLedgerBuilder`), a `from`/`to` range excluding every entry doesn't reuse the full-history cached PDF, 404 for a non-existent partner |
+| `tests/Feature/Gcom/GcomMultiSoucheNumberingTest.php` | §17 multi-souche numbering (2026-08-25/26) — a credit sale via a declared/internal `PaymentTerm` draws from the matching branch series, internal and declared invoices advance separate counters (declared sequence stays gap-free), creating an internal-souche invoice fails loudly when the branch's internal series isn't provisioned (never falls back to declared), stock deducts and treasury settlement posts identically regardless of souche, explicit `souche_kind` override beats the `PaymentTerm` default on all three invoice-creation endpoints (Comptoir, BC→Facture, BL→Facture), invalid `souche_kind` rejected with 422 |
 | `tests/Feature/CompanySalesModeTest.php` | `sales_mode` GET/PUT, default value, invalid-mode rejection, permission gate |
 | `tests/Feature/Warehouse/InventoryCheckTest.php` | Generic (not GCOM-scoped) — inventaire lifecycle, included here since it shares `StockService`/`StockUpdateService` with GCOM |
 | `tests/Feature/Warehouse/PurchaseReceptionValidationTest.php` | Generic — stock reception validate/reverse, same reason |
@@ -1410,6 +1683,42 @@ are never set by any GCOM code path.)*
 ---
 
 ## 14. Frontend Integration Notes
+
+### Screen convention — Liste / Détail à onglets / Formulaire / Actions
+
+**Standing rule for this doc and for every future GCOM UI spec written
+here**: describe a screen using the same four building blocks the UI
+team's existing screens already use (confirmed against the live "Bons
+de livraison" screen, 2026-08-21) — never invent a new layout shape when
+one of these four already fits.
+
+1. **Liste (data)** — left panel (or full-width table): a data grid with
+   status **filter tabs** at the top (e.g. `Tous` / `Livré` / `Annulé`
+   on the BL screen), a **per-column filter row** under the header
+   (small inputs/icons under each column), a search box, and a row count
+   badge next to the screen title.
+2. **Détail à onglets** — right panel (or a drill-in page) opened by
+   selecting a row: a breadcrumb line (document code + status pill), a
+   title (usually the partner/agency name) and subtitle (date + total or
+   key figure), then a **tab bar** (e.g. `Informations` / `Lignes` /
+   `Retours` on the BL screen) with icons. Under the active tab:
+   collapsible sections, each opening with 2–3 **metric cards** in a row
+   (e.g. `SOUS-TOTAL HT` / `TVA` / `TOTAL TTC`), and a **"Documents
+   liés"** row of pill-shaped links to related documents (e.g. the BC
+   and Facture a BL came from). A dismissible **alert banner** sits above
+   the tabs when the record is in a state that constrains what can be
+   done with it (e.g. "BL déjà facturé — utilisez l'avoir sur la facture
+   liée").
+3. **Formulaire (ajout / édition)** — a modal/popup for any action that
+   needs input before it can run (a count, a reason, a reference number).
+   Not a full page — the BL/BC/Facture screens never navigate away for
+   this.
+4. **Actions** — buttons scoped to the current row/detail (top-right of
+   the detail panel or inline in the list), never a separate menu screen.
+
+Every screen spec from here on (§16 in particular) is written in exactly
+these terms — when a spec says "Liste", it's block 1 above; "Détail",
+block 2; "Formulaire", block 3.
 
 ### Headers
 
@@ -1636,3 +1945,643 @@ curl -X POST https://<host>/api/backend/gcom/direct-invoices \
 Look up the actual partner/product ids first — `select id, code from
 partners where company_id = (select id from companies where code =
 'ORBIS');` and the equivalent for `products`.
+
+---
+
+## 16. Treasury Integration — Branch Caisse Journals
+
+**Audience**: this section is written for whoever builds the admin
+"Gestion Trésorerie" back-office screen — it's self-contained, same as
+§8/§13–15.
+
+### Why this exists
+
+Before 2026-08-20, GCOM had **zero footprint** in the ERP's pre-existing
+Treasury engine (`treasury_journals`, `treasury_intake_lines`,
+`treasury_transfers`, `treasury_ledger_entries`, `treasury_audit_logs`,
+`treasury_transfer_routes`) — a comptoir cash/cheque sale closed the
+invoice and wrote a `payment_transfers`/`letterings` row (§4/§6's
+"Treasury unification", 2026-08-15), but never touched a Treasury table
+at all. Surfaced when the UI team's already-built "Chèques & Effets"
+screen (a per-partner view, §8's Financial Instruments section) prompted
+the question: does GCOM feed the *real* company-wide trésorerie an
+accountant would reconcile against? It didn't.
+
+### Why a journal per branch, not per user
+
+The Treasury engine's existing model (`TreasuryJournal.type =
+USER_CAISSE`) is built around an individual field agent physically
+holding cash — a vendeur terrain collects a payment, it lands in *their*
+personal caisse (`C{user_code}{method_suffix}`), and they later transfer
+it to a desk/bank journal. GCOM's comptoir/back-office channel has no
+such agent: whoever is logged into the back office records a sale, but
+the money conceptually belongs to the **branch**, not to that particular
+admin. Forcing GCOM through `USER_CAISSE` would have meant either a
+fictional "cashier" user per branch, or every admin who ever touches a
+till accumulating a personal caisse that means nothing operationally.
+
+Decision (confirmed 2026-08-20): a new journal type, `TYPE_BRANCH_CAISSE`
+— one journal per **(branch, payment method)**, shared by everyone who
+transacts at that branch. `TreasuryJournal.user_id` is `null` on these
+rows (same as the pre-existing `TYPE_BANK_ACCOUNT`); `branch_id` is the
+source of truth instead.
+
+### How it's populated (automatic, no UI action needed)
+
+Every **immediate** GCOM settlement — cash, card, cheque, effet, across
+Facture Directe (§8's Direct Invoice), BC→Facture, and BL→Facture — seeds
+a `TreasuryIntakeLine` into the settling branch's own `TYPE_BRANCH_CAISSE`
+journal for that payment method, as a side effect of the same
+`GcomInstrumentRegistrar::recordSettlement()` call that already writes
+the `payment_transfers`/`letterings` row (§4/§6). This is entirely
+backend-internal — no new request/response shape on any endpoint you
+already call.
+
+- The branch is the **invoice's own order's** `branch_id`, not the
+  acting user's branch — an admin from branch A converting an order that
+  was created at branch B correctly credits B's caisse, not A's.
+- Payment method → Treasury `method_suffix` mapping: `cash→ESP`,
+  `cheque→CHQ`, `effet→EFF`, `card→VIR`. `VIR` for card is deliberate —
+  Treasury's vocabulary has no caisse-suffix for "card payment" (no
+  physical drawer holds it, it settles straight to a bank account via
+  the TPE), so it's grouped with virement, the closest real category.
+- Credit and transfer sales create **no** intake line at the moment of
+  the sale (same as they create no `payment_transfers` row — genuinely
+  open account exposure, nothing has actually been paid yet). Once
+  settled later through §6's règlement, **that** does create an intake
+  line — see "Deferred règlement also feeds the branch caisse" below.
+- Journal codes are `B{branch_id}{method_suffix}` (e.g. `B5ESP`) — keyed
+  on the numeric branch id, not the branch's human code, to guarantee a
+  short, collision-free code regardless of how long a real branch code
+  is (`treasury_audit_logs`/`treasury_ledger_entries.journal_code` are
+  `varchar(20)`, partitioned tables — not worth widening for a value that
+  doesn't need to be human-derived).
+
+### The admin API — already fully built, not GCOM-specific
+
+The Treasury engine already has a complete admin Finance API
+(`routes/backend.php`, prefix `/api/backend/finance/*`, pre-existing —
+built for field-terrain trésorerie, generic across every journal type
+including the new `BRANCH_CAISSE` one). **Nothing new needs to be built
+backend-side to view or transfer GCOM branch caisses** — the "Gestion
+Trésorerie" screen is a pure frontend build against this existing
+surface, filtered to GCOM's journals.
+
+Permissions: `permission:browse-finance` gates the whole `/finance/*`
+group; `manage-finance-journals`, `manage-finance-transfers`,
+`adjust-finance-ledger`, `reconcile-settlements` gate the mutating
+actions within it. The `GcomDatabaseSeeder` `admin@orbis.ma` user already
+has all five (`root`/`admin` get them by default, `DynamicRbacPermissionsSeeder`)
+— nothing to unblock before building against this.
+
+**Journals**
+
+`GET /api/backend/finance/journals?type=BRANCH_CAISSE` — filters:
+`branch_id`, `method_suffix` (`ESP`/`CHQ`/`EFF`/`VIR`/`VER`), `type`,
+`active_only`, `search` (matches on `code`), `per_page`. Each row is
+enriched with **computed** balances (never the raw cache — always
+recomputed from full transaction history):
+```json
+{
+  "id": 12, "code": "B5ESP", "type": "BRANCH_CAISSE", "method_suffix": "ESP",
+  "user_id": null, "branch_id": 5, "branch": { "id": 5, "code": "ORBIS-CAS", "name": "..." },
+  "currency": "MAD", "cached_balance": "628.00", "is_active": true,
+  "computed_balance": 628.00, "transit_balance": 0.00, "available_balance": 628.00
+}
+```
+`GET /api/backend/finance/journals/{id}` — same shape, single row.
+No `POST` needed for a `BRANCH_CAISSE` journal — it provisions itself
+automatically on the first settlement at that branch+method, same
+idempotent `findOrCreate` pattern as everything else in this engine.
+`POST /api/backend/finance/journals` with `type: "BANK_ACCOUNT"` is for
+the one-time setup of a bank destination journal (see the Transfers
+subsection below) — not something GCOM's own comptoir flow ever calls.
+
+`PUT`/`PATCH /api/backend/finance/journals/{id}` — `{ is_active?,
+currency?, bank_name?, rib? }`. `bank_name`/`rib` only editable on a
+`BANK_ACCOUNT` journal (`422 FINANCE_NOT_A_BANK_ACCOUNT` otherwise).
+Deactivating (`is_active: false`) is blocked with a `422` (
+`FINANCE_JOURNAL_HAS_BALANCE` / `FINANCE_JOURNAL_HAS_TRANSIT`) while the
+journal still has a real balance or funds in transit — transfer them out
+first. `code`/`user_id`/`type`/`branch_id`/`method_suffix`/
+`cached_balance` are never editable (accounting identity).
+
+**Transfers — moving a branch caisse's cash to a bank account**
+
+`GET /api/backend/finance/transfers` — filters: `status` (1–5),
+`source_journal_id`, `dest_journal_id`, `journal_code` (either side),
+`from_date`/`to_date`, `created_by`.
+
+`POST /api/backend/finance/transfers` 🔁 — request a transfer out of a
+branch caisse:
+```json
+{
+  "source_journal_id": 12,
+  "dest_journal_id": 3,
+  "amount": 628.00,
+  "transfer_type": "BANK_DEPOSIT",
+  "versement_reference": "VER-2026-0091",
+  "bank_name": "Attijariwafa Bank",
+  "deposit_date": "2026-08-20",
+  "note": "Versement quotidien ORBIS-CAS"
+}
+```
+- `transfer_type` optional, `DIRECT` (default) or `BANK_DEPOSIT` — the
+  latter is for an `ESP` source going to a bank/`VER` journal and
+  expects `versement_reference`/`bank_name`/`deposit_date`.
+- `intake_line_id` — **required** when the source is `CHQ` or `EFF` (a
+  cheque/effet is not divisible — the transfer moves one specific
+  physical instrument, not an arbitrary amount out of a pooled balance).
+  Pick it from `GET /api/backend/finance/intake-lines?journal_id=X&untransferred_only=true`.
+- Only source→dest **suffix** pairs present in
+  `GET /api/backend/finance/transfer-routes` are allowed — already
+  seeded for every GCOM deployment (`ESP→ESP`, `ESP→VER`, `CHQ→CHQ`,
+  `EFF→EFF`, `VIR→VIR`; `TreasuryTransferRoutesSeeder`, no longer
+  SFA-only-excluded as of 2026-08-20). `dest_journal_id` for the bank
+  side needs a real `TYPE_BANK_ACCOUNT` journal to exist first — create
+  one via `POST /api/backend/finance/journals` with `type: "BANK_ACCOUNT"`
+  if this deployment doesn't have one yet (one-time setup, not a
+  per-transfer step).
+
+`POST /api/backend/finance/transfers/{id}/approve` 🔁 — `{ comment?,
+confirmed_amount? }`. Applies the balance deltas on both journals and
+**auto-generates the double-entry `treasury_ledger_entries` pair**
+(Plan Comptable Marocain: `ESP→5161`, `CHQ→5113`, `EFF→3425`,
+`VER`/`VIR→5141`) — this is the only place a real ledger entry is ever
+created; an intake line alone never produces one. Returns both the
+updated transfer and the generated ledger rows.
+
+`POST /api/backend/finance/transfers/{id}/reject` 🔁 — `{ reason }`
+required, releases the transit hold.
+
+**Read-only views**
+
+- `GET /api/backend/finance/ledger` — the double-entry book itself.
+  Filters (same shape as every other list here, checked against
+  `FinanceLedgerController`): journal/date/period — treat it as a plain
+  paginated feed, no GCOM-specific filter needed on top.
+- `GET /api/backend/finance/intake-lines?journal_id=X` — every
+  settlement that filled a given caisse, traceable back to `order_id`.
+- `GET /api/backend/finance/audit-logs?journal_code=B5ESP` — full
+  operations trail (every intake, transfer request/approve/reject,
+  auth check, caisse open/close) for one journal.
+- `GET /api/backend/finance/helpers/branches`, `/helpers/methods`,
+  `/helpers/users` — for the screen's filters/dropdowns. `/helpers/users`
+  exists for SFA's per-vendeur journal pickers — GCOM's own screens have
+  no use for it (a `BRANCH_CAISSE` journal has no `user_id`), listed here
+  only so nothing in the Finance API goes undocumented.
+
+**Ledger adjustment (compensating entry)** — `POST
+/api/backend/finance/ledger/{entryId}/adjust`, gated by
+`adjust-finance-ledger` (already granted, see above). Posts a
+compensating counter-entry against a specific `treasury_ledger_entries`
+row — the original is never modified or deleted (same append-only
+philosophy as `voidIntakeLine()`). This exists for correcting a ledger
+row after the fact (e.g. a transfer approved with the wrong amount) —
+not part of GCOM's day-to-day flow, but the only way to fix a posted
+ledger entry if one is ever found wrong. Not something to build a
+dedicated GCOM button for unless an actual correction workflow is
+requested; documented here for completeness.
+
+**Transfer routes — admin configuration, not a day-to-day screen** —
+`POST`/`PUT /api/backend/finance/transfer-routes` (`PUT` needs `{id}`),
+gated by `manage-finance-transfers`. Creates or edits an allowed
+source→destination suffix pair (`description`/`is_active` only —
+the suffix pair itself is the route's identity, not editable once
+created; recreate instead of repointing). The 5 defaults ORBIS needs
+are already seeded (§16's own intro) — this is only relevant if a new
+suffix pair is ever needed, not a screen the comptoir/back-office
+workflow requires.
+
+**`/finance/settlements/*` (`FinanceSettlementController`) — exists,
+not applicable to GCOM.** `GET /settlements`, `GET /settlements/{id}`,
+`POST /settlements/reconcile` — SFA's end-of-tour cash reconciliation,
+built entirely around `WorkSession`/`VendorSettlement` (a field vendor
+physically returning cash to a cashier). GCOM has no `WorkSession`
+anywhere, so these three don't apply to any GCOM screen — listed here
+only so the Finance API's full endpoint surface is on record; GCOM's own
+equivalent is the Clôture de caisse subsection below, a completely
+separate mechanism.
+
+### Suggested screen shape
+
+Follows §14's Liste/Détail/Formulaire/Actions convention:
+
+- **Liste** — one row per caisse (`GET /finance/journals?type=BRANCH_CAISSE`),
+  filter tabs `Toutes` / `Actives` (`active_only`), a filter row for
+  `branch_id`/`method_suffix`, columns: agence, moyen de paiement, solde
+  disponible.
+- **Détail à onglets** — clicking a row opens: breadcrumb (journal code +
+  active/inactive pill), title = agence name, subtitle = moyen de
+  paiement. Tabs: `Informations` (metric cards `Théorique` /
+  `Transit` / `Disponible`, from `computed_balance`/`transit_balance`/
+  `available_balance`), `Historique des clôtures` (§16's closure
+  subsection — a `Liste` in its own right), `Grand livre` (`GET
+  /finance/ledger?...`), `Encaissements` (`GET
+  /finance/intake-lines?journal_id=X`).
+- **Actions** (top of the détail panel) — "Transférer vers la banque"
+  (opens the transfer **Formulaire** below) and "Clôturer" (§16's own
+  closure subsection).
+
+This is the same screen a field-terrain trésorerie view would need —
+just filtered to `type=BRANCH_CAISSE` and, for a GCOM-only tenant,
+effectively the whole `/finance/journals` list.
+
+**Transfer Formulaire** (opened by the "Transférer vers la banque"
+action): `source_journal_id`/`amount` pre-filled from the caisse being
+viewed, `dest_journal_id` (bank account picker), `transfer_type`,
+`versement_reference`/`bank_name`/`deposit_date` when `BANK_DEPOSIT`,
+`intake_line_id` picker (required, CHQ/EFF only) — submits to
+`POST /finance/transfers` (§ above).
+
+### Instrument reject reverses the settlement (built 2026-08-20)
+
+Rejecting a cheque/effet (`POST .../financial-instruments/{id}/reject`,
+§8) reopens every invoice its settlement touched and pulls the amount
+back out of the branch caisse it landed in — see §8's "Financial
+Instruments" section for the full behavior. Nothing new to call from the
+UI; this is a side effect of the existing `reject` endpoint.
+
+### Clôture de caisse (Z de caisse) — built 2026-08-21
+
+PRIORITÉ 2 of the trésorerie cadrage. New table
+`treasury_journal_closures` — one row per **(journal, business_date)**.
+A mechanism with the right *shape* already existed
+(`VendorSettlement`/`FinanceSettlementController::reconcile()` —
+counted-vs-theoretical, gap posting, session lock) but it's built
+entirely around SFA's `WorkSession` (a field vendor physically returning
+cash to a cashier); GCOM has no `WorkSession`, so that endpoint doesn't
+apply here. This is the GCOM-shaped equivalent, independent of it.
+
+**Lifecycle**: `OPEN` → `CLOSED`, one active session per journal per day.
+- **Opening** — explicit via `POST .../closures/open`, but also
+  **auto-provisioned** on the first settlement of the day if nobody
+  opened one yet (same self-provisioning philosophy as the journals
+  themselves). `opening_balance` is the journal's computed balance at
+  that moment.
+- **Closing** — `POST .../closures/{closure}/close` with
+  `{ counted_balance, notes? }`. `theoretical_closing_balance` is simply
+  the journal's `computeBalance()` at the moment of closing — no separate
+  date-windowed sum needed, since closures are sequential and nothing is
+  ever backdated, the cumulative balance already **is** the day's
+  theoretical figure. `discrepancy = counted_balance - theoretical_closing_balance`
+  (validated sign convention: positive = surplus, negative = shortage).
+  **Never auto-corrects `treasury_journals.cached_balance`** — a
+  discrepancy is recorded and reportable, not silently applied, keeping
+  the append-only invariant the whole engine is built on. If real
+  correction is needed, that's a manual/accounting decision outside this
+  system, not an automatic side effect of closing.
+
+**Strict same-day lock (validated, not just anti-backdating)**: once a
+journal's session is `CLOSED` for today, **every new GCOM settlement on
+that journal is blocked** — not just retroactive entries. Guarded at the
+single choke point, `TreasuryIntakeService::seedFromGcomBranchSettlement()`,
+so it covers comptoir, BC→Facture and BL→Facture in one place. A blocked
+attempt returns `422`:
+```json
+{ "success": false, "message": "Caisse B8ESP clôturée pour la date du 2026-08-21. Aucune nouvelle opération autorisée jusqu'à la prochaine ouverture." }
+```
+The lock is **per journal**, not per branch — closing the `CHQ` caisse
+doesn't block `ESP` sales at the same branch. **UI implication**: closing
+a caisse mid-day (by mistake or on purpose) stops that specific payment
+method's GCOM sales at that branch until the next day's session opens —
+show this message directly rather than a generic error, since it's an
+expected/intentional state, not a bug.
+
+**Endpoints** (`/api/backend/finance/journals/{journal}/closures/*`,
+same permissions as the rest of the Finance API, no new RBAC surface):
+`GET` (list, filterable by `business_date`/`status`, `browse-finance`),
+`GET /{closure}` (the "Z de caisse" report itself, `browse-finance`),
+`POST /open` (idempotent, `manage-finance-journals`),
+`POST /{closure}/close` (`manage-finance-journals`),
+`POST /{closure}/correct` (`adjust-finance-ledger` — see below).
+
+**Correcting a CLOSED session (built 2026-08-22)** — `POST
+/{closure}/correct`, body `{ counted_balance, reason }` (`reason`
+required, unlike `close()`'s optional `notes`). Fixes a wrong
+`counted_balance` after the fact (e.g. a typo caught the next day) —
+before this there was no way to fix a closed session's count short of
+editing the database directly, a real gap rather than a deliberate
+pause (unlike the two "not built" items below). Gated by
+`adjust-finance-ledger`, not `manage-finance-journals` — deliberately
+narrower, same permission as the analogous "fix something already
+posted" action on the ledger (`POST /finance/ledger/{entryId}/adjust`).
+
+`theoretical_closing_balance` is **never** recomputed by a correction —
+it's frozen at the moment that day was originally closed; recomputing
+it now would silently fold in every transaction from every day since,
+which isn't what fixing a typo means. Only `counted_balance` (the human
+input) and its `discrepancy` change. The very first submitted count
+survives forever in `original_counted_balance`/`original_discrepancy`
+(set once, on the first correction only — a second correction updates
+`counted_balance` again but never touches these two) — read them to
+show "corrigé, valeur d'origine : X" on the Z de caisse report. Every
+correction (who, when, why, before/after) is also logged to
+`treasury_audit_logs` (`CAISSE_CLOSURE_CORRECTED`) regardless of how
+many times it happens.
+
+**Screen shape** (§14 convention):
+- **Liste** — inside the caisse's `Détail` panel (previous subsection),
+  as the `Historique des clôtures` tab: one row per business day,
+  columns `business_date`/`status`/`counted_balance`/`discrepancy`, a
+  `Toutes` / `Ouvertes` / `Clôturées` filter tab row. Add a small
+  "corrigé" indicator on any row where `correction_count > 0`.
+- **Formulaire — Clôturer** (action available while `status = OPEN`):
+  `Montant compté` (required), `Notes` (optional, make it visually
+  prominent whenever a discrepancy appears once submitted). Show the
+  current theoretical balance (from the caisse's own `Détail` metric
+  card) above the field for reference before the user types the real
+  count.
+- **Formulaire — Corriger** (action available while `status = CLOSED`):
+  same `Montant compté` field, plus `Motif` — **required**, make that
+  visually clear (unlike the closing form's optional notes). Show the
+  currently recorded `counted_balance` (and `original_counted_balance`
+  if `correction_count > 0`) above the field so the user can see exactly
+  what they're changing.
+- **Détail** — clicking a row in the `Historique` opens the "Z de
+  caisse" report itself (`GET .../closures/{closure}`): three metric
+  cards `Théorique` / `Compté` / `Écart` (colour the écart card —
+  positive in the same tone as a credit/surplus, negative like a
+  debit/shortage). If `correction_count > 0`, add a small correction
+  panel: original count, current count, who/when/why for the latest
+  correction (`last_corrected_by`/`last_corrected_at`/
+  `last_correction_reason`).
+- **Actions** — "Ouvrir" (only while no session exists yet for today),
+  "Clôturer" (only while `status = OPEN`), "Corriger" (only while
+  `status = CLOSED`).
+
+**Batch-closing a whole branch (built 2026-08-22)** — `POST
+/api/backend/finance/branches/{branch}/closures/close-all`, body
+`{ counts: [{ journal_id, counted_balance, notes? }, ...] }`,
+`manage-finance-journals`. Closes every listed journal's OPEN-today
+session in one call — pure ergonomics (closing ESP/CHQ/EFF/VIR one at a
+time, every day, for every branch, is real recurring friction with no
+safety trade-off; each journal still gets counted and audited
+individually, nothing about the per-journal invariants changes).
+
+**Best-effort, not all-or-nothing**: one journal failing doesn't block
+the others. Response shape: `{ closed: [...closures], skipped:
+[journal_id, ...], errors: [{journal_id, message}, ...] }`. A journal
+with no OPEN session for today (never provisioned — no settlement
+happened on it yet, or already closed by someone else) lands in
+`skipped`, not `errors` — that's a normal, expected case, not a fault.
+Always returns `200` — read `closed`/`skipped`/`errors` in the body
+rather than the HTTP status to know what actually happened.
+
+Screen shape: an extra "Clôturer tout" action at the branch level (not
+per-journal) opens a **Formulaire** listing every currently-`OPEN`
+journal for that branch (from the existing `GET /finance/journals?
+branch_id=X&type=BRANCH_CAISSE` list, §"The admin API" above) with one
+`Montant compté` input per row, submitted together. After submit, show
+which closed and which were skipped/errored inline — don't just show a
+single success toast, since a partial result is a real, expected
+outcome here.
+
+**Not built** (out of scope, deliberate, not an oversight): no time
+limit on when a correction can be made (any `CLOSED` session, regardless
+of age, can be corrected — not restricted to "today" or "yesterday").
+
+### Deferred règlement also feeds the branch caisse (built 2026-08-21)
+
+The last structural gap: §6's `POST /payments` (a règlement collected
+weeks after a credit sale) now seeds a `TreasuryIntakeLine` too, exactly
+like an immediate settlement — every GCOM payment method that produces
+real money in hand (cash, cheque, effet, virement) shows up in
+`/finance/intake-lines` and its branch's journal balance, regardless of
+whether it was collected at the counter or weeks later.
+
+One real difference from an immediate settlement, worth knowing when
+reading the numbers: **the branch is the collecting actor's own branch**
+(`GcomContextResolver::resolveBranch()`), not an order's branch — a
+règlement is partner-level (can letter across multiple invoices, possibly
+from different branches), so there's no single order to derive one from.
+In practice, for a single-branch-per-admin deployment this is exactly
+the same branch every time; on a genuinely multi-branch deployment, a
+règlement always lands in whichever branch the operator who registered
+it belongs to, not necessarily the branch(es) of the invoices it settles.
+
+`GcomInstrumentRegistrar::recordDeferredSettlement()` is the entry
+point, called from `GcomPaymentController::store()` right after
+`registerPayment()`/`validatePayment()` and before
+`registerForPaymentTransfer()` (so the resulting intake line's id can be
+threaded onto the `FinancialInstrument`'s `metadata`, same as the
+at-sale path — needed for reject-reversal, §8, to be able to void it).
+This also means the strict same-day closure lock (previous subsection)
+now applies to deferred règlements too: collecting a règlement against a
+branch whose relevant caisse is closed for today returns the same `422`.
+
+### Financial Instruments — redeposit (built 2026-08-21)
+
+`POST /financial-instruments/{id}/redeposit` (§8) — `REJECTED` →
+`PENDING`. Completes the pre-existing state machine's HTTP surface
+(deposit/clear/reject were already wired). Resets the status only — it
+does **not** re-close the invoice or re-credit the branch caisse those
+were fully reversed on reject, exactly as if the settlement had never
+happened. If the retry actually clears, represent that with a fresh
+`deposit()`/`clear()` call, same as any other instrument; there is no
+automatic "replay" of the original settlement.
+
+### Backlog — Rapprochement bancaire (relevé réel), not started
+
+**Status**: paused, not a gap. Confirmed 2026-08-22: lettrage (§6) +
+branch caisse balances (this section) + transfers + closures already
+give correct traceability for every current operational need — no
+business trigger (auditor requirement, an actual undetected
+discrepancy) has asked for this yet. This subsection exists so the
+scoping work already done isn't lost — pick it up here instead of
+re-deriving it when a real trigger shows up.
+
+What this is, precisely (and why it's a different thing from everything
+else in §16): comparing `treasury_ledger_entries` against what the bank
+*itself* says happened, via an actually-imported bank statement — as
+opposed to lettrage, which only matches invoices to payments, and never
+touches an external bank statement at all.
+
+**Scope, when it's eventually built:**
+
+1. **Bank statement import** — standard formats: OFX, MT940, CSV. No
+   single universal schema across Moroccan banks in practice — expect to
+   need a per-bank parser (or per-format-per-bank), not one generic
+   importer. First format to support should be driven by whichever
+   bank(s) a real tenant actually exports from — not decided yet, and
+   deliberately not guessed at here.
+2. **Heuristic matching engine** — match each imported statement line
+   against `treasury_ledger_entries`/`treasury_transfers` on
+   Date / Montant / Référence (a transfer's `versement_reference`, a
+   cheque/effet's `reference_number` on `financial_instruments`, etc.).
+   Confidence-scored auto-match for the unambiguous cases, a manual
+   review queue for anything that doesn't match cleanly (amount off by a
+   few centimes, date shifted by a bank processing delay, reference typo).
+3. **Manual reconciliation interface** — pair an unmatched statement line
+   to a ledger entry by hand, or flag it as genuinely unexplained.
+4. **Bank-fee / commission handling** — a real, unresolved design
+   question, not just an implementation detail: many statement lines are
+   pure bank fees with **no corresponding internal transaction at all**.
+   These need their own posting path (a new kind of ledger entry
+   representing a cost, not a match against something that already
+   exists) — whoever builds this needs to design that path first, it's
+   not covered by the matching engine above.
+
+**Dependencies — all already exist, nothing to prepare in advance:**
+- `treasury_journals` (`TYPE_BANK_ACCOUNT` rows — the destination side
+  of every transfer, already built, §16 above).
+- `treasury_transfers` (the `DIRECT`/`BANK_DEPOSIT` records already
+  created when a branch caisse's funds move to a bank journal).
+- `treasury_ledger_entries` (the double-entry postings
+  `TreasuryTransferService::accept()` already generates on approval —
+  this is the "grand livre" side of the comparison).
+- `financial_instruments` (cheque/effet lifecycle — a statement line for
+  a cleared cheque should ultimately cross-reference the instrument, not
+  just a ledger entry).
+
+**Not designed yet — open questions for whoever picks this up:**
+- Which statement format(s) to support first (depends on the eventual
+  real bank(s)).
+- Where bank fees get posted (see point 4 above).
+- Whether reconciliation is scoped per bank account or per branch.
+- Whether an unmatched line older than some age should raise an alert,
+  and to whom.
+
+## 17. Multi-Souche Invoice Numbering (Declared vs Internal)
+
+Built 2026-08-25, "FEU VERT TOTAL" Phase 1. **Why this exists**:
+distributors/wholesalers commonly run two invoice sequences in parallel —
+a **déclarée** series that gets exported to the accountant/Sage and must
+be strictly gap-free for fiscal compliance, and an **interne** series for
+sales tracked for internal stock/caisse/encours purposes only, which must
+**never** appear in that export. Phase 1 builds the split itself; the
+Sage/FEC export format/job is deliberately out of scope (Phase 2, to be
+scoped once this split is validated in real use — no format decided yet).
+
+### The core design decision: separate counters, not a shared counter filtered later
+
+Each souche draws its invoice number from its **own** `TokenSerie` row —
+its own `invoice_next_number` counter. This is the only way the declared
+sequence's gap-freedom is **structural**: an internal sale never consumes
+a number from the declared counter in the first place, so there's nothing
+to "leave a hole" when it's excluded from the export. A design where both
+souches shared one counter and internal invoices were filtered out at
+export time was explicitly rejected — that would show a visible gap in
+the declared file every time an internal sale happened between two
+declared ones.
+
+### Schema
+
+- `token_series.souche_kind` — `'declared'` (default) or `'internal'`
+  (`TokenSerie::SOUCHE_DECLARED`/`SOUCHE_INTERNAL`). Every existing series
+  defaults to `declared`, so nothing changes until a branch is given a
+  second, internal series.
+- `invoices.souche_kind` + `invoices.token_serie_id` — captured at
+  generation time (`Invoice::generateInvoiceNumber()`, see below), so a
+  future export job can select `WHERE souche_kind = 'declared'` directly
+  instead of re-deriving the souche from the prefix, and any invoice can
+  be traced back to exactly which `TokenSerie` row produced its number
+  (this traceability didn't exist before — an invoice's number was
+  stored, but not which series row generated it).
+- `payment_terms.is_internal_souche` (boolean, default `false`) — the
+  chosen trigger (see below).
+
+### The default trigger: PaymentTerm
+
+A `PaymentTerm` flagged `is_internal_souche = true` routes **every**
+invoice settled through it onto the branch's internal series
+automatically — `PaymentTerm::soucheKind()` resolves which kind, and
+`Invoice::generateInvoiceNumber($branchCode, $paymentTermId)` reads it.
+No new field anywhere in the sale/checkout UI: every `InvoiceService`
+call site already resolves `payment_term_id` before creating the invoice
+(for due-date calculation), so this default is a zero-UI-cost addition at
+the point of sale — it only requires marking the relevant `PaymentTerm`
+row once in back-office master data.
+
+This only reliably drives **credit/transfer settlements**, which is the
+only path where a caller-supplied `payment_term_id` is actually honored
+(`GcomContextResolver::resolvePaymentTermId()` — cash/card/cheque/effet
+always resolve the one global `is_cash=true` term regardless of what's
+passed, since for those methods the payment method itself, not the term,
+carries the settlement semantics). This is exactly why the explicit
+override below exists — a payment term can't express "this specific
+cash sale is internal" when cash sales don't route through a
+caller-chosen term at all.
+
+### Explicit override at invoice creation (2026-08-26)
+
+Real business need reported by the UI team: in daily practice a cash or
+cheque sale can go on either souche depending on the transaction's
+nature, decided by the caissier/commercial at the point of sale — not
+implied by the settlement method. The three GCOM invoice-creation
+endpoints (`POST /direct-invoices`, `POST /orders/{order}/
+convert-to-invoice`, `POST /delivery-notes/{deliveryNote}/
+convert-to-invoice`) all accept an optional `souche_kind`
+(`'declared'`|`'internal'`) in the request body — see §8 for the exact
+per-endpoint contract. Precedence, resolved in
+`Invoice::generateInvoiceNumber()`:
+
+1. `souche_kind` explicitly provided and a recognized value → used as-is,
+   beats the `PaymentTerm` default even if the resolved term is flagged
+   `is_internal_souche` the other way.
+2. Otherwise → the `PaymentTerm`-derived default above.
+3. No payment term resolved either → `'declared'`.
+
+An unrecognized `souche_kind` string is never silently treated as
+meaningful — Laravel validation rejects it with `422` before the request
+reaches the service layer (`in:declared,internal`).
+
+### Provisioning a branch's internal series
+
+```php
+TokenSerie::autoGenerate(branchCode: $branch->code, name: 'Interne', soucheKind: TokenSerie::SOUCHE_INTERNAL);
+```
+
+A branch's existing declared series is untouched — `autoGenerate()` always
+mints a fresh unique code/prefix set, so calling it a second time with
+`SOUCHE_INTERNAL` gives that branch a second, fully independent series.
+
+**Resolution fails loudly, never silently falls back to the wrong
+souche**: `DocumentNumberingService::resolveBranchTokenSerie()` filters
+its candidate set to the requested `souche_kind` *before* running the
+branch-exact-match / `is_default` / sole-active-series cascade. If a
+`PaymentTerm` is flagged `is_internal_souche` but the branch has no
+internal series provisioned yet, invoice creation throws
+`CriticalConfigurationException` rather than drawing the number from the
+declared series (which would silently defeat the whole point) — the
+internal series must be provisioned before the flag is turned on for a
+branch's payment terms.
+
+### Real bug found building this (§10-class, not yet in §10's own table)
+
+`Order` has no `branch_code` column (only `branch_id`) — two
+`InvoiceService` call sites (`createFromPosOrder()`, the GCOM Facture
+Directe/Comptoir path, and `generateFromOrderDeliveries()`) were reading
+`$order->branch_code`, which Eloquent silently evaluates to `null` for an
+undefined attribute. Every invoice generated via either path was
+therefore **never** actually drawing its number from its own branch's
+series — it only ever worked by `resolveBranchTokenSerie()`'s
+"single active series" fallback coincidence, same latent-bug family as
+the branch_code gaps already fixed elsewhere in §10. It stayed invisible
+until multi-souche numbering made it legitimate for two `declared`-kind
+candidates to coexist (a test's own branch series + the environment's
+pre-existing baseline series), which forced resolution off that
+fallback and exposed the null branch code. Fixed: `createFromPosOrder()`
+now resolves `$order->branch?->code`; `generateFromOrderDeliveries()`
+uses `$lastBl->branch_code` (a `DeliveryNote`, which does have a real
+`branch_code` column, already in scope) — same source
+`generatePeriodicInvoice()` already correctly used.
+
+### Stock/treasury invariant
+
+`souche_kind` is purely a numbering/export classification layered onto
+the `Invoice` row — it never gates `StockService` or
+`GcomInstrumentRegistrar`. An internal-souche sale deducts stock exactly
+like a declared one, and settling an internal-souche invoice later posts
+treasury (payment_transfers/letterings/branch caisse) exactly like any
+other — locked in by
+`tests/Feature/Gcom/GcomMultiSoucheNumberingTest.php`.
+
+### Not built in Phase 1 (deliberately)
+
+Sage/FEC export job or endpoint — format (FEC? CSV Sage-native?), cadence
+(on-demand vs. scheduled), and delivery mechanism are all still open. No
+existing code touches this (the only "Sage" reference anywhere in the
+codebase is an unrelated, unimplemented warehouse-transfer sync stub) —
+greenfield, to be scoped once the souche split above is validated in
+real use.

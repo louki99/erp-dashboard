@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { ArrowLeftRight, Plus, RefreshCw, CheckCircle2, XCircle, ChevronRight, Landmark, AlertTriangle } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import toast from 'react-hot-toast';
@@ -203,22 +204,36 @@ const RejectModal = ({ transfer, onClose, onDone }: { transfer: Transfer; onClos
 };
 
 // ── Create Transfer Modal ─────────────────────────────────────────────────────
-const CreateTransferModal = ({ journals, onClose, onCreated }: { journals: Journal[]; onClose: () => void; onCreated: () => void }) => {
+const CreateTransferModal = ({ journals, initialSourceId, onClose, onCreated }: { journals: Journal[]; initialSourceId?: string; onClose: () => void; onCreated: () => void }) => {
   const { t } = useTranslation();
-  const [sourceJournalId, setSourceJournalId] = useState('');
+  const [sourceJournalId, setSourceJournalId] = useState(initialSourceId ?? '');
   const [destJournalId, setDestJournalId] = useState('');
   const [amount, setAmount] = useState('');
   const [versementRef, setVersementRef] = useState('');
   const [versementPhoto, setVersementPhoto] = useState('');
   const [bankName, setBankName] = useState('');
   const [depositDate, setDepositDate] = useState('');
-  const [intakeLineId, setIntakeLineId] = useState('');
   const [note, setNote] = useState('');
   const [saving, setSaving] = useState(false);
 
-  const sourceJournal = journals.find(j => j.id === Number(sourceJournalId));
-  const destJournal = journals.find(j => j.id === Number(destJournalId));
-  const isCHQorEFF = sourceJournal?.method_suffix === 'CHQ' || sourceJournal?.method_suffix === 'EFF';
+  // CHQ/EFF journals never appear in this free-fund-transfer modal at all —
+  // their cycle is exclusively the financial-instruments deposit/clear/reject
+  // lifecycle (§16, built on ReglementPage's Chèques & Effets tab), not this
+  // generic journal-to-journal transfer. Flagged 2026-08-18: the backend
+  // itself doesn't yet reject a mismatched-method transfer either (verified
+  // live — an ESP→CHQ transfer went through with a 201) — this client-side
+  // filter is the only guard until that's fixed server-side.
+  const transferableJournals = journals.filter(j => j.method_suffix !== 'CHQ' && j.method_suffix !== 'EFF');
+  const sourceJournal = transferableJournals.find(j => j.id === Number(sourceJournalId));
+  const destJournal = transferableJournals.find(j => j.id === Number(destJournalId));
+  // Real seeded routes (§16): ESP→ESP, ESP→VER, EFF→EFF, VIR→VIR — same
+  // suffix always allowed, plus the one cross-suffix exception (cash deposit
+  // into a bank/versement journal).
+  const compatibleDestinations = transferableJournals.filter(j => {
+    if (!sourceJournal || j.id === sourceJournal.id) return false;
+    if (j.method_suffix === sourceJournal.method_suffix) return true;
+    return sourceJournal.method_suffix === 'ESP' && j.method_suffix === 'VER';
+  });
   // Backend rule (2026-08): the transfer_type is dictated by the DESTINATION journal.
   // A BANK_ACCOUNT destination requires BANK_DEPOSIT + versement_reference + deposit_date;
   // a cash-register destination must be DIRECT.
@@ -243,7 +258,6 @@ const CreateTransferModal = ({ journals, onClose, onCreated }: { journals: Journ
         ...(destIsBank && versementPhoto ? { versement_photo_path: versementPhoto } : {}),
         ...(destIsBank && bankName ? { bank_name: bankName } : {}),
         ...(destIsBank && depositDate ? { deposit_date: depositDate } : {}),
-        ...(isCHQorEFF && intakeLineId ? { intake_line_id: Number(intakeLineId) } : {}),
         ...(note ? { note } : {}),
       });
       toast.success(t('finance.transfers.created'));
@@ -263,19 +277,22 @@ const CreateTransferModal = ({ journals, onClose, onCreated }: { journals: Journ
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">{t('finance.transfers.sourceJournalLabel')} *</label>
-            <select value={sourceJournalId} onChange={e => setSourceJournalId(e.target.value)}
+            <select value={sourceJournalId} onChange={e => { setSourceJournalId(e.target.value); setDestJournalId(''); }}
               className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500">
               <option value="">{t('common.selectPlaceholder')}</option>
-              {journals.map(j => <option key={j.id} value={j.id}>{j.code} ({j.method_suffix})</option>)}
+              {transferableJournals.map(j => <option key={j.id} value={j.id}>{j.code} ({j.method_suffix})</option>)}
             </select>
           </div>
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">{t('finance.transfers.destJournalLabel')} *</label>
-            <select value={destJournalId} onChange={e => setDestJournalId(e.target.value)}
-              className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500">
+            <select value={destJournalId} onChange={e => setDestJournalId(e.target.value)} disabled={!sourceJournal}
+              className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500 disabled:bg-gray-50 disabled:cursor-not-allowed">
               <option value="">{t('common.selectPlaceholder')}</option>
-              {journals.filter(j => j.id !== Number(sourceJournalId)).map(j => <option key={j.id} value={j.id}>{j.code} ({j.method_suffix}){j.type === 'BANK_ACCOUNT' ? ` 🏦 ${j.bank_name ?? ''}`.trimEnd() : ''}</option>)}
+              {compatibleDestinations.map(j => <option key={j.id} value={j.id}>{j.code} ({j.method_suffix}){j.type === 'BANK_ACCOUNT' ? ` 🏦 ${j.bank_name ?? ''}`.trimEnd() : ''}</option>)}
             </select>
+            {sourceJournal && compatibleDestinations.length === 0 && (
+              <p className="text-xs text-amber-600 mt-1">{t('finance.transfers.noCompatibleDestination')}</p>
+            )}
           </div>
           {destIsBank && (
             <div className="rounded-lg bg-purple-50 border border-purple-200 p-3 space-y-3">
@@ -306,21 +323,11 @@ const CreateTransferModal = ({ journals, onClose, onCreated }: { journals: Journ
               </div>
             </div>
           )}
-          {isCHQorEFF && (
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">{t('finance.transfers.settlementLineLabel')}</label>
-              <input type="number" value={intakeLineId} onChange={e => setIntakeLineId(e.target.value)}
-                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500" />
-              <p className="text-xs text-gray-400 mt-1">{t('finance.transfers.settlementLineHint')}</p>
-            </div>
-          )}
-          {!isCHQorEFF && (
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">{t('common.amount')} *</label>
-              <input type="number" step="0.01" value={amount} onChange={e => setAmount(e.target.value)} placeholder="0.00"
-                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500" />
-            </div>
-          )}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">{t('common.amount')} *</label>
+            <input type="number" step="0.01" value={amount} onChange={e => setAmount(e.target.value)} placeholder="0.00"
+              className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500" />
+          </div>
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">{t('finance.transfers.noteOptional')}</label>
             <textarea value={note} onChange={e => setNote(e.target.value)} rows={2}
@@ -368,15 +375,15 @@ const TransferDetail = ({ transfer, onAction }: { transfer: Transfer; onAction: 
 
       <div className="rounded-xl border border-gray-200 divide-y divide-gray-100">
         {[
-          [t('finance.transfers.detail.source'), `${transfer.sourceJournal.code} (${transfer.sourceJournal.method_suffix})`],
-          [t('finance.transfers.detail.destination'), `${transfer.destJournal.code} (${transfer.destJournal.method_suffix})`],
+          [t('finance.transfers.detail.source'), `${transfer.source_journal.code} (${transfer.source_journal.method_suffix})`],
+          [t('finance.transfers.detail.destination'), `${transfer.dest_journal.code} (${transfer.dest_journal.method_suffix})`],
           transfer.transfer_type && [t('common.type'), transfer.transfer_type],
           transfer.bank_name && [t('finance.transfers.detail.bank'), transfer.bank_name],
           transfer.deposit_date && [t('finance.transfers.detail.depositDate'), transfer.deposit_date],
           transfer.versement_reference && [t('finance.transfers.detail.depositRef'), transfer.versement_reference],
           [t('finance.transfers.detail.createdAt'), new Date(transfer.created_at).toLocaleString('fr-MA')],
-          transfer.createdBy && [t('finance.transfers.detail.by'), transfer.createdBy.name],
-        ].filter(Boolean).map(([label, value]) => (
+          [t('finance.transfers.detail.by'), `#${transfer.created_by}`],
+        ].filter((row): row is [string, string] => Boolean(row)).map(([label, value]) => (
           <div key={String(label)} className="flex justify-between px-4 py-2.5 text-sm">
             <span className="text-gray-500">{label}</span>
             <span className="font-mono font-semibold text-gray-800 text-xs">{value}</span>
@@ -418,11 +425,16 @@ const TransferDetail = ({ transfer, onAction }: { transfer: Transfer; onAction: 
 // ── Main Page ─────────────────────────────────────────────────────────────────
 export const TransfersPage = () => {
   const { t } = useTranslation();
+  const [searchParams, setSearchParams] = useSearchParams();
   const [transfers, setTransfers] = useState<Transfer[]>([]);
   const [journals, setJournals] = useState<Journal[]>([]);
   const [loading, setLoading] = useState(false);
   const [selected, setSelected] = useState<Transfer | null>(null);
-  const [showCreate, setShowCreate] = useState(false);
+  // Deep-link from a journal's "Transférer" action (?source=<journalId>) —
+  // opens the create modal pre-filled with that journal as source, matching
+  // §16's suggested "Transférer vers la banque" per-row shortcut.
+  const sourceParam = searchParams.get('source');
+  const [showCreate, setShowCreate] = useState(!!sourceParam);
   const [statusFilter, setStatusFilter] = useState('');
   const [fromDate, setFromDate] = useState('');
   const [toDate, setToDate] = useState('');
@@ -453,12 +465,12 @@ export const TransfersPage = () => {
     { headerName: t('finance.transfers.col.ref'), field: 'id', width: 70 },
     {
       headerName: t('finance.transfers.col.srcDest'),
-      field: 'sourceJournal',
+      field: 'source_journal',
       cellRenderer: (p: any) => (
         <span className="text-xs font-mono flex items-center gap-1">
-          {p.data?.sourceJournal?.code}
+          {p.data?.source_journal?.code}
           <ChevronRight className="w-3 h-3 text-gray-400" />
-          {p.data?.destJournal?.code}
+          {p.data?.dest_journal?.code}
         </span>
       ),
     },
@@ -536,7 +548,14 @@ export const TransfersPage = () => {
   return (
     <>
       <MasterLayout leftContent={leftContent} mainContent={mainContent} />
-      {showCreate && <CreateTransferModal journals={journals} onClose={() => setShowCreate(false)} onCreated={load} />}
+      {showCreate && (
+        <CreateTransferModal
+          journals={journals}
+          initialSourceId={sourceParam ?? undefined}
+          onClose={() => { setShowCreate(false); if (sourceParam) setSearchParams({}); }}
+          onCreated={load}
+        />
+      )}
     </>
   );
 };

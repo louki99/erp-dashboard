@@ -60,6 +60,10 @@ import type {
     GcomFinancialInstrument,
     GcomFinancialInstrumentsFilters,
     GcomFinancialInstrumentsResponse,
+    GcomFinancialInstrumentsGlobalFilters,
+    GcomBatchDepositPayload,
+    GcomBatchDepositResponse,
+    GcomSoucheKind,
     GcomAccountStatement,
     GcomAccountStatementResponse,
     GcomLedgerEntry,
@@ -207,11 +211,12 @@ export const gcomApi = {
 
         // Flow #3 — BC → Facture, no BL. `instrument` required if the BC's payment_method
         // is cheque/effet. Idempotent: re-calling on an already-invoiced order returns
-        // the existing invoice instead of erroring.
-        convertToInvoice: async (orderId: number, instrument?: GcomInstrumentInput | null): Promise<GcomInvoice> => {
+        // the existing invoice instead of erroring. `souche_kind` (§17, 2026-08-26) —
+        // explicit override, beats the PaymentTerm-derived default; omit to keep it.
+        convertToInvoice: async (orderId: number, instrument?: GcomInstrumentInput | null, soucheKind?: GcomSoucheKind | null): Promise<GcomInvoice> => {
             const response = await apiClient.post<GcomConvertToInvoiceResponse>(
                 `${BASE}/orders/${orderId}/convert-to-invoice`,
-                { instrument: instrument ?? null },
+                { instrument: instrument ?? null, souche_kind: soucheKind ?? null },
                 idempotent(),
             );
             return response.data.invoice;
@@ -299,11 +304,12 @@ export const gcomApi = {
         },
 
         // Flow #4's second hop — BC → BL → Facture. `instrument` required if the
-        // underlying BC's payment_method is cheque/effet.
-        convertToInvoice: async (deliveryNoteId: number, instrument?: GcomInstrumentInput | null): Promise<GcomInvoice> => {
+        // underlying BC's payment_method is cheque/effet. `souche_kind` (§17,
+        // 2026-08-26) — explicit override, beats the PaymentTerm-derived default.
+        convertToInvoice: async (deliveryNoteId: number, instrument?: GcomInstrumentInput | null, soucheKind?: GcomSoucheKind | null): Promise<GcomInvoice> => {
             const response = await apiClient.post<GcomConvertToInvoiceResponse>(
                 `${BASE}/delivery-notes/${deliveryNoteId}/convert-to-invoice`,
-                { instrument: instrument ?? null },
+                { instrument: instrument ?? null, souche_kind: soucheKind ?? null },
                 idempotent(),
             );
             return response.data.invoice;
@@ -374,6 +380,18 @@ export const gcomApi = {
             const response = await apiClient.get<GcomLedgerResponse>(`${BASE}/partners/${partnerId}/ledger`, { params: filters });
             return response.data.ledger;
         },
+
+        // Relevé de Compte PDF (2026-08-24) — same builder as the JSON /ledger
+        // endpoint above, so the PDF can never diverge from what the screen
+        // shows. No `download` param sent — inline view via window.open,
+        // matching every other GCOM PDF button in this module.
+        getLedgerPdfBlobUrl: async (partnerId: number, filters?: GcomLedgerFilters): Promise<string> => {
+            const response = await apiClient.get(`${BASE}/partners/${partnerId}/ledger/pdf`, {
+                responseType: 'blob',
+                params: filters,
+            });
+            return URL.createObjectURL(response.data as Blob);
+        },
     },
 
     payments: {
@@ -397,6 +415,26 @@ export const gcomApi = {
     // Lifecycle transitions for chèque/effet instruments (2026-08-18) — not
     // partner-scoped, unlike partners.financialInstruments() (the list).
     financialInstruments: {
+        // Company-wide "Portefeuille" (built 2026-08-24) — every instrument
+        // across every partner of the acting user's company, for the
+        // dedicated cross-client Liste. branch_id is best-effort (only
+        // resolvable for at-sale instruments, see the type's comment) — a
+        // deferred règlement's instrument never matches a branch_id filter,
+        // not a bug.
+        list: async (filters?: GcomFinancialInstrumentsGlobalFilters): Promise<GcomPaginator<GcomFinancialInstrument>> => {
+            const response = await apiClient.get<GcomFinancialInstrumentsResponse>(`${BASE}/financial-instruments`, { params: filters });
+            return response.data.financial_instruments;
+        },
+
+        // "Remise en banque groupée" — one deposit_date/deposit_reference
+        // applied to the whole selection. Best-effort, always 200 (read
+        // data.deposited/data.errors, not the status) — a non-PENDING id or
+        // one from another company lands in errors, doesn't fail the batch.
+        batchDeposit: async (payload: GcomBatchDepositPayload): Promise<GcomBatchDepositResponse['data']> => {
+            const response = await apiClient.post<GcomBatchDepositResponse>(`${BASE}/financial-instruments/batch-deposit`, payload, idempotent());
+            return response.data.data;
+        },
+
         // PENDING → DEPOSITED. Both fields optional (deposit_date defaults to today).
         deposit: async (instrumentId: number, payload?: GcomInstrumentDepositPayload): Promise<GcomFinancialInstrument> => {
             const response = await apiClient.post<GcomFinancialInstrumentActionResponse>(
@@ -417,16 +455,31 @@ export const gcomApi = {
             return response.data.financial_instrument;
         },
 
-        // DEPOSITED → REJECTED. `reason` required. Known backend gap (not yet
-        // fixed, flagged 2026-08-18): rejecting does NOT reopen the invoice's
-        // debt — a GCOM cheque marks the invoice "paid" the moment it's
-        // registered, so a reject currently leaves the invoice showing "payée"
-        // even though the money never arrived. Surface this in the UI, don't
-        // silently imply the invoice balance is corrected.
+        // DEPOSITED → REJECTED. `reason` required. Fixed 2026-08-20 (was
+        // flagged as a gap earlier): rejecting now reopens every invoice that
+        // instrument's settlement touched (paid_amount reverses, status
+        // recalculates) and pulls the amount back out of whichever branch
+        // caisse it landed in — a backend-only side effect, no new response
+        // field to read. Re-fetch the invoice if the screen needs to reflect
+        // the reopened state immediately.
         reject: async (instrumentId: number, payload: GcomInstrumentRejectPayload): Promise<GcomFinancialInstrument> => {
             const response = await apiClient.post<GcomFinancialInstrumentActionResponse>(
                 `${BASE}/financial-instruments/${instrumentId}/reject`,
                 payload,
+                idempotent(),
+            );
+            return response.data.financial_instrument;
+        },
+
+        // REJECTED → PENDING (2026-08-21) — completes the state machine's
+        // HTTP surface. Resets status/rejection_reason/rejected_at/
+        // deposited_at only — does NOT re-close the invoice or re-credit the
+        // branch caisse (those stay reversed). If the retry actually clears,
+        // that's a fresh deposit()/clear() call, no automatic replay.
+        redeposit: async (instrumentId: number): Promise<GcomFinancialInstrument> => {
+            const response = await apiClient.post<GcomFinancialInstrumentActionResponse>(
+                `${BASE}/financial-instruments/${instrumentId}/redeposit`,
+                {},
                 idempotent(),
             );
             return response.data.financial_instrument;

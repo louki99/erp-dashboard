@@ -23,7 +23,7 @@ import { RETURN_CONDITIONS, RETURN_CONDITION_LABEL } from '@/lib/gcom/returnCond
 import { RETURN_REASONS, RETURN_REASON_LABEL } from '@/lib/gcom/returnReasons';
 import type { Partner } from '@/types/partner.types';
 import type {
-    GcomDeliveryNote, GcomDeliveryNoteItem, GcomBlStatus, GcomInstrumentInput, GcomPdfPriceMode, GcomReturnCondition, GcomReturnReason, GcomDeliveryNoteReturn,
+    GcomDeliveryNote, GcomDeliveryNoteItem, GcomBlStatus, GcomInstrumentInput, GcomPdfPriceMode, GcomReturnCondition, GcomReturnReason, GcomDeliveryNoteReturn, GcomSoucheKind,
 } from '@/types/gcom.types';
 
 // ─── helpers ─────────────────────────────────────────────────────────────────
@@ -285,9 +285,12 @@ export default function BonLivraisonPage() {
     const [invoiceConfirmOpen, setInvoiceConfirmOpen] = useState(false); // plain confirmation otherwise
     const [convertInstrument, setConvertInstrument] = useState<GcomInstrumentInput>(EMPTY_INSTRUMENT);
     const [convertingToInvoice, setConvertingToInvoice] = useState(false);
+    // §17 — explicit override, 'declared' is the safe/common default.
+    const [convertSoucheKind, setConvertSoucheKind] = useState<GcomSoucheKind>('declared');
 
     const openConvertToInvoice = () => {
         if (!selected) return;
+        setConvertSoucheKind('declared');
         const method = selected.order?.financial_metadata?.payment_method;
         const needsInstrument = method === 'cheque' || method === 'effet';
         if (needsInstrument) {
@@ -303,8 +306,8 @@ export default function BonLivraisonPage() {
         if (!selected) return;
         setConvertingToInvoice(true);
         try {
-            const invoice = await gcomApi.deliveryNotes.convertToInvoice(selected.id, instrument);
-            toast.success(`Facture ${invoice.invoice_number ?? `#${invoice.id}`} créée`);
+            const invoice = await gcomApi.deliveryNotes.convertToInvoice(selected.id, instrument, convertSoucheKind);
+            toast.success(`Facture ${invoice.invoice_number ?? `#${invoice.id}`} créée${invoice.souche_kind === 'internal' ? ' (souche interne)' : ''}`);
             setConvertPanelOpen(false);
             setInvoiceConfirmOpen(false);
             refresh();
@@ -648,6 +651,20 @@ export default function BonLivraisonPage() {
                                                 <input value={convertInstrument.bank_name} onChange={e => setConvertInstrument(p => ({ ...p, bank_name: e.target.value }))} placeholder="Banque" className="px-2 py-1.5 text-xs border border-gray-200 rounded-md" />
                                                 <input value={convertInstrument.bank_account} onChange={e => setConvertInstrument(p => ({ ...p, bank_account: e.target.value }))} placeholder="N° compte" className="px-2 py-1.5 text-xs border border-gray-200 rounded-md" />
                                             </div>
+                                            <div className="flex items-center gap-1.5">
+                                                <span className="text-[10px] text-gray-500 mr-0.5">Souche :</span>
+                                                {(['declared', 'internal'] as GcomSoucheKind[]).map(k => (
+                                                    <button
+                                                        key={k}
+                                                        onClick={() => setConvertSoucheKind(k)}
+                                                        className={`px-2.5 py-1 rounded-lg border text-[11px] font-medium transition-colors ${
+                                                            convertSoucheKind === k ? 'bg-indigo-600 border-indigo-600 text-white' : 'bg-white border-gray-200 text-gray-600 hover:bg-gray-50'
+                                                        }`}
+                                                    >
+                                                        {k === 'declared' ? 'Déclarée' : 'Interne'}
+                                                    </button>
+                                                ))}
+                                            </div>
                                             <div className="flex gap-2">
                                                 <button
                                                     onClick={() => {
@@ -843,9 +860,23 @@ export default function BonLivraisonPage() {
                             </div>
                             <h3 className="text-base font-semibold text-gray-900">Convertir en facture</h3>
                         </div>
-                        <p className="text-sm text-gray-600 mb-5">
+                        <p className="text-sm text-gray-600 mb-3">
                             Confirmez-vous la conversion du BL <strong>{selected.delivery_number ?? `#${selected.id}`}</strong> en facture pour <strong>{selected.partner?.name}</strong>, d'un montant de <strong>{fmtMAD(selected.total_amount)}</strong> ?
                         </p>
+                        <div className="flex items-center gap-1.5 mb-5">
+                            <span className="text-[10px] text-gray-500 mr-0.5">Souche :</span>
+                            {(['declared', 'internal'] as GcomSoucheKind[]).map(k => (
+                                <button
+                                    key={k}
+                                    onClick={() => setConvertSoucheKind(k)}
+                                    className={`px-2.5 py-1 rounded-lg border text-[11px] font-medium transition-colors ${
+                                        convertSoucheKind === k ? 'bg-indigo-600 border-indigo-600 text-white' : 'bg-white border-gray-200 text-gray-600 hover:bg-gray-50'
+                                    }`}
+                                >
+                                    {k === 'declared' ? 'Déclarée' : 'Interne'}
+                                </button>
+                            ))}
+                        </div>
                         <div className="flex gap-3">
                             <button
                                 onClick={() => doConvertToInvoice(null)}

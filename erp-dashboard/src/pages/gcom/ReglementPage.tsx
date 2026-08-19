@@ -4,7 +4,7 @@ import type { AgGridReact } from 'ag-grid-react';
 import {
     Landmark, Search, X, Loader2, RefreshCw, Plus,
     Building2, FileText, Wallet, History, TrendingUp, TrendingDown, Scale,
-    Upload, CheckCircle2, Ban, AlertTriangle, Lock,
+    Upload, CheckCircle2, Ban, AlertTriangle, Lock, RotateCcw,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 
@@ -368,6 +368,29 @@ export default function ReglementPage() {
         }
     };
 
+    // REJECTED → PENDING (2026-08-21) — completes the state machine's HTTP
+    // surface. Doesn't re-close the invoice or re-credit the caisse (those
+    // stay reversed from the original reject) — a fresh deposit()/clear()
+    // represents an actual successful retry, this just resets the status.
+    const [redepositTarget, setRedepositTarget] = useState<GcomFinancialInstrument | null>(null);
+    const [redepositing, setRedepositing] = useState(false);
+
+    const confirmRedeposit = async () => {
+        if (!redepositTarget) return;
+        setRedepositing(true);
+        try {
+            await gcomApi.financialInstruments.redeposit(redepositTarget.id);
+            toast.success('Instrument remis en dépôt (PENDING)');
+            setRedepositTarget(null);
+            refresh();
+        } catch (err: unknown) {
+            const msg = (err as { response?: { data?: { message?: string } } })?.response?.data?.message;
+            toast.error(msg ?? 'Erreur lors de la remise en dépôt');
+        } finally {
+            setRedepositing(false);
+        }
+    };
+
     const [rejectTarget, setRejectTarget] = useState<GcomFinancialInstrument | null>(null);
     const [rejectReason, setRejectReason] = useState('');
     const [rejecting, setRejecting] = useState(false);
@@ -422,6 +445,23 @@ export default function ReglementPage() {
     const applyLedgerFilter = () => {
         if (!selectedPartner) return;
         loadLedger(selectedPartner.id, ledgerFrom, ledgerTo);
+    };
+
+    const [ledgerPdfLoading, setLedgerPdfLoading] = useState(false);
+    const handleLedgerPdf = async () => {
+        if (!selectedPartner) return;
+        setLedgerPdfLoading(true);
+        try {
+            const url = await gcomApi.partners.getLedgerPdfBlobUrl(selectedPartner.id, {
+                from: ledgerFrom || undefined,
+                to: ledgerTo || undefined,
+            });
+            window.open(url, '_blank');
+        } catch {
+            toast.error('Impossible de charger le relevé de compte PDF');
+        } finally {
+            setLedgerPdfLoading(false);
+        }
     };
 
     // ── Action panel ──────────────────────────────────────────────────────────
@@ -525,7 +565,17 @@ export default function ReglementPage() {
                         </div>
                     );
                 }
-                // CLEARED / REJECTED — terminal states, read-only.
+                if (fi.status === 'REJECTED') {
+                    return (
+                        <button
+                            onClick={() => setRedepositTarget(fi)}
+                            className="flex items-center gap-1 px-2 py-1 text-[10px] font-semibold text-amber-700 bg-amber-50 border border-amber-200 rounded-md hover:bg-amber-100 transition-colors"
+                        >
+                            <RotateCcw className="w-3 h-3" /> Remettre en dépôt
+                        </button>
+                    );
+                }
+                // CLEARED — terminal state, read-only.
                 return (
                     <span className="flex items-center gap-1 text-[10px] text-gray-400" title="État terminal">
                         <Lock className="w-3 h-3" /> —
@@ -777,6 +827,14 @@ export default function ReglementPage() {
                                             <span className="text-xs text-gray-400">→</span>
                                             <input type="date" value={ledgerTo} onChange={e => setLedgerTo(e.target.value)} className="px-2.5 py-1.5 text-xs border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-sage-400" />
                                             <button onClick={applyLedgerFilter} className="px-3 py-1.5 text-xs font-semibold text-sage-700 bg-sage-50 hover:bg-sage-100 rounded-lg transition-colors">Filtrer</button>
+                                            <button
+                                                onClick={handleLedgerPdf}
+                                                disabled={ledgerPdfLoading}
+                                                className="ml-auto flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-gray-700 bg-white border border-gray-200 hover:bg-gray-50 rounded-lg transition-colors disabled:opacity-50"
+                                            >
+                                                {ledgerPdfLoading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <FileText className="w-3.5 h-3.5" />}
+                                                Exporter PDF
+                                            </button>
                                         </div>
                                         <div className="flex-1 min-h-0">
                                             <DataGrid rowData={ledger} columnDefs={ledgerColumnDefs} loading={loadingLedger} pagination paginationPageSize={20} />
@@ -863,6 +921,40 @@ export default function ReglementPage() {
                             Confirmer
                         </button>
                         <button onClick={() => setClearTarget(null)} disabled={clearing} className="flex-1 py-2 border border-gray-200 text-sm text-gray-600 rounded-lg hover:bg-gray-50 disabled:opacity-50 transition-colors">
+                            Annuler
+                        </button>
+                    </div>
+                </div>
+            </div>
+        )}
+
+        {/* ── Remettre en dépôt (redeposit) ───────────────────────────────── */}
+        {redepositTarget && (
+            <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm">
+                <div className="bg-white rounded-2xl shadow-2xl p-6 max-w-sm w-full mx-4">
+                    <div className="flex items-center gap-3 mb-3">
+                        <div className="w-9 h-9 rounded-full bg-amber-100 flex items-center justify-center">
+                            <RotateCcw className="w-4 h-4 text-amber-600" />
+                        </div>
+                        <h3 className="text-base font-semibold text-gray-900">Remettre en dépôt</h3>
+                    </div>
+                    <p className="text-sm text-gray-600 mb-3">
+                        <strong>{redepositTarget.instrument_type} {redepositTarget.reference_number}</strong> — {fmtMAD(redepositTarget.amount)} — repart en attente (PENDING).
+                    </p>
+                    <p className="flex items-start gap-1.5 text-[11px] text-amber-700 bg-amber-50 border border-amber-100 rounded-lg px-2.5 py-1.5 mb-5">
+                        <AlertTriangle className="w-3.5 h-3.5 shrink-0 mt-0.5" />
+                        Ne rouvre ni la facture ni la caisse — pour représenter un vrai encaissement réussi, redéposez puis encaissez normalement ensuite.
+                    </p>
+                    <div className="flex gap-3">
+                        <button
+                            onClick={confirmRedeposit}
+                            disabled={redepositing}
+                            className="flex-1 flex items-center justify-center gap-2 py-2 bg-sage-600 text-white text-sm font-medium rounded-lg hover:bg-sage-700 disabled:opacity-50 transition-colors"
+                        >
+                            {redepositing ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RotateCcw className="w-3.5 h-3.5" />}
+                            Confirmer
+                        </button>
+                        <button onClick={() => setRedepositTarget(null)} disabled={redepositing} className="flex-1 py-2 border border-gray-200 text-sm text-gray-600 rounded-lg hover:bg-gray-50 disabled:opacity-50 transition-colors">
                             Annuler
                         </button>
                     </div>
