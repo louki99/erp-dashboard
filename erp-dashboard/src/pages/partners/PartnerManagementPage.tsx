@@ -1552,10 +1552,16 @@ export const PartnerManagementPage = () => {
     };
 
     // ── Inline channel / price list updates ──────────────────────────────────
-    // PUT /partners/{id} does a full replace — name + price_list_id are always required.
+    // PUT /partners/{id} does a full replace — name + price_list_id are always
+    // required (price_list_id is NOT nullable here, confirmed live 2026-08-19:
+    // a partner with no price list yet 422s with "price_list_id field is
+    // required" if this resolves to null — never send it as null).
     const withRequired = (partial: Record<string, unknown>) => ({
         name: partnerDetail?.name ?? selectedPartner?.name ?? '',
-        price_list_id: partnerDetail?.price_list_id ?? null,
+        // undefined, not null — null was never valid here either (that's the
+        // bug above), and CreatePartnerRequest.price_list_id is typed
+        // number|undefined, not number|null.
+        price_list_id: partnerDetail?.price_list_id ?? selectedPartner?.price_list_id ?? undefined,
         ...partial,
     });
 
@@ -1564,11 +1570,22 @@ export const PartnerManagementPage = () => {
         const numericId = typeof channelId === 'string' ? parseInt(channelId, 10) : channelId;
         if (Number.isNaN(numericId)) return;
         // PUT ignores channel_id — backend only writes channel via the string code field
-        const channelCode = (channelsData ?? []).find(c => c.id === numericId)?.code;
+        const channelEntry = (channelsData ?? []).find(c => c.id === numericId);
+        const channelCode = channelEntry?.code;
         if (!channelCode) return;
+        // If the partner has no price_list_id yet, price_list_id would resolve
+        // to null in withRequired() and 422 — fall back to the new channel's
+        // own default price list, same workaround already used below in
+        // handleClearPriceListOverride for the identical constraint.
+        const existingPriceListId = partnerDetail?.price_list_id ?? selectedPartner.price_list_id;
+        const fallbackPriceListId = existingPriceListId ?? channelEntry?.price_list_id;
+        if (!fallbackPriceListId) {
+            toast.error('Ce client n\'a pas de liste de prix, et le canal choisi n\'en a pas non plus par défaut — assignez une liste de prix avant de changer le canal.');
+            return;
+        }
         const toastId = toast.loading('Mise à jour du canal...');
         try {
-            await updatePartner({ id: selectedPartner.id, data: withRequired({ channel: channelCode }) });
+            await updatePartner({ id: selectedPartner.id, data: withRequired({ channel: channelCode, price_list_id: fallbackPriceListId }) });
             toast.dismiss(toastId);
             toast.success('Canal mis à jour');
             refetchDetail();

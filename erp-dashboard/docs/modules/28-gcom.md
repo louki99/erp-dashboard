@@ -21,7 +21,68 @@
 > (déclarée vs interne, Phase 1) — separate TokenSerie counters per
 > souche, `PaymentTerm`-driven routing plus an explicit per-request
 > `souche_kind` override on all three GCOM invoice-creation endpoints
-> (2026-08-26), Sage/FEC export itself deferred to Phase 2.
+> (2026-08-26), Sage/FEC export itself deferred to Phase 2. §8 (2026-08-27)
+> gained `delivery_date` on direct BL creation and a new `client_order_ref`
+> field (customer's own PO/reference number) on `POST /orders`,
+> `POST /delivery-notes` and `POST /direct-invoices`, mirrored down the
+> BC→BL→Facture chain. Also (2026-08-27): `partner.waive_stamp_duty` is
+> now honored everywhere GCOM computes stamp duty (a real gap before —
+> the flag existed but was never read), and all three sale-creation
+> endpoints accept an optional `salesperson_id` override for back-office
+> entry on behalf of a field salesperson. §18 (new, 2026-08-27/28) adds
+> représentant management (`/gcom/representatives`, a dedicated
+> `gcom_representative` role) and tightens `salesperson_id` to only
+> accept a real représentant. **2026-08-29**: real BL lifecycle for flows
+> #4/#5 — a BL is born `in_transit`, not `delivered` (§13); new
+> `POST /delivery-notes/{id}/confirm-delivery` and a new guard on
+> `convert-to-invoice` rejecting a still-`in_transit` BL. Settlement still
+> only triggers at convert-to-invoice, unchanged. Flow #6 (Comptoir) is
+> unaffected (no BL). New `driver_info`/`transporter_name` fields on BL
+> creation. **2026-08-30**: BL creation's initial `status` is now
+> configurable (`in_transit` default, or `delivered` for a counter/depot
+> pickup with no real transit leg) on both `POST /delivery-notes` and
+> `convert-to-bl`. `'draft'` is deliberately not accepted yet — real
+> design gap (stock-deduction timing, cancellation, numbering), written up
+> as a backlog note at the end of §18. **2026-08-31**: fixed a production
+> bug where any non-null `instrument` on all 3 invoicing endpoints
+> (`convert-to-invoice` ×2, `direct-invoices`) returned a bare 404 —
+> `TYPE_BRANCH_CAISSE` journal codes collided with manually-created
+> `BANK_ACCOUNT` codes in the same uniqueness namespace (§10 bug #9,
+> §16's code-pattern note). New `GET /partners/statements` (§8) —
+> company-wide statement list, one row per partner, same shape as
+> `/partners/{partner}/statement`, computed as a fixed handful of
+> `GROUP BY` queries across all partners rather than a per-partner loop.
+> **2026-08-31 (§9bis)**: `POST /delivery-notes/{id}/lines/{item}/return`
+> now allows returning 100% of a single line (was strictly less) — a
+> multi-line BL can drop one fully-refused product without cancelling
+> the rest. Fixed a real latent bug this surfaced: `InvoiceService::
+> createInvoiceItemsFromBlItems()` used to silently resurrect a
+> zero-quantity BL line to the full original order quantity on invoicing.
+> New `GET /credit-notes` (company-wide "Avoirs" list) and
+> `POST /credit-notes/{id}/redeem` (cash/cheque/effet/transfer
+> resolution of a credit note's outstanding `refund_amount`, journaled
+> in Treasury as a negative branch-caisse entry) — "apply to another
+> invoice" deliberately deferred, backlog note at the end of this doc.
+> **2026-08-31**: `draft` BL initial status shipped — no number/stock
+> movement until `POST /delivery-notes/{id}/validate` (§8/§13), product
+> decisions confirmed with the UI team. **Also 2026-08-31**: avoir as a
+> payment method on a new sale shipped — `payment_method: "avoir"` +
+> `avoir_allocations` at the 3 settlement endpoints (§8), no Treasury
+> movement, no credit check. `credit_notes` gains `remaining_amount`/
+> `consumed_amount`/`imputed_at`; `remaining_amount` is now the single
+> authoritative balance shared with `redeemCreditNote()` (made partial
+> in the same change) — resolves the `AvoirPaymentStrategy` collision
+> the earlier backlog note described. Applying an avoir to an
+> **existing**, already-invoiced sale (as opposed to a new one) remains
+> unbuilt — see the backlog note at the end of this doc.
+> **Also 2026-08-31**: mixed avoir + another payment method shipped —
+> real case reported live (an 18 MAD avoir against a 590 MAD BL, the
+> rest in cash), scoped out same-day then confirmed a genuine need
+> within hours. `avoir_allocations` may now cover only part of a sale;
+> Treasury is credited for only the real remainder, never the
+> avoir-covered portion. `credit`/`transfer` as the remainder method
+> still isn't supported (needs the credit check to run against just the
+> remainder — real scope boundary).
 > **Audience**: this doc is written for two readers — backend maintainers
 > (architecture/rationale, §1–7, §9–12) and **frontend/UI integrators**
 > (§8 API Reference and §13–16, which are self-contained — you can build a
@@ -51,6 +112,7 @@
 15. [Getting a Test Tenant — GcomDatabaseSeeder](#15-getting-a-test-tenant--gcomdatabaseseeder)
 16. [Treasury Integration — Branch Caisse Journals](#16-treasury-integration--branch-caisse-journals)
 17. [Multi-Souche Invoice Numbering (Declared vs Internal)](#17-multi-souche-invoice-numbering-declared-vs-internal)
+18. [Représentants (Sales Rep Management)](#18-représentants-sales-rep-management)
 
 ---
 
@@ -96,8 +158,8 @@ warehouse code — it just had no non-van caller until GCOM).
 | 1 | Devis → BC → Facture | `POST /quotes/{id}/convert-to-order` → `POST /orders/{id}/convert-to-invoice` | ✅ |
 | 2 | Devis → Facture Directe | `POST /quotes/{id}/convert` | ✅ |
 | 3 | BC → Facture | `POST /orders` → `POST /orders/{id}/convert-to-invoice` | ✅ |
-| 4 | BC → BL → Facture | `POST /orders` → `.../convert-to-bl` → `POST /delivery-notes/{id}/convert-to-invoice` | ✅ |
-| 5 | BL Direct → Facture | `POST /delivery-notes` → `.../convert-to-invoice` | ✅ |
+| 4 | BC → BL → Facture | `POST /orders` → `.../convert-to-bl` → **`.../confirm-delivery`** → `POST /delivery-notes/{id}/convert-to-invoice` | ✅ |
+| 5 | BL Direct → Facture | `POST /delivery-notes` → **`.../confirm-delivery`** → `.../convert-to-invoice` | ✅ |
 | 6 | Facture Directe / Comptoir | `POST /direct-invoices` (1-click: BC + stock-out + invoice) | ✅ |
 | 7 | Règlement à la facture (ESP/Chèque/Effet/Virement) | Built into every invoice-producing endpoint via `payment_method` | ✅ |
 | 8 | Lettrage (imputer un règlement sur 1+ factures) | `POST /payments` | ✅ |
@@ -107,6 +169,11 @@ No flow is privileged — a user can start at Devis, BC, BL, or straight at
 Facture, and convert forward from wherever they start. Nothing in the
 Order/Invoice/DeliveryNote schema enforces a fixed sequence for GCOM
 documents; the *services* simply offer every entry point.
+
+**BL lifecycle (2026-08-29, §13/§18)**: flows #4/#5 have a real
+`in_transit` state now — a BL is no longer born delivered. `confirm-delivery`
+is mandatory before `convert-to-invoice` will accept it. Flow #6 (Comptoir)
+has no BL at all and is unaffected.
 
 **Traceability**: no new `origin_document_type`/`origin_document_id`
 columns were added (see §10) — the existing relational chain already
@@ -177,7 +244,17 @@ accounting journal (who paid, how much, against which invoice).
 
 Stamp duty (`StampDutyService`, 0.25%) applies to `cash` only, by Moroccan
 law — computed once, at BC creation (`GcomOrderBuilder::build()`), not
-per-conversion-step.
+per-conversion-step (recomputed on a payment-method change at convert-to-bl,
+and on any BC line edit — see §10). **`partner.waive_stamp_duty`
+respected since 2026-08-27** — a real gap before that: none of GCOM's four
+stamp-duty computation points (BC creation, the three BC line-edit
+recompute paths, convert-to-bl's payment-method change) read the flag, so
+a partner marked exempt (Admin/ADV-only toggle,
+`PATCH /partners/{id}/stamp-duty-waiver`) was still silently charged on
+every cash GCOM sale. Now checked automatically wherever `payment_method`
+resolves to `cash` — no request-level flag needed, and no new permission
+gate required (the waiver itself is already Admin/ADV-gated at the point
+it's set on the partner).
 
 ---
 
@@ -273,6 +350,32 @@ All three scope by `order.partner_id`/`invoice.partner_id` directly — no
 multi-tier billing-partner indirection
 (`Partner::resolveBillingPartner()`), since no GCOM flow uses a payer
 partner today.
+
+**Company-wide statement list** (2026-08-31, `GcomPartnerStatementsBuilder`)
+— `GET /partners/statements`, requested for a "revue de fin de mois"
+screen where an accountant needs every client's balance without opening
+`/partners/{partner}/statement` one at a time. Same row shape as that
+endpoint (`partner_id`, `partner_name`, `partner_code`, `total_debit`,
+`total_credit`, `current_balance`, `pending_instruments_total`,
+`credit_limit`, `available_credit`), paginated, sorted by
+`current_balance` desc by default. Query: `branch_id?` (only counts
+orders placed at that branch — never applied to `pending_instruments_total`,
+matching the per-partner endpoint's own scoping), `channel?`,
+`min_balance?`, `include_zero_balance?` (default `false` — only partners
+with ≥1 GCOM order; `true` also lists partners with zero GCOM activity,
+every metric at `0`), `per_page?`, `page?`.
+
+Deliberately NOT a loop over `/statement`'s per-partner query set (~6
+queries per partner — a straight N+1 across a full partner list).
+Instead every metric is computed as one `GROUP BY partner_id` query
+across every qualifying partner at once, so the query count stays fixed
+regardless of company size — see `GcomPartnerStatementsBuilder`'s
+docblock. One behavioral difference from `/statement`: a partner with no
+`PartnerCreditState` row yet reads `credit_limit`/`available_credit` as
+`0` here rather than auto-provisioning one via `CreditControlEngine::
+getCreditState()`'s `firstOrCreate()` — silently writing hundreds of rows
+as a side effect of a `GET` list would itself be the N+1 this endpoint
+exists to avoid.
 
 ---
 
@@ -399,12 +502,30 @@ GCOM-specific renderer. Not a JSON endpoint.
   "items": [{ "product_id": 42, "quantity": 3 }],
   "payment_method": "credit",
   "payment_term_id": 5,
-  "notes": "Commande mensuelle"
+  "notes": "Commande mensuelle",
+  "client_order_ref": "PO-CLIENT-0042",
+  "salesperson_id": null
 }
 ```
 `payment_term_id` is **required** if `payment_method` is `credit`/`transfer`
 and the partner has no default payment term configured — otherwise it
-falls back to `Partner.paymentTerm()`.
+falls back to `Partner.paymentTerm()`. `client_order_ref` (optional,
+2026-08-27) — the customer's own PO/reference number, deliberately
+separate from `notes` (`bc_notes` under the hood) since it's a
+structured value, not freeform text. Lives on `orders.client_order_ref`
+and is automatically mirrored onto any `delivery_notes`/`invoices` row
+later created from this order (convert-to-bl, convert-to-invoice) — no
+need to resend it at each conversion step. `salesperson_id` (optional,
+2026-08-27, **must be a user holding the `gcom_representative` role** —
+see §18, `422` via `App\Rules\IsGcomRepresentative` otherwise) — overrides
+`orders.sales_rep_id` (otherwise always the authenticated user) for a
+back-office user entering a sale on behalf of a field salesperson; omit
+to keep the strict "creator = salesperson" default. Note: `order.sales_rep_id` is a
+satellite-mirrored attribute (`order_salesperson_data`) — it does **not**
+appear as a bare top-level key in any JSON response today (only nested
+`order.salesperson_data.salesperson_id`), regardless of which GCOM
+endpoint returns the order — flag this to the UI team if a direct
+top-level field is needed for display.
 → `201`, `{ "success": true, "message": "Order created", "order": {...} }`
 
 Does **not** touch stock or create an invoice — see §3.
@@ -421,9 +542,22 @@ instead of erroring.
 **`POST /orders/{order}/convert-to-bl`** 🔁 — flow #4's first hop (BC → BL).
 Body is optional:
 ```json
-{ "delivery_date": "2026-08-25", "payment_method": "cash" }
+{ "delivery_date": "2026-08-25", "payment_method": "cash", "driver_info": "Yassine — 0600112233", "transporter_name": "Transport Atlas", "status": "in_transit" }
 ```
-Both fields optional independently. `delivery_date` (`YYYY-MM-DD`) defaults
+All fields optional independently. `driver_info`/`transporter_name`
+(2026-08-29, free text, max 150 chars) — display/traceability only, not a
+Driver FK (GCOM still has zero field-sales/fleet dependency). `status`
+(2026-08-30, `'in_transit'`|`'delivered'`, default `'in_transit'`) — the
+resulting BL is born `in_transit` by default (real tournée/expédition, see
+§13/§18) and must go through `confirm-delivery` below before it's
+invoiceable; pass `status: 'delivered'` instead for a counter/depot
+pickup (the client loads the goods themselves right there) — sets
+`delivered_at = now()` immediately and skips `confirm-delivery` entirely
+(calling it afterwards on an already-delivered BL returns `422`).
+`'draft'` (2026-08-31) — creates the BC as normal but the BL itself gets
+no `TokenSerie` number and no stock deduction, both deferred to
+`POST /delivery-notes/{id}/validate` below.
+`delivery_date` (`YYYY-MM-DD`) defaults
 to today, sets `delivery_note.delivery_date`. `payment_method` (one of
 `cash`/`card`/`credit`/`cheque`/`effet`/`transfer`) defaults to the BC's
 existing method; if it differs from that, it **replaces** the order's
@@ -527,24 +661,86 @@ existing convention). Same generic document pipeline as BC above
 
 **`POST /delivery-notes`** 🔁 — flow #5 (BL Direct → Facture). Creates an
 underlying BC transparently, then the BL — stock deducts **here**, at BL
-creation, not later.
+creation, not later (unchanged by the 2026-08-29 lifecycle change below —
+stock timing never depended on delivery status).
 ```json
 {
   "partner_id": 12,
   "items": [{ "product_id": 42, "quantity": 3 }],
   "payment_method": "cash",
-  "notes": "Livraison directe comptoir"
+  "notes": "Livraison directe comptoir",
+  "delivery_date": "2026-09-01",
+  "client_order_ref": "PO-CLIENT-0042",
+  "salesperson_id": null,
+  "driver_info": "Yassine — 0600112233",
+  "transporter_name": "Transport Atlas",
+  "status": "in_transit"
 }
 ```
-→ `201`, `{ "success": true, "message": "Delivery note created", "delivery_note": { "id": 5, "total_amount": "320.80", "sub_total": "268.91", "tax_amount": "51.09", ... } }`
+`delivery_date` (optional, `YYYY-MM-DD`, 2026-08-27) — defaults to today
+if omitted, same semantics as `convert-to-bl`'s own `delivery_date`
+(previously this direct-creation endpoint had no way to set it at all —
+it always silently forced today). `client_order_ref` (optional,
+2026-08-27) — see the note on `POST /orders` above; on this endpoint it
+lands on both the transparently-created order and this BL.
+`salesperson_id` (optional, 2026-08-27) — see the note on `POST /orders`
+above; applies to the transparently-created order underneath this BL.
+`driver_info`/`transporter_name` (optional, free text, max 150 chars,
+2026-08-29) — see `convert-to-bl`'s equivalent note above.
+
+`status` (optional, `'in_transit'`|`'delivered'`, default `'in_transit'`,
+2026-08-30) — **the resulting BL is born `in_transit` by default**
+(§13/§18) — real distribution has goods physically leaving before a
+driver confirms delivery, so it must go through `confirm-delivery` below
+before `convert-to-invoice` will accept it. Pass `status: 'delivered'`
+for a counter/depot pickup instead — the client loads the goods
+themselves right there, so there's no real transit leg to model: this
+sets `delivered_at = now()` immediately and the BL is invoiceable right
+away (`confirm-delivery` afterwards would `422` — already delivered).
+`'draft'` (2026-08-31) — no `TokenSerie` number, no stock deduction; the
+response's `delivery_number` is a placeholder (`"DRAFT-{uuid}"`) until
+`POST /delivery-notes/{id}/validate` below is called.
+→ `201`, `{ "success": true, "message": "Delivery note created", "delivery_note": { "id": 5, "status": "in_transit", "total_amount": "320.80", "sub_total": "268.91", "tax_amount": "51.09", "client_order_ref": "PO-CLIENT-0042", "driver_info": "Yassine — 0600112233", "transporter_name": "Transport Atlas", ... } }`
+
+**`POST /delivery-notes/{deliveryNote}/confirm-delivery`** 🔁 (2026-08-29,
+§13/§18) — `in_transit` → `delivered`. No body. Sets `delivered_at` (never
+set at BL creation anymore — a BL that hasn't been confirmed has no real
+delivery timestamp yet). Does **not** touch stock (already deducted at BL
+creation, regardless of delivery status) or trigger any settlement
+(`payment_transfers`/`letterings`/`FinancialInstrument` — those still
+only ever happen at `convert-to-invoice`, exactly as before this feature;
+this only adds a delivery-confirmed gate in front of that existing
+trigger, nothing else changes about how settlement works).
+→ `200`, `{ "success": true, "message": "Delivery confirmed", "delivery_note": { "status": "delivered", "delivered_at": "2026-08-29T09:15:00.000000Z", ... } }`
+→ `422` if the BL isn't currently `in_transit` (already `delivered`,
+`cancelled`, etc.) — `"Delivery note {id} cannot be confirmed delivered
+from status '...' (must be in_transit)."`
+
+**`POST /delivery-notes/{deliveryNote}/validate`** 🔁 (2026-08-31) —
+`draft` → `in_transit`/`delivered`. Draws the real `TokenSerie` BL number
+(overwrites the `DRAFT-{uuid}` placeholder) and deducts stock — both
+deferred from creation for a draft, done unconditionally here instead.
+```json
+{ "status": "in_transit" }
+```
+`status` optional, `'in_transit'`|`'delivered'`, default `'in_transit'` —
+same two options and same `delivered_at` handling as the initial-status
+parameter on `POST /delivery-notes` above.
+→ `200`, `{ "success": true, "message": "Delivery note validated", "delivery_note": { "status": "in_transit", "delivery_number": "BLORBI-A01-000012", ... } }`
+→ `422` if the BL isn't currently `draft`.
 
 **`POST /delivery-notes/{deliveryNote}/convert-to-invoice`** 🔁 — flow #4
 second hop / #5's only hop. Body: `{ "instrument"?, "souche_kind"? }` (see
-§17 for `souche_kind`).
+§17 for `souche_kind`). **New guard (2026-08-29)**: `422` if the BL is
+still `in_transit` — `"Delivery note {id} cannot be invoiced from status
+'in_transit' — confirm delivery first."` Call `confirm-delivery` above
+first.
 → `200`, `{ "success": true, "message": "Delivery note converted to invoice", "invoice": {...} }` (`invoice.souche_kind`/`invoice.token_serie_id` included)
 
 **`POST /delivery-notes/{deliveryNote}/cancel`** 🔁 — see §9. Restocks
 immediately. Body: `{ "reason": "..." }` (required, max 255 chars).
+A still-`draft` BL (2026-08-31) skips the restock entirely — nothing was
+ever deducted, so this is a plain abandon, not a reversal.
 → `200`, `{ "success": true, "message": "Delivery note cancelled", "delivery_note": {...} }`
 → `422` if an invoice already exists for this BL.
 
@@ -559,18 +755,25 @@ for exactly where each one lands. `reason` — **2026-08-18, was free text,
 now one of**: `DEFECTIVE`, `DAMAGED`, `WRONG_ITEM`, `CHANGE_MIND`,
 `NOT_AS_DESCRIBED`, `EXPIRED`, `CUSTOMER_REQUEST`, `DUPLICATE_ORDER`,
 `OTHER` (the same `App\Enums\ReturnReason` `credit_note_items` already
-uses) — breaking change, `422` for anything else now. `quantity` must be
-strictly less than the line's current quantity (returning the whole
-line/BL isn't this endpoint's job — use `cancel` above for that, only
-possible before invoicing either way). Restocks immediately and
+uses) — breaking change, `422` for anything else now. `quantity` may now
+equal the line's current quantity (2026-08-31, was strictly less — a
+100%-damaged single line on a multi-line BL previously had no path that
+didn't cancel the whole BL; see §9bis). Restocks immediately and
 recomputes the BL's `total_amount`; no separate step needed to bill the
 net quantity — `convert-to-invoice` already reads the line's live
-quantity. Each call is now also persisted as its own row (see below) —
-previously `reason`/`condition` only ended up as freeform text buried in
-`StockMovement.notes`, unreachable from any GET.
+quantity and now correctly EXCLUDES a zeroed line from the invoice
+entirely (§9bis — a real latent bug was fixed alongside this: a zero
+quantity used to be silently resurrected to the full original order
+quantity). A zeroed line is NOT removed from the BL — `GET
+/delivery-notes/{id}` keeps returning it in `items[]` at quantity `0`
+(build the "Retourné intégralement" UI state off that, don't hide the
+row), and the BL itself is never auto-cancelled even if every line
+reaches zero. Each call is now also persisted as its own row (see
+below) — previously `reason`/`condition` only ended up as freeform text
+buried in `StockMovement.notes`, unreachable from any GET.
 → `200`, `{ "success": true, "message": "Delivery note line reduced", "delivery_note": {...} }`
-→ `422` if the BL is already invoiced, `quantity` is ≥ the line's current
-quantity, or `reason` isn't one of the values above.
+→ `422` if the BL is already invoiced, `quantity` exceeds the line's
+current quantity, or `reason` isn't one of the values above.
 
 **`GET /delivery-notes/{deliveryNote}/returns`** — 2026-08-18. Every CAS 1
 return event recorded against this BL (any line), newest first.
@@ -598,7 +801,9 @@ should call.
   "notes": "Vente comptoir",
   "payment_term_id": null,
   "instrument": null,
-  "souche_kind": null
+  "souche_kind": null,
+  "client_order_ref": null,
+  "salesperson_id": null
 }
 ```
 `souche_kind` — 2026-08-26, see §17 — `'declared'`|`'internal'`, optional.
@@ -607,8 +812,10 @@ caller-chosen `payment_term_id` at all (the one global cash term is
 always resolved regardless of what's passed), so this is the only way to
 mark one specific comptoir sale internal. Omit to use the
 `PaymentTerm.is_internal_souche`-derived default (`'declared'` unless the
-resolved term is flagged internal).
-→ `201`, `{ "success": true, "message": "Invoice created", "invoice": { "id": 88, "status": "fully_paid", "total_amount": "75.19", "remaining_amount": "0.00", "souche_kind": "declared", "token_serie_id": 4, "items": [...], "partner": {...}, "order": {...} } }`
+resolved term is flagged internal). `client_order_ref` (optional,
+2026-08-27) — see the note on `POST /orders` above. `salesperson_id`
+(optional, 2026-08-27) — see the note on `POST /orders` above.
+→ `201`, `{ "success": true, "message": "Invoice created", "invoice": { "id": 88, "status": "fully_paid", "total_amount": "75.19", "remaining_amount": "0.00", "souche_kind": "declared", "token_serie_id": 4, "client_order_ref": null, "items": [...], "partner": {...}, "order": {...} } }`
 
 ### Invoices (consultation only)
 
@@ -696,6 +903,99 @@ binary-PDF pattern as every other document PDF route in this API (§ the
 common `withoutMiddleware('force.json')` note applies here too). `404`
 if the credit note doesn't belong to the given invoice (cross-invoice
 guard, same as every other nested-resource PDF route).
+
+**`GET /credit-notes`** (2026-08-31) — company-wide "Avoirs" list, same
+family as `/partners/statements` but a plain filtered/paginated query
+(no aggregation — `CreditNote` carries no per-row perf risk). Query:
+`partner_id?`, `status?`, `branch_id?`, `from?`/`to?` (`created_at`,
+`YYYY-MM-DD`), `per_page?`, `page?`. `invoice`/`partner` are always
+eager-loaded — no extra call needed for a detail panel. `remaining_amount`
+(build the "Remboursé"/"En attente"/"Partiellement soldé" badge off this
+directly, not `refund_processed_at` — see below), `consumed_amount`,
+`imputed_at` all included alongside the existing `refund_*` fields.
+→ `{ "success": true, "credit_notes": { "data": [{ "id": 12, "credit_note_number": "AVRORBI-A01-000004", "status": "APPROVED", "total_amount": "60.00", "refund_amount": "60.00", "remaining_amount": "40.00", "consumed_amount": "20.00", "refund_method": null, "refund_reference": null, "refund_processed_at": null, "imputed_at": "2026-08-31T10:00:00.000000Z", "reason": "...", "created_at": "...", "invoice": { "id": 38, "invoice_number": "INVORBI-A02-000004", "total_amount": "239.00", "status": "fully_paid" }, "partner": { "id": 1485, "code": "ORBIS-CLI-002", "name": "Superette Bennani" } }], ...pagination... } }`
+
+**`GET /credit-notes/{creditNote}`** — same shape as one row above, for
+deep-linking.
+
+**`POST /credit-notes/{creditNote}/redeem`** 🔁 (2026-08-31, now partial)
+— resolves (part of) a credit note's outstanding `remaining_amount`
+(money owed back to the partner because the original invoice was
+already settled — see §9). Journals a negative/compensating
+`TreasuryIntakeLine` against the credit note's own branch caisse for the
+given method (same `cash→ESP, cheque→CHQ, effet→EFF, card|transfer→VIR`
+mapping as every other GCOM settlement, §16), records a
+`CreditNoteResolution` row, then stamps `refund_method`/
+`refund_reference`/`refund_processed_at` — but only once
+`remaining_amount` actually reaches `0`, whether via this one call or
+the last of several partial ones.
+```json
+{ "method": "cash", "amount": 200.00, "reference": "CAISSE-2026-0001" }
+```
+`amount` optional — omitted redeems the full `remaining_amount`.
+→ `200`, `{ "success": true, "message": "Credit note redeemed", "credit_note": {...} }`
+→ `422` if not `APPROVED`, `remaining_amount` is already `0`, `amount`
+exceeds `remaining_amount`, or `method` isn't one of
+`cash`/`cheque`/`effet`/`card`/`transfer`.
+
+### Avoir as a payment method (2026-08-31)
+
+A partner's own APPROVED credit note(s) settle a **new** sale directly
+— no Treasury/cash movement at all (`GcomSettlementClassifier`'s 4th
+category, `NON_CASH_COMPENSATION`, skips both `GcomInstrumentRegistrar::
+recordSettlement()` and the credit-limit check entirely — an avoir
+spends already-approved money, not new exposure). See
+`GcomCreditNoteService::imputeAvoirs()`'s docblock for the full design
+rationale (and why this is deliberately NOT the same mechanism as POS's
+`AvoirPaymentStrategy`).
+
+`payment_method: "avoir"` is accepted wherever `payment_method` already
+is (`POST /orders`, `POST /delivery-notes`/`convert-to-bl` — stored as a
+hint only, GCOM's Golden Rule means BC/BL creation never settles
+anything), but `avoir_allocations` itself is only accepted — and
+required — at the 3 endpoints that actually settle a sale, same as
+`instrument` for cheque/effet:
+
+```json
+POST /direct-invoices | /orders/{order}/convert-to-invoice | /delivery-notes/{id}/convert-to-invoice
+{
+  "avoir_allocations": [
+    { "credit_note_id": 12, "amount": 200.00 },
+    { "credit_note_id": 15, "amount": 100.00 }
+  ]
+}
+```
+
+Each allocated credit note must belong to the **same partner** as the
+sale, be `APPROVED`, and have `remaining_amount >= amount` requested —
+`422` otherwise. On success, each avoir's `remaining_amount` decrements
+(and `consumed_amount` increments) by its allocated share, and one
+`CreditNoteResolution` row is written per avoir consumed.
+
+**Mixed avoir + another payment method** (2026-08-31, real case reported
+live: an 18 MAD avoir against a 590 MAD BL, the rest paid cash —
+originally scoped out, confirmed as a real need the same day). Two
+shapes, both driven by whether `avoir_allocations` covers the full sale:
+
+- `payment_method: "avoir"` — allocations must sum to **exactly** the
+  sale total (`422` in either direction, under- or over-application).
+  This value means "no remainder expected"; a shortfall here is a
+  caller error, not an invitation to mix — set `payment_method` to the
+  remainder's real method instead (below).
+- `payment_method: "cash"|"card"|"cheque"|"effet"` **with**
+  `avoir_allocations` covering only PART of the sale — the avoir
+  settles that part, `payment_method` settles the rest (an `instrument`
+  object is still required for cheque/effet, same as always). The
+  Treasury outflow reflects **only the remainder**, never the full
+  total — the avoir-covered portion never physically moved. Still
+  `422` if `avoir_allocations` sums to MORE than the sale total.
+  **Not yet supported**: `credit`/`transfer` as the remainder method —
+  needs the credit-limit check to run against just the remainder, not
+  the full total; real scope boundary, not an oversight — `422` if
+  attempted.
+
+Either way, the invoice ends up `fully_paid`/`remaining_amount: 0`
+exactly like a cash sale from the caller's point of view.
 
 ### Payments (Règlement & Lettrage)
 
@@ -794,6 +1094,12 @@ building a "which invoices does this règlement cover" picker.
 **`GET /partners/{partner}/financial-instruments`** — Query: `status?`,
 `instrument_type?`, `per_page?`.
 → `{ "success": true, "financial_instruments": { "data": [{ "id": 1, "instrument_type": "CHEQUE", "reference_number": "CHQ-0001", "amount": "300.00", "status": "PENDING", "due_date": "2026-10-12", "bank_name": "...", ... }], ...pagination... } }`
+
+**`GET /partners/statements`** (2026-08-31) — company-wide list, same row
+shape as `/statement` below, one row per partner. Query: `branch_id?`,
+`channel?`, `min_balance?`, `include_zero_balance?` (default `false`),
+`per_page?`, `page?`. Sorted `current_balance` desc.
+→ `{ "success": true, "statements": { "data": [{ "partner_id": 1, "partner_name": "...", "partner_code": "...", "total_debit": 15000.00, "total_credit": 10797.20, "current_balance": 4202.80, "pending_instruments_total": 5359.20, "credit_limit": 50000.00, "available_credit": 40438.00 }], ...pagination... } }`
 
 **`GET /partners/{partner}/statement`**
 → `{ "success": true, "statement": { "partner_id": 1, "total_debit": 15000.00, "total_credit": 10797.20, "current_balance": 4202.80, "pending_instruments_total": 5359.20, "credit_limit": 50000.00, "available_credit": 40438.00 } }`
@@ -1064,6 +1370,29 @@ invoice's debt.
   `amount`) **is** how a GCOM invoice gets cancelled after the fact,
   matching real accounting practice (a validated invoice is credited, never
   deleted).
+- **Resolving a non-zero `refund_amount`** (2026-08-31, real gap
+  reported by the UI team — previously there was no action possible
+  against it at all). `remaining_amount` (new column) is the single
+  authoritative, mutable balance — backfilled from `refund_amount`, NOT
+  `total_amount`: the `appliedToDebt` portion above already reduced
+  *this* invoice at creation, so treating the full `total_amount` as
+  available again would let a partner benefit twice from the same
+  return. Two ways to resolve it, both decrementing the same
+  `remaining_amount` so they can never double-spend it:
+  - `POST /credit-notes/{id}/redeem` (§8) — cash/cheque/effet/transfer/
+    card, now partial (`amount?`, omitted = full remaining), journals a
+    compensating outflow in Treasury.
+  - `payment_method: "avoir"` (§8/§9's "Avoir as a payment method"
+    section) — applies the balance toward a brand-new sale instead, no
+    Treasury movement at all.
+
+  `refund_processed_at` means "`remaining_amount` reached zero" (set by
+  whichever event actually zeroes it), not "a first redemption
+  happened" — `refund_method`/`refund_reference` reflect only that last
+  event; `credit_note_resolutions` (new table) is the full per-event
+  history. Applying the balance to a **different, already-invoiced**
+  sale (rather than funding a new one) is still not built — see the
+  backlog note at the end of this doc.
 - Auto-approved immediately (`CreditNoteStatus::APPROVED`) — GCOM has no
   derogation/approval workflow anywhere else either.
 
@@ -1080,10 +1409,41 @@ line's own quantity, restocks the returned amount immediately
 `convertToInvoice()`/`InvoiceService::generateFromDeliveryNote()` already
 read live `DeliveryNoteItem` quantities, not a snapshot taken at BL
 creation — so a later conversion bills exactly the net quantity with
-**zero changes needed on the invoicing side**. Strictly a reduction: the
-returned quantity must be less than the line's current quantity — to
-return an entire line/the whole BL, use the existing whole-BL
-cancellation instead (only possible before invoicing either way).
+**zero changes needed on the invoicing side**.
+
+**100% single-line return (2026-08-31)** — real gap reported by the UI
+team: a client refusing 100% of one damaged product on a multi-line BL
+had no correct path — `reduceLineQuantity()` originally required the
+returned quantity to be strictly less than the line's current quantity,
+forcing the whole-BL `cancel` (which would have wrongly restocked and
+cancelled every *other* line too). The boundary is now `quantity <=
+currentQty` (was `<`) — a line can zero out while the rest of the BL
+stays untouched, through the exact same mechanism (restock, audit row,
+`total_amount` recompute).
+
+This surfaced a real latent bug in `InvoiceService::
+createInvoiceItemsFromBlItems()`, fixed alongside it: a "defensive"
+fallback there treated ANY zero/missing BL item quantity as missing
+data and silently substituted the full ORIGINAL ORDER quantity — so a
+zeroed-out line would have been invoiced at its pre-return quantity,
+re-billing the client for stock they'd already returned. Now only a
+genuinely-`null` quantity falls back; an explicit `0` is trusted and
+produces no invoice line at all (the method used to always call
+`InvoiceItem::create()` regardless of quantity — a second, narrower bug
+in the same method, fixed in the same pass — quantity is now checked
+*before* that call, not just for tax computation).
+
+A zeroed line is **not** removed from the BL — it stays in `GET
+/delivery-notes/{id}`'s `items[]` at quantity `0` (build a "Retourné
+intégralement" UI state off that). The BL itself is never auto-cancelled
+even if every line reaches zero — deliberately out of scope, since it
+doesn't happen in the reported scenario (2 of 3 lines stay real);
+`convertToInvoice()` on such a BL would simply produce a zero-amount
+invoice. A dedicated "remove line" endpoint was considered and rejected:
+`delivery_note_returns.delivery_note_item_id` is `ON DELETE CASCADE`, so
+hard-deleting the `DeliveryNoteItem` row to implement it would have
+silently destroyed any earlier partial-return history already recorded
+against that same line.
 
 **Persistence + printable bon de retour (2026-08-18)** — real gap
 reported by the UI team: `reason`/`condition` reached `StockService::
@@ -1238,6 +1598,31 @@ while building GCOM, then confirmed against the actual codebase.
    Separately, `delivery_notes` has no `sub_total`/`tax_amount` columns in
    the schema at all — `GcomDeliveryNoteController` now proxies both from
    the BL's underlying order onto the response instead (see §8).
+
+9. **`instrument` → bare 404 on all 3 invoicing endpoints** (found
+   2026-08-31, reported by the UI team as a suspected regression from the
+   08-29 BL-lifecycle deploy — it wasn't). `TreasuryJournalService::
+   findOrCreateBranchCaisse()` (§16) generated `BRANCH_CAISSE` journal
+   codes as `B{branch_id}{method_suffix}`, sharing the same per-company
+   `(code)` uniqueness namespace (`idx_tj_code_company`) as manually-typed
+   `BANK_ACCOUNT` codes (`POST /finance/journals`, `FinanceJournalController`
+   lets an admin type an arbitrary code). Production already had a
+   `BANK_ACCOUNT` journal coded `B8CHQ`, so every cheque/effet GCOM
+   settlement for that branch failed the `INSERT` with a
+   `UniqueConstraintViolationException` — a **permanent, deterministic**
+   collision, not the intermittent race the catch block's comment assumed.
+   The race-recovery re-fetch (scoped to `TYPE_BRANCH_CAISSE`) legitimately
+   found no row, threw an uncaught `ModelNotFoundException`, and the global
+   handler rendered that as `{"error":"not_found"}` — content-independent,
+   reproducing on any request that included a non-null `instrument` (the
+   only requests that reach `seedFromGcomBranchSettlement()` at all; a
+   pure-cash request never touches this code path, matching the report's
+   "instrument-present-only" correlation exactly). Fixed by renaming the
+   generated prefix to `BC{branch_id}{method_suffix}` (§16) — namespaced
+   away from the `BANK_ACCOUNT` convention, verified against every
+   existing `BANK_ACCOUNT` code in production (none match `BC\d+`) — plus
+   hardening the catch block to throw a diagnosable `DomainException`
+   instead of a bare `firstOrFail()` if a genuine mismatch ever recurs.
 
 ---
 
@@ -1569,7 +1954,9 @@ Still open:
 | `tests/Feature/Gcom/GcomConsultationEndpointsTest.php` | List/show endpoints — GET /orders, /delivery-notes, /invoices, /payments, canal/partner scoping, cross-tenant 404s |
 | `tests/Feature/Gcom/GcomAdminCanUseTelesalesCatalogTest.php` | GCOM reuse of `GET /telesales/catalog/products` — partner-aware pricing, permission gate, and `stock_available` correctly found under the bare warehouse code even when a storage location exists for that warehouse |
 | `tests/Feature/Gcom/GcomCancellationAndCreditNoteTest.php` | §9 — BC/BL cancellation + restocking, full/partial avoir, the total_amount-vs-remaining_amount split (refund_amount path), HTTP layer for cancel + credit-note endpoints |
-| `tests/Feature/Gcom/GcomReturnsConditionTest.php` | §9bis — CAS 1 (BL partial return pre-invoice, net billing on convert), condition routing (sellable/damaged/technical → available/DAMAGED/QUARANTINE) shared by BL returns and credit-note restocks, guards (already invoiced, whole-line removal rejected, invalid `reason`), `CreditNoteItem.is_scrap`/`stock_location`, `DeliveryNoteReturn` persistence + `GET .../returns` + bon de retour PDF + cross-BL 404 (2026-08-18), HTTP layer |
+| `tests/Feature/Gcom/GcomCreditNoteGlobalAndRedeemTest.php` | §8/§9 (2026-08-31) — `GET /credit-notes` filters (partner_id/status), invoice/partner eager-loaded, no cross-company leak; `GET /credit-notes/{id}`; `POST /credit-notes/{id}/redeem` journals a negative TreasuryIntakeLine and decrements the branch caisse's cached_balance, stamps refund_method/refund_reference/refund_processed_at, rejects a second redemption, rejects redeeming a credit note with nothing owed back, rejects an unknown method |
+| `tests/Feature/Gcom/GcomAvoirPaymentTest.php` | §8/§9 (2026-08-31) — a direct invoice settles fully via one avoir with zero TreasuryIntakeLine created; partial imputation leaves a remaining balance and does NOT flip refund_processed_at; two avoirs combined cover one sale; rejects allocations summing to less than or more than the sale total, an avoir belonging to another partner, and exceeding an avoir's remaining_amount; redeeming part then imputing the rest never double-spends the original balance (and a third attempt against the exhausted avoir fails); BC→Facture and BL→Facture both settle via avoir despite generateFromDeliveryNote() always starting 'pending'; avoir payment skips the credit check entirely even for a partner with a tiny credit limit. **Mixed avoir + another method** (same day, real case) — direct-invoice and BL→Facture both settle via a partial avoir + card remainder, Treasury credited for ONLY the remainder (never the avoir-covered portion); rejects a shortfall when payment_method is 'avoir' itself; rejects mixing avoir with a credit remainder; mixed avoir + cheque remainder still requires instrument details |
+| `tests/Feature/Gcom/GcomReturnsConditionTest.php` | §9bis — CAS 1 (BL partial return pre-invoice, net billing on convert), condition routing (sellable/damaged/technical → available/DAMAGED/QUARANTINE) shared by BL returns and credit-note restocks, guards (already invoiced, over-quantity rejected, invalid `reason`), `CreditNoteItem.is_scrap`/`stock_location`, `DeliveryNoteReturn` persistence + `GET .../returns` + bon de retour PDF + cross-BL 404 (2026-08-18), HTTP layer. **2026-08-31**: 100% single-line return zeroes the line and leaves sibling lines untouched, the zeroed line is excluded from the invoice (not resurrected to the original order quantity — the real bug this surfaced), `GET /delivery-notes/{id}` still returns the zeroed line in `items[]` |
 | `tests/Feature/Gcom/GcomOrderLineCancellationTest.php` | Partial/full single-line BC cancellation, order-total recomputation, HTTP layer |
 | `tests/Feature/Gcom/GcomOrderLineUpdateTest.php` | BC line quantity increase/decrease, re-pricing, stock untouched, credit re-check on increase only, HTTP layer |
 | `tests/Feature/Gcom/GcomOrderLineAdditionTest.php` | Adding a new product line to an existing BC, rejects duplicate product, stock untouched, credit re-check, HTTP layer |
@@ -1577,6 +1964,7 @@ Still open:
 | `tests/Feature/Gcom/GcomTreasuryUnificationTest.php` | Treasury unification (§4/§6/§7) — `payment_transfers`+`letterings` created for cash/card/cheque comptoir sales and BC→Facture/BL→Facture immediate settlements, none created for credit sales, cheque gets both a `FinancialInstrument` and a `payment_transfers` row, and the credit-sale-via-BL-was-wrongly-fully_paid regression |
 | `tests/Feature/Gcom/GcomInvoiceDetailPaymentInfoTest.php` | `GET /invoices/{invoice}`'s `payments`/`financial_instrument` fields — cash/cheque comptoir, empty for an unsettled credit invoice, populated once a deferred règlement lands |
 | `tests/Feature/Gcom/GcomPartnerFinanceControllerTest.php` | `GET /partners/{partner}/{financial-instruments,statement,ledger}` — instrument filtering + cross-partner isolation, statement debit/credit/balance/pending-instruments/credit-limit for cash and mixed credit+cheque scenarios, ledger entry types + running balance including a deferred règlement and an avoir |
+| `tests/Feature/Gcom/GcomPartnerStatementsTest.php` | §8 (2026-08-31) — `GET /partners/statements` sorted by `current_balance` desc, cash-settled partner nets to zero and reports credit limit, `include_zero_balance` on/off toggles whether a partner with no GCOM orders appears, `min_balance` filters, `branch_id` only counts orders placed there, `pending_instruments_total` reflects an uncleared cheque, no cross-company partner leak |
 | `tests/Feature/Gcom/GcomDeferredChequeSettlementTest.php` | `POST /payments`'s `payment_method_id`/`instrument` fields — a deferred cheque/effet creates a `FinancialInstrument` linked via `payment_transfer_id` (not `invoice_id`), rejects a cheque with no instrument details, an explicit `payment_method_id` overrides the term's default |
 | `tests/Feature/Gcom/GcomFinancialInstrumentLifecycleTest.php` | §8 "Financial Instruments" — deposit with date+reference, deposit defaults to today, clear, reject with reason, reject requires a reason (422), invalid transition surfaces as a 422 through the GCOM HTTP layer |
 | `tests/Feature/Gcom/GcomTreasuryBranchCaisseTest.php` | §16 — cash settlement seeds an ESP intake line into the branch's `TYPE_BRANCH_CAISSE` journal, two sales accumulate in the same journal, cheque settlement seeds CHQ **and** still registers the PENDING `FinancialInstrument`, card maps to VIR, a credit sale seeds nothing at all |
@@ -1589,7 +1977,11 @@ Still open:
 | `tests/Feature/Gcom/GcomBootstrapPayloadConditioningTest.php` | §11 "Setup/Bootstrap payload conditioning" — a GCOM-only company's login `settings` excludes the ~140 `sfa_parameter_definitions.php` keys, SFA/HYBRID companies still get the full set (unaffected), an explicit `ConfigurationSetting` override on a registered key still reaches a GCOM company's settings (extraKeys path never skipped) |
 | `tests/Feature/Gcom/GcomFinancialInstrumentPortfolioTest.php` | §8 "Portefeuille" — `GET /financial-instruments` lists across every partner of the company, never leaks another company's instruments, filters by `status`/`instrument_type`/`bank_id`/`due_date` range, `branch_id` best-effort matches an at-sale instrument; `POST /financial-instruments/batch-deposit` deposits every valid id in one call, is best-effort (one wrong-state instrument doesn't block the others), and treats another company's id as not found rather than processing it |
 | `tests/Feature/Gcom/GcomPartnerStatementPdfTest.php` | §8 "Relevé de Compte" PDF (2026-08-24) — `GET /partners/{partner}/ledger/pdf` returns real PDF bytes with `Content-Type: application/pdf`, `download` flag switches `Content-Disposition` inline/attachment, entries match the JSON `/ledger` endpoint exactly (shared `GcomPartnerLedgerBuilder`), a `from`/`to` range excluding every entry doesn't reuse the full-history cached PDF, 404 for a non-existent partner |
-| `tests/Feature/Gcom/GcomMultiSoucheNumberingTest.php` | §17 multi-souche numbering (2026-08-25/26) — a credit sale via a declared/internal `PaymentTerm` draws from the matching branch series, internal and declared invoices advance separate counters (declared sequence stays gap-free), creating an internal-souche invoice fails loudly when the branch's internal series isn't provisioned (never falls back to declared), stock deducts and treasury settlement posts identically regardless of souche, explicit `souche_kind` override beats the `PaymentTerm` default on all three invoice-creation endpoints (Comptoir, BC→Facture, BL→Facture), invalid `souche_kind` rejected with 422 |
+| `tests/Feature/Gcom/GcomStampDutyWaiverAndSalespersonOverrideTest.php` | 2026-08-27 — `partner.waive_stamp_duty` honored on BC creation and on the line-edit recompute path (adding a line to a waived partner's order stays waived), non-waived partner still charged normally (regression); explicit `salesperson_id` honored on direct-invoice and direct-BL creation, defaults to the acting user when omitted, rejects a non-existent user id with 422 |
+| `tests/Feature/Gcom/GcomRepresentativeTest.php` | §18 (2026-08-27/28) — creates a représentant with the dedicated role, lists scoped to the actor's company only (excludes plain staff and another company's représentant — real BelongsToCompany creating-hook trap found writing this test), `show` 404s for a non-représentant, update (branch/active status), role removal without deleting the user, BC creation accepts a registered représentant as `salesperson_id` and rejects a non-représentant with 422 |
+| `tests/Feature/Gcom/GcomBlDeliveryLifecycleTest.php` | §13/§18 (2026-08-29/30) — a direct BL and a BC→BL conversion are both born `in_transit`; `confirm-delivery` transitions to `delivered` and sets `delivered_at`, rejects an already-delivered BL; `convert-to-invoice` rejects a still-`in_transit` BL and succeeds once delivered; cancelling an `in_transit` BL restocks immediately (locks in that `cancelDeliveryNote()` needed zero changes); `driver_info`/`transporter_name` stored on both direct BL creation and convert-to-bl; full lifecycle confirms stock deducts once (at creation) and settlement still only triggers at convert-to-invoice, unchanged; configurable `status: 'delivered'` at creation (both endpoints) skips `in_transit` entirely, still deducts stock, is immediately invoiceable, and rejects a subsequent `confirm-delivery` call; omitting `status` still defaults to `in_transit`. **2026-08-31**: `status: 'draft'` creates no number/no stock movement (`delivery_number` placeholder), `POST .../validate` draws the real number and deducts stock exactly once, can target `delivered` directly, rejects validating a non-draft BL, cancelling a draft does not restock, `draft` also honored on `convert-to-bl` |
+| `tests/Feature/Gcom/GcomBlPayloadAlignmentTest.php` | 2026-08-27 — `delivery_date` on direct BL creation (`POST /delivery-notes`, previously convert-to-bl only, defaults to today when omitted, rejects malformed dates), `client_order_ref` stored on a BC and mirrored onto a direct BL + its underlying order, mirrored onto a direct invoice, and flows through the full BC→BL→Facture chain with no extra parameter needed on the conversion endpoints |
+| `tests/Feature/Gcom/GcomMultiSoucheNumberingTest.php` | §17 multi-souche numbering (2026-08-25/26) — a credit sale via a declared/internal `PaymentTerm` draws from the matching branch series, internal and declared invoices advance separate counters (declared sequence stays gap-free), creating an internal-souche invoice fails loudly when the branch's internal series isn't provisioned (never falls back to declared), stock deducts and treasury settlement posts identically regardless of souche, explicit `souche_kind` override beats the `PaymentTerm` default on all three invoice-creation endpoints (Comptoir, BC→Facture, BL→Facture), invalid `souche_kind` rejected with 422, an unprovisioned branch's internal request returns a clean 422 on all three endpoints (not a 500) |
 | `tests/Feature/CompanySalesModeTest.php` | `sales_mode` GET/PUT, default value, invalid-mode rejection, permission gate |
 | `tests/Feature/Warehouse/InventoryCheckTest.php` | Generic (not GCOM-scoped) — inventaire lifecycle, included here since it shares `StockService`/`StockUpdateService` with GCOM |
 | `tests/Feature/Warehouse/PurchaseReceptionValidationTest.php` | Generic — stock reception validate/reverse, same reason |
@@ -1628,10 +2020,21 @@ needs to handle.
 
 ### `deliveryNote.status` (BL)
 
+**Changed 2026-08-29** ("FEU VERT TOTAL: CYCLE BL IN_TRANSIT -> DELIVERED")
+— a BL is no longer born delivered for flows #4 (BC→BL) and #5 (BL
+Direct): real distribution has goods physically leaving before a driver
+confirms a signed delivery or a refusal. §18 has the full design writeup.
+
 | Value | Meaning | Set by |
 |---|---|---|
-| `delivered` | The only "active" state — GCOM has no loading/transit pipeline; a BL is considered delivered the moment it's created | `GcomDeliveryNoteService` (both `createDeliveryNoteFromOrder()` and `createDirectDeliveryNote()`) |
-| `cancelled` | Cancelled before an invoice existed (restocks) | `GcomDeliveryNoteService::cancelDeliveryNote()` |
+| `draft` | (2026-08-31) No `TokenSerie` number drawn, no stock deducted — `delivery_number` is a `DRAFT-{uuid}` placeholder | `POST /delivery-notes`/`convert-to-bl` with `status: 'draft'` |
+| `in_transit` | Default initial state for flows #4/#5 — goods have left, delivery not yet confirmed. Stock is already deducted at this point (unchanged — see §3) | `GcomDeliveryNoteService` (`createDeliveryNoteFromOrder()`/`createDirectDeliveryNote()`, or `validateDraft()` from `draft`) |
+| `delivered` | Delivery confirmed. Also directly selectable as the **initial** state (2026-08-30, `status: 'delivered'` on creation) for a counter/depot pickup with no real transit leg — either way, this is the only state a BL can be invoiced from | `GcomDeliveryNoteService::confirmDelivery()`, creation itself when `status: 'delivered'` is passed, or `validateDraft()` targeting `delivered` |
+| `cancelled` | Cancelled before an invoice existed. Restocks — except from `draft`, which never deducted anything in the first place (plain abandon, no reversal); works from `in_transit` too, a recalled/refused delivery restocks exactly like any other cancellation | `GcomDeliveryNoteService::cancelDeliveryNote()` |
+
+Flow #6 (Comptoir/`direct-invoices`) has no BL at all — this lifecycle
+doesn't apply to it; that flow remains BC + stock-out + invoice in one
+call, unchanged.
 
 ### `invoice.status`
 
@@ -1671,6 +2074,7 @@ are never set by any GCOM code path.)*
 | `effet` | Instrument — same as cheque |
 | `credit` | Credit — `pending`, opens real encours, `payment_term_id` required (or partner default) |
 | `transfer` | Credit — same as `credit` |
+| `avoir` | (2026-08-31) Non-cash compensation — `fully_paid`, no Treasury movement, no credit check; `avoir_allocations` required at the 3 settlement endpoints (§8's "Avoir as a payment method") |
 
 ### `company.sales_mode`
 
@@ -2010,7 +2414,9 @@ already call.
   open account exposure, nothing has actually been paid yet). Once
   settled later through §6's règlement, **that** does create an intake
   line — see "Deferred règlement also feeds the branch caisse" below.
-- Journal codes are `B{branch_id}{method_suffix}` (e.g. `B5ESP`) — keyed
+- Journal codes are `BC{branch_id}{method_suffix}` (e.g. `BC5ESP`,
+  renamed from a bare `B{branch_id}{method_suffix}` on 2026-08-31 — see
+  §10's "instrument → 404 on all 3 invoicing endpoints" entry) — keyed
   on the numeric branch id, not the branch's human code, to guarantee a
   short, collision-free code regardless of how long a real branch code
   is (`treasury_audit_logs`/`treasury_ledger_entries.journal_code` are
@@ -2043,7 +2449,7 @@ enriched with **computed** balances (never the raw cache — always
 recomputed from full transaction history):
 ```json
 {
-  "id": 12, "code": "B5ESP", "type": "BRANCH_CAISSE", "method_suffix": "ESP",
+  "id": 12, "code": "BC5ESP", "type": "BRANCH_CAISSE", "method_suffix": "ESP",
   "user_id": null, "branch_id": 5, "branch": { "id": 5, "code": "ORBIS-CAS", "name": "..." },
   "currency": "MAD", "cached_balance": "628.00", "is_active": true,
   "computed_balance": 628.00, "transit_balance": 0.00, "available_balance": 628.00
@@ -2526,6 +2932,21 @@ An unrecognized `souche_kind` string is never silently treated as
 meaningful — Laravel validation rejects it with `422` before the request
 reaches the service layer (`in:declared,internal`).
 
+**Real bug found in live testing (2026-08-26) and fixed**: requesting
+`souche_kind: 'internal'` on a branch whose internal series isn't
+provisioned yet threw `CriticalConfigurationException` from
+`resolveBranchTokenSerie()` (by design — see "Provisioning" above), but
+none of the three GCOM invoice-creation controllers caught that
+exception type (only `InvalidArgumentException`/`DomainException`/
+`TreasuryException`), so it bubbled into Laravel's generic handler and
+surfaced as an opaque `{"message": "Server Error"}` 500 instead of an
+actionable `422`. All three (plus the Devis→Facture/Devis→BC actions,
+same numbering call chain) now catch it too, same shape as every other
+GCOM validation/config error: `{"success": false, "message": "No active
+[internal] token series available for INV numbering (branch: ...)."}`.
+If you see this message, the fix is: provision the branch's internal
+series (see above) before sending `souche_kind: 'internal'` for it.
+
 ### Provisioning a branch's internal series
 
 ```php
@@ -2585,3 +3006,155 @@ existing code touches this (the only "Sage" reference anywhere in the
 codebase is an unrelated, unimplemented warehouse-transfer sync stub) —
 greenfield, to be scoped once the souche split above is validated in
 real use.
+
+---
+
+## 18. Représentants (Sales Rep Management)
+
+Built 2026-08-27/28: now that a BC/BL/Facture can be attributed to a
+`salesperson_id` explicitly (§8, "back-office entering a sale on behalf of
+a field salesperson"), the UI team asked for a way to actually manage
+those représentants — create them, list/edit them, and control who
+qualifies as one.
+
+### Why a thin façade, not new user-management infrastructure
+
+A représentant is a **plain `User`** holding a new dedicated Spatie role,
+`gcom_representative` (`Roles::GCOM_REPRESENTATIVE`) — no new model, no
+new table. A full generic user/role/permission management API already
+existed before this (`RbacController`, `RolePermissionController`,
+`UserPermissionController` — create a staff user with `branch_id`+role in
+one call, assign/remove roles, grant/revoke/blacklist permissions), but
+it's gated `manage-rbac`/`manage-employees`, not `manage-gcom` — a GCOM
+back-office admin has no access to it. Rather than either (a) duplicating
+that machinery under GCOM, or (b) handing out `manage-rbac` (which exposes
+every role including `admin`/`root` and every user in the system, far
+more than "manage my commercials"), this is a **thin, GCOM-scoped façade**
+over the exact same `User::create()`/`assignRole()`/`hasRole()` mechanics,
+gated `manage-gcom`, and deliberately narrow:
+
+- The role is **never a request parameter** — `POST /representatives`
+  always assigns `gcom_representative`, nothing else.
+- **Tenant-scoped**: every list/show/update is filtered to
+  `company_id = $actor->company_id` — a GCOM admin from one company can
+  never see or edit another company's représentants.
+- **"Manage his role"** = add/remove the one `gcom_representative` role
+  (`POST`/`DELETE`). There is no arbitrary-role-assignment path here.
+- **"Manage his permission"** = `GET .../representatives/{user}` returns
+  `roles`+`permissions` (effective, read-only). There is deliberately
+  **no** grant/revoke-permission endpoint under `manage-gcom` — that stays
+  on `UserPermissionController` (`manage-rbac`), so this façade can't
+  become a backdoor into broader access control. If per-representative
+  custom permissions turn out to be a real need, that's a separate,
+  explicit ask.
+- `DELETE` removes the role, **never the user account** — a représentant
+  who already has BCs/BLs/Factures attributed via `sales_rep_id` keeps
+  that history; they just stop being selectable for new ones.
+
+### API
+
+**`GET /api/backend/gcom/representatives`** — Query: `search?` (name/
+email/code), `branch_id?`, `is_active?`, `per_page?`.
+→ `{ "success": true, "representatives": { "data": [{ "id": 42, "name": "...", "email": "...", "phone": "...", "code": "REP-001", "branch_id": 3, "company_id": 1, "is_active": true }], ...pagination... } }`
+
+**`POST /api/backend/gcom/representatives`** 🔁 — Body:
+```json
+{ "name": "Karim Bennani", "email": "karim@...", "password": "...", "code": "REP-001", "branch_id": 3, "phone": "0600000000" }
+```
+`company_id` always defaults to the acting admin's own — not settable in
+the payload (tenant isolation, same reasoning as elsewhere in this doc).
+→ `201`, `{ "success": true, "message": "Representative created", "representative": { "id": 42, "name": "...", ... } }`
+
+**`GET /api/backend/gcom/representatives/{user}`** — `404` if `{user}`
+doesn't hold `gcom_representative` or belongs to another company.
+→ `{ "success": true, "representative": { "id": 42, "...": "...", "roles": ["gcom_representative"], "permissions": [] } }`
+
+**`PUT /api/backend/gcom/representatives/{user}`** 🔁 — Body (all
+optional): `{ "branch_id"?, "phone"?, "is_active"? }`.
+→ `200`, `{ "success": true, "message": "Representative updated", "representative": {...} }`
+
+**`DELETE /api/backend/gcom/representatives/{user}`** 🔁 — removes the
+role only.
+→ `200`, `{ "success": true, "message": "Representative role removed — the user account itself was not deleted" }`
+
+### `salesperson_id` validation tightened
+
+Before this, `salesperson_id` on the three GCOM sale-creation endpoints
+(`POST /orders`, `POST /delivery-notes`, `POST /direct-invoices` — §8)
+accepted **any** user id (`exists:users,id` only) — a magasinier or driver
+could be picked as a BC's commercial. It's now additionally validated by
+`App\Rules\IsGcomRepresentative`: the id must belong to a user holding
+`gcom_representative`, or the request fails `422` with a clear message.
+Representatives created before this feature (there were none, since the
+role is new) aren't affected; any pre-existing `sales_rep_id` value on an
+already-created order is untouched either way — this only gates new
+requests going forward.
+
+### `draft` BL initial status — built 2026-08-31
+
+Was a deliberately-paused backlog item (see git history for the original
+write-up of the 3 open design questions); shipped once the UI team made
+the product calls:
+
+1. **No number, no stock movement at draft creation.** `delivery_number`
+   is a placeholder (`DRAFT-{uuid}`, since the column is NOT NULL +
+   UNIQUE at the DB level) until validated.
+2. **`POST /delivery-notes/{id}/validate`** (§8) — separate action, not
+   folded into `confirm-delivery`. Draws the real `TokenSerie` number,
+   deducts stock, transitions to `in_transit` (default) or `delivered`
+   (`{ status?: 'in_transit'|'delivered' }`).
+3. **Cancelling a draft** reuses the existing `cancel` endpoint —
+   `cancelDeliveryNote()` skips the restock entirely when the BL is still
+   `draft` (nothing was ever deducted), a plain abandon rather than a
+   reversal.
+
+Not addressed (not asked for, not blocking): draft line items are NOT
+independently editable before validation — same locked snapshot as any
+other BL, set once at creation from the order's lines.
+
+### Avoir as a payment method — built 2026-08-31 (the refund_amount collision is resolved)
+
+The `AvoirPaymentStrategy::applyAvoir()` collision this backlog note
+originally described (POS's mechanism treats `refund_amount` as a
+MUTABLE "amount already applied" counter — incompatible with GCOM's own
+"fixed at creation" convention) is now resolved for good, not just
+avoided: `credit_notes.remaining_amount` (new column, backfilled from
+`refund_amount`, NOT `total_amount` — see §9's "Resolving a non-zero
+refund_amount" note for why) is the single authoritative, mutable
+balance both `redeemCreditNote()` (made partial in the same change) and
+the new `GcomCreditNoteService::imputeAvoirs()` draw from and decrement
+— so a credit note can never be redeemed in cash and imputed toward a
+sale for the same money. `credit_note_resolutions` (new table) is the
+real per-event audit trail now that resolution can be partial/repeated.
+
+**What's built**: `payment_method: "avoir"` on `POST /orders`,
+`POST /delivery-notes`/`convert-to-bl` (stored as a hint, same as
+`cheque`/`effet` today — GCOM's Golden Rule means BC/BL creation never
+settles anything), with `avoir_allocations` accepted and validated at
+the 3 endpoints that actually settle a sale: `POST /direct-invoices`,
+`POST /orders/{order}/convert-to-invoice`,
+`POST /delivery-notes/{id}/convert-to-invoice` (same 3 endpoints
+`instrument` already lives on, for the same reason). Scope (a) only,
+confirmed with the UI team: allocations must sum to EXACTLY the sale
+total — `422` in either direction. See §8/§9 for the full contract.
+
+**What's still NOT built — applying an avoir to an EXISTING already-
+invoiced sale** (as opposed to funding a brand-new one). Genuinely
+smaller now that the hard part (the `remaining_amount` collision) is
+resolved — the same `imputeAvoirs()` pattern could plausibly be adapted
+to reduce an existing `Invoice.remaining_amount` instead of always
+closing a freshly-created one, reusing `credit_note_resolutions`
+unchanged. Open questions if picked up:
+- Does applying to an existing invoice route through the exact same
+  field-touching pattern `createCreditNote()`'s own `appliedToDebt`
+  already uses (decrement `remaining_amount`, flip status), or does
+  `imputeAvoirs()` itself grow a second mode?
+- Partial application against an existing invoice (leaving both the
+  avoir AND the target invoice partially resolved) vs. requiring an
+  exact match like the new-sale case does today.
+- What happens if the target invoice is fully settled by the time the
+  application is attempted (race with a règlement) — same
+  idempotency/locking questions §6's règlement code already had to
+  answer once.
+- Cross-partner applications: still out of scope either way (an avoir
+  only ever applies within the same partner).

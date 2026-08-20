@@ -10,20 +10,25 @@ import toast from 'react-hot-toast';
 
 import { MasterLayout } from '@/components/layout/MasterLayout';
 import { ActionPanel, type ActionItemProps } from '@/components/layout/ActionPanel';
+import { ConfirmationModal } from '@/components/common/ConfirmationModal';
 import { DataGrid } from '@/components/common/DataGrid';
 import { SageTabs, type TabItem } from '@/components/common/SageTabs';
 import { SageCollapsible } from '@/components/common/SageCollapsible';
 import { GcomCatalogEntryScreen, type GcomCatalogEntrySubmitPayload } from '@/components/gcom/GcomCatalogEntryScreen';
 import { GcomLinesTable } from '@/components/gcom/GcomLinesTable';
 import { PdfPriceModeModal } from '@/components/gcom/PdfPriceModeModal';
+import { AvoirAllocationPicker } from '@/components/gcom/AvoirAllocationPicker';
+import { avoirAllocationsMatchTotal, avoirAllocationsWithinTotal, canMixAvoirWith } from '@/lib/gcom/avoirAllocations';
 
 import { gcomApi } from '@/services/api/gcomApi';
 import { getPartners } from '@/services/api/partnerApi';
+import { masterdataApi, type Bank } from '@/services/api/masterdataApi';
+import { productsApi } from '@/services/api/productsApi';
 import { RETURN_CONDITIONS, RETURN_CONDITION_LABEL } from '@/lib/gcom/returnConditions';
 import { RETURN_REASONS, RETURN_REASON_LABEL } from '@/lib/gcom/returnReasons';
 import type { Partner } from '@/types/partner.types';
 import type {
-    GcomDeliveryNote, GcomDeliveryNoteItem, GcomBlStatus, GcomInstrumentInput, GcomPdfPriceMode, GcomReturnCondition, GcomReturnReason, GcomDeliveryNoteReturn, GcomSoucheKind,
+    GcomDeliveryNote, GcomDeliveryNoteItem, GcomBlStatus, GcomInstrumentInput, GcomPdfPriceMode, GcomReturnCondition, GcomReturnReason, GcomDeliveryNoteReturn, GcomSoucheKind, GcomAvoirAllocation,
 } from '@/types/gcom.types';
 
 // ─── helpers ─────────────────────────────────────────────────────────────────
@@ -44,12 +49,14 @@ const fmtDate = (d: string | null | undefined) => d ? new Date(d).toLocaleDateSt
 const currentLineQty = (it: GcomDeliveryNoteItem): number => Number(it.delivered_quantity ?? it.ordered_quantity) || 0;
 
 const BL_STATUS_META: Record<GcomBlStatus, { label: string; dot: string; text: string }> = {
+    in_transit: { label: 'En transit', dot: 'bg-amber-500', text: 'text-amber-700' },
     delivered: { label: 'Livré', dot: 'bg-emerald-500', text: 'text-emerald-700' },
     cancelled: { label: 'Annulé', dot: 'bg-gray-400', text: 'text-gray-500' },
 };
 
 const BL_STATUS_FILTERS: { value: 'all' | GcomBlStatus; label: string }[] = [
     { value: 'all', label: 'Tous' },
+    { value: 'in_transit', label: 'En transit' },
     { value: 'delivered', label: 'Livré' },
     { value: 'cancelled', label: 'Annulé' },
 ];
@@ -192,7 +199,14 @@ export default function BonLivraisonPage() {
         setDetailLoading(true);
         setReturns([]);
         try {
-            setSelected(await gcomApi.deliveryNotes.get(row.id));
+            const fresh = await gcomApi.deliveryNotes.get(row.id);
+            setSelected(fresh);
+            // Keep the grid row in sync with the detail fetch — without this,
+            // a BL invoiced/confirmed/cancelled since the list last loaded
+            // (another tab, another user, or just time passing) shows stale
+            // Statut/Facturé in the grid while the detail panel already has
+            // the truth, which reads as a contradiction/bug to the user.
+            setNotes(prev => prev.map(n => n.id === fresh.id ? fresh : n));
         } catch {
             toast.error('Erreur chargement du bon de livraison');
         } finally {
@@ -211,6 +225,38 @@ export default function BonLivraisonPage() {
     const refresh = () => {
         loadNotes(1, false);
         if (selected) selectNote(selected);
+    };
+
+    // Delivery-note items only carry `product_id` (verified live — no nested
+    // `product` object, unlike the returns list which does), so line/return
+    // tables fell back to a raw "Produit #id" label. Resolve real
+    // code/name for whatever product ids show up on the currently-viewed
+    // BL, caching across selections since the catalog is stable within a
+    // session.
+    const [productNames, setProductNames] = useState<Record<number, { code: string; name: string }>>({});
+    useEffect(() => {
+        const ids = Array.from(new Set((selected?.items ?? []).map(it => it.product_id))).filter(id => !(id in productNames));
+        if (ids.length === 0) return;
+        (async () => {
+            const results = await Promise.all(ids.map(async id => {
+                try {
+                    const res = await productsApi.getDetail(id);
+                    return [id, { code: res.data.product.code, name: res.data.product.name }] as const;
+                } catch {
+                    return [id, null] as const;
+                }
+            }));
+            setProductNames(prev => {
+                const next = { ...prev };
+                for (const [id, info] of results) if (info) next[id] = info;
+                return next;
+            });
+        })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [selected?.items]);
+    const productLabel = (productId: number) => {
+        const info = productNames[productId];
+        return info ? `${info.name}${info.code ? ` (${info.code})` : ''}` : `Produit #${productId}`;
     };
 
     // Deep-link from another GCOM document's "Documents liés" chip (?id=123).
@@ -265,8 +311,14 @@ export default function BonLivraisonPage() {
                 payment_method: payload.payment_method,
                 payment_term_id: payload.payment_term_id,
                 notes: payload.notes,
+                delivery_date: payload.delivery_date,
+                client_order_ref: payload.client_order_ref,
+                salesperson_id: payload.salesperson_id,
+                driver_info: payload.driver_info,
+                transporter_name: payload.transporter_name,
+                status: payload.status,
             });
-            toast.success('Bon de livraison créé');
+            toast.success(note.status === 'delivered' ? 'Bon de livraison créé — livré' : 'Bon de livraison créé — en transit');
             return note;
         } catch (err: unknown) {
             const msg = (err as { response?: { data?: { message?: string } } })?.response?.data?.message;
@@ -280,36 +332,71 @@ export default function BonLivraisonPage() {
         selectNote(note);
     };
 
+    // ── Confirmer la livraison (2026-08-29) — in_transit → delivered ────────
+    const [confirmingDelivery, setConfirmingDelivery] = useState(false);
+    const confirmDelivery = async () => {
+        if (!selected) return;
+        setConfirmingDelivery(true);
+        try {
+            await gcomApi.deliveryNotes.confirmDelivery(selected.id);
+            toast.success('Livraison confirmée');
+            refresh();
+        } catch (err: unknown) {
+            const msg = (err as { response?: { data?: { message?: string } } })?.response?.data?.message;
+            toast.error(msg ?? 'Erreur lors de la confirmation de livraison');
+        } finally {
+            setConfirmingDelivery(false);
+        }
+    };
+
     // ── Convert to Facture ───────────────────────────────────────────────────
     const [convertPanelOpen, setConvertPanelOpen] = useState(false); // instrument required (cheque/effet)
     const [invoiceConfirmOpen, setInvoiceConfirmOpen] = useState(false); // plain confirmation otherwise
+    const [convertAvoirPanelOpen, setConvertAvoirPanelOpen] = useState(false); // payment_method === 'avoir'
+    const [convertAvoirAllocations, setConvertAvoirAllocations] = useState<GcomAvoirAllocation[]>([]);
+    // Optional avoir mix (2026-08-20) — the avoir covers PART of the total,
+    // the BL's own payment_method settles the rest. Reuses
+    // convertAvoirAllocations (mutually exclusive with the exact-avoir panel
+    // by payment method).
+    const [convertMixAvoirEnabled, setConvertMixAvoirEnabled] = useState(false);
     const [convertInstrument, setConvertInstrument] = useState<GcomInstrumentInput>(EMPTY_INSTRUMENT);
     const [convertingToInvoice, setConvertingToInvoice] = useState(false);
     // §17 — explicit override, 'declared' is the safe/common default.
     const [convertSoucheKind, setConvertSoucheKind] = useState<GcomSoucheKind>('declared');
+    // Bank dropdown for the instrument's bank_name (GET /masterdata/banks) —
+    // falls back to free text if the list is empty or the bank isn't listed.
+    const [banks, setBanks] = useState<Bank[]>([]);
+    const [convertInstrumentBankOther, setConvertInstrumentBankOther] = useState(false);
+    useEffect(() => { masterdataApi.banks.getAll().then(setBanks).catch(() => setBanks([])); }, []);
 
     const openConvertToInvoice = () => {
         if (!selected) return;
         setConvertSoucheKind('declared');
+        setConvertAvoirAllocations([]);
+        setConvertMixAvoirEnabled(false);
         const method = selected.order?.financial_metadata?.payment_method;
         const needsInstrument = method === 'cheque' || method === 'effet';
         if (needsInstrument) {
             setConvertInstrument(EMPTY_INSTRUMENT);
+            setConvertInstrumentBankOther(false);
             setConvertPanelOpen(true);
+        } else if (method === 'avoir') {
+            setConvertAvoirPanelOpen(true);
         } else {
             setInvoiceConfirmOpen(true);
         }
     };
     const closeInvoiceConfirm = () => setInvoiceConfirmOpen(false);
 
-    const doConvertToInvoice = async (instrument: GcomInstrumentInput | null) => {
+    const doConvertToInvoice = async (instrument: GcomInstrumentInput | null, avoirAllocations?: GcomAvoirAllocation[]) => {
         if (!selected) return;
         setConvertingToInvoice(true);
         try {
-            const invoice = await gcomApi.deliveryNotes.convertToInvoice(selected.id, instrument, convertSoucheKind);
+            const invoice = await gcomApi.deliveryNotes.convertToInvoice(selected.id, instrument, convertSoucheKind, avoirAllocations);
             toast.success(`Facture ${invoice.invoice_number ?? `#${invoice.id}`} créée${invoice.souche_kind === 'internal' ? ' (souche interne)' : ''}`);
             setConvertPanelOpen(false);
             setInvoiceConfirmOpen(false);
+            setConvertAvoirPanelOpen(false);
             refresh();
         } catch (err: unknown) {
             const msg = (err as { response?: { data?: { message?: string } } })?.response?.data?.message;
@@ -384,9 +471,9 @@ export default function BonLivraisonPage() {
             const qty = Number(returnBatchQty[it.id]) || 0;
             const currentQty = currentLineQty(it);
             const reason = returnBatchReason[it.id] || '';
-            const label = it.product_id ? `Produit #${it.product_id}` : `Ligne #${it.id}`;
-            if (qty >= currentQty) {
-                failures.push(`${label} : quantité invalide (doit être < ${fmt(currentQty, 0)})`);
+            const label = productLabel(it.product_id);
+            if (qty > currentQty) {
+                failures.push(`${label} : quantité invalide (doit être ≤ ${fmt(currentQty, 0)})`);
                 continue;
             }
             if (!reason) {
@@ -438,6 +525,17 @@ export default function BonLivraisonPage() {
             cellRenderer: (p: ICellRendererParams<GcomDeliveryNote>) => p.data ? <StatusBadge status={p.data.status} /> : null,
         },
         {
+            colId: 'facture', headerName: 'Facturé', width: 90,
+            filter: 'agSetColumnFilter',
+            valueGetter: (p: ValueGetterParams<GcomDeliveryNote>) => (p.data?.invoice_id ? 'Oui' : 'Non'),
+            cellRenderer: (p: ICellRendererParams<GcomDeliveryNote, string>) => (
+                <span className={`inline-flex items-center gap-1 text-[11px] font-medium ${p.value === 'Oui' ? 'text-emerald-700' : 'text-gray-400'}`}>
+                    <span className={`w-1.5 h-1.5 rounded-full ${p.value === 'Oui' ? 'bg-emerald-500' : 'bg-gray-300'}`} />
+                    {p.value}
+                </span>
+            ),
+        },
+        {
             colId: 'total_amount', headerName: 'Total TTC', width: 100,
             filter: 'agNumberColumnFilter',
             valueGetter: (p: ValueGetterParams<GcomDeliveryNote>) => Number(p.data?.total_amount) || 0,
@@ -462,9 +560,14 @@ export default function BonLivraisonPage() {
 
     // ── Action panel ──────────────────────────────────────────────────────────
 
+    // 2026-08-29: a BL is born in_transit now — only 'delivered' can be
+    // invoiced or partially returned (returning implies delivery already
+    // happened). Cancel works from both in_transit and delivered, per
+    // backend confirmation — never invoice-gated only, status!=='cancelled'.
+    const canConfirmDelivery = selected?.status === 'in_transit';
     const canConvertToInvoice = selected?.status === 'delivered' && !selected.invoice_id;
-    const canCancel = selected?.status === 'delivered' && !selected.invoice_id;
-    const canReturn = canCancel && (selected?.items ?? []).some(it => currentLineQty(it) > 1);
+    const canCancel = (selected?.status === 'in_transit' || selected?.status === 'delivered') && !selected.invoice_id;
+    const canReturn = canConvertToInvoice && (selected?.items ?? []).some(it => currentLineQty(it) > 0);
 
     const actionGroups = useMemo((): { items: ActionItemProps[] }[] => {
         const base: ActionItemProps[] = [
@@ -475,6 +578,9 @@ export default function BonLivraisonPage() {
         const detailItems: ActionItemProps[] = [
             { icon: Download, label: 'Imprimer', variant: 'default', onClick: () => setPdfModalOpen(true) },
         ];
+        if (canConfirmDelivery) {
+            detailItems.push({ icon: CheckCircle2, label: 'Confirmer la livraison', variant: 'primary', onClick: confirmDelivery, disabled: confirmingDelivery });
+        }
         if (canReturn) {
             detailItems.push({ icon: RotateCcw, label: 'Effectuer un retour partiel', variant: 'warning', onClick: openReturnBatch });
         }
@@ -486,7 +592,7 @@ export default function BonLivraisonPage() {
         }
         return [{ items: base }, { items: detailItems }];
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [selected, canConvertToInvoice, canCancel, canReturn, loading, convertingToInvoice]);
+    }, [selected, canConfirmDelivery, canConvertToInvoice, canCancel, canReturn, loading, convertingToInvoice, confirmingDelivery]);
 
     // ─────────────────────────────────────────────────────────────────────────
     // RENDER
@@ -498,6 +604,7 @@ export default function BonLivraisonPage() {
                 submitLabel="Créer le BL"
                 submitIcon={Truck}
                 needsInstrumentAtSubmit={false}
+                showDeliveryDateField
                 onSubmit={handleCreateNoteSubmit}
                 onSubmitted={handleNoteCreated}
                 cancelActionItem={{ icon: X, label: 'Annuler', variant: 'warning', onClick: () => setFormMode('view') }}
@@ -648,7 +755,22 @@ export default function BonLivraisonPage() {
                                             <div className="grid grid-cols-2 gap-2">
                                                 <input value={convertInstrument.reference_number} onChange={e => setConvertInstrument(p => ({ ...p, reference_number: e.target.value }))} placeholder="Référence *" className="px-2 py-1.5 text-xs border border-gray-200 rounded-md" />
                                                 <input type="date" value={convertInstrument.due_date} onChange={e => setConvertInstrument(p => ({ ...p, due_date: e.target.value }))} className="px-2 py-1.5 text-xs border border-gray-200 rounded-md" />
-                                                <input value={convertInstrument.bank_name} onChange={e => setConvertInstrument(p => ({ ...p, bank_name: e.target.value }))} placeholder="Banque" className="px-2 py-1.5 text-xs border border-gray-200 rounded-md" />
+                                                {banks.length > 0 && !convertInstrumentBankOther ? (
+                                                    <select
+                                                        value={convertInstrument.bank_name}
+                                                        onChange={e => {
+                                                            if (e.target.value === '__other__') { setConvertInstrumentBankOther(true); setConvertInstrument(p => ({ ...p, bank_name: '' })); }
+                                                            else setConvertInstrument(p => ({ ...p, bank_name: e.target.value }));
+                                                        }}
+                                                        className="px-2 py-1.5 text-xs border border-gray-200 rounded-md bg-white"
+                                                    >
+                                                        <option value="">Banque</option>
+                                                        {banks.map(b => <option key={b.id} value={b.name}>{b.name}</option>)}
+                                                        <option value="__other__">Autre…</option>
+                                                    </select>
+                                                ) : (
+                                                    <input value={convertInstrument.bank_name} onChange={e => setConvertInstrument(p => ({ ...p, bank_name: e.target.value }))} placeholder={banks.length > 0 ? 'Banque (saisie libre)' : 'Banque'} className="px-2 py-1.5 text-xs border border-gray-200 rounded-md" />
+                                                )}
                                                 <input value={convertInstrument.bank_account} onChange={e => setConvertInstrument(p => ({ ...p, bank_account: e.target.value }))} placeholder="N° compte" className="px-2 py-1.5 text-xs border border-gray-200 rounded-md" />
                                             </div>
                                             <div className="flex items-center gap-1.5">
@@ -665,11 +787,41 @@ export default function BonLivraisonPage() {
                                                     </button>
                                                 ))}
                                             </div>
+
+                                            {/* Optional avoir mix (2026-08-20) — avoir covers part of the total, this instrument settles the rest. */}
+                                            {canMixAvoirWith(selected.order?.financial_metadata?.payment_method) && (
+                                                <div className="space-y-2">
+                                                    <label className="flex items-center gap-2 text-xs text-gray-600 cursor-pointer">
+                                                        <input
+                                                            type="checkbox"
+                                                            checked={convertMixAvoirEnabled}
+                                                            onChange={e => { setConvertMixAvoirEnabled(e.target.checked); if (!e.target.checked) setConvertAvoirAllocations([]); }}
+                                                            className="rounded border-gray-300 text-sage-600 focus:ring-sage-400"
+                                                        />
+                                                        Appliquer un avoir en réduction du montant
+                                                    </label>
+                                                    {convertMixAvoirEnabled && (
+                                                        <AvoirAllocationPicker
+                                                            partnerId={selected.partner?.id ?? null}
+                                                            total={Number(selected.total_amount) || 0}
+                                                            value={convertAvoirAllocations}
+                                                            onChange={setConvertAvoirAllocations}
+                                                            mode="partial"
+                                                        />
+                                                    )}
+                                                </div>
+                                            )}
+
                                             <div className="flex gap-2">
                                                 <button
                                                     onClick={() => {
                                                         if (!convertInstrument.reference_number.trim() || !convertInstrument.due_date) { toast.error('Référence et échéance requises'); return; }
-                                                        void doConvertToInvoice(convertInstrument);
+                                                        const total = Number(selected.total_amount) || 0;
+                                                        if (convertMixAvoirEnabled && !avoirAllocationsWithinTotal(convertAvoirAllocations, total)) {
+                                                            toast.error('Le total des avoirs sélectionnés dépasse le montant de la vente');
+                                                            return;
+                                                        }
+                                                        void doConvertToInvoice(convertInstrument, convertMixAvoirEnabled && convertAvoirAllocations.length > 0 ? convertAvoirAllocations : undefined);
                                                     }}
                                                     disabled={convertingToInvoice}
                                                     className="flex items-center gap-2 px-3 py-1.5 bg-sage-600 text-white text-xs font-medium rounded-lg hover:bg-sage-700 disabled:opacity-50"
@@ -678,6 +830,37 @@ export default function BonLivraisonPage() {
                                                     Confirmer
                                                 </button>
                                                 <button onClick={() => setConvertPanelOpen(false)} className="px-3 py-1.5 text-xs text-gray-600 border border-gray-200 rounded-lg hover:bg-gray-50">Annuler</button>
+                                            </div>
+                                        </div>
+                                    )}
+
+                                    {/* ── Convert-to-invoice avoir panel ──── */}
+                                    {convertAvoirPanelOpen && (
+                                        <div className="bg-amber-50 border border-amber-200 rounded-lg p-4 space-y-3">
+                                            <p className="text-xs font-semibold text-amber-800">Règlement par avoir pour la conversion du BL en facture</p>
+                                            <AvoirAllocationPicker
+                                                partnerId={selected.partner?.id ?? null}
+                                                total={Number(selected.total_amount) || 0}
+                                                value={convertAvoirAllocations}
+                                                onChange={setConvertAvoirAllocations}
+                                            />
+                                            <div className="flex gap-2">
+                                                <button
+                                                    onClick={() => {
+                                                        const total = Number(selected.total_amount) || 0;
+                                                        if (!avoirAllocationsMatchTotal(convertAvoirAllocations, total)) {
+                                                            toast.error('Le total des avoirs sélectionnés doit correspondre exactement au montant de la vente');
+                                                            return;
+                                                        }
+                                                        void doConvertToInvoice(null, convertAvoirAllocations);
+                                                    }}
+                                                    disabled={convertingToInvoice || !avoirAllocationsMatchTotal(convertAvoirAllocations, Number(selected.total_amount) || 0)}
+                                                    className="flex items-center gap-2 px-3 py-1.5 bg-sage-600 text-white text-xs font-medium rounded-lg hover:bg-sage-700 disabled:opacity-50"
+                                                >
+                                                    {convertingToInvoice ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <CheckCircle2 className="w-3.5 h-3.5" />}
+                                                    Confirmer
+                                                </button>
+                                                <button onClick={() => setConvertAvoirPanelOpen(false)} className="px-3 py-1.5 text-xs text-gray-600 border border-gray-200 rounded-lg hover:bg-gray-50">Annuler</button>
                                             </div>
                                         </div>
                                     )}
@@ -718,6 +901,27 @@ export default function BonLivraisonPage() {
                                                     <Calendar className="w-3.5 h-3.5 text-gray-300" />
                                                     <p className="text-xs font-medium text-gray-700">{fmtDate(selected.delivery_date)}</p>
                                                 </div>
+
+                                                {(selected.driver_info || selected.transporter_name || selected.delivered_at) && (
+                                                    <div className="bg-gray-50 rounded-lg p-3 border border-gray-100 space-y-1.5">
+                                                        <p className="text-[10px] text-gray-400 uppercase tracking-wider mb-1">Livraison</p>
+                                                        {selected.driver_info && (
+                                                            <div className="flex items-center gap-1.5 text-xs text-gray-700">
+                                                                <Truck className="w-3.5 h-3.5 text-gray-400 shrink-0" /> {selected.driver_info}
+                                                            </div>
+                                                        )}
+                                                        {selected.transporter_name && (
+                                                            <div className="flex items-center gap-1.5 text-xs text-gray-700">
+                                                                <Package className="w-3.5 h-3.5 text-gray-400 shrink-0" /> {selected.transporter_name}
+                                                            </div>
+                                                        )}
+                                                        {selected.delivered_at && (
+                                                            <div className="flex items-center gap-1.5 text-xs text-emerald-700">
+                                                                <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500 shrink-0" /> Livré le {fmtDate(selected.delivered_at)}
+                                                            </div>
+                                                        )}
+                                                    </div>
+                                                )}
 
                                                 {(selected.order || selected.invoice_id) && (
                                                     <div className="bg-gray-50 rounded-lg p-3 border border-gray-100">
@@ -766,7 +970,7 @@ export default function BonLivraisonPage() {
                                                 rowKey={it => it.id}
                                                 emptyIcon={Package}
                                                 columns={[
-                                                    { key: 'article', header: 'Article', render: (it: GcomDeliveryNoteItem) => <span className="font-medium text-gray-800">{`Produit #${it.product_id}`}</span> },
+                                                    { key: 'article', header: 'Article', render: (it: GcomDeliveryNoteItem) => <span className="font-medium text-gray-800">{productLabel(it.product_id)}</span> },
                                                     {
                                                         key: 'qty', header: 'Qté', align: 'right', width: 'w-20',
                                                         render: (it: GcomDeliveryNoteItem) => {
@@ -853,7 +1057,7 @@ export default function BonLivraisonPage() {
             {/* ── Convert to Facture — plain confirmation (no instrument needed) ── */}
             {invoiceConfirmOpen && selected && (
                 <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm">
-                    <div className="bg-white rounded-2xl shadow-2xl p-6 max-w-sm w-full mx-4">
+                    <div className={`bg-white rounded-2xl shadow-2xl p-6 w-full mx-4 ${convertMixAvoirEnabled ? 'max-w-lg' : 'max-w-sm'}`}>
                         <div className="flex items-center gap-3 mb-3">
                             <div className="w-9 h-9 rounded-full bg-sage-100 flex items-center justify-center">
                                 <FileText className="w-4 h-4 text-sage-600" />
@@ -863,7 +1067,7 @@ export default function BonLivraisonPage() {
                         <p className="text-sm text-gray-600 mb-3">
                             Confirmez-vous la conversion du BL <strong>{selected.delivery_number ?? `#${selected.id}`}</strong> en facture pour <strong>{selected.partner?.name}</strong>, d'un montant de <strong>{fmtMAD(selected.total_amount)}</strong> ?
                         </p>
-                        <div className="flex items-center gap-1.5 mb-5">
+                        <div className="flex items-center gap-1.5 mb-3">
                             <span className="text-[10px] text-gray-500 mr-0.5">Souche :</span>
                             {(['declared', 'internal'] as GcomSoucheKind[]).map(k => (
                                 <button
@@ -877,9 +1081,41 @@ export default function BonLivraisonPage() {
                                 </button>
                             ))}
                         </div>
+
+                        {/* Optional avoir mix (2026-08-20) — not offered for credit/transfer (backend 422s that combination). */}
+                        {canMixAvoirWith(selected.order?.financial_metadata?.payment_method) && (
+                            <div className="space-y-2 mb-5">
+                                <label className="flex items-center gap-2 text-xs text-gray-600 cursor-pointer">
+                                    <input
+                                        type="checkbox"
+                                        checked={convertMixAvoirEnabled}
+                                        onChange={e => { setConvertMixAvoirEnabled(e.target.checked); if (!e.target.checked) setConvertAvoirAllocations([]); }}
+                                        className="rounded border-gray-300 text-sage-600 focus:ring-sage-400"
+                                    />
+                                    Appliquer un avoir en réduction du montant
+                                </label>
+                                {convertMixAvoirEnabled && (
+                                    <AvoirAllocationPicker
+                                        partnerId={selected.partner?.id ?? null}
+                                        total={Number(selected.total_amount) || 0}
+                                        value={convertAvoirAllocations}
+                                        onChange={setConvertAvoirAllocations}
+                                        mode="partial"
+                                    />
+                                )}
+                            </div>
+                        )}
+
                         <div className="flex gap-3">
                             <button
-                                onClick={() => doConvertToInvoice(null)}
+                                onClick={() => {
+                                    const total = Number(selected.total_amount) || 0;
+                                    if (convertMixAvoirEnabled && !avoirAllocationsWithinTotal(convertAvoirAllocations, total)) {
+                                        toast.error('Le total des avoirs sélectionnés dépasse le montant de la vente');
+                                        return;
+                                    }
+                                    doConvertToInvoice(null, convertMixAvoirEnabled && convertAvoirAllocations.length > 0 ? convertAvoirAllocations : undefined);
+                                }}
                                 disabled={convertingToInvoice}
                                 className="flex-1 flex items-center justify-center gap-2 py-2 bg-sage-600 text-white text-sm font-medium rounded-lg hover:bg-sage-700 disabled:opacity-50 transition-colors whitespace-nowrap"
                             >
@@ -944,93 +1180,89 @@ export default function BonLivraisonPage() {
                 loading={pdfLoading}
             />
 
-            {/* ── Batch return modal — all lines in one grid, one submit ───────── */}
+            {/* ── Batch return modal — all lines in one grid, one submit ─────────
+                Reuses the same draggable/resizable ConfirmationModal shell as the
+                Comptoir/BC submit-confirmation flow (GcomCatalogEntryScreen) —
+                drag the header to move it, drag the bottom-right handle to resize. */}
             {returnBatchOpen && selected && (
-                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm">
-                    <div className="bg-white rounded-2xl shadow-2xl p-6 max-w-3xl w-full mx-4">
-                        <div className="flex items-center gap-3 mb-4">
-                            <div className="w-9 h-9 rounded-full bg-amber-100 flex items-center justify-center">
-                                <RotateCcw className="w-4 h-4 text-amber-600" />
-                            </div>
-                            <div>
-                                <h3 className="text-base font-semibold text-gray-900">Retour partiel</h3>
-                                <p className="text-[11px] text-gray-400">Renseignez la quantité retournée pour chaque article concerné.</p>
-                            </div>
-                        </div>
-
-                        <div className="max-h-[26rem] overflow-y-auto rounded-lg border border-gray-100">
-                            <table className="w-full text-xs">
-                                <thead className="sticky top-0 bg-gray-50 border-b border-gray-200">
-                                    <tr className="text-[10px] uppercase tracking-wider text-gray-400">
-                                        <th className="text-left font-semibold px-3 py-2">Article</th>
-                                        <th className="text-right font-semibold px-3 py-2 w-20">Qté livrée</th>
-                                        <th className="text-center font-semibold px-3 py-2 w-24">Qté à retourner</th>
-                                        <th className="text-left font-semibold px-3 py-2 w-40">État</th>
-                                        <th className="text-left font-semibold px-3 py-2">Motif</th>
-                                    </tr>
-                                </thead>
-                                <tbody className="divide-y divide-gray-100">
-                                    {(selected.items ?? []).map(it => {
-                                        const current = currentLineQty(it);
-                                        const returnable = current > 1;
-                                        const qty = returnBatchQty[it.id] ?? '';
-                                        return (
-                                            <tr key={it.id} className={!returnable ? 'opacity-50' : (Number(qty) || 0) > 0 ? 'bg-amber-50/40' : undefined}>
-                                                <td className="px-3 py-2 font-medium text-gray-800">{`Produit #${it.product_id}`}</td>
-                                                <td className="px-3 py-2 text-right text-gray-600">{fmt(current, 0)}</td>
-                                                <td className="px-2 py-1.5">
-                                                    <input
-                                                        type="number" min={0} max={returnable ? current - 1 : 0}
-                                                        disabled={!returnable}
-                                                        value={qty}
-                                                        placeholder="0"
-                                                        onChange={e => setBatchQty(it.id, e.target.value === '' ? '' : parseInt(e.target.value, 10))}
-                                                        className="w-full text-center px-2 py-1 text-xs border border-gray-200 rounded-md focus:outline-none focus:ring-1 focus:ring-sage-400 disabled:bg-gray-50 disabled:cursor-not-allowed"
-                                                    />
-                                                </td>
-                                                <td className="px-2 py-1.5">
-                                                    <select
-                                                        disabled={!returnable}
-                                                        value={returnBatchCondition[it.id] ?? 'sellable'}
-                                                        onChange={e => setBatchCondition(it.id, e.target.value as GcomReturnCondition)}
-                                                        className="w-full px-2 py-1 text-xs border border-gray-200 rounded-md focus:outline-none focus:ring-1 focus:ring-sage-400 bg-white disabled:bg-gray-50 disabled:cursor-not-allowed"
-                                                    >
-                                                        {RETURN_CONDITIONS.map(opt => <option key={opt.value} value={opt.value}>{opt.label}</option>)}
-                                                    </select>
-                                                </td>
-                                                <td className="px-2 py-1.5">
-                                                    <select
-                                                        disabled={!returnable}
-                                                        value={returnBatchReason[it.id] ?? ''}
-                                                        onChange={e => setBatchReason(it.id, e.target.value as GcomReturnReason | '')}
-                                                        className="w-full px-2 py-1 text-xs border border-gray-200 rounded-md focus:outline-none focus:ring-1 focus:ring-sage-400 bg-white disabled:bg-gray-50 disabled:cursor-not-allowed"
-                                                    >
-                                                        <option value="">{returnable ? '— Motif —' : 'Qté = 1, annulez le BL'}</option>
-                                                        {RETURN_REASONS.map(opt => <option key={opt.value} value={opt.value}>{opt.label}</option>)}
-                                                    </select>
-                                                </td>
-                                            </tr>
-                                        );
-                                    })}
-                                </tbody>
-                            </table>
-                        </div>
-
-                        <div className="flex gap-3 mt-5">
-                            <button
-                                onClick={confirmReturnBatch}
-                                disabled={returningBatch}
-                                className="flex-1 flex items-center justify-center gap-2 py-2 bg-sage-600 text-white text-sm font-medium rounded-lg hover:bg-sage-700 disabled:opacity-50 transition-colors"
-                            >
-                                {returningBatch ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <CheckCircle2 className="w-3.5 h-3.5" />}
-                                Confirmer le retour
-                            </button>
-                            <button onClick={closeReturnBatch} disabled={returningBatch} className="flex-1 py-2 border border-gray-200 text-sm text-gray-600 rounded-lg hover:bg-gray-50 disabled:opacity-50 transition-colors">
-                                Annuler
-                            </button>
-                        </div>
+                <ConfirmationModal
+                    isOpen={returnBatchOpen}
+                    onClose={closeReturnBatch}
+                    onConfirm={confirmReturnBatch}
+                    title="Retour partiel"
+                    description="Renseignez la quantité retournée pour chaque article concerné — un retour intégral d'une ligne est accepté, les autres lignes du BL ne sont pas affectées."
+                    confirmText="Confirmer le retour"
+                    cancelText="Annuler"
+                    variant="warning"
+                    isLoading={returningBatch}
+                    initialWidth={768}
+                >
+                    <div className="max-h-[26rem] overflow-y-auto rounded-lg border border-gray-100">
+                        <table className="w-full text-xs">
+                            <thead className="sticky top-0 bg-gray-50 border-b border-gray-200">
+                                <tr className="text-[10px] uppercase tracking-wider text-gray-400">
+                                    <th className="text-left font-semibold px-3 py-2">Article</th>
+                                    <th className="text-right font-semibold px-3 py-2 w-20">Qté livrée</th>
+                                    <th className="text-center font-semibold px-3 py-2 w-24">Qté à retourner</th>
+                                    <th className="text-left font-semibold px-3 py-2 w-40">État</th>
+                                    <th className="text-left font-semibold px-3 py-2">Motif</th>
+                                </tr>
+                            </thead>
+                            <tbody className="divide-y divide-gray-100">
+                                {(selected.items ?? []).map(it => {
+                                    const current = currentLineQty(it);
+                                    const returnable = current > 0;
+                                    const qty = returnBatchQty[it.id] ?? '';
+                                    const isFullReturn = returnable && Number(qty) === current;
+                                    return (
+                                        <tr key={it.id} className={!returnable ? 'opacity-50' : (Number(qty) || 0) > 0 ? 'bg-amber-50/40' : undefined}>
+                                            <td className="px-3 py-2 font-medium text-gray-800">
+                                                {productLabel(it.product_id)}
+                                                {isFullReturn && <span className="ml-1.5 text-[9px] font-semibold text-amber-600 uppercase tracking-wide">Retour intégral</span>}
+                                            </td>
+                                            <td className="px-3 py-2 text-right text-gray-600">{fmt(current, 0)}</td>
+                                            <td className="px-2 py-1.5">
+                                                <input
+                                                    type="number" min={0} max={returnable ? current : 0}
+                                                    disabled={!returnable}
+                                                    value={qty}
+                                                    placeholder="0"
+                                                    onChange={e => {
+                                                        const raw = e.target.value === '' ? '' : parseInt(e.target.value, 10);
+                                                        const clamped = raw === '' ? '' : Math.min(raw, returnable ? current : 0);
+                                                        setBatchQty(it.id, clamped);
+                                                    }}
+                                                    className="w-full text-center px-2 py-1 text-xs border border-gray-200 rounded-md focus:outline-none focus:ring-1 focus:ring-sage-400 disabled:bg-gray-50 disabled:cursor-not-allowed"
+                                                />
+                                            </td>
+                                            <td className="px-2 py-1.5">
+                                                <select
+                                                    disabled={!returnable}
+                                                    value={returnBatchCondition[it.id] ?? 'sellable'}
+                                                    onChange={e => setBatchCondition(it.id, e.target.value as GcomReturnCondition)}
+                                                    className="w-full px-2 py-1 text-xs border border-gray-200 rounded-md focus:outline-none focus:ring-1 focus:ring-sage-400 bg-white disabled:bg-gray-50 disabled:cursor-not-allowed"
+                                                >
+                                                    {RETURN_CONDITIONS.map(opt => <option key={opt.value} value={opt.value}>{opt.label}</option>)}
+                                                </select>
+                                            </td>
+                                            <td className="px-2 py-1.5">
+                                                <select
+                                                    disabled={!returnable}
+                                                    value={returnBatchReason[it.id] ?? ''}
+                                                    onChange={e => setBatchReason(it.id, e.target.value as GcomReturnReason | '')}
+                                                    className="w-full px-2 py-1 text-xs border border-gray-200 rounded-md focus:outline-none focus:ring-1 focus:ring-sage-400 bg-white disabled:bg-gray-50 disabled:cursor-not-allowed"
+                                                >
+                                                    <option value="">— Motif —</option>
+                                                    {RETURN_REASONS.map(opt => <option key={opt.value} value={opt.value}>{opt.label}</option>)}
+                                                </select>
+                                            </td>
+                                        </tr>
+                                    );
+                                })}
+                            </tbody>
+                        </table>
                     </div>
-                </div>
+                </ConfirmationModal>
             )}
         </>
     );

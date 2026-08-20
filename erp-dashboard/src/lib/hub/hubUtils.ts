@@ -65,12 +65,26 @@ export function getQuickActions(role: HubRole, permissions: string[] = []): Quic
 
 // ─── Domain Filtering by Role ─────────────────────────────────────────────────
 
+// SFA/Conventional-only workspaces — irrelevant for a company running
+// GCOM (B2B/wholesale) mode. Per docs/modules/28-gcom.md: GCOM is
+// "zero-field-sales-dependency", explicitly has no Visit/WorkSession/
+// route concepts (dispatcher), no ADV-derogation workflow (adv), and its
+// stock deducts directly at BC/BL/comptoir time, disconnected from the
+// separate WMS pick-task cycle (magasinier). This is a business-model
+// relevance check, not a permission — admins do NOT bypass it, unlike the
+// role/permission checks below, since it's about what the company's
+// sales_mode actually uses, not about who's allowed to see it.
+const SFA_ONLY_DOMAIN_IDS = ['dispatcher', 'adv', 'magasinier'];
+
 export function getVisibleDomains(user: User | null, permissions: string[], roles: string[]): BusinessDomain[] {
     if (!user) return [];
 
     const isAdmin = user.can?.is_root || roles.includes('admin') || roles.includes('root');
+    const isGcomOnly = user.company?.sales_mode === 'GCOM';
 
     return BUSINESS_DOMAINS.filter(domain => {
+        if (isGcomOnly && SFA_ONLY_DOMAIN_IDS.includes(domain.id)) return false;
+
         if (isAdmin) return true;
 
         if (domain.requiredRole) {

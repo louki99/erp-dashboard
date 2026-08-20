@@ -11,6 +11,12 @@ import type {
     GcomCreditNotesListResponse,
     GcomCreateCreditNotePayload,
     GcomCreateCreditNoteResponse,
+    GcomCreditNotesGlobalListFilters,
+    GcomCreditNotesGlobalListResponse,
+    GcomCreditNoteDetailResponse,
+    GcomRedeemCreditNotePayload,
+    GcomRedeemCreditNoteResponse,
+    GcomAvoirAllocation,
     GcomReturnDeliveryNoteLinePayload,
     GcomReturnDeliveryNoteLineResponse,
     GcomDeliveryNoteReturn,
@@ -66,10 +72,21 @@ import type {
     GcomSoucheKind,
     GcomAccountStatement,
     GcomAccountStatementResponse,
+    GcomPartnerStatementRow,
+    GcomPartnerStatementsListFilters,
+    GcomPartnerStatementsListResponse,
     GcomLedgerEntry,
     GcomLedgerFilters,
     GcomLedgerResponse,
     GcomPdfPriceMode,
+    GcomRepresentative,
+    GcomRepresentativesListFilters,
+    GcomRepresentativesListResponse,
+    GcomRepresentativeShowResponse,
+    GcomCreateRepresentativePayload,
+    GcomUpdateRepresentativePayload,
+    GcomRepresentativeMutationResponse,
+    GcomRepresentativeRemoveResponse,
 } from '@/types/gcom.types';
 
 const BASE = '/api/backend/gcom';
@@ -213,10 +230,12 @@ export const gcomApi = {
         // is cheque/effet. Idempotent: re-calling on an already-invoiced order returns
         // the existing invoice instead of erroring. `souche_kind` (§17, 2026-08-26) —
         // explicit override, beats the PaymentTerm-derived default; omit to keep it.
-        convertToInvoice: async (orderId: number, instrument?: GcomInstrumentInput | null, soucheKind?: GcomSoucheKind | null): Promise<GcomInvoice> => {
+        // `avoirAllocations` (2026-08-20) — required (and must sum exactly to the
+        // sale total) when the BC's payment_method is 'avoir'.
+        convertToInvoice: async (orderId: number, instrument?: GcomInstrumentInput | null, soucheKind?: GcomSoucheKind | null, avoirAllocations?: GcomAvoirAllocation[]): Promise<GcomInvoice> => {
             const response = await apiClient.post<GcomConvertToInvoiceResponse>(
                 `${BASE}/orders/${orderId}/convert-to-invoice`,
-                { instrument: instrument ?? null, souche_kind: soucheKind ?? null },
+                { instrument: instrument ?? null, souche_kind: soucheKind ?? null, avoir_allocations: avoirAllocations ?? undefined },
                 idempotent(),
             );
             return response.data.invoice;
@@ -303,13 +322,30 @@ export const gcomApi = {
             return response.data.delivery_note;
         },
 
+        // 2026-08-29 — in_transit → delivered, sets delivered_at. No body.
+        // 422 if the BL isn't currently in_transit. Does NOT touch stock
+        // (already deducted at BL creation) or trigger settlement — that
+        // still only happens at convert-to-invoice, unchanged.
+        confirmDelivery: async (deliveryNoteId: number): Promise<GcomDeliveryNote> => {
+            const response = await apiClient.post<GcomDeliveryNoteMutationResponse>(
+                `${BASE}/delivery-notes/${deliveryNoteId}/confirm-delivery`,
+                {},
+                idempotent(),
+            );
+            return response.data.delivery_note;
+        },
+
         // Flow #4's second hop — BC → BL → Facture. `instrument` required if the
         // underlying BC's payment_method is cheque/effet. `souche_kind` (§17,
         // 2026-08-26) — explicit override, beats the PaymentTerm-derived default.
-        convertToInvoice: async (deliveryNoteId: number, instrument?: GcomInstrumentInput | null, soucheKind?: GcomSoucheKind | null): Promise<GcomInvoice> => {
+        // 2026-08-29: 422s if the BL is still in_transit — call confirmDelivery
+        // first (the UI should gate this action on status === 'delivered', not
+        // just rely on the 422).
+        // `avoirAllocations` (2026-08-20) — see orders.convertToInvoice's comment.
+        convertToInvoice: async (deliveryNoteId: number, instrument?: GcomInstrumentInput | null, soucheKind?: GcomSoucheKind | null, avoirAllocations?: GcomAvoirAllocation[]): Promise<GcomInvoice> => {
             const response = await apiClient.post<GcomConvertToInvoiceResponse>(
                 `${BASE}/delivery-notes/${deliveryNoteId}/convert-to-invoice`,
-                { instrument: instrument ?? null, souche_kind: soucheKind ?? null },
+                { instrument: instrument ?? null, souche_kind: soucheKind ?? null, avoir_allocations: avoirAllocations ?? undefined },
                 idempotent(),
             );
             return response.data.invoice;
@@ -391,6 +427,14 @@ export const gcomApi = {
                 params: filters,
             });
             return URL.createObjectURL(response.data as Blob);
+        },
+
+        // Relevé de Compte Global (2026-08-30) — company-wide, mass-aggregated
+        // server-side (~6 GROUP BY queries, not a per-partner loop). Excludes
+        // clients with zero GCOM activity unless include_zero_balance is set.
+        statementsList: async (filters?: GcomPartnerStatementsListFilters): Promise<GcomPaginator<GcomPartnerStatementRow>> => {
+            const response = await apiClient.get<GcomPartnerStatementsListResponse>(`${BASE}/partners/statements`, { params: filters });
+            return response.data.statements;
         },
     },
 
@@ -483,6 +527,75 @@ export const gcomApi = {
                 idempotent(),
             );
             return response.data.financial_instrument;
+        },
+    },
+
+    // Company-wide Avoirs (2026-08-20) — separate from invoices.creditNotes()/
+    // createCreditNote(), which stay invoice-scoped. Each row already nests
+    // invoice{}/partner{} (verified live), so the global "Avoirs" Liste and its
+    // detail panel need no follow-up calls.
+    creditNotes: {
+        list: async (filters?: GcomCreditNotesGlobalListFilters): Promise<GcomPaginator<GcomCreditNote>> => {
+            const response = await apiClient.get<GcomCreditNotesGlobalListResponse>(`${BASE}/credit-notes`, { params: filters });
+            return response.data.credit_notes;
+        },
+
+        get: async (creditNoteId: number): Promise<GcomCreditNote> => {
+            const response = await apiClient.get<GcomCreditNoteDetailResponse>(`${BASE}/credit-notes/${creditNoteId}`);
+            return response.data.credit_note;
+        },
+
+        // Resolves (fully, or partially via `amount`) a credit note's
+        // `remaining_amount` — journals a negative branch-caisse entry for the
+        // redeemed amount. Draws from the same `remaining_amount` pool that
+        // `payment_method: 'avoir'` allocations draw from (2026-08-20), so a
+        // note can never be spent twice across the two channels. Only the
+        // event that brings `remaining_amount` to exactly 0 stamps
+        // refund_method/refund_reference/refund_processed_at — a partial call
+        // in between leaves those three untouched (verified live). 422 if
+        // already fully resolved, nothing due, or an unknown method.
+        redeem: async (creditNoteId: number, payload: GcomRedeemCreditNotePayload): Promise<GcomCreditNote> => {
+            const response = await apiClient.post<GcomRedeemCreditNoteResponse>(
+                `${BASE}/credit-notes/${creditNoteId}/redeem`,
+                payload,
+                idempotent(),
+            );
+            return response.data.credit_note;
+        },
+    },
+
+    // §18, built 2026-08-27/28 — thin GCOM-scoped façade over plain Users
+    // holding the gcom_representative role. Tenant-scoped to the acting
+    // admin's own company automatically, nothing to pass for that.
+    representatives: {
+        list: async (filters?: GcomRepresentativesListFilters): Promise<GcomPaginator<GcomRepresentative>> => {
+            const response = await apiClient.get<GcomRepresentativesListResponse>(`${BASE}/representatives`, { params: filters });
+            return response.data.representatives;
+        },
+
+        get: async (userId: number): Promise<GcomRepresentative> => {
+            const response = await apiClient.get<GcomRepresentativeShowResponse>(`${BASE}/representatives/${userId}`);
+            return response.data.representative;
+        },
+
+        // Always assigns gcom_representative — the role is never a request
+        // parameter. company_id defaults to the acting admin's own.
+        create: async (payload: GcomCreateRepresentativePayload): Promise<GcomRepresentative> => {
+            const response = await apiClient.post<GcomRepresentativeMutationResponse>(`${BASE}/representatives`, payload, idempotent());
+            return response.data.representative;
+        },
+
+        update: async (userId: number, payload: GcomUpdateRepresentativePayload): Promise<GcomRepresentative> => {
+            const response = await apiClient.put<GcomRepresentativeMutationResponse>(`${BASE}/representatives/${userId}`, payload, idempotent());
+            return response.data.representative;
+        },
+
+        // Removes the gcom_representative role only — never deletes the
+        // user account. Any BC/BL/Facture already attributed to them via
+        // sales_rep_id keeps that history; they just stop being selectable
+        // for new ones.
+        remove: async (userId: number): Promise<void> => {
+            await apiClient.delete<GcomRepresentativeRemoveResponse>(`${BASE}/representatives/${userId}`, idempotent());
         },
     },
 };

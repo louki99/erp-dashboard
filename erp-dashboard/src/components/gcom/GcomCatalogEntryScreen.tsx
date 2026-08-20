@@ -2,7 +2,7 @@ import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react'
 import {
     ShoppingCart, Search, X, Trash2, Loader2,
     User, Users, Building2, AlertTriangle, Calendar, Warehouse, LayoutGrid, ListFilter,
-    Maximize2, Minimize2,
+    Maximize2, Minimize2, Info, Hash, Truck, CheckCircle2,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 
@@ -10,14 +10,18 @@ import { MasterLayout } from '@/components/layout/MasterLayout';
 import { ActionPanel, type ActionItemProps } from '@/components/layout/ActionPanel';
 import { ConfirmationModal } from '@/components/common/ConfirmationModal';
 import { PartnerPickerModal } from '@/components/gcom/PartnerPickerModal';
+import { AvoirAllocationPicker } from '@/components/gcom/AvoirAllocationPicker';
+import { avoirAllocationsMatchTotal, avoirAllocationsWithinTotal, canMixAvoirWith } from '@/lib/gcom/avoirAllocations';
 import { useAuth } from '@/context/AuthContext';
 
 import { getPartners, getPaymentTerms } from '@/services/api/partnerApi';
 import { telesalesApi } from '@/services/api/telesalesApi';
+import { gcomApi } from '@/services/api/gcomApi';
+import { masterdataApi, type Bank } from '@/services/api/masterdataApi';
 import { PAYMENT_METHODS } from '@/lib/gcom/paymentMethods';
 import type { Partner, PaymentTermOption } from '@/types/partner.types';
 import type { CatalogProduct } from '@/types/telesalesAgent.types';
-import type { GcomPaymentMethod, GcomInstrumentInput, GcomItemInput, GcomSoucheKind } from '@/types/gcom.types';
+import type { GcomPaymentMethod, GcomInstrumentInput, GcomItemInput, GcomSoucheKind, GcomRepresentative, GcomAvoirAllocation } from '@/types/gcom.types';
 
 // ─── Shared "catalog quick-pad" entry experience ──────────────────────────────
 // Powers both the Comptoir (direct invoice) and BC creation screens: pick a
@@ -57,6 +61,28 @@ export interface GcomCatalogEntrySubmitPayload {
     expires_at?: string;
     /** Only meaningful when `showSoucheKindSelector` is set (Comptoir). §17. */
     souche_kind?: GcomSoucheKind | null;
+    /** 2026-08-27 — customer's own PO/reference number, hidden on Devis (not
+     * accepted by `POST /quotes`). Gated the same way as payment_method:
+     * `!hidePaymentSection`. */
+    client_order_ref?: string | null;
+    /** 2026-08-27 — back-office override of the "creator = salesperson"
+     * default. Same gating as client_order_ref. */
+    salesperson_id?: number | null;
+    /** Only meaningful when `showDeliveryDateField` is set (BL direct creation
+     * — not accepted by POST /orders or POST /direct-invoices). */
+    delivery_date?: string;
+    /** 2026-08-29 — same gating as delivery_date (BL-only). Free text,
+     * display/traceability only. The resulting BL is born in_transit. */
+    driver_info?: string | null;
+    transporter_name?: string | null;
+    /** 2026-08-30 — same gating as delivery_date (BL-only). Omit/'in_transit'
+     * for a real tournée; 'delivered' for a counter/depot pickup. */
+    status?: 'in_transit' | 'delivered';
+    /** 2026-08-20 — required (must sum exactly to the total) when
+     * payment_method is 'avoir' and needsInstrumentAtSubmit is true (Comptoir
+     * settles immediately; BC/BL creation only accept payment_method as a
+     * hint, allocations happen later at convert-to-invoice). */
+    avoir_allocations?: GcomAvoirAllocation[];
 }
 
 export interface GcomCatalogEntryScreenProps<TResult> {
@@ -86,6 +112,10 @@ export interface GcomCatalogEntryScreenProps<TResult> {
      * is the only point-of-sale path that can mark a specific sale internal.
      * Shows a 2-option "Déclarée"/"Interne" toggle next to payment method. */
     showSoucheKindSelector?: boolean;
+    /** BL-only (2026-08-27) — POST /delivery-notes is the only one of the 3
+     * creation endpoints that accepts delivery_date directly. Shows a date
+     * input next to notes, defaults to empty (backend defaults to today). */
+    showDeliveryDateField?: boolean;
 }
 
 const EMPTY_INSTRUMENT: GcomInstrumentInput = { reference_number: '', due_date: '', bank_name: '', bank_account: '' };
@@ -105,6 +135,7 @@ export function GcomCatalogEntryScreen<TResult>({
     hidePaymentSection = false,
     showExpiresAt = false,
     showSoucheKindSelector = false,
+    showDeliveryDateField = false,
 }: GcomCatalogEntryScreenProps<TResult>) {
     const { user } = useAuth();
 
@@ -286,9 +317,61 @@ export function GcomCatalogEntryScreen<TResult>({
     // §17 — 'declared' is the safe/common default, matching the backend's own
     // fallback when the field is omitted entirely.
     const [soucheKind, setSoucheKind] = useState<GcomSoucheKind>('declared');
+    // 2026-08-27 — client_order_ref/salesperson_id/delivery_date.
+    const [clientOrderRef, setClientOrderRef] = useState('');
+    const [salespersonId, setSalespersonId] = useState<number | ''>('');
+    const [deliveryDate, setDeliveryDate] = useState('');
+    // 2026-08-29 — driver_info/transporter_name, BL-only like deliveryDate
+    // (free text, display/traceability only, not a Driver FK).
+    const [driverInfo, setDriverInfo] = useState('');
+    const [transporterName, setTransporterName] = useState('');
+    // 2026-08-30 — 'in_transit' is the safe/common default (real tournée),
+    // matching the backend's own default when the field is omitted.
+    const [blStatus, setBlStatus] = useState<'in_transit' | 'delivered'>('in_transit');
+    // Instrument's bank_name defaults to a dropdown (GET /masterdata/banks),
+    // falls back to free text if the list is empty or the bank isn't listed.
+    const [instrumentBankOther, setInstrumentBankOther] = useState(false);
+    // 2026-08-20 — avoir-as-payment allocations. Two distinct uses of the same
+    // state: payment_method === 'avoir' itself (must sum to exactly the
+    // total, mandatory, see showAvoirFields), or an OPTIONAL partial mix on
+    // top of cash/card/cheque/effet (see mixAvoirEnabled/canMixAvoir below) —
+    // the two are mutually exclusive by payment method so sharing the state
+    // is safe.
+    const [avoirAllocations, setAvoirAllocations] = useState<GcomAvoirAllocation[]>([]);
+    const [mixAvoirEnabled, setMixAvoirEnabled] = useState(false);
+    // §18 (2026-08-28) — salesperson_id is now validated against the
+    // gcom_representative role specifically (422 otherwise), so this picker
+    // MUST come from gcomApi.representatives.list(), not a generic
+    // commercial-employees list — any other source will 422 at submit time.
+    const [representatives, setRepresentatives] = useState<GcomRepresentative[]>([]);
+
+    useEffect(() => {
+        if (hidePaymentSection) return; // Devis doesn't need the salesperson picker
+        gcomApi.representatives.list({ is_active: true, per_page: 100 }).then(res => setRepresentatives(res.data)).catch(() => {});
+    }, [hidePaymentSection]);
+
+    // Banks list (GET /masterdata/banks) — only Comptoir collects instrument
+    // fields at submit time, so only load it there. Used to constrain the
+    // instrument's bank_name to a known bank instead of raw free text; the
+    // field itself stays a plain string (no bank_id on the instrument shape).
+    const [banks, setBanks] = useState<Bank[]>([]);
+    useEffect(() => {
+        if (!needsInstrumentAtSubmit) return;
+        masterdataApi.banks.getAll().then(setBanks).catch(() => setBanks([]));
+    }, [needsInstrumentAtSubmit]);
 
     const methodDef = PAYMENT_METHODS.find(m => m.value === paymentMethod)!;
     const showInstrumentFields = needsInstrumentAtSubmit && methodDef.needsInstrument;
+    const showAvoirFields = needsInstrumentAtSubmit && methodDef.needsAvoirAllocation;
+    // A payment method switch invalidates any prior selection — a stale
+    // allocation from cash mixing shouldn't silently carry over to cheque, or
+    // survive a switch to a method that can't mix avoir at all.
+    useEffect(() => { setAvoirAllocations([]); setMixAvoirEnabled(false); }, [paymentMethod]);
+    // Optional avoir mix — only offered where backend actually accepts a
+    // remainder payment method (cash/card/cheque/effet, verified live —
+    // credit/transfer 422 as "not supported yet").
+    const canMixAvoir = needsInstrumentAtSubmit && canMixAvoirWith(paymentMethod);
+    const showMixAvoirFields = canMixAvoir && mixAvoirEnabled;
     // Cash terms (e.g. "Comptant") must never be offered once a credit/transfer
     // method is picked — only terms flagged is_credit are valid here.
     const creditTerms = useMemo(() => partnerTerms.filter(t => t.is_credit && !t.is_cash), [partnerTerms]);
@@ -322,7 +405,9 @@ export function GcomCatalogEntryScreen<TResult>({
 
     const canSubmit = !!selectedPartner && selectedLines.length > 0 && !submitting && !hasOutOfStockSelection &&
         (!showInstrumentFields || (instrument.reference_number.trim() && instrument.due_date)) &&
-        (!methodDef.needsTerm || paymentTermId != null);
+        (!methodDef.needsTerm || paymentTermId != null) &&
+        (!showAvoirFields || avoirAllocationsMatchTotal(avoirAllocations, estimatedTTC)) &&
+        (!showMixAvoirFields || avoirAllocationsWithinTotal(avoirAllocations, estimatedTTC));
 
     const [showConfirmModal, setShowConfirmModal] = useState(false);
 
@@ -332,6 +417,14 @@ export function GcomCatalogEntryScreen<TResult>({
         if (hasOutOfStockSelection) { toast.error('Retirez les articles en rupture de stock avant de valider'); return; }
         if (showInstrumentFields && (!instrument.reference_number.trim() || !instrument.due_date)) {
             toast.error('Référence et échéance requises pour ce mode de paiement');
+            return;
+        }
+        if (showAvoirFields && !avoirAllocationsMatchTotal(avoirAllocations, estimatedTTC)) {
+            toast.error('Le total des avoirs sélectionnés doit correspondre exactement au montant de la vente');
+            return;
+        }
+        if (showMixAvoirFields && !avoirAllocationsWithinTotal(avoirAllocations, estimatedTTC)) {
+            toast.error('Le total des avoirs sélectionnés dépasse le montant de la vente');
             return;
         }
         if (confirmBeforeSubmit) { setShowConfirmModal(true); return; }
@@ -351,6 +444,13 @@ export function GcomCatalogEntryScreen<TResult>({
                 instrument: showInstrumentFields ? instrument : null,
                 expires_at: showExpiresAt ? (expiresAt || undefined) : undefined,
                 souche_kind: showSoucheKindSelector ? soucheKind : undefined,
+                client_order_ref: !hidePaymentSection ? (clientOrderRef.trim() || undefined) : undefined,
+                salesperson_id: !hidePaymentSection ? (salespersonId === '' ? undefined : salespersonId) : undefined,
+                delivery_date: showDeliveryDateField ? (deliveryDate || undefined) : undefined,
+                driver_info: showDeliveryDateField ? (driverInfo.trim() || undefined) : undefined,
+                transporter_name: showDeliveryDateField ? (transporterName.trim() || undefined) : undefined,
+                status: showDeliveryDateField ? blStatus : undefined,
+                avoir_allocations: (showAvoirFields || (showMixAvoirFields && avoirAllocations.length > 0)) ? avoirAllocations : undefined,
             });
             setShowConfirmModal(false);
             if (renderSuccess) setResult(created);
@@ -371,6 +471,15 @@ export function GcomCatalogEntryScreen<TResult>({
         setNotes('');
         setExpiresAt('');
         setSoucheKind('declared');
+        setClientOrderRef('');
+        setSalespersonId('');
+        setDeliveryDate('');
+        setDriverInfo('');
+        setTransporterName('');
+        setBlStatus('in_transit');
+        setInstrumentBankOther(false);
+        setAvoirAllocations([]);
+        setMixAvoirEnabled(false);
         setShowOnlySelected(false);
         loadCatalog(catalogQuery, 1, false); // refresh stock levels
         setTimeout(() => searchInputRef.current?.focus(), 0);
@@ -494,10 +603,14 @@ export function GcomCatalogEntryScreen<TResult>({
                     {/* Sale metadata */}
                     <div className="px-4 pt-3 pb-4 shrink-0 space-y-2">
                         <h3 className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider mb-1">Détails de la vente</h3>
-                        <div className="flex items-center gap-2 text-xs text-gray-600 bg-gray-50 rounded-lg px-3 py-2 border border-gray-100">
-                            <Calendar className="w-3.5 h-3.5 text-gray-400 shrink-0" />
-                            <span className="capitalize">{today}</span>
-                        </div>
+                        {/* BL has its own editable delivery-date field below — showing
+                            this generic read-only "today" row too was redundant there. */}
+                        {!showDeliveryDateField && (
+                            <div className="flex items-center gap-2 text-xs text-gray-600 bg-gray-50 rounded-lg px-3 py-2 border border-gray-100">
+                                <Calendar className="w-3.5 h-3.5 text-gray-400 shrink-0" />
+                                <span className="capitalize">{today}</span>
+                            </div>
+                        )}
                         <div className="flex items-center gap-2 text-xs text-gray-600 bg-gray-50 rounded-lg px-3 py-2 border border-gray-100">
                             <Warehouse className="w-3.5 h-3.5 text-gray-400 shrink-0" />
                             <div className="min-w-0">
@@ -505,6 +618,103 @@ export function GcomCatalogEntryScreen<TResult>({
                                 <p className="text-[10px] text-gray-400">Entrepôt central résolu automatiquement pour cette branche</p>
                             </div>
                         </div>
+
+                        {showDeliveryDateField && (
+                            <div className="flex items-center gap-2 bg-gray-50 rounded-lg px-3 py-2 border border-gray-100">
+                                <Calendar className="w-3.5 h-3.5 text-gray-400 shrink-0" />
+                                <input
+                                    type="date"
+                                    value={deliveryDate}
+                                    onChange={e => setDeliveryDate(e.target.value)}
+                                    autoComplete="off"
+                                    title="Date de livraison (optionnel — défaut aujourd'hui)"
+                                    className="w-full bg-transparent text-xs text-gray-700 focus:outline-none"
+                                />
+                                {!deliveryDate && <span className="text-[10px] text-gray-400 shrink-0">auj. par défaut</span>}
+                            </div>
+                        )}
+
+                        {showDeliveryDateField && (
+                            <div className="flex items-center gap-2 bg-gray-50 rounded-lg px-3 py-2 border border-gray-100">
+                                <Truck className="w-3.5 h-3.5 text-gray-400 shrink-0" />
+                                <input
+                                    value={driverInfo}
+                                    onChange={e => setDriverInfo(e.target.value)}
+                                    placeholder="Chauffeur (optionnel)"
+                                    maxLength={150}
+                                    className="w-full bg-transparent text-xs text-gray-700 placeholder:text-gray-400 focus:outline-none"
+                                />
+                            </div>
+                        )}
+
+                        {showDeliveryDateField && (
+                            <div className="flex items-center gap-2 bg-gray-50 rounded-lg px-3 py-2 border border-gray-100">
+                                <Building2 className="w-3.5 h-3.5 text-gray-400 shrink-0" />
+                                <input
+                                    value={transporterName}
+                                    onChange={e => setTransporterName(e.target.value)}
+                                    placeholder="Transporteur (optionnel)"
+                                    maxLength={150}
+                                    className="w-full bg-transparent text-xs text-gray-700 placeholder:text-gray-400 focus:outline-none"
+                                />
+                            </div>
+                        )}
+
+                        {showDeliveryDateField && (
+                            <div className="flex items-center gap-1.5">
+                                {([
+                                    { value: 'in_transit' as const, label: 'En transit', icon: Truck },
+                                    { value: 'delivered' as const, label: 'Livré directement', icon: CheckCircle2 },
+                                ]).map(opt => (
+                                    <button
+                                        key={opt.value}
+                                        onClick={() => setBlStatus(opt.value)}
+                                        className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border text-[11px] font-medium transition-colors ${
+                                            blStatus === opt.value
+                                                ? 'bg-sage-600 border-sage-600 text-white'
+                                                : 'bg-white border-gray-200 text-gray-600 hover:bg-gray-50'
+                                        }`}
+                                    >
+                                        <opt.icon className="w-3.5 h-3.5" /> {opt.label}
+                                    </button>
+                                ))}
+                            </div>
+                        )}
+                        {showDeliveryDateField && blStatus === 'delivered' && (
+                            <p className="flex items-center gap-1.5 text-[10px] text-gray-400">
+                                <Info className="w-3 h-3 shrink-0" />
+                                Pour un retrait comptoir/dépôt — le client charge la marchandise sur place, pas de tournée réelle. Facturable immédiatement.
+                            </p>
+                        )}
+
+                        {!hidePaymentSection && (
+                            <div className="flex items-center gap-2 bg-gray-50 rounded-lg px-3 py-2 border border-gray-100">
+                                <Hash className="w-3.5 h-3.5 text-gray-400 shrink-0" />
+                                <input
+                                    value={clientOrderRef}
+                                    onChange={e => setClientOrderRef(e.target.value)}
+                                    placeholder="Réf. commande client (optionnel)"
+                                    className="w-full bg-transparent text-xs text-gray-700 placeholder:text-gray-400 focus:outline-none"
+                                />
+                            </div>
+                        )}
+
+                        {!hidePaymentSection && (
+                            <div className="flex items-center gap-2 bg-gray-50 rounded-lg px-3 py-2 border border-gray-100">
+                                <User className="w-3.5 h-3.5 text-gray-400 shrink-0" />
+                                <select
+                                    value={salespersonId}
+                                    onChange={e => setSalespersonId(e.target.value ? parseInt(e.target.value, 10) : '')}
+                                    title="Commercial (optionnel — vide = vous-même)"
+                                    className="w-full bg-transparent text-xs text-gray-700 focus:outline-none"
+                                >
+                                    <option value="">Commercial : vous-même</option>
+                                    {representatives.map((r: GcomRepresentative) => (
+                                        <option key={r.id} value={r.id}>{r.name}{r.code ? ` (${r.code})` : ''}</option>
+                                    ))}
+                                </select>
+                            </div>
+                        )}
                     </div>
                 </div>
             }
@@ -684,6 +894,17 @@ export function GcomCatalogEntryScreen<TResult>({
                                         </div>
                                         )}
 
+                                        {/* Deferred-settlement flows (BC/BL — not Comptoir) only record the
+                                            method here; nothing is charged and no cheque/effet details are
+                                            collected until convert-to-invoice, which confused testers into
+                                            thinking a payment was being taken at this step. */}
+                                        {!hidePaymentSection && !needsInstrumentAtSubmit && (
+                                            <p className="flex items-center gap-1.5 text-[10px] text-gray-400">
+                                                <Info className="w-3 h-3 shrink-0" />
+                                                Mode de règlement pré-sélectionné — les détails (N° chèque/effet, banque, échéance) seront saisis lors de la facturation, aucun encaissement n'a lieu à cette étape.
+                                            </p>
+                                        )}
+
                                         {showSoucheKindSelector && (
                                             <div className="flex items-center gap-1.5">
                                                 <span className="text-[10px] text-gray-400 mr-0.5">Souche :</span>
@@ -735,18 +956,72 @@ export function GcomCatalogEntryScreen<TResult>({
                                                     onChange={e => setInstrument(p => ({ ...p, due_date: e.target.value }))}
                                                     className="px-2 py-1.5 text-xs border border-gray-200 rounded-md focus:outline-none focus:ring-1 focus:ring-sage-400"
                                                 />
-                                                <input
-                                                    value={instrument.bank_name}
-                                                    onChange={e => setInstrument(p => ({ ...p, bank_name: e.target.value }))}
-                                                    className="px-2 py-1.5 text-xs border border-gray-200 rounded-md focus:outline-none focus:ring-1 focus:ring-sage-400"
-                                                    placeholder="Banque"
-                                                />
+                                                {banks.length > 0 && !instrumentBankOther ? (
+                                                    <select
+                                                        value={instrument.bank_name}
+                                                        onChange={e => {
+                                                            if (e.target.value === '__other__') { setInstrumentBankOther(true); setInstrument(p => ({ ...p, bank_name: '' })); }
+                                                            else setInstrument(p => ({ ...p, bank_name: e.target.value }));
+                                                        }}
+                                                        className="px-2 py-1.5 text-xs border border-gray-200 rounded-md focus:outline-none focus:ring-1 focus:ring-sage-400 bg-white"
+                                                    >
+                                                        <option value="">Banque</option>
+                                                        {banks.map(b => <option key={b.id} value={b.name}>{b.name}</option>)}
+                                                        <option value="__other__">Autre…</option>
+                                                    </select>
+                                                ) : (
+                                                    <input
+                                                        value={instrument.bank_name}
+                                                        onChange={e => setInstrument(p => ({ ...p, bank_name: e.target.value }))}
+                                                        className="px-2 py-1.5 text-xs border border-gray-200 rounded-md focus:outline-none focus:ring-1 focus:ring-sage-400"
+                                                        placeholder={banks.length > 0 ? 'Banque (saisie libre)' : 'Banque'}
+                                                    />
+                                                )}
                                                 <input
                                                     value={instrument.bank_account}
                                                     onChange={e => setInstrument(p => ({ ...p, bank_account: e.target.value }))}
                                                     className="px-2 py-1.5 text-xs border border-gray-200 rounded-md focus:outline-none focus:ring-1 focus:ring-sage-400"
                                                     placeholder="N° compte"
                                                 />
+                                            </div>
+                                        )}
+
+                                        {!hidePaymentSection && showAvoirFields && (
+                                            <div className="max-w-lg bg-amber-50/50 border border-amber-100 rounded-lg p-2.5">
+                                                <AvoirAllocationPicker
+                                                    partnerId={selectedPartner?.id ?? null}
+                                                    total={estimatedTTC}
+                                                    value={avoirAllocations}
+                                                    onChange={setAvoirAllocations}
+                                                />
+                                            </div>
+                                        )}
+
+                                        {/* Optional avoir mix (2026-08-20) — the avoir covers PART of the
+                                            total, this method settles the rest. Only offered where backend
+                                            actually accepts a remainder method. */}
+                                        {!hidePaymentSection && canMixAvoir && (
+                                            <div className="max-w-lg space-y-2">
+                                                <label className="flex items-center gap-2 text-xs text-gray-600 cursor-pointer">
+                                                    <input
+                                                        type="checkbox"
+                                                        checked={mixAvoirEnabled}
+                                                        onChange={e => { setMixAvoirEnabled(e.target.checked); if (!e.target.checked) setAvoirAllocations([]); }}
+                                                        className="rounded border-gray-300 text-sage-600 focus:ring-sage-400"
+                                                    />
+                                                    Appliquer un avoir en réduction du montant
+                                                </label>
+                                                {showMixAvoirFields && (
+                                                    <div className="bg-amber-50/50 border border-amber-100 rounded-lg p-2.5">
+                                                        <AvoirAllocationPicker
+                                                            partnerId={selectedPartner?.id ?? null}
+                                                            total={estimatedTTC}
+                                                            value={avoirAllocations}
+                                                            onChange={setAvoirAllocations}
+                                                            mode="partial"
+                                                        />
+                                                    </div>
+                                                )}
                                             </div>
                                         )}
 

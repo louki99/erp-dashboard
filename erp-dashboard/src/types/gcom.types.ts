@@ -13,7 +13,25 @@
 //    "sub" and "total"), and each invoice item's line total is `line_total`,
 //    not `total_amount`.
 
-export type GcomPaymentMethod = 'cash' | 'card' | 'credit' | 'cheque' | 'effet' | 'transfer';
+// 'avoir' added 2026-08-20 — NON_CASH_COMPENSATION in GcomSettlementClassifier,
+// no Treasury movement, no credit-limit check. Only meaningful (requires
+// `avoir_allocations`) at the 3 endpoints that actually settle a sale to an
+// invoice — POST /direct-invoices, orders/{order}/convert-to-invoice,
+// delivery-notes/{id}/convert-to-invoice. Accepted elsewhere (BC/BL creation)
+// only as a forward-looking hint, no allocation required there.
+export type GcomPaymentMethod = 'cash' | 'card' | 'credit' | 'cheque' | 'effet' | 'transfer' | 'avoir';
+
+// One or more credit notes funding a sale paid via payment_method: 'avoir'.
+// The sum must match the sale total EXACTLY — GCOM has no mixed/split payment
+// concept yet (avoir + another method on the same sale), confirmed 422:
+// "Avoir allocations total (X) must exactly match the sale total (Y) — mixed
+// avoir + another payment method is not supported yet." Each credit_note_id
+// must belong to the sale's own partner, be APPROVED, and have enough
+// remaining_amount — all three verified live as separate 422s.
+export interface GcomAvoirAllocation {
+    credit_note_id: number;
+    amount: number;
+}
 
 // `?price_mode=` on the BC/Devis/BL pdf endpoints — controls only the per-line
 // unit price/amount column basis; the HT/TVA/TTC totals block at the bottom
@@ -48,6 +66,11 @@ export interface GcomDirectInvoicePayload {
     payment_term_id?: number | null;
     instrument?: GcomInstrumentInput | null;
     souche_kind?: GcomSoucheKind | null;
+    // Both 2026-08-27 — see GcomCreateOrderPayload's comment, same semantics.
+    client_order_ref?: string | null;
+    salesperson_id?: number | null;
+    // Required when payment_method is 'avoir' (2026-08-20) — see GcomAvoirAllocation.
+    avoir_allocations?: GcomAvoirAllocation[];
 }
 
 export interface GcomInvoiceItem {
@@ -143,6 +166,8 @@ export interface GcomInvoice {
     // was explicitly sent or auto-derived from the PaymentTerm.
     souche_kind?: GcomSoucheKind;
     token_serie_id?: number;
+    // 2026-08-27 — mirrored automatically from the underlying order.
+    client_order_ref?: string | null;
 }
 
 export interface GcomDirectInvoiceResponse {
@@ -195,22 +220,118 @@ export interface GcomCreditNoteItem {
     return_reason?: GcomReturnReason | null;
 }
 
+// `refund_method`/`refund_reference`/`refund_processed_at` (2026-08-20) — a
+// credit note's `refund_amount` (the part that couldn't be netted against its
+// own invoice's remaining debt, e.g. an avoir on an already-fully-paid cash
+// sale) previously had no resolution path at all: visible as "money owed
+// back" but nothing let staff mark it as actually paid out. `POST
+// /credit-notes/{id}/redeem` sets these three fields; `refund_amount` itself
+// stays unchanged (a fixed historical fact).
+//
+// `remaining_amount`/`consumed_amount`/`imputed_at` added the same day once
+// `redeem` became partial (`amount?`) and a second consumer — paying for a
+// NEW sale via `payment_method: 'avoir'` — was introduced: both draw from the
+// same `remaining_amount` pool so an avoir can never be spent twice.
+// `refund_processed_at` is set only when `remaining_amount` reaches exactly
+// `0` (verified live: a partial `redeem` call left it `null`, only the call
+// that brought `remaining_amount` to 0 set it) — treat it as "fully
+// resolved", not "at least one event happened". `refund_method`/
+// `refund_reference` mirror the same rule — only the closing event updates
+// them, a partial redeem in between leaves them untouched (also verified
+// live, not documented explicitly by backend). `consumed_amount` only
+// tracks the avoir-as-payment channel specifically — a cash `redeem` reduces
+// `remaining_amount` but does NOT increase `consumed_amount` (verified live:
+// two `redeem` calls draining a note to 0 left `consumed_amount` at `0.00`
+// throughout), so don't read `consumed_amount` as "total amount spent so
+// far" — use `refund_amount - remaining_amount` for that instead.
+//
+// KNOWN DATA GAP (flagged to backend, not yet fixed as of 2026-08-20): the
+// migration backfilling these three columns set `remaining_amount =
+// refund_amount` unconditionally, including for credit notes that already
+// had `refund_processed_at` set (cash-redeemed before this migration ran) —
+// live-reproduced on ORBIS. Those rows now read as "fully available again"
+// under the new field even though the money was already paid out once,
+// which is exactly the double-credit risk this whole feature exists to
+// prevent. Don't trust `remaining_amount` as authoritative for any credit
+// note created/redeemed before 2026-08-20 until backend confirms a backfill
+// fix — new credit notes created after this date are unaffected (verified
+// live with a fresh note end-to-end).
+export type GcomRefundMethod = 'cash' | 'cheque' | 'effet' | 'card' | 'transfer';
+
 export interface GcomCreditNote {
     id: number;
     // "AVR..." prefix — real agency-series number (2026-08-18 fix, was 500ing
     // before due to a series-resolution bug, now fixed).
     credit_note_number?: string;
+    credit_note_type?: 'financial' | 'return';
     status: GcomCreditNoteStatus;
+    order_id?: number;
+    invoice_id?: number;
+    partner_id?: number;
+    branch_id?: number;
+    subtotal?: number | string;
+    tax_amount?: number | string;
     total_amount: number | string;
     refund_amount: number | string;
+    refund_method?: GcomRefundMethod | null;
+    refund_reference?: string | null;
+    refund_processed_at?: string | null;
+    // The live, authoritative spendable balance — see the comment above
+    // GcomRefundMethod for the full explanation and the known backfill gap.
+    remaining_amount?: number | string;
+    consumed_amount?: number | string;
+    imputed_at?: string | null;
     reason?: string;
+    return_reason?: GcomReturnReason | null;
+    notes?: string | null;
     created_at?: string;
     items?: GcomCreditNoteItem[];
+    // Only present on the global list/detail endpoints (§8, 2026-08-20) — the
+    // per-invoice list (`GET /invoices/{id}/credit-notes`) doesn't nest these
+    // since the caller already has both from context.
+    invoice?: { id: number; invoice_number?: string; total_amount: number | string; status: GcomInvoiceStatus };
+    partner?: { id: number; name: string; code?: string };
 }
 
 export interface GcomCreditNotesListResponse {
     success: boolean;
     credit_notes: GcomCreditNote[];
+}
+
+// ─── Global Avoirs (2026-08-20) ────────────────────────────────────────────
+
+export interface GcomCreditNotesGlobalListFilters {
+    partner_id?: number;
+    status?: GcomCreditNoteStatus;
+    branch_id?: number;
+    from?: string; // YYYY-MM-DD
+    to?: string; // YYYY-MM-DD
+    per_page?: number;
+    page?: number;
+}
+
+export interface GcomCreditNotesGlobalListResponse {
+    success: boolean;
+    credit_notes: GcomPaginator<GcomCreditNote>;
+}
+
+export interface GcomCreditNoteDetailResponse {
+    success: boolean;
+    credit_note: GcomCreditNote;
+}
+
+export interface GcomRedeemCreditNotePayload {
+    method: GcomRefundMethod;
+    reference?: string;
+    // 2026-08-20 — partial redeem, draws from remaining_amount (not
+    // refund_amount directly). Omit for the full remaining balance.
+    amount?: number;
+}
+
+export interface GcomRedeemCreditNoteResponse {
+    success: boolean;
+    message?: string;
+    credit_note: GcomCreditNote;
 }
 
 // ─── Returns architecture (§9bis, 2026-08-18) ─────────────────────────────
@@ -431,6 +552,12 @@ export interface GcomOrder {
     invoices?: GcomInvoice[];
     delivery_notes?: GcomDeliveryNoteRef[];
     financial_metadata?: GcomOrderFinancialMetadata;
+    // 2026-08-27 — customer's own PO/reference number, separate from notes.
+    client_order_ref?: string | null;
+    // order.sales_rep_id never appears as a bare top-level key (backend's own
+    // note) — only reachable nested here, regardless of which GCOM endpoint
+    // returned the order.
+    salesperson_data?: { id: number; salesperson_id: number } | null;
 }
 
 export interface GcomCreateOrderPayload {
@@ -439,6 +566,13 @@ export interface GcomCreateOrderPayload {
     payment_method: GcomPaymentMethod;
     payment_term_id?: number | null;
     notes?: string;
+    // Both 2026-08-27. client_order_ref lives on orders.client_order_ref and
+    // is auto-mirrored onto any delivery_notes/invoices created later from
+    // this order — no need to resend at convert-to-bl/convert-to-invoice.
+    // salesperson_id overrides the "creator = salesperson" default, for a
+    // back-office user entering a sale on behalf of a field salesperson.
+    client_order_ref?: string | null;
+    salesperson_id?: number | null;
 }
 
 export interface GcomOrderListFilters {
@@ -487,6 +621,16 @@ export interface GcomConvertToBlResponse {
 export interface GcomConvertToBlPayload {
     delivery_date?: string; // YYYY-MM-DD
     payment_method?: GcomPaymentMethod;
+    // Both 2026-08-29 — free text, max 150 chars, display/traceability only.
+    driver_info?: string | null;
+    transporter_name?: string | null;
+    // 2026-08-30 — optional, default 'in_transit'. 'delivered' is for a
+    // counter/depot pickup (client loads goods right there, no real transit
+    // leg) — sets delivered_at=now() immediately, skips confirm-delivery
+    // entirely (calling it afterwards 422s, already delivered). 'draft' is
+    // NOT accepted (422) — a real, currently unbuilt design gap, see the
+    // doc's §18 backlog note — never send it speculatively.
+    status?: 'in_transit' | 'delivered';
 }
 
 export interface GcomCancelOrderPayload {
@@ -525,7 +669,12 @@ export interface GcomAddOrderLinePayload {
 // (product_name/product_code included). Fall back to `Produit #{id}` in the
 // UI. (2) the top-level `invoice_id` is a bare number, not a nested invoice
 // object — no `invoice_number` available here, only the id.
-export type GcomBlStatus = 'delivered' | 'cancelled';
+// 'in_transit' added 2026-08-29 ("FEU VERT TOTAL: CYCLE BL IN_TRANSIT ->
+// DELIVERED") — a BL created via flow #4/#5 is now born in_transit, not
+// delivered; only confirm-delivery moves it to delivered, the only state
+// it can be invoiced from. Flow #6 (Comptoir/direct-invoices) has no BL
+// at all, unaffected.
+export type GcomBlStatus = 'in_transit' | 'delivered' | 'cancelled';
 
 export interface GcomDeliveryNoteItem {
     id: number;
@@ -550,6 +699,14 @@ export interface GcomDeliveryNote {
     items?: GcomDeliveryNoteItem[];
     partner?: { id: number; name: string; code?: string };
     order?: { id: number; order_code?: string; bc_status?: string; financial_metadata?: GcomOrderFinancialMetadata };
+    // 2026-08-27 — mirrored automatically from the underlying order.
+    client_order_ref?: string | null;
+    // All 3 added 2026-08-29 — display/traceability only, not a Driver FK
+    // (GCOM still has zero field-sales/fleet dependency). delivered_at is
+    // never set at BL creation anymore — only confirm-delivery sets it.
+    driver_info?: string | null;
+    transporter_name?: string | null;
+    delivered_at?: string | null;
 }
 
 export interface GcomDeliveryNoteListFilters {
@@ -583,6 +740,19 @@ export interface GcomCreateDeliveryNotePayload {
     payment_method: GcomPaymentMethod;
     payment_term_id?: number | null;
     notes?: string;
+    // All 3 added 2026-08-27 — see GcomCreateOrderPayload's comment for
+    // client_order_ref/salesperson_id (same semantics, applies to the
+    // transparently-created order underneath this BL). delivery_date
+    // (YYYY-MM-DD) defaults to today if omitted — previously this endpoint
+    // had no way to set it at all (always silently forced today).
+    delivery_date?: string;
+    client_order_ref?: string | null;
+    salesperson_id?: number | null;
+    // Both 2026-08-29 — free text, max 150 chars, display/traceability only.
+    driver_info?: string | null;
+    transporter_name?: string | null;
+    // 2026-08-30 — see GcomConvertToBlPayload's comment, same semantics.
+    status?: 'in_transit' | 'delivered';
 }
 
 export interface GcomCancelDeliveryNotePayload {
@@ -818,6 +988,46 @@ export interface GcomAccountStatementResponse {
     statement: GcomAccountStatement;
 }
 
+// Relevé de Compte Global (built 2026-08-30) — company-wide, one row per
+// partner, same shape as GcomAccountStatement above (mass-aggregated with a
+// fixed ~6 GROUP BY queries server-side, not a per-partner loop over
+// statement() — that would N+1 on a large client base). No PDF for this
+// list — row click drills into the existing per-partner Relevé de Compte
+// tab (ReglementPage.tsx's ?partnerId=&tab=ledger deep link).
+export interface GcomPartnerStatementRow {
+    partner_id: number;
+    partner_name: string;
+    partner_code: string;
+    total_debit: number;
+    total_credit: number;
+    current_balance: number;
+    pending_instruments_total: number;
+    credit_limit: number;
+    available_credit: number;
+}
+
+export interface GcomPartnerStatementsListFilters {
+    branch_id?: number;
+    channel?: string;
+    min_balance?: number;
+    // Default false server-side — clients with zero GCOM activity (no
+    // partner_credit_states row) are excluded unless this is set, to avoid
+    // silently auto-provisioning credit-state rows for hundreds of clients
+    // on every call (the per-partner statement() endpoint does auto-create
+    // one on demand; this bulk endpoint deliberately does not).
+    // Send 1 (not `true`) or omit the key: axios serializes a JS `false` as
+    // the literal string "false" in query params, which Laravel's `boolean`
+    // validation rule rejects with a 422.
+    include_zero_balance?: 1;
+    per_page?: number;
+    page?: number;
+}
+
+export interface GcomPartnerStatementsListResponse {
+    success: boolean;
+    statements: GcomPaginator<GcomPartnerStatementRow>;
+}
+
 export type GcomLedgerEntryType = 'invoice' | 'payment' | 'credit_note';
 
 export interface GcomLedgerEntry {
@@ -841,4 +1051,75 @@ export interface GcomLedgerResponse {
     success: boolean;
     partner_id: number;
     ledger: GcomLedgerEntry[];
+}
+
+// ─── Représentants (§18, built 2026-08-27/28) ─────────────────────────────
+// A représentant is a plain User holding the gcom_representative Spatie
+// role — thin GCOM-scoped façade over User::create()/assignRole(), gated
+// manage-gcom, tenant-scoped to the acting admin's own company_id. This is
+// now the ONLY valid source for the 3 sale-creation endpoints' salesperson_id
+// (App\Rules\IsGcomRepresentative, 422 for anyone else) — do not source that
+// picker from a generic employees/commercials list anymore.
+export interface GcomRepresentative {
+    id: number;
+    name: string;
+    email: string;
+    phone?: string | null;
+    code?: string | null;
+    branch_id?: number | null;
+    company_id?: number;
+    is_active: boolean;
+    // Only present on GET .../representatives/{user} (the show endpoint),
+    // not on the list.
+    roles?: string[];
+    permissions?: string[];
+}
+
+export interface GcomRepresentativesListFilters {
+    search?: string;
+    branch_id?: number;
+    is_active?: boolean;
+    per_page?: number;
+    page?: number;
+}
+
+export interface GcomRepresentativesListResponse {
+    success: boolean;
+    representatives: GcomPaginator<GcomRepresentative>;
+}
+
+export interface GcomRepresentativeShowResponse {
+    success: boolean;
+    representative: GcomRepresentative;
+}
+
+// company_id always defaults to the acting admin's own — never settable here.
+export interface GcomCreateRepresentativePayload {
+    name: string;
+    email: string;
+    password: string;
+    code?: string;
+    branch_id?: number;
+    phone?: string;
+}
+
+export interface GcomUpdateRepresentativePayload {
+    branch_id?: number;
+    phone?: string;
+    is_active?: boolean;
+}
+
+export interface GcomRepresentativeMutationResponse {
+    success: boolean;
+    message?: string;
+    representative: GcomRepresentative;
+}
+
+// DELETE removes the gcom_representative role only — the user account
+// itself is never deleted (any BC/BL/Facture already attributed via
+// sales_rep_id keeps that history, the person just stops being selectable
+// for new ones).
+export interface GcomRepresentativeRemoveResponse {
+    success: boolean;
+    message?: string;
 }

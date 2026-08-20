@@ -1,10 +1,11 @@
 import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import type { ICellRendererParams, ValueGetterParams } from 'ag-grid-community';
 import type { AgGridReact } from 'ag-grid-react';
 import {
     Landmark, Search, X, Loader2, RefreshCw, Plus,
     Building2, FileText, Wallet, History, TrendingUp, TrendingDown, Scale,
-    Upload, CheckCircle2, Ban, AlertTriangle, Lock, RotateCcw,
+    Upload, CheckCircle2, Ban, AlertTriangle, Lock, RotateCcw, Maximize2, Minimize2,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 
@@ -15,7 +16,7 @@ import { DataGrid } from '@/components/common/DataGrid';
 import { ReglementForm } from '@/components/gcom/ReglementForm';
 
 import { gcomApi } from '@/services/api/gcomApi';
-import { getPartners, getPaymentTerms } from '@/services/api/partnerApi';
+import { getPartners, getPartner, getPaymentTerms } from '@/services/api/partnerApi';
 import type { Partner, PaymentTermOption } from '@/types/partner.types';
 import type {
     GcomOpenInvoice, GcomPayment, GcomFinancialInstrument, GcomLedgerEntry,
@@ -57,14 +58,17 @@ const InstrumentStatusBadge = ({ status }: { status: GcomInstrumentStatus }) => 
     return <span className={`inline-flex items-center gap-1.5 text-[11px] font-medium ${m.text}`}><span className={`w-1.5 h-1.5 rounded-full ${m.dot}`} />{m.label}</span>;
 };
 
-const LEDGER_TYPE_META: Record<GcomLedgerEntryType, { label: string; cls: string }> = {
-    invoice: { label: 'Facture', cls: 'bg-gray-100 text-gray-700' },
-    payment: { label: 'Paiement', cls: 'bg-emerald-50 text-emerald-700' },
-    credit_note: { label: 'Avoir', cls: 'bg-indigo-50 text-indigo-700' },
+// Dot+text, no filled background — matches INVOICE_STATUS_META/
+// INSTRUMENT_STATUS_META's style below (established GCOM convention, no
+// filled-pill badges).
+const LEDGER_TYPE_META: Record<GcomLedgerEntryType, { label: string; dot: string; text: string }> = {
+    invoice: { label: 'Facture', dot: 'bg-gray-400', text: 'text-gray-600' },
+    payment: { label: 'Paiement', dot: 'bg-emerald-500', text: 'text-emerald-700' },
+    credit_note: { label: 'Avoir', dot: 'bg-indigo-500', text: 'text-indigo-700' },
 };
 const LedgerTypeBadge = ({ type }: { type: GcomLedgerEntryType }) => {
-    const m = LEDGER_TYPE_META[type] ?? { label: type, cls: 'bg-gray-100 text-gray-700' };
-    return <span className={`inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold ${m.cls}`}>{m.label}</span>;
+    const m = LEDGER_TYPE_META[type] ?? { label: type, dot: 'bg-gray-400', text: 'text-gray-500' };
+    return <span className={`inline-flex items-center gap-1.5 text-[11px] font-medium ${m.text}`}><span className={`w-1.5 h-1.5 rounded-full ${m.dot}`} />{m.label}</span>;
 };
 
 // ─── Header KPI cards ───────────────────────────────────────────────────────
@@ -102,6 +106,8 @@ const KpiCard: React.FC<{
 // ─── Component ───────────────────────────────────────────────────────────────
 
 export default function ReglementPage() {
+    const [searchParams] = useSearchParams();
+
     // ── Client list (sidebar) ────────────────────────────────────────────────
     const [clients, setClients] = useState<Partner[]>([]);
     const [clientsLoading, setClientsLoading] = useState(false);
@@ -230,6 +236,29 @@ export default function ReglementPage() {
     const [ledgerFrom, setLedgerFrom] = useState('');
     const [ledgerTo, setLedgerTo] = useState('');
     const [partnerTerms, setPartnerTerms] = useState<PaymentTermOption[]>([]);
+
+    // Fullscreen toggle for the active tab's content (Factures Ouvertes/
+    // Chèques & Effets/Historique des Paiements/Relevé de Compte, whichever
+    // is selected) — same Maximize2/Minimize2, fixed inset-0, ESC-to-close
+    // pattern established in GcomCatalogEntryScreen/PortefeuilleInstrumentsPage/
+    // RelevesComptePage.
+    const [isTabExpanded, setIsTabExpanded] = useState(false);
+    useEffect(() => {
+        if (!isTabExpanded) return;
+        const handler = (e: KeyboardEvent) => { if (e.key === 'Escape') setIsTabExpanded(false); };
+        window.addEventListener('keydown', handler);
+        return () => window.removeEventListener('keydown', handler);
+    }, [isTabExpanded]);
+    // AG Grid's flex columns size themselves against the container width at
+    // mount time (DataGrid's onGridReady) — an already-mounted grid doesn't
+    // automatically re-fit when the fixed-position wrapper's width changes
+    // out from under it, which left a large empty gap to the right of the
+    // grid after toggling. Force a re-fit once the layout has settled.
+    const gridApiRef = useRef<AgGridReact>(null);
+    useEffect(() => {
+        const raf = requestAnimationFrame(() => gridApiRef.current?.api?.sizeColumnsToFit());
+        return () => cancelAnimationFrame(raf);
+    }, [isTabExpanded, activeTab]);
 
     const loadOpenInvoices = useCallback(async (partnerId: number) => {
         setLoadingInvoices(true);
@@ -430,6 +459,25 @@ export default function ReglementPage() {
             .then(res => setPartnerTerms(res.partner?.paymentTerms ?? res.partner?.payment_terms ?? res.availableTerms ?? res.available_terms ?? []))
             .catch(() => setPartnerTerms([]));
     };
+
+    // Deep-link from another GCOM screen (e.g. the global Relevé de Compte
+    // list) — ?partnerId=123 selects that client directly, optional
+    // &tab=ledger jumps straight to the Relevé de Compte tab (selectPartner
+    // itself always resets to 'invoices' first; setActiveTab after it in the
+    // same synchronous block wins, same batching every other selectXxx here
+    // relies on).
+    useEffect(() => {
+        const partnerIdParam = searchParams.get('partnerId');
+        const partnerId = partnerIdParam ? parseInt(partnerIdParam, 10) : NaN;
+        if (Number.isNaN(partnerId)) return;
+        getPartner(partnerId)
+            .then(res => {
+                selectPartner(res.partner);
+                if (searchParams.get('tab') === 'ledger') setActiveTab('ledger');
+            })
+            .catch(() => toast.error('Client introuvable'));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []);
 
     const refresh = () => {
         if (!selectedPartner) return;
@@ -765,23 +813,41 @@ export default function ReglementPage() {
                                         value={fmtMAD(pendingInstrumentsTotal)}
                                     />
                                 </div>
-                                <SageTabs
-                                    tabs={[
-                                        { id: 'invoices', label: 'Factures Ouvertes', icon: FileText },
-                                        { id: 'instruments', label: 'Chèques & Effets', icon: Wallet },
-                                        { id: 'payments', label: 'Historique des Paiements', icon: History },
-                                        { id: 'ledger', label: 'Relevé de Compte', icon: History },
-                                    ]}
-                                    activeTabId={activeTab}
-                                    onTabChange={id => setActiveTab(id as typeof activeTab)}
-                                    className="shadow-none px-0"
-                                />
                             </div>
 
-                            <div className="flex-1 min-h-0 flex flex-col p-6">
+                            {/* Tabs + active tab's content — both go fullscreen together so
+                                the user can still switch tabs while maximized, not just stare
+                                at whichever table was active when they clicked the toggle. */}
+                            <div className={isTabExpanded ? 'fixed inset-0 z-50 bg-white flex flex-col' : 'flex-1 min-h-0 flex flex-col'}>
+                                <div className="shrink-0 bg-white border-b border-gray-200 px-6 pt-2">
+                                    <div className="flex items-end gap-2">
+                                        <div className="flex-1 min-w-0">
+                                            <SageTabs
+                                                tabs={[
+                                                    { id: 'invoices', label: 'Factures Ouvertes', icon: FileText },
+                                                    { id: 'instruments', label: 'Chèques & Effets', icon: Wallet },
+                                                    { id: 'payments', label: 'Historique des Paiements', icon: History },
+                                                    { id: 'ledger', label: 'Relevé de Compte', icon: History },
+                                                ]}
+                                                activeTabId={activeTab}
+                                                onTabChange={id => setActiveTab(id as typeof activeTab)}
+                                                className="shadow-none px-0"
+                                            />
+                                        </div>
+                                        <button
+                                            onClick={() => setIsTabExpanded(v => !v)}
+                                            title={isTabExpanded ? 'Réduire' : 'Plein écran'}
+                                            className="mb-1.5 p-2 text-gray-500 hover:text-sage-600 hover:bg-white border border-gray-200 rounded-lg transition-colors shrink-0"
+                                        >
+                                            {isTabExpanded ? <Minimize2 className="w-4 h-4" /> : <Maximize2 className="w-4 h-4" />}
+                                        </button>
+                                    </div>
+                                </div>
+
+                                <div className="flex-1 min-h-0 flex flex-col p-6">
                                 {activeTab === 'invoices' && (
                                     <div className="flex-1 min-h-0">
-                                        <DataGrid rowData={openInvoices} columnDefs={invoicesColumnDefs} loading={loadingInvoices} pagination paginationPageSize={20} />
+                                        <DataGrid ref={gridApiRef} rowData={openInvoices} columnDefs={invoicesColumnDefs} loading={loadingInvoices} pagination paginationPageSize={20} />
                                     </div>
                                 )}
 
@@ -807,7 +873,7 @@ export default function ReglementPage() {
                                             ))}
                                         </div>
                                         <div className="flex-1 min-h-0">
-                                            <DataGrid rowData={displayedInstruments} columnDefs={instrumentsColumnDefs} loading={loadingInstruments} pagination paginationPageSize={20} />
+                                            <DataGrid ref={gridApiRef} rowData={displayedInstruments} columnDefs={instrumentsColumnDefs} loading={loadingInstruments} pagination paginationPageSize={20} />
                                         </div>
                                     </div>
                                 )}
@@ -815,7 +881,7 @@ export default function ReglementPage() {
                                 {activeTab === 'payments' && (
                                     <div className="flex-1 min-h-0 flex flex-col">
                                         <div className="flex-1 min-h-0">
-                                            <DataGrid rowData={payments} columnDefs={paymentsColumnDefs} loading={loadingPayments} pagination paginationPageSize={20} />
+                                            <DataGrid ref={gridApiRef} rowData={payments} columnDefs={paymentsColumnDefs} loading={loadingPayments} pagination paginationPageSize={20} />
                                         </div>
                                     </div>
                                 )}
@@ -837,10 +903,11 @@ export default function ReglementPage() {
                                             </button>
                                         </div>
                                         <div className="flex-1 min-h-0">
-                                            <DataGrid rowData={ledger} columnDefs={ledgerColumnDefs} loading={loadingLedger} pagination paginationPageSize={20} />
+                                            <DataGrid ref={gridApiRef} rowData={ledger} columnDefs={ledgerColumnDefs} loading={loadingLedger} pagination paginationPageSize={20} />
                                         </div>
                                     </div>
                                 )}
+                                </div>
                             </div>
                         </div>
                     )}

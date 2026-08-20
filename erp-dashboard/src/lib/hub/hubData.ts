@@ -7,7 +7,7 @@ import {
     Target, AlertTriangle, Import, GitBranch,
     Calculator, Globe, Cog, FileSearch, RotateCcw, ScanLine, Box,
     Activity, ShieldAlert, HardDrive, Trash2, CalendarClock,
-    Star, ListTodo, ShoppingCart, Hash, Key, Radio, Landmark, Wallet,
+    Star, ListTodo, ShoppingCart, Hash, Key, Radio, Landmark, Wallet, Headset, Scale,
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 
@@ -30,6 +30,10 @@ export interface HubProcess {
     icon: LucideIcon;
     actions: HubAction[];
     permission?: string;
+    // No process sets this today (only BusinessDomain does) — declared so
+    // hubUtils.ts's filterDomainContent() can read it optionally without a
+    // type error, in case per-process role gating is ever actually needed.
+    requiredRole?: string[];
 }
 
 export interface BusinessDomain {
@@ -516,11 +520,16 @@ export const BUSINESS_DOMAINS: BusinessDomain[] = [
         icon: ShoppingCart,
         color: 'emerald',
         permission: 'manage-gcom',
+        // Grouped by function (2026-08-19) — was one flat 10-item list under
+        // a single "Ventes & Facturation" process, hard to scan. No "Achat"
+        // group exists because GCOM has no purchasing/achat flow today (it's
+        // a pure sales/B2B module, see docs/modules/28-gcom.md's own framing)
+        // — don't add one without a real feature behind it.
         processes: [
             {
                 id: 'gcom-ventes',
-                label: 'Ventes & Facturation',
-                description: 'Cycle complet — comptoir, BC, BL, règlement et consultation facture',
+                label: 'Ventes',
+                description: 'Cycle complet — devis, comptoir, BC, BL et facturation',
                 route: '/gcom/comptoir',
                 icon: ShoppingCart,
                 actions: [
@@ -528,10 +537,49 @@ export const BUSINESS_DOMAINS: BusinessDomain[] = [
                     { id: 'gcom-comptoir',  label: 'Comptoir',          route: '/gcom/comptoir',       icon: Calculator    },
                     { id: 'gcom-bc',        label: 'Bons de Commande',  route: '/gcom/bons-commande',  icon: ClipboardList },
                     { id: 'gcom-bl',        label: 'Bons de Livraison', route: '/gcom/bons-livraison', icon: Truck         },
-                    { id: 'gcom-reglement', label: 'Règlement',         route: '/gcom/reglement',      icon: Banknote      },
                     { id: 'gcom-factures',  label: 'Factures',          route: '/gcom/factures',       icon: FileText      },
-                    { id: 'gcom-treasury',  label: 'Trésorerie Agence', route: '/finance/journals?type=BRANCH_CAISSE', icon: Landmark },
+                ],
+            },
+            {
+                id: 'gcom-clients',
+                label: 'Clients & Représentants',
+                description: 'Fiches clients et gestion des commerciaux (rôle gcom_representative)',
+                route: '/gcom/partners',
+                icon: Users,
+                actions: [
+                    { id: 'gcom-partners', label: 'Clients', route: '/gcom/partners', icon: Users },
+                    { id: 'gcom-representants', label: 'Représentants', route: '/gcom/representants', icon: Headset },
+                    { id: 'gcom-releves-compte', label: 'Relevé de Compte Global', route: '/gcom/releves-compte', icon: Scale },
+                ],
+            },
+            {
+                id: 'gcom-tresorerie',
+                label: 'Trésorerie & Finance',
+                description: 'Règlements, caisses d\'agence et portefeuille chèques/effets',
+                route: '/gcom/reglement',
+                icon: Banknote,
+                actions: [
+                    { id: 'gcom-reglement', label: 'Règlement',         route: '/gcom/reglement',      icon: Banknote      },
+                    { id: 'gcom-treasury', label: 'Trésorerie Agence', route: '/finance/journals?type=BRANCH_CAISSE', icon: Landmark },
                     { id: 'gcom-instruments', label: 'Chèques & Effets', route: '/gcom/instruments', icon: Wallet },
+                    { id: 'gcom-avoirs', label: 'Avoirs', route: '/gcom/avoirs', icon: RotateCcw },
+                ],
+            },
+            {
+                // Same base-module screens as "Articles & Produits" in
+                // menuData.ts (permission: admin.master.products, not
+                // manage-gcom) — reused, not duplicated. GCOM sales/stock
+                // itself reads from telesalesApi.catalog.getProducts, never
+                // straight from /products, but a back-office admin still
+                // needs these to actually manage the catalog/TVA rates.
+                id: 'gcom-catalogue',
+                label: 'Catalogue & Référentiel',
+                description: 'Produits et master data (marques, catégories, unités, TVA, fournisseurs)',
+                route: '/products',
+                icon: Package,
+                actions: [
+                    { id: 'gcom-products', label: 'Catalogue Produits', route: '/products', icon: Package },
+                    { id: 'gcom-products-master-data', label: 'Master Data Produits (TVA, marques…)', route: '/products/master-data', icon: Database },
                 ],
             },
         ],

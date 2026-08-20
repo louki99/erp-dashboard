@@ -13,6 +13,8 @@ interface ConfirmationModalProps {
     variant?: 'danger' | 'warning' | 'info' | 'sage';
     children?: React.ReactNode;
     isLoading?: boolean;
+    /** Starting width in px — still freely drag-resizable from there. Defaults to 448 (max-w-md), for content-heavy modals (e.g. an embedded table) pass a wider value. */
+    initialWidth?: number;
 }
 
 export const ConfirmationModal: React.FC<ConfirmationModalProps> = ({
@@ -25,10 +27,11 @@ export const ConfirmationModal: React.FC<ConfirmationModalProps> = ({
     cancelText = 'Cancel',
     variant = 'danger',
     children,
-    isLoading = false
+    isLoading = false,
+    initialWidth = 448,
 }) => {
     const dragControls = useDragControls();
-    const [size, setSize] = useState({ width: 448, height: 'auto' }); // 448px is max-w-md
+    const [size, setSize] = useState({ width: initialWidth, height: 'auto' });
     const modalRef = useRef<HTMLDivElement>(null);
 
     // Lock body scroll

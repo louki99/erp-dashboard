@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback, useMemo } from 'react';
 import type { ICellRendererParams, ValueGetterParams } from 'ag-grid-community';
 import {
     Wallet, RefreshCw, Landmark as BankIcon, Upload, Loader2, Filter, RotateCcw as ResetIcon,
-    CheckCircle2, Ban, RotateCcw, Lock,
+    CheckCircle2, Ban, RotateCcw, Lock, Maximize2, Minimize2,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 
@@ -178,6 +178,16 @@ export const PortefeuilleInstrumentsPage = () => {
     const [dueDateTo, setDueDateTo] = useState('');
     const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
     const [batchOpen, setBatchOpen] = useState(false);
+
+    // Full-screen grid toggle — same pattern as GcomCatalogEntryScreen.tsx's
+    // Comptoir view, for scanning a long list of instruments more easily.
+    const [isExpanded, setIsExpanded] = useState(false);
+    useEffect(() => {
+        if (!isExpanded) return;
+        const handler = (e: KeyboardEvent) => { if (e.key === 'Escape') setIsExpanded(false); };
+        window.addEventListener('keydown', handler);
+        return () => window.removeEventListener('keydown', handler);
+    }, [isExpanded]);
 
     // ── Single-instrument lifecycle actions (same 4 endpoints as
     // ReglementPage.tsx's per-partner tab, just reachable from the
@@ -442,7 +452,7 @@ export const PortefeuilleInstrumentsPage = () => {
     ], [selectedIds, allPendingSelected, pendingRows]);
 
     const mainContent = (
-        <div className="h-full flex flex-col bg-gray-50">
+        <div className={isExpanded ? 'fixed inset-0 z-50 bg-gray-50 flex flex-col' : 'h-full flex flex-col bg-gray-50'}>
             <div className="px-5 py-3 bg-white border-b border-gray-200 flex items-center justify-between">
                 <div className="flex items-center gap-3">
                     <div className="p-2 bg-blue-50 rounded-lg">
@@ -455,14 +465,23 @@ export const PortefeuilleInstrumentsPage = () => {
                         </p>
                     </div>
                 </div>
-                <button
-                    onClick={load}
-                    disabled={loading}
-                    className="p-2 text-gray-500 hover:text-sage-600 hover:bg-sage-50 rounded-lg transition-colors disabled:opacity-50"
-                    title="Rafraîchir"
-                >
-                    <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
-                </button>
+                <div className="flex items-center gap-1">
+                    <button
+                        onClick={load}
+                        disabled={loading}
+                        className="p-2 text-gray-500 hover:text-sage-600 hover:bg-sage-50 rounded-lg transition-colors disabled:opacity-50"
+                        title="Rafraîchir"
+                    >
+                        <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
+                    </button>
+                    <button
+                        onClick={() => setIsExpanded(v => !v)}
+                        title={isExpanded ? 'Réduire' : 'Plein écran'}
+                        className="p-2 text-gray-500 hover:text-sage-600 hover:bg-sage-50 rounded-lg transition-colors"
+                    >
+                        {isExpanded ? <Minimize2 className="w-4 h-4" /> : <Maximize2 className="w-4 h-4" />}
+                    </button>
+                </div>
             </div>
 
             <div className="bg-white border-b border-gray-200 px-5 py-4">

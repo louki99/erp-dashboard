@@ -16,15 +16,18 @@ import { SageCollapsible } from '@/components/common/SageCollapsible';
 import { GcomCatalogEntryScreen, type GcomCatalogEntrySubmitPayload } from '@/components/gcom/GcomCatalogEntryScreen';
 import { GcomLinesTable } from '@/components/gcom/GcomLinesTable';
 import { PdfPriceModeModal } from '@/components/gcom/PdfPriceModeModal';
+import { AvoirAllocationPicker } from '@/components/gcom/AvoirAllocationPicker';
+import { avoirAllocationsMatchTotal, avoirAllocationsWithinTotal, canMixAvoirWith } from '@/lib/gcom/avoirAllocations';
 
 import { gcomApi } from '@/services/api/gcomApi';
 import { getPartners } from '@/services/api/partnerApi';
 import { telesalesApi } from '@/services/api/telesalesApi';
+import { masterdataApi, type Bank } from '@/services/api/masterdataApi';
 import { PAYMENT_METHODS } from '@/lib/gcom/paymentMethods';
 import type { Partner } from '@/types/partner.types';
 import type { CatalogProduct } from '@/types/telesalesAgent.types';
 import type {
-    GcomPaymentMethod, GcomOrder, GcomOrderProduct, GcomBcStatus, GcomInstrumentInput, GcomPdfPriceMode, GcomSoucheKind,
+    GcomPaymentMethod, GcomOrder, GcomOrderProduct, GcomBcStatus, GcomInstrumentInput, GcomPdfPriceMode, GcomSoucheKind, GcomAvoirAllocation,
 } from '@/types/gcom.types';
 
 // ─── helpers ─────────────────────────────────────────────────────────────────
@@ -234,6 +237,8 @@ export default function BonCommandePage() {
                 payment_method: payload.payment_method,
                 payment_term_id: payload.payment_term_id,
                 notes: payload.notes,
+                client_order_ref: payload.client_order_ref,
+                salesperson_id: payload.salesperson_id,
             });
             toast.success('Bon de commande créé');
             return order;
@@ -258,12 +263,21 @@ export default function BonCommandePage() {
     const [blModalOpen, setBlModalOpen] = useState(false);
     const [blDeliveryDate, setBlDeliveryDate] = useState('');
     const [blPaymentMethod, setBlPaymentMethod] = useState<GcomPaymentMethod>('cash');
+    // 2026-08-29 — free text, display/traceability only. The resulting BL
+    // is born in_transit, not delivered (see docs §13/§18).
+    const [blDriverInfo, setBlDriverInfo] = useState('');
+    const [blTransporterName, setBlTransporterName] = useState('');
+    // 2026-08-30 — 'in_transit' is the safe/common default (real tournée).
+    const [blStatus, setBlStatus] = useState<'in_transit' | 'delivered'>('in_transit');
     const [convertingToBl, setConvertingToBl] = useState(false);
 
     const openConvertToBlModal = () => {
         if (!selected) return;
         setBlDeliveryDate(new Date().toISOString().slice(0, 10));
         setBlPaymentMethod(selected.financial_metadata?.payment_method ?? 'cash');
+        setBlDriverInfo('');
+        setBlTransporterName('');
+        setBlStatus('in_transit');
         setBlModalOpen(true);
     };
     const closeConvertToBlModal = () => setBlModalOpen(false);
@@ -272,8 +286,14 @@ export default function BonCommandePage() {
         if (!selected) return;
         setConvertingToBl(true);
         try {
-            await gcomApi.orders.convertToBl(selected.id, { delivery_date: blDeliveryDate, payment_method: blPaymentMethod });
-            toast.success('Bon de commande converti en BL');
+            await gcomApi.orders.convertToBl(selected.id, {
+                delivery_date: blDeliveryDate,
+                payment_method: blPaymentMethod,
+                driver_info: blDriverInfo.trim() || undefined,
+                transporter_name: blTransporterName.trim() || undefined,
+                status: blStatus,
+            });
+            toast.success(blStatus === 'delivered' ? 'Bon de commande converti en BL — livré' : 'Bon de commande converti en BL — en transit');
             setBlModalOpen(false);
             refresh();
         } catch (err: unknown) {
@@ -284,24 +304,58 @@ export default function BonCommandePage() {
         }
     };
 
+    // ── Confirmer la livraison du BL lié (2026-08-29) ────────────────────────
+    const [confirmingBlDelivery, setConfirmingBlDelivery] = useState(false);
+    const confirmBlDelivery = async () => {
+        if (!blForConversion) return;
+        setConfirmingBlDelivery(true);
+        try {
+            await gcomApi.deliveryNotes.confirmDelivery(blForConversion.id);
+            toast.success('Livraison confirmée');
+            refresh();
+        } catch (err: unknown) {
+            const msg = (err as { response?: { data?: { message?: string } } })?.response?.data?.message;
+            toast.error(msg ?? 'Erreur lors de la confirmation de livraison');
+        } finally {
+            setConfirmingBlDelivery(false);
+        }
+    };
+
     // ── BC/BL → Facture conversion ───────────────────────────────────────────────
     const [convertTarget, setConvertTarget] = useState<ConvertTarget | null>(null);
     const [convertPanelOpen, setConvertPanelOpen] = useState(false); // instrument required (cheque/effet)
     const [invoiceConfirmOpen, setInvoiceConfirmOpen] = useState(false); // plain confirmation otherwise
+    const [convertAvoirPanelOpen, setConvertAvoirPanelOpen] = useState(false); // payment_method === 'avoir'
+    const [convertAvoirAllocations, setConvertAvoirAllocations] = useState<GcomAvoirAllocation[]>([]);
+    // Optional avoir mix (2026-08-20) — the avoir covers PART of the total,
+    // the BC/BL's own payment_method settles the rest. Reuses
+    // convertAvoirAllocations (mutually exclusive with the exact-avoir panel
+    // by payment method, same reasoning as GcomCatalogEntryScreen).
+    const [convertMixAvoirEnabled, setConvertMixAvoirEnabled] = useState(false);
     const [convertInstrument, setConvertInstrument] = useState<GcomInstrumentInput>(EMPTY_INSTRUMENT);
     const [convertingToInvoice, setConvertingToInvoice] = useState(false);
     // §17 — explicit override, 'declared' is the safe/common default.
     const [convertSoucheKind, setConvertSoucheKind] = useState<GcomSoucheKind>('declared');
+    // Bank dropdown for the instrument's bank_name (GET /masterdata/banks) —
+    // falls back to free text if the list is empty or the bank isn't listed.
+    const [banks, setBanks] = useState<Bank[]>([]);
+    const [convertInstrumentBankOther, setConvertInstrumentBankOther] = useState(false);
+    useEffect(() => { masterdataApi.banks.getAll().then(setBanks).catch(() => setBanks([])); }, []);
 
     const openConvertToInvoice = (target: ConvertTarget) => {
         if (!selected) return;
         setConvertTarget(target);
         setConvertSoucheKind('declared');
+        setConvertAvoirAllocations([]);
+        setConvertMixAvoirEnabled(false);
         const method = selected.financial_metadata?.payment_method;
         const needsInstrument = method === 'cheque' || method === 'effet';
         if (needsInstrument) {
             setConvertInstrument(EMPTY_INSTRUMENT);
+            setConvertInstrumentBankOther(false);
             setConvertPanelOpen(true);
+        } else if (method === 'avoir') {
+            setConvertAvoirPanelOpen(true);
         } else {
             setInvoiceConfirmOpen(true);
         }
@@ -309,15 +363,16 @@ export default function BonCommandePage() {
 
     const closeInvoiceConfirm = () => { setInvoiceConfirmOpen(false); setConvertTarget(null); };
 
-    const doConvertToInvoice = async (target: ConvertTarget, instrument: GcomInstrumentInput | null) => {
+    const doConvertToInvoice = async (target: ConvertTarget, instrument: GcomInstrumentInput | null, avoirAllocations?: GcomAvoirAllocation[]) => {
         setConvertingToInvoice(true);
         try {
             const invoice = target.type === 'order'
-                ? await gcomApi.orders.convertToInvoice(target.id, instrument, convertSoucheKind)
-                : await gcomApi.deliveryNotes.convertToInvoice(target.id, instrument, convertSoucheKind);
+                ? await gcomApi.orders.convertToInvoice(target.id, instrument, convertSoucheKind, avoirAllocations)
+                : await gcomApi.deliveryNotes.convertToInvoice(target.id, instrument, convertSoucheKind, avoirAllocations);
             toast.success(`Facture ${invoice.invoice_number ?? `#${invoice.id}`} créée${invoice.souche_kind === 'internal' ? ' (souche interne)' : ''}`);
             setConvertPanelOpen(false);
             setInvoiceConfirmOpen(false);
+            setConvertAvoirPanelOpen(false);
             setConvertTarget(null);
             refresh();
         } catch (err: unknown) {
@@ -537,7 +592,15 @@ export default function BonCommandePage() {
     // Same "before any BL/invoice" guard the API enforces for BC→BL, BC→Facture, cancel and line-cancel.
     const noDocumentsYet = selected?.bc_status === 'confirmed' && (selected.delivery_notes?.length ?? 0) === 0 && (selected.invoices?.length ?? 0) === 0;
     const blForConversion = selected?.delivery_notes?.[0];
-    const canConvertBlToInvoice = selected?.bc_status === 'confirmed' && !!blForConversion && (selected.invoices?.length ?? 0) === 0;
+    // The BC's own total unless converting the BL specifically — a BL can
+    // diverge from its parent BC (partial return before invoicing, §9bis),
+    // so its own total_amount is the one that must match the avoir allocation sum.
+    const convertTargetTotal = Number(convertTarget?.type === 'bl' ? (blForConversion?.total_amount ?? selected?.total_amount) : selected?.total_amount) || 0;
+    // 2026-08-29: a BL is born in_transit now — only 'delivered' can be
+    // invoiced (the endpoint 422s otherwise, gate the button instead of
+    // letting that surface as an error).
+    const canConfirmBlDelivery = blForConversion?.status === 'in_transit';
+    const canConvertBlToInvoice = selected?.bc_status === 'confirmed' && !!blForConversion && blForConversion.status === 'delivered' && (selected.invoices?.length ?? 0) === 0;
 
     const actionGroups = useMemo((): { items: ActionItemProps[] }[] => {
         const base: ActionItemProps[] = [
@@ -555,6 +618,10 @@ export default function BonCommandePage() {
                 { icon: FileText, label: 'Convertir en Facture', variant: 'primary', onClick: () => openConvertToInvoice({ type: 'order', id: selected.id }), disabled: convertingToInvoice },
                 { icon: Ban, label: 'Annuler le BC', variant: 'danger', onClick: openCancelOrder },
             );
+        } else if (canConfirmBlDelivery && blForConversion) {
+            detailItems.push(
+                { icon: CheckCircle2, label: 'Confirmer la livraison du BL', variant: 'primary', onClick: confirmBlDelivery, disabled: confirmingBlDelivery },
+            );
         } else if (canConvertBlToInvoice && blForConversion) {
             detailItems.push(
                 { icon: FileText, label: 'Convertir le BL en Facture', variant: 'primary', onClick: () => openConvertToInvoice({ type: 'bl', id: blForConversion.id }), disabled: convertingToInvoice },
@@ -562,7 +629,7 @@ export default function BonCommandePage() {
         }
         return [{ items: base }, { items: detailItems }];
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [selected, noDocumentsYet, canConvertBlToInvoice, blForConversion, loading, convertingToBl, convertingToInvoice]);
+    }, [selected, noDocumentsYet, canConfirmBlDelivery, canConvertBlToInvoice, blForConversion, loading, convertingToBl, convertingToInvoice, confirmingBlDelivery]);
 
     // ─────────────────────────────────────────────────────────────────────────
     // RENDER
@@ -725,7 +792,22 @@ export default function BonCommandePage() {
                                             <div className="grid grid-cols-2 gap-2">
                                                 <input value={convertInstrument.reference_number} onChange={e => setConvertInstrument(p => ({ ...p, reference_number: e.target.value }))} placeholder="Référence *" className="px-2 py-1.5 text-xs border border-gray-200 rounded-md" />
                                                 <input type="date" value={convertInstrument.due_date} onChange={e => setConvertInstrument(p => ({ ...p, due_date: e.target.value }))} className="px-2 py-1.5 text-xs border border-gray-200 rounded-md" />
-                                                <input value={convertInstrument.bank_name} onChange={e => setConvertInstrument(p => ({ ...p, bank_name: e.target.value }))} placeholder="Banque" className="px-2 py-1.5 text-xs border border-gray-200 rounded-md" />
+                                                {banks.length > 0 && !convertInstrumentBankOther ? (
+                                                    <select
+                                                        value={convertInstrument.bank_name}
+                                                        onChange={e => {
+                                                            if (e.target.value === '__other__') { setConvertInstrumentBankOther(true); setConvertInstrument(p => ({ ...p, bank_name: '' })); }
+                                                            else setConvertInstrument(p => ({ ...p, bank_name: e.target.value }));
+                                                        }}
+                                                        className="px-2 py-1.5 text-xs border border-gray-200 rounded-md bg-white"
+                                                    >
+                                                        <option value="">Banque</option>
+                                                        {banks.map(b => <option key={b.id} value={b.name}>{b.name}</option>)}
+                                                        <option value="__other__">Autre…</option>
+                                                    </select>
+                                                ) : (
+                                                    <input value={convertInstrument.bank_name} onChange={e => setConvertInstrument(p => ({ ...p, bank_name: e.target.value }))} placeholder={banks.length > 0 ? 'Banque (saisie libre)' : 'Banque'} className="px-2 py-1.5 text-xs border border-gray-200 rounded-md" />
+                                                )}
                                                 <input value={convertInstrument.bank_account} onChange={e => setConvertInstrument(p => ({ ...p, bank_account: e.target.value }))} placeholder="N° compte" className="px-2 py-1.5 text-xs border border-gray-200 rounded-md" />
                                             </div>
                                             <div className="flex items-center gap-1.5">
@@ -742,12 +824,41 @@ export default function BonCommandePage() {
                                                     </button>
                                                 ))}
                                             </div>
+
+                                            {/* Optional avoir mix (2026-08-20) — avoir covers part of the total, this instrument settles the rest. */}
+                                            {canMixAvoirWith(selected.financial_metadata?.payment_method) && (
+                                                <div className="space-y-2">
+                                                    <label className="flex items-center gap-2 text-xs text-gray-600 cursor-pointer">
+                                                        <input
+                                                            type="checkbox"
+                                                            checked={convertMixAvoirEnabled}
+                                                            onChange={e => { setConvertMixAvoirEnabled(e.target.checked); if (!e.target.checked) setConvertAvoirAllocations([]); }}
+                                                            className="rounded border-gray-300 text-sage-600 focus:ring-sage-400"
+                                                        />
+                                                        Appliquer un avoir en réduction du montant
+                                                    </label>
+                                                    {convertMixAvoirEnabled && (
+                                                        <AvoirAllocationPicker
+                                                            partnerId={selected.partner?.id ?? null}
+                                                            total={convertTargetTotal}
+                                                            value={convertAvoirAllocations}
+                                                            onChange={setConvertAvoirAllocations}
+                                                            mode="partial"
+                                                        />
+                                                    )}
+                                                </div>
+                                            )}
+
                                             <div className="flex gap-2">
                                                 <button
                                                     onClick={() => {
                                                         if (!convertTarget) return;
                                                         if (!convertInstrument.reference_number.trim() || !convertInstrument.due_date) { toast.error('Référence et échéance requises'); return; }
-                                                        void doConvertToInvoice(convertTarget, convertInstrument);
+                                                        if (convertMixAvoirEnabled && !avoirAllocationsWithinTotal(convertAvoirAllocations, convertTargetTotal)) {
+                                                            toast.error('Le total des avoirs sélectionnés dépasse le montant de la vente');
+                                                            return;
+                                                        }
+                                                        void doConvertToInvoice(convertTarget, convertInstrument, convertMixAvoirEnabled && convertAvoirAllocations.length > 0 ? convertAvoirAllocations : undefined);
                                                     }}
                                                     disabled={convertingToInvoice}
                                                     className="flex items-center gap-2 px-3 py-1.5 bg-sage-600 text-white text-xs font-medium rounded-lg hover:bg-sage-700 disabled:opacity-50"
@@ -756,6 +867,39 @@ export default function BonCommandePage() {
                                                     Confirmer la conversion
                                                 </button>
                                                 <button onClick={() => { setConvertPanelOpen(false); setConvertTarget(null); }} className="px-3 py-1.5 text-xs text-gray-600 border border-gray-200 rounded-lg hover:bg-gray-50">Annuler</button>
+                                            </div>
+                                        </div>
+                                    )}
+
+                                    {/* ── Convert-to-invoice avoir panel ──── */}
+                                    {convertAvoirPanelOpen && convertTarget && (
+                                        <div className="bg-amber-50 border border-amber-200 rounded-lg p-4 space-y-3">
+                                            <p className="text-xs font-semibold text-amber-800">
+                                                Règlement par avoir pour la conversion {convertTarget.type === 'bl' ? 'du BL' : 'du BC'} en facture
+                                            </p>
+                                            <AvoirAllocationPicker
+                                                partnerId={selected.partner?.id ?? null}
+                                                total={convertTargetTotal}
+                                                value={convertAvoirAllocations}
+                                                onChange={setConvertAvoirAllocations}
+                                            />
+                                            <div className="flex gap-2">
+                                                <button
+                                                    onClick={() => {
+                                                        if (!convertTarget) return;
+                                                        if (!avoirAllocationsMatchTotal(convertAvoirAllocations, convertTargetTotal)) {
+                                                            toast.error('Le total des avoirs sélectionnés doit correspondre exactement au montant de la vente');
+                                                            return;
+                                                        }
+                                                        void doConvertToInvoice(convertTarget, null, convertAvoirAllocations);
+                                                    }}
+                                                    disabled={convertingToInvoice || !avoirAllocationsMatchTotal(convertAvoirAllocations, convertTargetTotal)}
+                                                    className="flex items-center gap-2 px-3 py-1.5 bg-sage-600 text-white text-xs font-medium rounded-lg hover:bg-sage-700 disabled:opacity-50"
+                                                >
+                                                    {convertingToInvoice ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <CheckCircle2 className="w-3.5 h-3.5" />}
+                                                    Confirmer la conversion
+                                                </button>
+                                                <button onClick={() => { setConvertAvoirPanelOpen(false); setConvertTarget(null); }} className="px-3 py-1.5 text-xs text-gray-600 border border-gray-200 rounded-lg hover:bg-gray-50">Annuler</button>
                                             </div>
                                         </div>
                                     )}
@@ -1112,6 +1256,46 @@ export default function BonCommandePage() {
                                 </p>
                             )}
                         </div>
+                        <div className="mb-3">
+                            <label className="block text-xs font-medium text-gray-600 mb-1">Chauffeur (optionnel)</label>
+                            <input
+                                value={blDriverInfo}
+                                onChange={e => setBlDriverInfo(e.target.value)}
+                                maxLength={150}
+                                className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-sage-400"
+                            />
+                        </div>
+                        <div className="mb-3">
+                            <label className="block text-xs font-medium text-gray-600 mb-1">Transporteur (optionnel)</label>
+                            <input
+                                value={blTransporterName}
+                                onChange={e => setBlTransporterName(e.target.value)}
+                                maxLength={150}
+                                className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-sage-400"
+                            />
+                        </div>
+                        <div className="flex items-center gap-1.5 mb-4">
+                            {([
+                                { value: 'in_transit' as const, label: 'En transit', icon: Truck },
+                                { value: 'delivered' as const, label: 'Livré directement', icon: CheckCircle2 },
+                            ]).map(opt => (
+                                <button
+                                    key={opt.value}
+                                    onClick={() => setBlStatus(opt.value)}
+                                    className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border text-[11px] font-medium transition-colors ${
+                                        blStatus === opt.value ? 'bg-sage-600 border-sage-600 text-white' : 'bg-white border-gray-200 text-gray-600 hover:bg-gray-50'
+                                    }`}
+                                >
+                                    <opt.icon className="w-3.5 h-3.5" /> {opt.label}
+                                </button>
+                            ))}
+                        </div>
+                        <p className="flex items-start gap-1.5 text-[11px] text-amber-700 bg-amber-50 border border-amber-100 rounded-lg px-2.5 py-1.5 mb-4">
+                            <AlertTriangle className="w-3.5 h-3.5 shrink-0 mt-0.5" />
+                            {blStatus === 'delivered'
+                                ? 'Retrait comptoir/dépôt — le BL sera immédiatement livré et facturable.'
+                                : "Le BL sera créé en transit — il faudra confirmer la livraison avant de pouvoir le facturer."}
+                        </p>
                         <div className="flex gap-3">
                             <button
                                 onClick={confirmConvertToBl}
@@ -1132,7 +1316,7 @@ export default function BonCommandePage() {
             {/* ── Convert to Facture — plain confirmation (no instrument needed) ── */}
             {invoiceConfirmOpen && convertTarget && selected && (
                 <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm">
-                    <div className="bg-white rounded-2xl shadow-2xl p-6 max-w-sm w-full mx-4">
+                    <div className={`bg-white rounded-2xl shadow-2xl p-6 w-full mx-4 ${convertMixAvoirEnabled ? 'max-w-lg' : 'max-w-sm'}`}>
                         <div className="flex items-center gap-3 mb-3">
                             <div className="w-9 h-9 rounded-full bg-sage-100 flex items-center justify-center">
                                 <FileText className="w-4 h-4 text-sage-600" />
@@ -1142,7 +1326,7 @@ export default function BonCommandePage() {
                         <p className="text-sm text-gray-600 mb-3">
                             Confirmez-vous la conversion {convertTarget.type === 'bl' ? 'du BL' : `du BC ${selected.order_code ?? `#${selected.id}`}`} en facture pour <strong>{selected.partner?.name}</strong>, d'un montant de <strong>{fmtMAD(selected.total_amount)}</strong> ?
                         </p>
-                        <div className="flex items-center gap-1.5 mb-5">
+                        <div className="flex items-center gap-1.5 mb-3">
                             <span className="text-[10px] text-gray-500 mr-0.5">Souche :</span>
                             {(['declared', 'internal'] as GcomSoucheKind[]).map(k => (
                                 <button
@@ -1156,9 +1340,40 @@ export default function BonCommandePage() {
                                 </button>
                             ))}
                         </div>
+
+                        {/* Optional avoir mix (2026-08-20) — not offered for credit/transfer (backend 422s that combination). */}
+                        {canMixAvoirWith(selected.financial_metadata?.payment_method) && (
+                            <div className="space-y-2 mb-5">
+                                <label className="flex items-center gap-2 text-xs text-gray-600 cursor-pointer">
+                                    <input
+                                        type="checkbox"
+                                        checked={convertMixAvoirEnabled}
+                                        onChange={e => { setConvertMixAvoirEnabled(e.target.checked); if (!e.target.checked) setConvertAvoirAllocations([]); }}
+                                        className="rounded border-gray-300 text-sage-600 focus:ring-sage-400"
+                                    />
+                                    Appliquer un avoir en réduction du montant
+                                </label>
+                                {convertMixAvoirEnabled && (
+                                    <AvoirAllocationPicker
+                                        partnerId={selected.partner?.id ?? null}
+                                        total={convertTargetTotal}
+                                        value={convertAvoirAllocations}
+                                        onChange={setConvertAvoirAllocations}
+                                        mode="partial"
+                                    />
+                                )}
+                            </div>
+                        )}
+
                         <div className="flex gap-3">
                             <button
-                                onClick={() => doConvertToInvoice(convertTarget, null)}
+                                onClick={() => {
+                                    if (convertMixAvoirEnabled && !avoirAllocationsWithinTotal(convertAvoirAllocations, convertTargetTotal)) {
+                                        toast.error('Le total des avoirs sélectionnés dépasse le montant de la vente');
+                                        return;
+                                    }
+                                    doConvertToInvoice(convertTarget, null, convertMixAvoirEnabled && convertAvoirAllocations.length > 0 ? convertAvoirAllocations : undefined);
+                                }}
                                 disabled={convertingToInvoice}
                                 className="flex-1 flex items-center justify-center gap-2 py-2 bg-sage-600 text-white text-sm font-medium rounded-lg hover:bg-sage-700 disabled:opacity-50 transition-colors"
                             >

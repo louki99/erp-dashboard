@@ -19,6 +19,9 @@ import BonCommandePage from '@/pages/gcom/BonCommandePage';
 import BonLivraisonPage from '@/pages/gcom/BonLivraisonPage';
 import ReglementPage from '@/pages/gcom/ReglementPage';
 import PortefeuilleInstrumentsPage from '@/pages/gcom/PortefeuilleInstrumentsPage';
+import RepresentantsPage from '@/pages/gcom/RepresentantsPage';
+import RelevesComptePage from '@/pages/gcom/RelevesComptePage';
+import AvoirsPage from '@/pages/gcom/AvoirsPage';
 import { OrdersPage } from '@/pages/OrdersPage';
 import { PartnerBalancesPage } from '@/pages/partners/PartnerBalancesPage';
 import { Dashboard } from '@/pages/Dashboard';
@@ -226,6 +229,32 @@ function AppRoutes() {
       <Route path="/gcom/instruments" element={
         <ProtectedRoute requiredPermission={PERMISSIONS.DYNAMIC.MANAGE_GCOM}>
           <PortefeuilleInstrumentsPage />
+        </ProtectedRoute>
+      } />
+
+      <Route path="/gcom/representants" element={
+        <ProtectedRoute requiredPermission={PERMISSIONS.DYNAMIC.MANAGE_GCOM}>
+          <RepresentantsPage />
+        </ProtectedRoute>
+      } />
+
+      <Route path="/gcom/releves-compte" element={
+        <ProtectedRoute requiredPermission={PERMISSIONS.DYNAMIC.MANAGE_GCOM}>
+          <RelevesComptePage />
+        </ProtectedRoute>
+      } />
+
+      <Route path="/gcom/avoirs" element={
+        <ProtectedRoute requiredPermission={PERMISSIONS.DYNAMIC.MANAGE_GCOM}>
+          <AvoirsPage />
+        </ProtectedRoute>
+      } />
+
+      {/* Same component as /partners — GCOM-scoped URL so navigation stays
+          inside the GCOM layout/sidebar context instead of leaving it. */}
+      <Route path="/gcom/partners" element={
+        <ProtectedRoute requiredPermission={PERMISSIONS.PARTNERS.INDEX}>
+          <PartnerManagementPage />
         </ProtectedRoute>
       } />
 

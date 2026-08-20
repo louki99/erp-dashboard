@@ -37,6 +37,7 @@ import {
   Box,
   Headset,
   Wallet,
+  Scale,
 } from 'lucide-react';
 
 export interface MenuItem {
@@ -1067,6 +1068,38 @@ export const MENU_MODULES: MenuModule[] = [
             icon: Wallet,
             description: 'Portefeuille chèques & effets — vue globale entreprise, remise en banque groupée',
             keywords: ['cheque', 'chèque', 'effet', 'portefeuille', 'bordereau', 'remise en banque', 'instrument'],
+          },
+          {
+            id: 'gcom:partners',
+            label: 'Clients',
+            route: '/gcom/partners',
+            icon: Users,
+            description: 'Gestion des clients — même écran que Partenaires, sans quitter le contexte GCOM',
+            keywords: ['client', 'clients', 'partenaire', 'partenaires', 'partners'],
+          },
+          {
+            id: 'gcom:representants',
+            label: 'Représentants',
+            route: '/gcom/representants',
+            icon: Headset,
+            description: 'Gestion des représentants (commerciaux) — création, agence, statut, rôle gcom_representative',
+            keywords: ['representant', 'représentant', 'commercial', 'salesperson', 'vendeur'],
+          },
+          {
+            id: 'gcom:releves-compte',
+            label: 'Relevé de Compte Global',
+            route: '/gcom/releves-compte',
+            icon: Scale,
+            description: 'Vue multi-clients des soldes — filtres agence/canal/solde minimum, clic → relevé détaillé du client',
+            keywords: ['releve', 'relevé', 'compte', 'solde', 'balance', 'encours', 'statement'],
+          },
+          {
+            id: 'gcom:avoirs',
+            label: 'Avoirs',
+            route: '/gcom/avoirs',
+            icon: RotateCcw,
+            description: 'Vue globale des avoirs financiers — filtres client/statut/agence/période, remboursement du solde à rembourser',
+            keywords: ['avoir', 'avoirs', 'credit note', 'remboursement', 'rembourser', 'refund'],
           },
         ],
       },
