@@ -897,6 +897,12 @@ export interface GcomFinancialInstrument {
     cleared_at?: string | null;
     rejected_at?: string | null;
     deposit_reference?: string | null;
+    // 2026-08-20 — the real, id-based source of truth for "which bordereau
+    // does this instrument belong to". `deposit_reference` stays a free-text
+    // display field only (never unique, never a lookup key) — a single
+    // deposit() creates its own 1-instrument BankDeposit too, so any
+    // DEPOSITED/CLEARED/REJECTED instrument has one, not just batch deposits.
+    bank_deposit_id?: number | null;
     // Only present on the company-wide list (GET /financial-instruments) —
     // the per-partner list omits it since the partner is already known
     // from the URL.
@@ -970,6 +976,10 @@ export interface GcomBatchDepositResponse {
     data: {
         deposited: GcomFinancialInstrument[];
         errors: { id: number; message: string }[];
+        // The one BankDeposit shared by every instrument in this batch —
+        // feeds the "Imprimer le bordereau PDF" button shown right after a
+        // successful remise groupée.
+        bank_deposit_id?: number | null;
     };
 }
 

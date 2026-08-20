@@ -48,7 +48,7 @@ const InvoiceStatusBadge = ({ status }: { status: GcomInvoiceStatus }) => {
 };
 
 const INSTRUMENT_STATUS_META: Record<GcomInstrumentStatus, { label: string; dot: string; text: string }> = {
-    PENDING: { label: 'En attente', dot: 'bg-amber-500', text: 'text-amber-700' },
+    PENDING: { label: 'En portefeuille', dot: 'bg-amber-500', text: 'text-amber-700' },
     DEPOSITED: { label: 'Déposé', dot: 'bg-blue-500', text: 'text-blue-700' },
     CLEARED: { label: 'Encaissé', dot: 'bg-emerald-500', text: 'text-emerald-700' },
     REJECTED: { label: 'Rejeté', dot: 'bg-red-500', text: 'text-red-700' },
@@ -856,7 +856,7 @@ export default function ReglementPage() {
                                         <div className="flex flex-wrap gap-1 mb-3 shrink-0">
                                             {([
                                                 { value: 'all', label: 'Tous' },
-                                                { value: 'PENDING', label: 'En attente' },
+                                                { value: 'PENDING', label: 'En portefeuille' },
                                                 { value: 'DEPOSITED', label: 'Déposé' },
                                                 { value: 'CLEARED', label: 'Encaissé' },
                                                 { value: 'REJECTED', label: 'Rejeté' },

@@ -332,6 +332,12 @@ export default function BonCommandePage() {
     // convertAvoirAllocations (mutually exclusive with the exact-avoir panel
     // by payment method, same reasoning as GcomCatalogEntryScreen).
     const [convertMixAvoirEnabled, setConvertMixAvoirEnabled] = useState(false);
+    // payment_method override (2026-08-20) — ONLY meaningful inside the
+    // exact-avoir panel (BC/BL stored payment_method === 'avoir'): when the
+    // available avoir doesn't cover 100%, this is the one way to still
+    // convert — override to cash/card for the remainder. '' = no override,
+    // stays the strict 100%-avoir requirement.
+    const [convertAvoirOverrideMethod, setConvertAvoirOverrideMethod] = useState<'' | 'cash' | 'card'>('');
     const [convertInstrument, setConvertInstrument] = useState<GcomInstrumentInput>(EMPTY_INSTRUMENT);
     const [convertingToInvoice, setConvertingToInvoice] = useState(false);
     // §17 — explicit override, 'declared' is the safe/common default.
@@ -348,6 +354,7 @@ export default function BonCommandePage() {
         setConvertSoucheKind('declared');
         setConvertAvoirAllocations([]);
         setConvertMixAvoirEnabled(false);
+        setConvertAvoirOverrideMethod('');
         const method = selected.financial_metadata?.payment_method;
         const needsInstrument = method === 'cheque' || method === 'effet';
         if (needsInstrument) {
@@ -363,12 +370,12 @@ export default function BonCommandePage() {
 
     const closeInvoiceConfirm = () => { setInvoiceConfirmOpen(false); setConvertTarget(null); };
 
-    const doConvertToInvoice = async (target: ConvertTarget, instrument: GcomInstrumentInput | null, avoirAllocations?: GcomAvoirAllocation[]) => {
+    const doConvertToInvoice = async (target: ConvertTarget, instrument: GcomInstrumentInput | null, avoirAllocations?: GcomAvoirAllocation[], paymentMethodOverride?: 'cash' | 'card') => {
         setConvertingToInvoice(true);
         try {
             const invoice = target.type === 'order'
-                ? await gcomApi.orders.convertToInvoice(target.id, instrument, convertSoucheKind, avoirAllocations)
-                : await gcomApi.deliveryNotes.convertToInvoice(target.id, instrument, convertSoucheKind, avoirAllocations);
+                ? await gcomApi.orders.convertToInvoice(target.id, instrument, convertSoucheKind, avoirAllocations, paymentMethodOverride)
+                : await gcomApi.deliveryNotes.convertToInvoice(target.id, instrument, convertSoucheKind, avoirAllocations, paymentMethodOverride);
             toast.success(`Facture ${invoice.invoice_number ?? `#${invoice.id}`} créée${invoice.souche_kind === 'internal' ? ' (souche interne)' : ''}`);
             setConvertPanelOpen(false);
             setInvoiceConfirmOpen(false);
@@ -882,18 +889,60 @@ export default function BonCommandePage() {
                                                 total={convertTargetTotal}
                                                 value={convertAvoirAllocations}
                                                 onChange={setConvertAvoirAllocations}
+                                                mode={convertAvoirOverrideMethod ? 'partial' : 'exact'}
                                             />
+
+                                            {/* payment_method override (2026-08-20) — the avoir alone doesn't have
+                                                to cover 100%; switching this on lets the remainder be settled in
+                                                cash/card instead of requiring an exact avoir match. */}
+                                            <div className="space-y-1.5 pt-1 border-t border-amber-100">
+                                                <p className="text-[11px] text-gray-500">L'avoir ne couvre pas tout ? Réglez le reliquat par :</p>
+                                                <div className="flex gap-1.5">
+                                                    <button
+                                                        onClick={() => setConvertAvoirOverrideMethod('')}
+                                                        className={`px-2.5 py-1 rounded-lg border text-[11px] font-medium transition-colors ${
+                                                            !convertAvoirOverrideMethod ? 'bg-gray-700 border-gray-700 text-white' : 'bg-white border-gray-200 text-gray-600 hover:bg-gray-50'
+                                                        }`}
+                                                    >
+                                                        Avoir seul (100%)
+                                                    </button>
+                                                    <button
+                                                        onClick={() => setConvertAvoirOverrideMethod('cash')}
+                                                        className={`px-2.5 py-1 rounded-lg border text-[11px] font-medium transition-colors ${
+                                                            convertAvoirOverrideMethod === 'cash' ? 'bg-indigo-600 border-indigo-600 text-white' : 'bg-white border-gray-200 text-gray-600 hover:bg-gray-50'
+                                                        }`}
+                                                    >
+                                                        Espèces
+                                                    </button>
+                                                    <button
+                                                        onClick={() => setConvertAvoirOverrideMethod('card')}
+                                                        className={`px-2.5 py-1 rounded-lg border text-[11px] font-medium transition-colors ${
+                                                            convertAvoirOverrideMethod === 'card' ? 'bg-indigo-600 border-indigo-600 text-white' : 'bg-white border-gray-200 text-gray-600 hover:bg-gray-50'
+                                                        }`}
+                                                    >
+                                                        Carte
+                                                    </button>
+                                                </div>
+                                            </div>
+
                                             <div className="flex gap-2">
                                                 <button
                                                     onClick={() => {
                                                         if (!convertTarget) return;
-                                                        if (!avoirAllocationsMatchTotal(convertAvoirAllocations, convertTargetTotal)) {
-                                                            toast.error('Le total des avoirs sélectionnés doit correspondre exactement au montant de la vente');
+                                                        const ok = convertAvoirOverrideMethod
+                                                            ? avoirAllocationsWithinTotal(convertAvoirAllocations, convertTargetTotal)
+                                                            : avoirAllocationsMatchTotal(convertAvoirAllocations, convertTargetTotal);
+                                                        if (!ok) {
+                                                            toast.error(convertAvoirOverrideMethod
+                                                                ? 'Le total des avoirs sélectionnés dépasse le montant de la vente'
+                                                                : 'Le total des avoirs sélectionnés doit correspondre exactement au montant de la vente (ou choisissez un mode de règlement pour le reliquat)');
                                                             return;
                                                         }
-                                                        void doConvertToInvoice(convertTarget, null, convertAvoirAllocations);
+                                                        void doConvertToInvoice(convertTarget, null, convertAvoirAllocations, convertAvoirOverrideMethod || undefined);
                                                     }}
-                                                    disabled={convertingToInvoice || !avoirAllocationsMatchTotal(convertAvoirAllocations, convertTargetTotal)}
+                                                    disabled={convertingToInvoice || (convertAvoirOverrideMethod
+                                                        ? !avoirAllocationsWithinTotal(convertAvoirAllocations, convertTargetTotal)
+                                                        : !avoirAllocationsMatchTotal(convertAvoirAllocations, convertTargetTotal))}
                                                     className="flex items-center gap-2 px-3 py-1.5 bg-sage-600 text-white text-xs font-medium rounded-lg hover:bg-sage-700 disabled:opacity-50"
                                                 >
                                                     {convertingToInvoice ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <CheckCircle2 className="w-3.5 h-3.5" />}

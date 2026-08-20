@@ -300,6 +300,15 @@
         "transit": "Transit",
         "available": "Available",
         "status": "Status"
+      },
+      "home": {
+        "description": "Overview of this account — check its balance, then jump to its ledger, cash intake, or audit log using the shortcuts below.",
+        "quickNav": "Quick access",
+        "navInfo": "View and edit this account's general information.",
+        "navClosures": "Open and close cash sessions (Z report).",
+        "navLedger": "Full accounting movement history (debit/credit).",
+        "navIntake": "Detail of cash received on this register.",
+        "navActivity": "Audit log — every action taken on this account."
       }
     },
     "closures": {

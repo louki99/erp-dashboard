@@ -232,10 +232,17 @@ export const gcomApi = {
         // explicit override, beats the PaymentTerm-derived default; omit to keep it.
         // `avoirAllocations` (2026-08-20) — required (and must sum exactly to the
         // sale total) when the BC's payment_method is 'avoir'.
-        convertToInvoice: async (orderId: number, instrument?: GcomInstrumentInput | null, soucheKind?: GcomSoucheKind | null, avoirAllocations?: GcomAvoirAllocation[]): Promise<GcomInvoice> => {
+        // `paymentMethodOverride` (2026-08-20) — the ONLY way to settle a BC that was
+        // created with payment_method: 'avoir' but whose avoir doesn't cover 100% of
+        // the total. Only accepted when the stored method is genuinely 'avoir' (422
+        // otherwise), and restricted to 'cash'/'card' — cheque/effet/credit/transfer
+        // are rejected (`The selected payment method is invalid.`), same immediate-
+        // settlement-only limit as the plain avoir+cash mix. Requires avoirAllocations
+        // to be present too (a bare override with no avoir would just be a normal sale).
+        convertToInvoice: async (orderId: number, instrument?: GcomInstrumentInput | null, soucheKind?: GcomSoucheKind | null, avoirAllocations?: GcomAvoirAllocation[], paymentMethodOverride?: 'cash' | 'card'): Promise<GcomInvoice> => {
             const response = await apiClient.post<GcomConvertToInvoiceResponse>(
                 `${BASE}/orders/${orderId}/convert-to-invoice`,
-                { instrument: instrument ?? null, souche_kind: soucheKind ?? null, avoir_allocations: avoirAllocations ?? undefined },
+                { instrument: instrument ?? null, souche_kind: soucheKind ?? null, avoir_allocations: avoirAllocations ?? undefined, payment_method: paymentMethodOverride ?? undefined },
                 idempotent(),
             );
             return response.data.invoice;
@@ -341,11 +348,17 @@ export const gcomApi = {
         // 2026-08-29: 422s if the BL is still in_transit — call confirmDelivery
         // first (the UI should gate this action on status === 'delivered', not
         // just rely on the 422).
-        // `avoirAllocations` (2026-08-20) — see orders.convertToInvoice's comment.
-        convertToInvoice: async (deliveryNoteId: number, instrument?: GcomInstrumentInput | null, soucheKind?: GcomSoucheKind | null, avoirAllocations?: GcomAvoirAllocation[]): Promise<GcomInvoice> => {
+        // `avoirAllocations`/`paymentMethodOverride` (2026-08-20) — see
+        // orders.convertToInvoice's comment for both. The BL-specific bug backend
+        // fixed while building this: generateFromDeliveryNote() reads the BL's own
+        // total_amount snapshot (taken at BL creation), not the order's live total —
+        // stamp duty recalculated on the order alone would never have reached the
+        // invoice without also updating delivery_note.total_amount. Verified live on
+        // this exact endpoint (BC→BL→Facture chain, cash override + partial avoir).
+        convertToInvoice: async (deliveryNoteId: number, instrument?: GcomInstrumentInput | null, soucheKind?: GcomSoucheKind | null, avoirAllocations?: GcomAvoirAllocation[], paymentMethodOverride?: 'cash' | 'card'): Promise<GcomInvoice> => {
             const response = await apiClient.post<GcomConvertToInvoiceResponse>(
                 `${BASE}/delivery-notes/${deliveryNoteId}/convert-to-invoice`,
-                { instrument: instrument ?? null, souche_kind: soucheKind ?? null, avoir_allocations: avoirAllocations ?? undefined },
+                { instrument: instrument ?? null, souche_kind: soucheKind ?? null, avoir_allocations: avoirAllocations ?? undefined, payment_method: paymentMethodOverride ?? undefined },
                 idempotent(),
             );
             return response.data.invoice;
@@ -528,6 +541,14 @@ export const gcomApi = {
             );
             return response.data.financial_instrument;
         },
+
+        // Bordereau de remise (2026-08-20) — id-based like every other GCOM
+        // PDF, never keyed on the free-text deposit_reference. A single
+        // deposit() creates its own 1-instrument BankDeposit too, so this
+        // works for any DEPOSITED/CLEARED/REJECTED instrument's
+        // bank_deposit_id, not just ones from a batch deposit.
+        getBankDepositPdfBlobUrl: (bankDepositId: number): Promise<string> =>
+            fetchPdfBlobUrl(`${BASE}/financial-instruments/bank-deposits/${bankDepositId}/pdf`),
     },
 
     // Company-wide Avoirs (2026-08-20) — separate from invoices.creditNotes()/

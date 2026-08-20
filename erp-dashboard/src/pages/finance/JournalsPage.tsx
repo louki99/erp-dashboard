@@ -1140,10 +1140,72 @@ const JournalDetailPanel = ({ journal, onSaved }: DetailPanelProps) => {
     { id: 'activity', label: t('finance.closures.tabActivity'), icon: ScrollText },
   ];
 
+  // SageTabs always prepends its own icon-only "home" tab — previously
+  // clicking it just showed a blank pane since nothing here handled
+  // activeTab === 'home'. Give it a real overview instead: balances +
+  // a quick-nav shortcut to each real tab.
+  const navDescriptions: Record<string, string> = {
+    info: t('finance.journals.home.navInfo'),
+    closures: t('finance.journals.home.navClosures'),
+    ledger: t('finance.journals.home.navLedger'),
+    intake: t('finance.journals.home.navIntake'),
+    activity: t('finance.journals.home.navActivity'),
+  };
+  const homeTab = (
+    <div className="h-full overflow-y-auto p-5 space-y-5">
+      <div className="rounded-xl border border-gray-200 p-4">
+        <div className="flex items-center gap-2 mb-1.5">
+          <div className="p-1.5 bg-gray-100 rounded-lg"><Landmark className="w-4 h-4 text-gray-600" /></div>
+          <h3 className="text-sm font-bold text-gray-900 font-mono">{journal.code}</h3>
+        </div>
+        <p className="text-xs text-gray-500 leading-relaxed">{t('finance.journals.home.description')}</p>
+      </div>
+
+      <div className="grid grid-cols-3 gap-3">
+        <div className="rounded-xl bg-gray-50 border border-gray-200 p-3">
+          <p className="text-[10px] text-gray-500 uppercase font-semibold tracking-wide mb-1">{t('modules.finance.computedBalance')}</p>
+          <p className="text-lg font-bold text-gray-800">{formatMAD(journal.computed_balance)}</p>
+        </div>
+        <div className="rounded-xl bg-amber-50 border border-amber-200 p-3">
+          <p className="text-[10px] text-amber-600 uppercase font-semibold tracking-wide mb-1">{t('modules.finance.transitBalance')}</p>
+          <p className="text-lg font-bold text-amber-700">{formatMAD(journal.transit_balance)}</p>
+        </div>
+        <div className="rounded-xl bg-emerald-50 border border-emerald-200 p-3">
+          <p className="text-[10px] text-emerald-600 uppercase font-semibold tracking-wide mb-1">{t('modules.finance.availableBalance')}</p>
+          <p className="text-lg font-bold text-emerald-700">{formatMAD(journal.available_balance)}</p>
+        </div>
+      </div>
+
+      <div className="space-y-2">
+        <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide">{t('finance.journals.home.quickNav')}</p>
+        {tabs.map(tab => {
+          const TabIcon = tab.icon ?? Landmark;
+          return (
+          <button
+            key={tab.id}
+            onClick={() => setActiveTab(tab.id)}
+            className="w-full flex items-start gap-3 p-3 text-left rounded-lg border border-gray-200 hover:border-sage-300 hover:bg-sage-50/50 transition-colors"
+          >
+            <div className="p-1.5 bg-gray-100 rounded-md shrink-0">
+              <TabIcon className="w-3.5 h-3.5 text-gray-600" />
+            </div>
+            <div className="min-w-0">
+              <p className="text-sm font-semibold text-gray-800">{tab.label}</p>
+              <p className="text-[11px] text-gray-500 leading-snug">{navDescriptions[tab.id]}</p>
+            </div>
+            <ChevronRight className="w-4 h-4 text-gray-300 shrink-0 ml-auto mt-1" />
+          </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+
   return (
     <div className="h-full flex flex-col">
       <SageTabs tabs={tabs} activeTabId={activeTab} onTabChange={setActiveTab} />
       <div className="flex-1 overflow-y-auto">
+        {activeTab === 'home' && homeTab}
         {activeTab === 'info' && infoTab}
         {activeTab === 'closures' && isBranchCaisse && <div className="p-5"><CaisseClosureSection journal={journal} /></div>}
         {activeTab === 'ledger' && <div className="p-5"><CaisseLedgerTab journal={journal} /></div>}

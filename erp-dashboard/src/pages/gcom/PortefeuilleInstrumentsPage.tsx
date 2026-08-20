@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback, useMemo } from 'react';
 import type { ICellRendererParams, ValueGetterParams } from 'ag-grid-community';
 import {
     Wallet, RefreshCw, Landmark as BankIcon, Upload, Loader2, Filter, RotateCcw as ResetIcon,
-    CheckCircle2, Ban, RotateCcw, Lock, Maximize2, Minimize2,
+    CheckCircle2, Ban, RotateCcw, Lock, Maximize2, Minimize2, FileText,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 
@@ -21,8 +21,20 @@ const fmtMAD = (n: number | string | undefined | null) => {
 const fmtDate = (d: string | null | undefined) => d ? new Date(d).toLocaleDateString('fr-MA', { day: '2-digit', month: 'short', year: 'numeric' }) : '—';
 const todayISO = () => new Date().toISOString().slice(0, 10);
 
+// Bordereau de remise (2026-08-20) — id-based, works for any instrument with
+// a bank_deposit_id (batch deposit OR a single deposit(), which now creates
+// its own 1-instrument BankDeposit too — verified live).
+const openBordereauPdf = async (bankDepositId: number) => {
+    try {
+        const url = await gcomApi.financialInstruments.getBankDepositPdfBlobUrl(bankDepositId);
+        window.open(url, '_blank');
+    } catch {
+        toast.error('Impossible de charger le bordereau PDF');
+    }
+};
+
 const INSTRUMENT_STATUS_META: Record<GcomInstrumentStatus, { label: string; dot: string; text: string }> = {
-    PENDING: { label: 'En attente', dot: 'bg-amber-500', text: 'text-amber-700' },
+    PENDING: { label: 'En portefeuille', dot: 'bg-amber-500', text: 'text-amber-700' },
     DEPOSITED: { label: 'Déposé', dot: 'bg-blue-500', text: 'text-blue-700' },
     CLEARED: { label: 'Encaissé', dot: 'bg-emerald-500', text: 'text-emerald-700' },
     REJECTED: { label: 'Rejeté', dot: 'bg-red-500', text: 'text-red-700' },
@@ -34,7 +46,7 @@ const InstrumentStatusBadge = ({ status }: { status: GcomInstrumentStatus }) => 
 
 const STATUS_TABS: { key: GcomInstrumentStatus | 'ALL'; label: string }[] = [
     { key: 'ALL', label: 'Tous' },
-    { key: 'PENDING', label: 'En attente' },
+    { key: 'PENDING', label: 'En portefeuille' },
     { key: 'DEPOSITED', label: 'Déposés' },
     { key: 'CLEARED', label: 'Encaissés' },
     { key: 'REJECTED', label: 'Rejetés' },
@@ -45,6 +57,7 @@ const STATUS_TABS: { key: GcomInstrumentStatus | 'ALL'; label: string }[] = [
 interface BatchResult {
     deposited: GcomFinancialInstrument[];
     errors: { id: number; message: string }[];
+    bank_deposit_id?: number | null;
 }
 
 const BatchDepositModal = ({
@@ -60,6 +73,7 @@ const BatchDepositModal = ({
     const [depositReference, setDepositReference] = useState('');
     const [saving, setSaving] = useState(false);
     const [result, setResult] = useState<BatchResult | null>(null);
+    const [printingBordereau, setPrintingBordereau] = useState(false);
 
     const total = instruments.reduce((sum, fi) => sum + (Number(fi.amount) || 0), 0);
 
@@ -113,6 +127,20 @@ const BatchDepositModal = ({
                                     </div>
                                 ))}
                             </div>
+                        )}
+                        {result.bank_deposit_id && (
+                            <button
+                                onClick={async () => {
+                                    setPrintingBordereau(true);
+                                    await openBordereauPdf(result.bank_deposit_id!);
+                                    setPrintingBordereau(false);
+                                }}
+                                disabled={printingBordereau}
+                                className="w-full flex items-center justify-center gap-2 py-2 bg-indigo-600 text-white text-sm font-medium rounded-lg hover:bg-indigo-700 disabled:opacity-50 transition-colors"
+                            >
+                                {printingBordereau ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <FileText className="w-3.5 h-3.5" />}
+                                Imprimer le bordereau PDF
+                            </button>
                         )}
                         <button
                             onClick={() => { onDone(); onClose(); }}
@@ -280,6 +308,17 @@ export const PortefeuilleInstrumentsPage = () => {
         }
     };
 
+    // Bordereau reprint (2026-08-20) — available for any instrument that's
+    // ever been deposited (bank_deposit_id set), not just DEPOSITED ones: a
+    // CLEARED or REJECTED instrument still belongs to a real BankDeposit.
+    const [bordereauPdfLoadingId, setBordereauPdfLoadingId] = useState<number | null>(null);
+    const printBordereau = async (fi: GcomFinancialInstrument) => {
+        if (!fi.bank_deposit_id) return;
+        setBordereauPdfLoadingId(fi.id);
+        await openBordereauPdf(fi.bank_deposit_id);
+        setBordereauPdfLoadingId(null);
+    };
+
     const load = useCallback(async () => {
         setLoading(true);
         try {
@@ -398,10 +437,24 @@ export const PortefeuilleInstrumentsPage = () => {
             cellRenderer: (p: ICellRendererParams<GcomFinancialInstrument, string>) => <span style={{ fontFamily: 'monospace', fontSize: '11px', color: '#6b7280' }}>{p.value ?? '—'}</span>,
         },
         {
-            colId: 'actions', headerName: 'Actions', width: 220, sortable: false, filter: false, pinned: 'right' as const,
+            colId: 'actions', headerName: 'Actions', width: 260, sortable: false, filter: false, pinned: 'right' as const,
             cellRenderer: (p: ICellRendererParams<GcomFinancialInstrument>) => {
                 if (!p.data) return null;
                 const fi = p.data;
+                // Bordereau reprint — any instrument that's ever been deposited
+                // (bank_deposit_id set), appended alongside whatever other
+                // action(s) the status below already offers.
+                const printButton = fi.bank_deposit_id ? (
+                    <button
+                        onClick={() => printBordereau(fi)}
+                        disabled={bordereauPdfLoadingId === fi.id}
+                        title="Imprimer le bordereau"
+                        className="flex items-center gap-1 px-2 py-1 text-[10px] font-semibold text-indigo-700 bg-indigo-50 border border-indigo-200 rounded-md hover:bg-indigo-100 disabled:opacity-50 transition-colors"
+                    >
+                        {bordereauPdfLoadingId === fi.id ? <Loader2 className="w-3 h-3 animate-spin" /> : <FileText className="w-3 h-3" />}
+                    </button>
+                ) : null;
+
                 if (fi.status === 'PENDING') {
                     return (
                         <button
@@ -427,21 +480,25 @@ export const PortefeuilleInstrumentsPage = () => {
                             >
                                 <Ban className="w-3 h-3" /> Rejeter
                             </button>
+                            {printButton}
                         </div>
                     );
                 }
                 if (fi.status === 'REJECTED') {
                     return (
-                        <button
-                            onClick={() => setRedepositTarget(fi)}
-                            className="flex items-center gap-1 px-2 py-1 text-[10px] font-semibold text-amber-700 bg-amber-50 border border-amber-200 rounded-md hover:bg-amber-100 transition-colors"
-                        >
-                            <RotateCcw className="w-3 h-3" /> Remettre en dépôt
-                        </button>
+                        <div className="flex items-center gap-1.5">
+                            <button
+                                onClick={() => setRedepositTarget(fi)}
+                                className="flex items-center gap-1 px-2 py-1 text-[10px] font-semibold text-amber-700 bg-amber-50 border border-amber-200 rounded-md hover:bg-amber-100 transition-colors"
+                            >
+                                <RotateCcw className="w-3 h-3" /> Remettre en dépôt
+                            </button>
+                            {printButton}
+                        </div>
                     );
                 }
-                // CLEARED — terminal state, read-only.
-                return (
+                // CLEARED — terminal state, only the bordereau reprint (if any) is left to offer.
+                return printButton ?? (
                     <span className="flex items-center gap-1 text-[10px] text-gray-400" title="État terminal">
                         <Lock className="w-3 h-3" /> —
                     </span>
@@ -449,7 +506,7 @@ export const PortefeuilleInstrumentsPage = () => {
             },
         },
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    ], [selectedIds, allPendingSelected, pendingRows]);
+    ], [selectedIds, allPendingSelected, pendingRows, bordereauPdfLoadingId]);
 
     const mainContent = (
         <div className={isExpanded ? 'fixed inset-0 z-50 bg-gray-50 flex flex-col' : 'h-full flex flex-col bg-gray-50'}>
@@ -578,9 +635,53 @@ export const PortefeuilleInstrumentsPage = () => {
         </div>
     );
 
+    const leftContent = (
+        <div className="h-full bg-white p-5 space-y-5 overflow-y-auto">
+            <div>
+                <div className="flex items-center gap-2 mb-2">
+                    <div className="p-1.5 bg-blue-50 rounded-lg">
+                        <Wallet className="w-4 h-4 text-blue-600" />
+                    </div>
+                    <h2 className="text-sm font-bold text-gray-900">Portefeuille</h2>
+                </div>
+                <p className="text-xs text-gray-500 leading-relaxed">
+                    Vue globale de tous les chèques et effets de l'entreprise, tous clients
+                    confondus — encaissés au comptoir ou en règlement différé. Suivez leur
+                    cycle de vie et déclenchez les remises en banque directement depuis
+                    cette liste.
+                </p>
+            </div>
+
+            <div className="space-y-2">
+                <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide">Cycle de vie</p>
+                {(['PENDING', 'DEPOSITED', 'CLEARED', 'REJECTED'] as GcomInstrumentStatus[]).map(status => (
+                    <div key={status} className="flex items-start gap-2 text-xs text-gray-600">
+                        <span className={`mt-1 w-1.5 h-1.5 rounded-full shrink-0 ${INSTRUMENT_STATUS_META[status].dot}`} />
+                        <span>
+                            <strong className={INSTRUMENT_STATUS_META[status].text}>{INSTRUMENT_STATUS_META[status].label}</strong>
+                            {status === 'PENDING' && ' — reçu, pas encore remis en banque.'}
+                            {status === 'DEPOSITED' && ' — remis en banque, en attente de compensation.'}
+                            {status === 'CLEARED' && ' — fonds crédités, cycle terminé.'}
+                            {status === 'REJECTED' && ' — impayé ; la créance client est rouverte automatiquement.'}
+                        </span>
+                    </div>
+                ))}
+            </div>
+
+            <div className="rounded-lg border border-gray-100 bg-gray-50/60 p-3 space-y-1.5">
+                <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide">À savoir</p>
+                <p className="text-[11px] text-gray-500 leading-relaxed">
+                    Cochez plusieurs lignes <strong>En portefeuille</strong> pour une remise
+                    groupée en un seul bordereau. Le bordereau PDF reste réimprimable à tout
+                    moment via l'icône dans la colonne Actions.
+                </p>
+            </div>
+        </div>
+    );
+
     return (
         <>
-            <MasterLayout leftContent={null} mainContent={mainContent} />
+            <MasterLayout leftContent={leftContent} mainContent={mainContent} />
             {batchOpen && (
                 <BatchDepositModal
                     instruments={selectedInstruments}

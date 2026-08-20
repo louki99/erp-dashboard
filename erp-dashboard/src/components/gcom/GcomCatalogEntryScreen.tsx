@@ -2,7 +2,7 @@ import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react'
 import {
     ShoppingCart, Search, X, Trash2, Loader2,
     User, Users, Building2, AlertTriangle, Calendar, Warehouse, LayoutGrid, ListFilter,
-    Maximize2, Minimize2, Info, Hash, Truck, CheckCircle2,
+    Maximize2, Minimize2, Info, Hash, Truck, CheckCircle2, EyeOff, ArrowUpDown,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 
@@ -270,9 +270,31 @@ export function GcomCatalogEntryScreen<TResult>({
 
     const selectedCount = useMemo(() => Object.values(quantities).filter(q => q > 0).length, [quantities]);
 
-    const displayedRows: CatalogProduct[] = showOnlySelected
-        ? Array.from(catalogCache.current.values()).filter(r => (quantities[r.id] ?? 0) > 0)
-        : catalogRows;
+    // Hide-rupture + sort only make sense on the live catalog view — a row
+    // the user already selected should never disappear from "Sélectionnés"
+    // just because it later went to 0 stock or the sort order changed.
+    const [hideOutOfStock, setHideOutOfStock] = useState(false);
+    const [catalogSort, setCatalogSort] = useState<'default' | 'stock_desc' | 'stock_asc' | 'price_desc' | 'price_asc'>('default');
+
+    const displayedRows: CatalogProduct[] = useMemo(() => {
+        const base = showOnlySelected
+            ? Array.from(catalogCache.current.values()).filter(r => (quantities[r.id] ?? 0) > 0)
+            : catalogRows;
+        if (showOnlySelected) return base;
+        const filtered = hideOutOfStock ? base.filter(r => r.stock_available > 0) : base;
+        if (catalogSort === 'default') return filtered;
+        const sorted = [...filtered];
+        sorted.sort((a, b) => {
+            switch (catalogSort) {
+                case 'stock_desc': return b.stock_available - a.stock_available;
+                case 'stock_asc': return a.stock_available - b.stock_available;
+                case 'price_desc': return (Number(b.price) || 0) - (Number(a.price) || 0);
+                case 'price_asc': return (Number(a.price) || 0) - (Number(b.price) || 0);
+                default: return 0;
+            }
+        });
+        return sorted;
+    }, [showOnlySelected, catalogRows, quantities, hideOutOfStock, catalogSort]);
 
     const selectedLines: GcomCatalogEntryLine[] = useMemo(() => {
         return Object.entries(quantities)
@@ -772,6 +794,46 @@ export function GcomCatalogEntryScreen<TResult>({
                                 </button>
                             </div>
 
+                            {/* ── Filter/sort toolbar — only meaningful on the live
+                                catalog, not the "Sélectionnés" view ─────────────── */}
+                            {!showOnlySelected && (
+                                <div className="px-4 py-2 bg-white border-b border-gray-100 shrink-0 flex items-center gap-4">
+                                    <label className="flex items-center gap-1.5 text-[11px] font-medium text-gray-600 cursor-pointer select-none">
+                                        <input
+                                            type="checkbox"
+                                            checked={hideOutOfStock}
+                                            onChange={e => setHideOutOfStock(e.target.checked)}
+                                            className="rounded border-gray-300 text-sage-600 focus:ring-sage-400"
+                                        />
+                                        <EyeOff className="w-3.5 h-3.5 text-gray-400" />
+                                        Masquer les ruptures
+                                    </label>
+                                    <div className="flex items-center gap-1.5">
+                                        <ArrowUpDown className="w-3.5 h-3.5 text-gray-400" />
+                                        <select
+                                            value={catalogSort}
+                                            onChange={e => setCatalogSort(e.target.value as typeof catalogSort)}
+                                            className="text-[11px] font-medium text-gray-600 border border-gray-200 rounded-md pl-2 pr-6 py-1 bg-white focus:outline-none focus:ring-1 focus:ring-sage-400"
+                                        >
+                                            <option value="default">Trier par…</option>
+                                            <option value="stock_desc">Stock (décroissant)</option>
+                                            <option value="stock_asc">Stock (croissant)</option>
+                                            <option value="price_desc">Prix (décroissant)</option>
+                                            <option value="price_asc">Prix (croissant)</option>
+                                        </select>
+                                    </div>
+                                    {(hideOutOfStock || catalogSort !== 'default') && (
+                                        <button
+                                            onClick={() => { setHideOutOfStock(false); setCatalogSort('default'); }}
+                                            className="text-[11px] font-medium text-gray-400 hover:text-gray-600"
+                                        >
+                                            Réinitialiser
+                                        </button>
+                                    )}
+                                    <span className="ml-auto text-[11px] text-gray-400">{displayedRows.length} article(s)</span>
+                                </div>
+                            )}
+
                             {/* ── Catalog grid ─────────────────────────────────── */}
                             <div className="flex-1 overflow-y-auto px-4 py-3 relative">
                                 {!selectedPartner && (
@@ -787,20 +849,42 @@ export function GcomCatalogEntryScreen<TResult>({
                                         <ShoppingCart className="w-10 h-10 mx-auto mb-2 text-gray-200" />
                                         {showOnlySelected
                                             ? 'Aucun article sélectionné pour le moment'
-                                            : loadingCatalog ? 'Chargement du catalogue…' : 'Aucun article trouvé'}
+                                            : loadingCatalog ? 'Chargement du catalogue…'
+                                            : hideOutOfStock ? (
+                                                <>
+                                                    Aucun article en stock ne correspond à cette recherche
+                                                    <button onClick={() => setHideOutOfStock(false)} className="block mx-auto mt-2 text-sage-600 font-medium hover:underline">
+                                                        Afficher aussi les ruptures
+                                                    </button>
+                                                </>
+                                            ) : 'Aucun article trouvé'}
                                     </div>
                                 ) : (
                                     <>
-                                        <table className="w-full bg-white rounded-xl border border-gray-200 overflow-hidden text-xs">
-                                            <thead>
-                                                <tr className="bg-gray-50 border-b border-gray-200 text-[10px] uppercase tracking-wider text-gray-400 whitespace-nowrap">
-                                                    <th className="text-left font-semibold px-3 py-2 w-24">Code</th>
-                                                    <th className="text-left font-semibold px-3 py-2">Article</th>
-                                                    <th className="text-right font-semibold px-3 py-2 w-20">Stock</th>
-                                                    <th className="text-right font-semibold px-3 py-2 w-28">P.U. HT</th>
-                                                    <th className="text-center font-semibold px-3 py-2 w-24">Quantité</th>
-                                                    <th className="text-right font-semibold px-3 py-2 w-32">Total TTC</th>
-                                                    <th className="w-10"></th>
+                                        {/* No `overflow-hidden` anywhere between here and the real scrolling
+                                            ancestor (the .overflow-y-auto div above) — it breaks
+                                            `position: sticky` on thead by giving it a clipping context to
+                                            stick against instead of the actual scroll container, which
+                                            showed up as a sliver of the row above peeking out from under the
+                                            sticky header while scrolling. Costs slightly-less-clipped table
+                                            corners, worth it for a working sticky header. */}
+                                        <table className="w-full bg-white rounded-xl border border-gray-200 text-xs">
+                                            {/* index.css has a global `th { @apply bg-gray-50 text-gray-600 ...; }`
+                                                rule targeting the bare element — it paints its own opaque
+                                                background/text color directly on every <th>, which silently
+                                                hid a color set on the parent <thead> (child paint always wins
+                                                over a parent's background, no specificity contest needed).
+                                                Every header cell below sets its own bg/text explicitly to
+                                                override that global rule (class beats element selector). */}
+                                            <thead className="sticky top-0 z-[1] shadow-sm">
+                                                <tr className="text-[10px] uppercase tracking-wider whitespace-nowrap">
+                                                    <th className="text-left font-semibold px-3 py-2.5 w-24 bg-sage-600 text-white/90">Code</th>
+                                                    <th className="text-left font-semibold px-3 py-2.5 bg-sage-600 text-white/90">Article</th>
+                                                    <th className="text-right font-semibold px-3 py-2.5 w-20 bg-sage-600 text-white/90">Stock</th>
+                                                    <th className="text-right font-semibold px-3 py-2.5 w-28 bg-sage-600 text-white/90">P.U. HT</th>
+                                                    <th className="text-center font-semibold px-3 py-2.5 w-24 bg-sage-600 text-white/90">Quantité</th>
+                                                    <th className="text-right font-semibold px-3 py-2.5 w-32 bg-sage-600 text-white/90">Total TTC</th>
+                                                    <th className="w-10 bg-sage-600"></th>
                                                 </tr>
                                             </thead>
                                             <tbody className="divide-y divide-gray-100">
@@ -810,8 +894,13 @@ export function GcomCatalogEntryScreen<TResult>({
                                                     const short = row.stock_available != null && quantity > row.stock_available;
                                                     const outOfStock = row.stock_available === 0;
                                                     const selected = quantity > 0;
+                                                    // Zebra striping on the two-idle states only — a selected or
+                                                    // out-of-stock row already has its own strong background, no
+                                                    // need to fight it with alternating shades.
+                                                    const zebra = idx % 2 === 1 ? 'bg-gray-50/40' : 'bg-white';
+                                                    const rowClass = outOfStock ? 'opacity-60' : selected ? 'bg-sage-50/40 hover:bg-sage-50/70' : `${zebra} hover:bg-gray-50/70 transition-colors`;
                                                     return (
-                                                        <tr key={row.id} className={outOfStock ? 'opacity-60' : selected ? 'bg-sage-50/40 hover:bg-sage-50/70' : 'hover:bg-gray-50/60'}>
+                                                        <tr key={row.id} className={rowClass}>
                                                             <td className="px-3 py-2 font-mono font-bold text-indigo-600 whitespace-nowrap">{row.code}</td>
                                                             <td className="px-3 py-2 font-medium text-gray-800">{row.name}</td>
                                                             <td className={`px-3 py-2 text-right font-semibold whitespace-nowrap ${outOfStock ? 'text-red-500' : short ? 'text-red-500' : row.stock_available != null ? 'text-gray-500' : 'text-gray-300'}`}>

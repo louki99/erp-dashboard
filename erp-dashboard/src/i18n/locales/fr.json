@@ -300,6 +300,15 @@
         "transit": "Transit",
         "available": "Disponible",
         "status": "Statut"
+      },
+      "home": {
+        "description": "Vue d'ensemble de ce compte — consultez son solde, puis accédez à son historique de mouvements, ses encaissements ou son journal d'audit depuis les raccourcis ci-dessous.",
+        "quickNav": "Accès rapide",
+        "navInfo": "Consultez et modifiez les informations générales de ce compte.",
+        "navClosures": "Ouvrez et clôturez les sessions de caisse (Z de caisse).",
+        "navLedger": "Historique complet des mouvements comptables (débit/crédit).",
+        "navIntake": "Détail des encaissements enregistrés sur cette caisse.",
+        "navActivity": "Journal d'audit — toutes les actions effectuées sur ce compte."
       }
     },
     "closures": {
