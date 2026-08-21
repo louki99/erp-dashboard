@@ -22,6 +22,7 @@ import PortefeuilleInstrumentsPage from '@/pages/gcom/PortefeuilleInstrumentsPag
 import RepresentantsPage from '@/pages/gcom/RepresentantsPage';
 import RelevesComptePage from '@/pages/gcom/RelevesComptePage';
 import AvoirsPage from '@/pages/gcom/AvoirsPage';
+import MaCaissePage from '@/pages/gcom/MaCaissePage';
 import { OrdersPage } from '@/pages/OrdersPage';
 import { PartnerBalancesPage } from '@/pages/partners/PartnerBalancesPage';
 import { Dashboard } from '@/pages/Dashboard';
@@ -247,6 +248,12 @@ function AppRoutes() {
       <Route path="/gcom/avoirs" element={
         <ProtectedRoute requiredPermission={PERMISSIONS.DYNAMIC.MANAGE_GCOM}>
           <AvoirsPage />
+        </ProtectedRoute>
+      } />
+
+      <Route path="/gcom/ma-caisse" element={
+        <ProtectedRoute requiredPermission={PERMISSIONS.DYNAMIC.MANAGE_GCOM}>
+          <MaCaissePage />
         </ProtectedRoute>
       } />
 

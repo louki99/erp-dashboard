@@ -1094,6 +1094,14 @@ export const MENU_MODULES: MenuModule[] = [
             keywords: ['releve', 'relevé', 'compte', 'solde', 'balance', 'encours', 'statement'],
           },
           {
+            id: 'gcom:ma-caisse',
+            label: 'Ma Caisse',
+            route: '/gcom/ma-caisse',
+            icon: Wallet,
+            description: 'Caisses individuelles (2026-08-20) — soldes en direct par mode de paiement, clôture de session versée au coffre agence',
+            keywords: ['caisse', 'ma caisse', 'cloture', 'clôture', 'z de caisse', 'coffre', 'encaissement'],
+          },
+          {
             id: 'gcom:avoirs',
             label: 'Avoirs',
             route: '/gcom/avoirs',

@@ -1133,3 +1133,92 @@ export interface GcomRepresentativeRemoveResponse {
     success: boolean;
     message?: string;
 }
+
+// ─── Caisses individuelles (2026-08-20) ────────────────────────────────────
+// Routing switch: every GCOM cash-in (comptoir/BC/BL sale, deferred
+// règlement, and a cash avoir redeem) now credits the CONNECTED USER's own
+// USER_CAISSE journal (CU{user_id}-{ESP/CHQ/EFF/VIR}) instead of the
+// branch's BRANCH_CAISSE, which becomes a pure coffre fed only by closure
+// transfers below. Auto-provisioned for all 4 immediate-settlement methods
+// (not just ESP/CHQ) for any user with manage-gcom — card/credit don't get
+// one (they settle to a bank account, not a physical drawer).
+export type GcomCaisseMethodSuffix = 'ESP' | 'CHQ' | 'EFF' | 'VIR';
+
+export interface GcomCaisse {
+    id: number;
+    code: string;
+    method_suffix: GcomCaisseMethodSuffix;
+    balance: number;
+    is_active: boolean;
+    // 2026-08-21 — multi-session-per-day: a caisse can now be closed and
+    // silently reopened (auto, on the next settlement) any number of times
+    // within the same calendar day. is_closed_today is kept for back-compat
+    // but is now just !has_open_session — has_open_session is the field to
+    // gate the Clôturer action on. session_number is null until the caisse
+    // has ever been touched today; distinguishing "never touched" (closing
+    // is always valid — opens+closes an empty session for the record) from
+    // "closed, nothing since" (closing 422s: TREASURY_NO_OPEN_SESSION)
+    // requires checking session_number, not just has_open_session alone.
+    is_closed_today: boolean;
+    has_open_session: boolean;
+    session_number: number | null;
+}
+
+export interface GcomCaisseListResponse {
+    success: boolean;
+    data: GcomCaisse[];
+}
+
+export interface GcomCloseCaissePayload {
+    method_suffix: GcomCaisseMethodSuffix;
+    counted_balance: number;
+    notes?: string;
+}
+
+export interface GcomCaisseClosure {
+    id: number;
+    company_id: number;
+    journal_id: number;
+    business_date: string;
+    status: 'CLOSED' | string;
+    opening_balance: number | string;
+    theoretical_closing_balance: number | string;
+    counted_balance: number | string;
+    discrepancy: number | string;
+    notes?: string | null;
+    opened_by?: number | null;
+    opened_at?: string | null;
+    closed_by?: number | null;
+    closed_at?: string | null;
+}
+
+// Cheque/effet closures settle to the coffre one transfer per instrument
+// (an instrument isn't divisible) rather than a single lump sum — `transfers`
+// reflects that, length 1 for ESP/VIR, N for CHQ/EFF.
+export interface GcomCaisseCloseResult {
+    success: boolean;
+    message?: string;
+    data: {
+        closure: GcomCaisseClosure;
+        coffre_code: string;
+        transfers: { id: number; amount: number | string; status: number }[];
+    };
+}
+
+// 2026-09-01 — POST /invoices/consolidate. Groups delivery notes from
+// SEPARATE orders of the same partner into one invoice — the case
+// convert-to-invoice's own "wait for every sibling BL of this order" logic
+// can never reach, since a GCOM order can only ever have one BL. `avoir` is
+// not a valid payment_method here yet (real method or nothing). All 4
+// optional fields are only REQUIRED when the selected BLs' orders disagree
+// (different payment methods, different natural souche) — omit them and
+// backend auto-resolves when everything naturally agrees; 422 asking for an
+// explicit value otherwise. `instrument` still required when overriding to
+// cheque/effet.
+export interface GcomConsolidateInvoicePayload {
+    delivery_note_ids: number[];
+    payment_method?: Exclude<GcomPaymentMethod, 'avoir'>;
+    payment_term_id?: number | null;
+    instrument?: GcomInstrumentInput | null;
+    souche_kind?: GcomSoucheKind | null;
+}

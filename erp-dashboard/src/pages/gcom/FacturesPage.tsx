@@ -31,7 +31,10 @@ const fmtMAD = (n: number | string | undefined | null) => `${fmt(n)} MAD`;
 const fmtDate = (d: string | null | undefined) => d ? new Date(d).toLocaleDateString('fr-MA', { day: '2-digit', month: 'short', year: 'numeric' }) : '—';
 
 const STATUS_META: Record<GcomInvoiceStatus, { label: string; dot: string; text: string }> = {
-    pending: { label: 'En attente', dot: 'bg-amber-500', text: 'text-amber-700' },
+    // "Non réglée" not "En attente" — the invoice is officially issued and
+    // validated, not a draft or pending approval; it's just unpaid, standard
+    // ERP terminology (Sage/Odoo).
+    pending: { label: 'Non réglée', dot: 'bg-amber-500', text: 'text-amber-700' },
     partially_paid: { label: 'Partiel', dot: 'bg-blue-500', text: 'text-blue-700' },
     fully_paid: { label: 'Payée', dot: 'bg-emerald-500', text: 'text-emerald-700' },
     overdue: { label: 'En retard', dot: 'bg-red-500', text: 'text-red-700' },
@@ -39,7 +42,7 @@ const STATUS_META: Record<GcomInvoiceStatus, { label: string; dot: string; text:
 
 const STATUS_FILTERS: { value: 'all' | GcomInvoiceStatus; label: string }[] = [
     { value: 'all', label: 'Toutes' },
-    { value: 'pending', label: 'En attente' },
+    { value: 'pending', label: 'Non réglées' },
     { value: 'partially_paid', label: 'Partiel' },
     { value: 'fully_paid', label: 'Payées' },
     { value: 'overdue', label: 'En retard' },

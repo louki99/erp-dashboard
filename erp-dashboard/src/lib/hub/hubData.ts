@@ -560,6 +560,7 @@ export const BUSINESS_DOMAINS: BusinessDomain[] = [
                 icon: Banknote,
                 actions: [
                     { id: 'gcom-reglement', label: 'Règlement',         route: '/gcom/reglement',      icon: Banknote      },
+                    { id: 'gcom-ma-caisse', label: 'Ma Caisse', route: '/gcom/ma-caisse', icon: Wallet },
                     { id: 'gcom-treasury', label: 'Trésorerie Agence', route: '/finance/journals?type=BRANCH_CAISSE', icon: Landmark },
                     { id: 'gcom-instruments', label: 'Chèques & Effets', route: '/gcom/instruments', icon: Wallet },
                     { id: 'gcom-avoirs', label: 'Avoirs', route: '/gcom/avoirs', icon: RotateCcw },

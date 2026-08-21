@@ -131,6 +131,79 @@
 > insert into it fail — dormant until this was the first GCOM code path
 > to ever call a real Treasury transfer `accept()`. See §16 for the full
 > design.
+> **Also 2026-08-31**: `GET /gcom/caisse` gained `is_closed_today` per
+> journal — the UI team was only discovering an already-closed caisse
+> reactively, via the close endpoint's own 422; this lets "Ma Caisse"
+> disable the "Clôturer" button proactively instead.
+> **Investigated, then built, 2026-08-31**: `partners.invoicing_mode`
+> (per-partner billing cadence — immediate/per-order/periodic) is now
+> wired into GCOM — "architecture propre à GCOM" per the UI team's
+> explicit decision, NOT coupled to the legacy SFA
+> `DeliveryNoteDelivered`/`GenerateInvoiceOnDelivery` listener chain.
+> `1_FAC_PER_BL` (default) is unchanged. `1_FAC_PER_ORDER`:
+> `convert-to-invoice` on any sibling BL of an order now waits for every
+> non-cancelled sibling to be delivered, then consolidates all of them
+> into ONE invoice (reuses `InvoiceService::generateFromOrderDeliveries()`)
+> with GCOM's own settlement (USER_CAISSE, avoir) applied on top.
+> `PERIODIC_FIN_DE_MOIS`: `convert-to-invoice` now rejects on demand; a
+> new `gcom:generate-periodic-invoices` command (scheduled monthly, 1st
+> at 01:30, `canal='GCOM'`-scoped) consolidates delivered/uninvoiced BLs
+> into a 'pending' credit invoice per partner, settled later through the
+> normal règlement screen. Real dormant risk found and fixed along the
+> way: the legacy periodic cron had no `canal` filter and could have
+> swept an unconverted GCOM BL into a pipeline never built for it. See
+> §8's `convert-to-invoice` entry and §11 for full detail.
+> **Confirmed 2026-08-31**: a GCOM credit invoice needs no "settlement"
+> block (`payment_method: "credit"` alone is enough, status lands on the
+> real `'pending'` value — there is no `'unpaid'` anywhere in this
+> codebase), and règlement/lettrage (§6) already fully supports
+> multi-invoice allocation. Real bug found and fixed in the same
+> investigation: `LetteringService::letterPayment()` could be tricked
+> into over-lettering — several individually-valid allocation lines whose
+> SUM exceeded the payment's own amount, now rejected with a clean `422`.
+> Also confirmed: no "avance client"/prepayment concept exists anywhere
+> — a payment surplus beyond open invoices just sits as an under-lettered
+> `PaymentTransfer`, discoverable only by direct query. See §6 for full
+> detail.
+> **Built 2026-08-31**: multi-sessions par jour for caisse closures —
+> the original "one closure per journal per calendar day" hard lock
+> (`UNIQUE(journal_id, business_date)`) is gone, replaced by a
+> `session_number` column and `UNIQUE(journal_id, business_date,
+> session_number)`. A sale after a lunchtime closure now silently
+> auto-opens session 2 on the same journal/day instead of throwing
+> `JournalClosedException` (deleted, had one throw site). `GET
+> /gcom/caisse` gained `has_open_session`/`session_number` alongside
+> `is_closed_today`. The explicit close endpoint still rejects
+> (`422 TREASURY_NO_OPEN_SESSION`, new `NoOpenSessionException`)
+> closing an already-closed-today caisse a second time, while still
+> allowing "close my never-touched-today empty caisse for the record".
+> See §16's "Clôture de caisse et versement au coffre" for full detail.
+> **Generalized 2026-09-01**: the `payment_method` override at
+> convert-to-invoice, previously scoped to the avoir-remainder gap only,
+> now accepts any real settlement method regardless of the document's
+> original one (mirrors convert-to-bl's `applyPaymentMethodChange()`
+> exactly — stamp duty, credit-limit check, payment-term re-resolution).
+> Fixes two real gaps: "espèces différé" (a cash BL/BC whose client
+> can't pay on the spot at invoicing time can now be overridden to
+> `credit` for a pending/no-movement invoice settled the next day via
+> the normal deferred règlement), and a silent no-op where overriding
+> `payment_method` after the document was already invoiced used to
+> return the pre-existing invoice untouched — now a clear `422`. See
+> §8's "payment_method override at convert-to-invoice" for full detail.
+> **Built 2026-09-01**: `POST /invoices/consolidate` — on-demand
+> cross-order BL grouping for `1_FAC_PER_ORDER` wholesale clients.
+> Root-caused first: a GCOM order can only ever have one BL, so the
+> existing `1_FAC_PER_ORDER` per-order consolidation could never
+> actually merge more than one — the real need was several separate
+> orders of the same client grouped together, a genuinely different
+> endpoint. Reuses `InvoiceService::generatePeriodicInvoice()` (the
+> same cross-order primitive `PERIODIC_FIN_DE_MOIS` already relies on)
+> rather than a new one. Real dormant bug found and fixed along the
+> way: that method's own `payment_term_id` resolution read a Partner
+> attribute with no accessor, always silently landing on the 30-day due
+> date fallback instead of the partner's real term — affected the
+> pre-existing monthly cron too, not just this new endpoint. See §8's
+> "`POST /invoices/consolidate`" for full detail.
 > **Audience**: this doc is written for two readers — backend maintainers
 > (architecture/rationale, §1–7, §9–12) and **frontend/UI integrators**
 > (§8 API Reference and §13–16, which are self-contained — you can build a
@@ -361,6 +434,68 @@ here seeds a `TreasuryIntakeLine` into the collecting actor's own branch
 caisse, same as an immediate settlement — the only difference is which
 branch it's attributed to (the actor's, not an order's, since a règlement
 has no single order to derive one from).
+
+**Issuing a credit invoice needs no "settlement" block at all** (confirmed
+2026-08-31, real UI team question). `payment_method: "credit"` (or
+`"transfer"`) is enough — `instrument` is only ever required for
+`cheque`/`effet` (`GcomSettlementClassifier::usesInstrument()`), and
+there is no `settlement` key anywhere in any GCOM request shape. The
+resulting invoice: `status = 'pending'` (the real vocabulary is
+`pending`/`partially_paid`/`fully_paid`/`overdue`/`cancelled` — there is
+**no** `'unpaid'` value anywhere in this codebase, despite that being a
+natural guess), `paid_amount = 0`, `remaining_amount = total_amount`. A
+`payment_term_id` IS required, but not as a request field — either pass
+it explicitly or let it fall back to the partner's own default term
+(`Partner::paymentTerm()`); a partner with neither gets a clean `422`
+(`GcomContextResolver::resolvePaymentTermId()`): `"No payment term
+resolved for partner {id} — cannot create a credit sale without one
+(pass payment_term_id or configure a default)."`
+
+**Lettering mechanics — allocations, auto-letter, and surplus** (same
+2026-08-31 question). `POST /payments`'s `allocations` is
+`[{invoice_id, amount, notes?}]`, one `Lettering` row created per entry
+(`LetteringService::letterPayment()`) — note the `letterings` table's FK
+column is literally `order_id` (`invoices.order_id`, resolved from the
+invoice), not `invoice_id`; there's no `invoice_id` column on that table
+at all. Each allocation increments the invoice's `paid_amount`,
+decrements `remaining_amount`, and recomputes `status`
+(`fully_paid` once `remaining_amount <= 0`, else `partially_paid` if
+anything's been paid, else `overdue`/`pending`). `autoLetter()` (used
+when `allocations` is omitted and `auto_letter` isn't `false`) walks the
+partner's open invoices oldest-`invoice_date`-first, allocating
+`min(remaining payment, that invoice's remaining_amount)` to each until
+either the payment or the invoice list runs out — exactly the ordering
+`GET /partners/{partner}/open-invoices` already returns.
+
+**No partner credit-balance/prepayment concept exists** — a payment
+larger than the sum of all open invoices (e.g. a 20 000 MAD chèque
+against 5 000 MAD of open invoices) is not tracked anywhere as an
+"avance client." `autoLetter()` simply allocates until it runs out of
+open invoices, then stops — the payment's own `remaining_amount` (on
+`payment_transfers`, decremented but never negative) is left non-zero,
+its `status` stays `'validated'` (never flips to `'reconciled'`), and
+that's the *entire* representation of the surplus: an under-lettered
+`PaymentTransfer` row, discoverable only via
+`PaymentTransferService::getValidatedPayments()` (`status='validated'
+AND remaining_amount>0`) — no dedicated "surplus"/"avance" list endpoint
+exists today. Once new invoices exist for that partner, a fresh
+`letterPayment()`/`autoLetter()` call against that same payment can
+allocate the remainder — nothing expires it or writes it off
+automatically. **If the UI needs to surface "ce client a une avance de X
+MAD"** as its own concept, that's real, unbuilt scope — flag if wanted,
+not started.
+
+**Real bug found and fixed in the same investigation**: `letterPayment()`'s
+per-line guard (`$amount > $payment->remaining_amount`) compared every
+allocation line against the payment's remaining_amount as loaded
+*before* the loop — never decremented mid-loop — so several
+individually-valid lines could jointly exceed the payment (e.g. two
+200 MAD allocations against a 250 MAD payment: `200 > 250` is false
+twice, but they sum to 400). Fixed with an aggregate sum check before
+the loop starts — `POST /payments` now returns a clean `422`
+(`"Total allocation amount {X} exceeds payment remaining balance {Y}"`)
+instead of silently over-lettering multiple invoices with money the
+payment never actually had.
 
 **Per-partner financial views** (2026-08-15, `GcomPartnerFinanceController`)
 — three reads for a "vue financière complète par client" screen:
@@ -785,6 +920,35 @@ still `in_transit` — `"Delivery note {id} cannot be invoiced from status
 first.
 → `200`, `{ "success": true, "message": "Delivery note converted to invoice", "invoice": {...} }` (`invoice.souche_kind`/`invoice.token_serie_id` included)
 
+**`partners.invoicing_mode` now branches this endpoint's behavior
+(2026-08-31)** — resolved from the BL's own order's partner, not a
+separate parameter:
+- `1_FAC_PER_BL` (default/null): unchanged, everything above.
+- `1_FAC_PER_ORDER`: call this endpoint on **any** BL of the order, same
+  as always — the backend decides whether it's ready. If any
+  non-cancelled sibling BL isn't `delivered` yet: `422`,
+  `"Order {id} (mode 1_FAC_PER_ORDER) cannot be invoiced yet — N delivery
+  note(s) not yet delivered."` Once every sibling is delivered, calling it
+  on ANY of them consolidates every still-uninvoiced sibling into ONE
+  invoice covering all of them — same response shape, `invoice.id` is
+  shared across every sibling BL's own `delivery_note.invoice_id`.
+  Calling it again on any sibling afterward just returns that same
+  invoice (idempotent, no duplicate). `payment_method` (the avoir-too-small
+  override) and an explicit `souche_kind` are **not supported yet** for
+  this mode — `422` if either is passed, not a silent no-op.
+- `PERIODIC_FIN_DE_MOIS`: always `422` —
+  `"Delivery note {id}'s partner is billed periodically (fin de mois) —
+  it stays delivered/uninvoiced until the monthly GCOM periodic run, not
+  invoiced on demand."` The BL stays `delivered`+uninvoiced;
+  `GcomGeneratePeriodicInvoicesCommand` (`gcom:generate-periodic-invoices`,
+  scheduled monthly, 1st at 01:30) consolidates every `PERIODIC_FIN_DE_MOIS`
+  partner's GCOM BLs into one 'pending' credit invoice per partner —
+  settled later through the normal règlement screen (§6/§8's
+  `POST /payments`), same as any other GCOM credit sale. Not wired up
+  yet: PDF for a periodic invoice (no single `order_id` to key GCOM's
+  document pipeline off of — same pre-existing gap the legacy/SFA
+  periodic path also has).
+
 **`POST /delivery-notes/{deliveryNote}/cancel`** 🔁 — see §9. Restocks
 immediately. Body: `{ "reason": "..." }` (required, max 255 chars).
 A still-`draft` BL (2026-08-31) skips the restock entirely — nothing was
@@ -865,10 +1029,10 @@ resolved term is flagged internal). `client_order_ref` (optional,
 (optional, 2026-08-27) — see the note on `POST /orders` above.
 → `201`, `{ "success": true, "message": "Invoice created", "invoice": { "id": 88, "status": "fully_paid", "total_amount": "75.19", "remaining_amount": "0.00", "souche_kind": "declared", "token_serie_id": 4, "client_order_ref": null, "items": [...], "partner": {...}, "order": {...} } }`
 
-### Invoices (consultation only)
+### Invoices (mostly consultation — see consolidate below)
 
 Every flow above lands here — there's no separate "create invoice"
-concept beyond the endpoints already listed.
+concept beyond the endpoints already listed, except `consolidate` below.
 
 **`GET /invoices`** — scoped to `order.canal = 'GCOM'`. Query:
 `partner_id?`, `status?` (`pending`|`partially_paid`|`fully_paid`|
@@ -914,6 +1078,76 @@ shared "Imprimer" (HT/TTC) button across all 4 GCOM screens:
   payé/reste-à-payer breakdown when the invoice isn't fully settled,
   signature grid, legal footer) — no longer the older, sparser
   `invoice_v1` layout.
+
+### `POST /invoices/consolidate` — on-demand cross-order BL grouping (2026-09-01)
+
+"Feu vert" follow-up to the `1_FAC_PER_ORDER` work above: reported live
+that `convert-to-invoice` invoiced a single BL immediately for a
+grouped-billing wholesale client instead of waiting/consolidating.
+Root cause, confirmed live before building anything: **a GCOM order can
+only ever have one BL** (`GcomDeliveryNoteService::
+createDeliveryNoteFromOrder()`'s own idempotent guard returns the
+existing BL rather than ever creating a second one) — so
+`convertOrderToConsolidatedInvoice()`'s "wait for every sibling BL of
+this order" logic can never actually consolidate more than one; there
+was nothing broken to fix there. The real need was multiple SEPARATE
+orders of the same client, grouped on demand — a different endpoint.
+
+Reuses `InvoiceService::generatePeriodicInvoice()` — the exact same
+cross-order consolidation primitive `PERIODIC_FIN_DE_MOIS` already
+relies on (`invoices.order_id` left NULL by design for a batch spanning
+several orders) — rather than inventing a second one.
+
+Body:
+```json
+{
+  "delivery_note_ids": [24, 25, 31],
+  "payment_method": "credit",
+  "payment_term_id": 4,
+  "instrument": { "reference_number": "...", "due_date": "..." },
+  "souche_kind": "declared"
+}
+```
+- `delivery_note_ids` — required, **≥ 2** (a single id is the existing
+  `convert-to-invoice` endpoint). Every BL must: belong to the **same
+  partner**, be `DELIVERED`, not already invoiced, and come from a GCOM
+  order — `422` listing the offending ids otherwise, before any write.
+- `payment_method` — optional **only if every selected BL's order
+  naturally agrees** on one (read the same way `convert-to-invoice`'s
+  override does, §8's own section above); a real disagreement (e.g. one
+  order was `cash`, another `credit`) gets a `422` asking for an
+  explicit value rather than silently picking one. Any real method
+  (`cash`/`card`/`cheque`/`effet`/`credit`/`transfer`) — `avoir` is not
+  supported here yet.
+- `payment_term_id` — optional, same "explicit beats natural agreement,
+  422 if neither resolves" rule, needed when overriding to
+  `credit`/`transfer` and the partner has no default term.
+- `souche_kind` — same consistency rule as `payment_method`: an invoice
+  can only ever draw from ONE `TokenSerie` series, so if the selected
+  orders' payment terms don't all naturally resolve to the same souche
+  (§17), an explicit value is required.
+- `instrument` — required for `cheque`/`effet`, same shape as every
+  other settlement endpoint.
+
+Response: the created invoice (`items`, `partner` loaded). Every
+selected BL is stamped with this invoice's id — `delivery_notes.
+invoice_id` remains the authoritative, precise record of exactly which
+BLs a consolidated invoice covers; `invoice.order_id` is backfilled
+with the lowest-id selected order purely so the existing settlement
+pipeline has a real FK to letter against (`letterings.order_id` is a
+hard `NOT NULL` column — there is no `invoice_id` column on that table
+at all, §6) — treat it as a "primary order" convenience for reporting,
+not as the full picture.
+
+Real bug found building this: `InvoiceService::generatePeriodicInvoice()`
+read `$billingPartner?->payment_term_id` to resolve the invoice's own
+due date — but `Partner` has no read accessor for that virtual
+attribute (only a write mutator routing to the `partner_payment_terms`
+pivot, see §21 of the partner/address doc), so it always evaluated to
+`null`. Dead code on **every** call, including the pre-existing monthly
+`PERIODIC_FIN_DE_MOIS` cron — silently landing on `calculateDueDate()`'s
+30-day fallback instead of the partner's real term. Fixed to read the
+`paymentTerm` relation directly.
 
 Not a JSON endpoint: point a browser `<a href>`/download button directly
 at this URL (with the auth header), don't run it through your normal JSON
@@ -1045,31 +1279,73 @@ shapes, both driven by whether `avoir_allocations` covers the full sale:
 Either way, the invoice ends up `fully_paid`/`remaining_amount: 0`
 exactly like a cash sale from the caller's point of view.
 
-**Overriding `payment_method: "avoir"` at convert-to-invoice** (2026-08-31,
-real case reported live within hours of shipping the above): a BC/BL
-created with `payment_method: "avoir"` as the stated intent, but the
-partner's only available avoir turns out too small — until now there
-was no way to switch to a real remainder method except cancelling and
-recreating the BC/BL, which loses the delivery trail already recorded.
+### `payment_method` override at convert-to-invoice (2026-08-31, generalized 2026-09-01)
+
+Originally shipped narrowly (real case reported live within hours of
+mixed-tender avoir support): a BC/BL created with `payment_method:
+"avoir"` as the stated intent, but the partner's only available avoir
+turns out too small — no way to switch to a real remainder method
+except cancelling and recreating the document, losing the delivery
+trail. Generalized 2026-09-01 after the UI team reported two related
+gaps: no way to invoice a document "espèces différé" (client can't pay
+on the spot at invoicing time, needs a pending/no-movement invoice
+settled the next day), and sending a different `payment_method` than
+the document's stored one silently returned the pre-existing invoice
+unchanged once the document was already invoiced (read as "the backend
+responds 200 but ignores the override").
 
 `POST /orders/{order}/convert-to-invoice` and
-`POST /delivery-notes/{id}/convert-to-invoice` now accept an optional
-`payment_method` (`"cash"`|`"card"` only) in the body, ONLY when the
-order's stored `payment_method` is `"avoir"`:
+`POST /delivery-notes/{id}/convert-to-invoice` accept an optional
+`payment_method` in the body — now **any** real settlement method
+(`cash`/`card`/`cheque`/`effet`/`credit`/`transfer`), regardless of
+what the document was originally created with. `avoir` is not a valid
+target here — becoming avoir-settled is the `avoir_allocations`
+mechanism above, a different amount-bearing payload, not a bare method
+swap:
 ```json
-{ "payment_method": "cash", "avoir_allocations": [{ "credit_note_id": 7, "amount": 18.00 }] }
+{ "payment_method": "credit", "payment_term_id": 4 }
 ```
-Recalculates stamp duty (cash only, by law) — same mechanism
-`convert-to-bl`'s own existing payment-method override
-(`applyPaymentMethodChange()`) already uses. For the BL endpoint, this
-also updates the BL's own `total_amount` — `generateFromDeliveryNote()`
-reads that stored snapshot (taken at BL creation), never the order's
-live total, so the recalculated amount would otherwise never reach the
-invoice. `422` if the order's stored method isn't `"avoir"`, or the
-override value isn't `cash`/`card` — `cheque`/`effet`/`credit`/`transfer`
-are not accepted override targets (no credit check or instrument step
-built for this narrow path; same scope boundary as the mixed-tender
-remainder itself, above).
+`payment_term_id` (optional) — explicit échéancier when overriding to
+`credit`/`transfer` and the partner has no default payment term
+configured (common for an otherwise cash-only partner, the exact
+"espèces différé" case); falls back to the partner's default when
+omitted, `422` with a clear message if neither exists.
+
+Mirrors `convert-to-bl`'s own override (`applyPaymentMethodChange()`)
+exactly: stamp duty recomputed (cash only, by law), the same real
+credit-limit check (`GcomSettlementClassifier::assertCreditOk()`) a
+genuine credit sale gets when switching to a non-immediate method, and
+`payment_term_id` re-resolved whenever credit-sale-ness flips. For the
+BL endpoint, this also updates the BL's own `total_amount` —
+`generateFromDeliveryNote()` reads that stored snapshot (taken at BL
+creation), never the order's live total, so the recalculated amount
+would otherwise never reach the invoice.
+
+**"Espèces différé" — the driving real case**: a BL created
+`payment_method: "cash"` whose client can't pay on the spot when it's
+time to invoice. Override to `credit` at convert-to-invoice produces
+the same `pending`/`paid_amount: 0`/no-Treasury-movement invoice a
+genuine credit sale gets (`settleWithAvoirSupport()` skips
+`recordSettlement()` entirely for a credit sale) — settled the next
+day through the normal deferred règlement screen (`POST /payments`,
+below), no different from any other credit sale's règlement.
+
+**Rejected once already invoiced** (2026-09-01, closes the silent-ignore
+gap): if the document already has an invoice (a second call, e.g. a UI
+retry or double-click), passing `payment_method` now gets a `422`
+("payment_method can only be overridden before the first successful
+conversion") instead of silently returning the existing invoice with
+its original method. Omitting `payment_method` on a repeat call still
+returns the existing invoice as before — only the override itself is
+rejected.
+
+`422` also on: an invalid override target (validation layer —
+`cheque`/`effet`/`credit`/`transfer`/`cash`/`card` only, `avoir`
+excluded), missing `instrument` details when overriding to
+`cheque`/`effet`, the credit-limit check failing when overriding to
+`credit`/`transfer`, no resolvable payment term for the same, and
+(unchanged) not supported at all yet for a `1_FAC_PER_ORDER` partner
+(§11).
 
 ### Payments (Règlement & Lettrage)
 
@@ -2054,6 +2330,21 @@ Still open:
   documented here; see `app/Http/Controllers/Backend/
   InventoryCheckController.php` and `PurchaseReceptionController.php`
   directly if a GCOM screen needs to trigger a stock count or receipt.
+- ~~`partners.invoicing_mode` is not consulted anywhere in GCOM.~~
+  **Built 2026-08-31** (confirmed status 2026-08-31, real question from
+  the UI team; "architecture propre à GCOM" — explicit decision to NOT
+  couple to the legacy SFA `DeliveryNoteDelivered`/
+  `GenerateInvoiceOnDelivery` listener chain). See §8's
+  `convert-to-invoice` entry and §16-adjacent `GcomGeneratePeriodicInvoicesCommand`
+  for the full behavior of all 3 modes. Real latent risk found and fixed
+  in the same investigation, independent of the feature itself: the
+  monthly `invoices:generate-periodic` cron (`GeneratePeriodicInvoicesCommand`,
+  the legacy/non-GCOM one) had no `canal` filter at all — a GCOM BL
+  sitting `delivered`+uninvoiced (its normal pre-convert-to-invoice
+  state) for a `PERIODIC_FIN_DE_MOIS` partner would have been swept into
+  that legacy pipeline, never built for GCOM's souche/stamp-duty/
+  settlement rules. No partner was in that state at fix time (verified
+  live) — excluded by `canal` now regardless.
 
 ---
 
@@ -2063,14 +2354,15 @@ Still open:
 |---|---|
 | `tests/Feature/Gcom/GcomDirectInvoiceServiceTest.php` | Facture Directe (#6), Devis→Facture (#2), credit sales, cheque/effet instruments |
 | `tests/Feature/Gcom/GcomDirectInvoiceControllerTest.php` | HTTP layer for the above |
-| `tests/Feature/Gcom/GcomPaymentControllerTest.php` | Règlement/lettrage (#7/#8) |
+| `tests/Feature/Gcom/GcomPaymentControllerTest.php` | Règlement/lettrage (#7/#8) — registers + auto-letters a payment against an open GCOM invoice, letters against an explicit allocation, lists open invoices. **2026-08-31**: rejects a set of individually-valid allocation lines whose SUM exceeds the payment amount (real bug fix, `LetteringService::letterPayment()`'s aggregate guard), no partial write survives the rejected transaction |
 | `tests/Feature/Gcom/GcomFlexibleDocumentFlowTest.php` | BC/BL flows (#1, #3, #4, #5) — the stock-deduction-timing invariant, credit checks at BC creation, Devis→BC |
 | `tests/Feature/Gcom/GcomFlexibleDocumentControllerTest.php` | HTTP layer for BC/BL flows |
 | `tests/Feature/Gcom/GcomConsultationEndpointsTest.php` | List/show endpoints — GET /orders, /delivery-notes, /invoices, /payments, canal/partner scoping, cross-tenant 404s |
 | `tests/Feature/Gcom/GcomAdminCanUseTelesalesCatalogTest.php` | GCOM reuse of `GET /telesales/catalog/products` — partner-aware pricing, permission gate, `stock_available` correctly found under the bare warehouse code even when a storage location exists for that warehouse, and (2026-08-20) the branch-fallback path excludes `DAMAGED` stock while still counting general-bucket stock |
 | `tests/Feature/Gcom/GcomCancellationAndCreditNoteTest.php` | §9 — BC/BL cancellation + restocking, full/partial avoir, the total_amount-vs-remaining_amount split (refund_amount path), HTTP layer for cancel + credit-note endpoints |
 | `tests/Feature/Gcom/GcomCreditNoteGlobalAndRedeemTest.php` | §8/§9 (2026-08-31) — `GET /credit-notes` filters (partner_id/status), invoice/partner eager-loaded, no cross-company leak; `GET /credit-notes/{id}`; `POST /credit-notes/{id}/redeem` journals a negative TreasuryIntakeLine and decrements the branch caisse's cached_balance, stamps refund_method/refund_reference/refund_processed_at, rejects a second redemption, rejects redeeming a credit note with nothing owed back, rejects an unknown method |
-| `tests/Feature/Gcom/GcomAvoirPaymentTest.php` | §8/§9 (2026-08-31) — a direct invoice settles fully via one avoir with zero TreasuryIntakeLine created; partial imputation leaves a remaining balance and does NOT flip refund_processed_at; two avoirs combined cover one sale; rejects allocations summing to less than or more than the sale total, an avoir belonging to another partner, and exceeding an avoir's remaining_amount; redeeming part then imputing the rest never double-spends the original balance (and a third attempt against the exhausted avoir fails); BC→Facture and BL→Facture both settle via avoir despite generateFromDeliveryNote() always starting 'pending'; avoir payment skips the credit check entirely even for a partner with a tiny credit limit. **Mixed avoir + another method** (same day, real case) — direct-invoice and BL→Facture both settle via a partial avoir + card remainder, Treasury credited for ONLY the remainder (never the avoir-covered portion); rejects a shortfall when payment_method is 'avoir' itself; rejects mixing avoir with a credit remainder; mixed avoir + cheque remainder still requires instrument details. **payment_method override** (same day, another real case) — BL→Facture and BC→Facture both override an avoir-only BC/BL to cash/card when the avoir is too small, stamp duty correctly added/omitted, the BL's own total_amount snapshot updated (not just the order's), Treasury credited for the true remainder including stamp duty; rejects the override when the stored method isn't 'avoir'; rejects an invalid override target |
+| `tests/Feature/Gcom/GcomAvoirPaymentTest.php` | §8/§9 (2026-08-31) — a direct invoice settles fully via one avoir with zero TreasuryIntakeLine created; partial imputation leaves a remaining balance and does NOT flip refund_processed_at; two avoirs combined cover one sale; rejects allocations summing to less than or more than the sale total, an avoir belonging to another partner, and exceeding an avoir's remaining_amount; redeeming part then imputing the rest never double-spends the original balance (and a third attempt against the exhausted avoir fails); BC→Facture and BL→Facture both settle via avoir despite generateFromDeliveryNote() always starting 'pending'; avoir payment skips the credit check entirely even for a partner with a tiny credit limit. **Mixed avoir + another method** (same day, real case) — direct-invoice and BL→Facture both settle via a partial avoir + card remainder, Treasury credited for ONLY the remainder (never the avoir-covered portion); rejects a shortfall when payment_method is 'avoir' itself; rejects mixing avoir with a credit remainder; mixed avoir + cheque remainder still requires instrument details. **payment_method override** (same day, another real case) — BL→Facture and BC→Facture both override an avoir-only BC/BL to cash/card when the avoir is too small, stamp duty correctly added/omitted, the BL's own total_amount snapshot updated (not just the order's), Treasury credited for the true remainder including stamp duty. **2026-09-01 (generalized)**: a stored 'credit' BC now overrides to 'cash' and succeeds (was a 422 before generalization); rejects 'avoir' as an override target (the one target still excluded) |
+| `tests/Feature/Gcom/GcomPaymentMethodOverrideAtInvoicingTest.php` | §8 (2026-09-01) — general payment_method override at convert-to-invoice: BL→Facture overrides cash to credit for "espèces différé" (pending/paid_amount:0/no TreasuryIntakeLine, explicit payment_term_id honored), settled the next day via the normal POST /payments deferred règlement into the actor's own ESP caisse; BC→Facture overrides a stored credit method to cash (real Treasury movement, fully_paid); override to cheque still requires instrument details; rejects avoir as an override target; rejects overriding once the document is already invoiced (a repeat call without an override still returns the existing invoice unchanged); rejects a credit override with no resolvable payment term (no explicit one supplied, no partner default); a credit override still runs the real credit-limit check (422 for a partner with a 1 MAD limit) |
 | `tests/Feature/Gcom/GcomReturnsConditionTest.php` | §9bis — CAS 1 (BL partial return pre-invoice, net billing on convert), condition routing (sellable/damaged/technical → available/DAMAGED/QUARANTINE) shared by BL returns and credit-note restocks, guards (already invoiced, over-quantity rejected, invalid `reason`), `CreditNoteItem.is_scrap`/`stock_location`, `DeliveryNoteReturn` persistence + `GET .../returns` + bon de retour PDF + cross-BL 404 (2026-08-18), HTTP layer. **2026-08-31**: 100% single-line return zeroes the line and leaves sibling lines untouched, the zeroed line is excluded from the invoice (not resurrected to the original order quantity — the real bug this surfaced), `GET /delivery-notes/{id}` still returns the zeroed line in `items[]` |
 | `tests/Feature/Gcom/GcomOrderLineCancellationTest.php` | Partial/full single-line BC cancellation, order-total recomputation, HTTP layer |
 | `tests/Feature/Gcom/GcomOrderLineUpdateTest.php` | BC line quantity increase/decrease, re-pricing, stock untouched, credit re-check on increase only, HTTP layer |
@@ -2084,9 +2376,9 @@ Still open:
 | `tests/Feature/Gcom/GcomFinancialInstrumentLifecycleTest.php` | §8 "Financial Instruments" — deposit with date+reference, deposit defaults to today, clear, reject with reason, reject requires a reason (422), invalid transition surfaces as a 422 through the GCOM HTTP layer |
 | `tests/Feature/Gcom/GcomTreasuryUserCaisseTest.php` | §16 (2026-08-20+ caisses individuelles) — cash settlement seeds an ESP intake line into the ACTOR's own `TYPE_USER_CAISSE` journal (not the branch coffre, untouched), two sales accumulate in the same user journal, two vendeurs at the same branch never mix caisses, cheque settlement seeds CHQ **and** still registers the PENDING `FinancialInstrument`, card maps to VIR, a credit sale seeds nothing at all, a settlement with no assigned caisse gets a 422 |
 | `tests/Feature/Gcom/GcomInstrumentRejectReversalTest.php` | §8/§11 reject-reversal — an at-sale cheque's reject reopens the invoice (`paid_amount`/`remaining_amount`/`status`) and voids the actor's own user caisse's intake line (compensating negative row, balance back to 0), `clear()` touches neither, a deferred cheque lettered across two invoices reopens both on reject |
-| `tests/Feature/Treasury/TreasuryJournalClosureTest.php` | §16 "Clôture de caisse" — auto-open on first sale, a second sale reuses the same session, explicit `open` is idempotent, `close` computes `theoretical_closing_balance`/`discrepancy` correctly and never touches `cached_balance`, a closed journal blocks a new same-day GCOM sale with a 422 (not a 500), closing an already-closed session is rejected, correcting a closed session updates the count and preserves `original_counted_balance`/`original_discrepancy`, a second correction doesn't overwrite those originals, correcting a still-`OPEN` session is rejected, correction requires a `reason`, batch-close closes every open journal for a branch in one call, reports a never-touched journal as `skipped` not an error, and is best-effort (one already-closed journal doesn't block closing the others) |
-| `tests/Feature/Gcom/GcomDeferredSettlementUserCaisseTest.php` | §16 "Deferred règlement" — a deferred cash règlement seeds an ESP intake line into the collecting actor's own user caisse, a deferred cheque seeds CHQ and links `intake_line_id` on the `FinancialInstrument`, a closed user caisse blocks a new deferred règlement too, a closed branch coffre does NOT block a user settlement, no assigned caisse gets a 422, `redeposit()` moves a rejected instrument back to `PENDING` |
-| `tests/Feature/Gcom/GcomCaisseClosureTest.php` | §16 "Clôture de caisse et versement au coffre" (2026-08-20+) — `GET /gcom/caisse` lists the caller's own caisses with live computed balances, closing ESP transfers the closure's theoretical balance to the branch coffre auto-accepted (a counted-balance discrepancy never changes the transferred amount), closing CHQ creates one transfer per pending cheque (never a lump sum), closing an empty caisse transfers nothing, no assigned caisse and an already-closed-today caisse both get a 422 |
+| `tests/Feature/Treasury/TreasuryJournalClosureTest.php` | §16 "Clôture de caisse" — auto-open on first sale, a second sale reuses the same session, explicit `open` is idempotent, `close` computes `theoretical_closing_balance`/`discrepancy` correctly and never touches `cached_balance`, closing an already-closed session is rejected, correcting a closed session updates the count and preserves `original_counted_balance`/`original_discrepancy`, a second correction doesn't overwrite those originals, correcting a still-`OPEN` session is rejected, correction requires a `reason`, batch-close closes every open journal for a branch in one call, reports a never-touched journal as `skipped` not an error, and is best-effort (one already-closed journal doesn't block closing the others). **Multi-sessions (2026-08-31)**: a closed journal auto-opens `session_number` 2 for the next same-day GCOM sale instead of throwing (was `JournalClosedException`, now deleted), and batch-close targets the currently-open session specifically, never an earlier already-closed one |
+| `tests/Feature/Gcom/GcomDeferredSettlementUserCaisseTest.php` | §16 "Deferred règlement" — a deferred cash règlement seeds an ESP intake line into the collecting actor's own user caisse, a deferred cheque seeds CHQ and links `intake_line_id` on the `FinancialInstrument`, a closed branch coffre does NOT block a user settlement, no assigned caisse gets a 422, `redeposit()` moves a rejected instrument back to `PENDING`. **Multi-sessions (2026-08-31)**: a closed user caisse auto-opens a new session for the next deferred règlement the same day rather than blocking it |
+| `tests/Feature/Gcom/GcomCaisseClosureTest.php` | §16 "Clôture de caisse et versement au coffre" (2026-08-20+) — `GET /gcom/caisse` lists the caller's own caisses with live computed balances and `is_closed_today` (false before, true for the just-closed journal only — a sibling caisse stays false), closing ESP transfers the closure's theoretical balance to the branch coffre auto-accepted (a counted-balance discrepancy never changes the transferred amount), closing CHQ creates one transfer per pending cheque (never a lump sum), closing an empty caisse transfers nothing, no assigned caisse gets a 422. **Multi-sessions (2026-08-31)**: `index` also exposes `has_open_session`/`session_number`; closing with nothing currently open (already closed today, untouched since) is rejected (`422 TREASURY_NO_OPEN_SESSION`) without creating a phantom session; a second same-day session closes and transfers independently of the first, coffre balance ends up as the sum of both |
 | `tests/Feature/Gcom/GcomInvoicePdfTest.php` | `GET /invoices/{invoice}/pdf` — real PDF bytes returned, correct `Content-Type`, 404 for non-GCOM invoices, HT vs. TTC renders differ and cache separately (2026-08-18, migration onto the BC/Devis/BL pipeline) |
 | `tests/Feature/Gcom/GcomDocumentPdfTest.php` | `GET /orders/{order}/pdf`, `/delivery-notes/{deliveryNote}/pdf`, `/quotes/{id}/pdf` — real PDF bytes for BC/BL/Devis, 404 for non-GCOM BC/BL, 403 for someone else's Devis, HT vs. TTC renders differ and cache separately |
 | `tests/Feature/Gcom/GcomDocumentNumberingBranchScopingTest.php` | Locks in that BC/Devis/BL/bon de retour/Facture/Avoir each consume their own branch's `TokenSerie` series, never a coexisting generic wildcard default and never another branch's series (real bug this test was built to catch, §10) — Devis added 2026-08-23 once its numbering migrated off the random scheme |
@@ -2102,6 +2394,10 @@ Still open:
 | `tests/Feature/CompanySalesModeTest.php` | `sales_mode` GET/PUT, default value, invalid-mode rejection, permission gate |
 | `tests/Feature/Warehouse/InventoryCheckTest.php` | Generic (not GCOM-scoped) — inventaire lifecycle, included here since it shares `StockService`/`StockUpdateService` with GCOM |
 | `tests/Feature/Warehouse/PurchaseReceptionValidationTest.php` | Generic — stock reception validate/reverse, same reason |
+| `tests/Feature/Invoicing/GeneratePeriodicInvoicesCommandGcomExclusionTest.php` | §11 "`invoicing_mode` not consulted in GCOM" (2026-08-31) — a GCOM BL for a `PERIODIC_FIN_DE_MOIS` partner is never swept into the legacy `invoices:generate-periodic` cron, a non-GCOM BL for the same partner still consolidates normally (regression guard), a mix of GCOM + non-GCOM BLs only ever consolidates the non-GCOM one |
+| `tests/Feature/Gcom/GcomInvoicingModeTest.php` | §8/§11 "`invoicing_mode` wired into GCOM" (2026-08-31) — `1_FAC_PER_ORDER`: blocks convert-to-invoice with a clear pending-count 422 until every non-cancelled sibling BL is delivered, then consolidates all uninvoiced siblings into ONE invoice (callable from any sibling, idempotent on retry), real USER_CAISSE settlement happens, a cancelled sibling is never waited on or included, `payment_method` override is rejected. `PERIODIC_FIN_DE_MOIS`: convert-to-invoice always rejects on demand; `gcom:generate-periodic-invoices` consolidates only `canal='GCOM'` BLs for periodic partners, leaves a non-GCOM sibling for the legacy command |
+| `tests/Feature/Gcom/GcomInvoiceConsolidationTest.php` | §8 `POST /invoices/consolidate` (2026-09-01) — consolidates 2 delivered BLs from DIFFERENT orders of the same partner into one invoice (real settlement, both orders' worth credited to the actor's caisse); rejects fewer than 2 ids, an unknown id, BLs from different partners, a not-yet-delivered BL, an already-invoiced BL; requires an explicit `payment_method` when the selected orders' natural methods disagree (succeeds once supplied); requires an explicit `souche_kind` when the selected orders' natural souches disagree (succeeds once supplied, draws from the right TokenSerie); still requires `instrument` details for a cheque settlement; still runs the real credit-limit check when overriding to credit |
+| `tests/Feature/Invoicing/GeneratePeriodicInvoicesCommandGcomExclusionTest.php` | Re-verified 2026-09-01 after fixing `generatePeriodicInvoice()`'s dead `payment_term_id` read (see §8's consolidate section) — still correctly excludes GCOM BLs from the legacy monthly command, still consolidates a periodic partner's non-GCOM BLs normally |
 | `tests/Feature/MasterDataBanksTest.php` | Generic (not GCOM-scoped) — `GET /masterdata/banks`, active-only + name-ordered, feeds the `bank_id` picker `POST /gcom/payments` needs |
 | `tests/Feature/Payment/PaymentTransferMethodResolutionTest.php` | Generic (not GCOM-scoped) — `PaymentTransferService::registerPayment()`'s `payment_method_id` resolution order: term's own, cash-term auto-resolve takes priority over the partner's generic default, partner default for credit terms, and the single consistent error when nothing resolves |
 
@@ -3015,16 +3311,30 @@ caisse" flow a vendeur/admin uses on themselves.
 journals with live computed balances:
 ```json
 { "success": true, "data": [
-  { "id": 24, "code": "CU15-ESP", "method_suffix": "ESP", "balance": 420.0, "is_active": true },
-  { "id": 25, "code": "CU15-CHQ", "method_suffix": "CHQ", "balance": 0.0, "is_active": true }
+  { "id": 24, "code": "CU15-ESP", "method_suffix": "ESP", "balance": 420.0, "is_active": true, "is_closed_today": false, "has_open_session": true, "session_number": 1 },
+  { "id": 25, "code": "CU15-CHQ", "method_suffix": "CHQ", "balance": 0.0, "is_active": true, "is_closed_today": true, "has_open_session": false, "session_number": 1 }
 ] }
 ```
+`is_closed_today` (2026-08-31, requested by the UI team after shipping
+"Ma Caisse" — they were only finding out on submit, via the close
+endpoint's own 422) — lets the "Clôturer" button disable itself
+proactively instead of failing on click.
+
+`has_open_session`/`session_number` (2026-08-31, multi-sessions par jour)
+describe the **latest** session for today, not session 1 specifically —
+`is_closed_today` is really `!has_open_session`, kept as its own field
+for UI back-compat. After a caisse is closed then a new sale
+auto-reopens it (see below), `is_closed_today` flips back to `false`,
+`has_open_session` to `true`, and `session_number` increments — the UI
+can re-enable "Clôturer" purely by watching `has_open_session`, no
+polling needed beyond the normal `GET /gcom/caisse` refresh.
 
 `POST /api/backend/gcom/caisse/close` — body
 `{ method_suffix: "ESP"|"CHQ"|"EFF"|"VIR", counted_balance, notes? }`.
-Closes today's session for the caller's own caisse of that method
-(auto-opens one first if somehow none exists yet, same as any closure),
-then:
+Closes the caller's own currently-open session for that method (or
+auto-opens session 1 first if the caisse was never touched at all
+today — "close my empty caisse for the record" stays valid, unchanged
+from before this feature), then:
 - Resolves (or provisions, first time) the caller's own branch's coffre
   (`TYPE_BRANCH_CAISSE`, same method suffix).
 - **ESP/VIR**: one `TreasuryTransfer` for the closure's **theoretical**
@@ -3041,6 +3351,40 @@ then:
   counterparty to hand off to.
 - Nothing to transfer (closure balance is zero) closes the session and
   returns an empty `transfers` array — not an error.
+
+**Multi-sessions par jour (2026-08-31)** — the original design hard-locked
+a journal for the rest of the calendar day after one closure
+(`UNIQUE(journal_id, business_date)`); the UI team flagged this as a real
+operational blocker (a vendeur closes at lunch, needs to keep selling in
+the afternoon on the *same* caisse). Reversed: `treasury_journal_closures`
+gained a `session_number` column, uniqueness is now
+`(journal_id, business_date, session_number)`, and
+`TreasuryJournalClosureService::findOrOpenTodaysClosure()` auto-opens
+`session_number + 1` whenever the latest session for today is already
+closed, instead of throwing. A cash/cheque sale right after a lunchtime
+closure silently opens session 2 on the same journal/day — no separate
+"reopen" call needed, same auto-open-on-first-activity behavior the
+journal always had, just no longer capped at one session per day.
+`JournalClosedException` is gone (had exactly one throw site, this one).
+
+The explicit **close** action stays stricter than settlement's
+auto-open, on purpose: closing must never silently manufacture a phantom
+empty session just to immediately close it again. `POST
+/gcom/caisse/close` distinguishes two states for the caller's caisse
+today:
+- **Never touched at all today** (no closure row yet) — legitimate,
+  auto-opens session 1 (zero activity) and closes it. Same as before
+  this feature; "close my empty caisse for the record" still works.
+- **Latest session today already closed, nothing since** — rejected,
+  `422 TREASURY_NO_OPEN_SESSION`, *"Aucune session de caisse ouverte à
+  clôturer aujourd'hui pour {code}"*. Calling close twice in a row
+  without an intervening sale/settlement hits this, not a silent no-op.
+
+`closeAllForBranch` (the generic admin bulk-close, §7/`FinanceJournalClosureController`)
+was updated the same way — it now targets each journal's **currently
+open session** specifically, not a naive "today's row", so it can't
+double-close an already-closed session or miss session 2+ after a
+lunchtime reopen.
 
 Response:
 ```json

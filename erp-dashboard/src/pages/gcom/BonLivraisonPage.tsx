@@ -4,7 +4,7 @@ import type { ICellRendererParams, ValueGetterParams } from 'ag-grid-community';
 import {
     Truck, Search, X, Plus, Loader2, CheckCircle2,
     RefreshCw, Building2, AlertTriangle, Info, Package,
-    FileText, Ban, Calendar, Download, RotateCcw,
+    FileText, Ban, Calendar, Download, RotateCcw, Layers,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 
@@ -18,17 +18,18 @@ import { GcomCatalogEntryScreen, type GcomCatalogEntrySubmitPayload } from '@/co
 import { GcomLinesTable } from '@/components/gcom/GcomLinesTable';
 import { PdfPriceModeModal } from '@/components/gcom/PdfPriceModeModal';
 import { AvoirAllocationPicker } from '@/components/gcom/AvoirAllocationPicker';
-import { avoirAllocationsMatchTotal, avoirAllocationsWithinTotal, canMixAvoirWith } from '@/lib/gcom/avoirAllocations';
+import { ConvertToInvoicePaymentFields } from '@/components/gcom/ConvertToInvoicePaymentFields';
+import { avoirAllocationsMatchTotal, avoirAllocationsWithinTotal } from '@/lib/gcom/avoirAllocations';
 
 import { gcomApi } from '@/services/api/gcomApi';
-import { getPartners } from '@/services/api/partnerApi';
+import { getPartners, getPartner, getPaymentTerms } from '@/services/api/partnerApi';
 import { masterdataApi, type Bank } from '@/services/api/masterdataApi';
 import { productsApi } from '@/services/api/productsApi';
 import { RETURN_CONDITIONS, RETURN_CONDITION_LABEL } from '@/lib/gcom/returnConditions';
 import { RETURN_REASONS, RETURN_REASON_LABEL } from '@/lib/gcom/returnReasons';
-import type { Partner } from '@/types/partner.types';
+import type { Partner, PaymentTermOption } from '@/types/partner.types';
 import type {
-    GcomDeliveryNote, GcomDeliveryNoteItem, GcomBlStatus, GcomInstrumentInput, GcomPdfPriceMode, GcomReturnCondition, GcomReturnReason, GcomDeliveryNoteReturn, GcomSoucheKind, GcomAvoirAllocation,
+    GcomDeliveryNote, GcomDeliveryNoteItem, GcomBlStatus, GcomInstrumentInput, GcomPdfPriceMode, GcomReturnCondition, GcomReturnReason, GcomDeliveryNoteReturn, GcomSoucheKind, GcomAvoirAllocation, GcomPaymentMethod,
 } from '@/types/gcom.types';
 
 // ─── helpers ─────────────────────────────────────────────────────────────────
@@ -54,6 +55,11 @@ const BL_STATUS_META: Record<GcomBlStatus, { label: string; dot: string; text: s
     cancelled: { label: 'Annulé', dot: 'bg-gray-400', text: 'text-gray-500' },
 };
 
+// 2026-09-01 — same eligibility rule POST /invoices/consolidate itself
+// enforces server-side (delivered, not yet invoiced) — checked client-side
+// too so the checkbox column never offers a row that would 422.
+const isConsolidateEligible = (n: GcomDeliveryNote) => n.status === 'delivered' && !n.invoice_id;
+
 const BL_STATUS_FILTERS: { value: 'all' | GcomBlStatus; label: string }[] = [
     { value: 'all', label: 'Tous' },
     { value: 'in_transit', label: 'En transit' },
@@ -76,6 +82,155 @@ const TABS: TabItem[] = [
     { id: 'lignes', label: 'Lignes', icon: Package },
     { id: 'retours', label: 'Retours', icon: RotateCcw },
 ];
+
+// ─── Consolidate modal — groups ≥2 BLs from separate orders of the same
+// partner into one invoice (2026-09-01, POST /invoices/consolidate). A
+// financial mutation, so a modal like every other convert/close/redeem
+// action in this codebase, not inline. ─────────────────────────────────────
+
+const ConsolidateModal = ({ notes, onClose, onDone }: { notes: GcomDeliveryNote[]; onClose: () => void; onDone: () => void }) => {
+    const partner = notes[0]?.partner ?? null;
+    const total = notes.reduce((sum, n) => sum + (Number(n.total_amount) || 0), 0);
+
+    // Off by default — payment_method/souche_kind are only REQUIRED when the
+    // selected orders disagree; most manual groupings are a single wholesale
+    // client whose orders already naturally agree, so the common path needs
+    // no override at all. If the API 422s asking for one, confirm() reveals
+    // this section automatically rather than leaving the user to guess why.
+    const [overrideEnabled, setOverrideEnabled] = useState(false);
+    const [method, setMethod] = useState<Exclude<GcomPaymentMethod, 'avoir'>>('cash');
+    const [instrument, setInstrument] = useState<GcomInstrumentInput>(EMPTY_INSTRUMENT);
+    const [instrumentBankOther, setInstrumentBankOther] = useState(false);
+    const [banks, setBanks] = useState<Bank[]>([]);
+    const [creditTerms, setCreditTerms] = useState<PaymentTermOption[]>([]);
+    const [termId, setTermId] = useState<number | null>(null);
+    const [soucheKind, setSoucheKind] = useState<GcomSoucheKind>('declared');
+    const [submitting, setSubmitting] = useState(false);
+
+    useEffect(() => {
+        masterdataApi.banks.getAll().then(setBanks).catch(() => setBanks([]));
+        if (partner?.id) {
+            getPaymentTerms(partner.id)
+                .then(res => {
+                    const terms = res.partner?.paymentTerms ?? res.partner?.payment_terms ?? res.availableTerms ?? res.available_terms ?? [];
+                    const ct = terms.filter(t => t.is_credit && !t.is_cash);
+                    setCreditTerms(ct);
+                    const defaultTerm = ct.find(t => t.pivot?.is_default) ?? ct[0] ?? null;
+                    setTermId(defaultTerm?.id ?? null);
+                })
+                .catch(() => setCreditTerms([]));
+        }
+    }, [partner?.id]);
+
+    const confirm = async () => {
+        const needsInstrumentNow = overrideEnabled && (method === 'cheque' || method === 'effet');
+        if (needsInstrumentNow && (!instrument.reference_number.trim() || !instrument.due_date)) {
+            toast.error('Référence et échéance requises');
+            return;
+        }
+        const needsTermNow = overrideEnabled && (method === 'credit' || method === 'transfer');
+        if (needsTermNow && creditTerms.length === 0) {
+            toast.error('Aucun terme de paiement à crédit configuré pour ce client');
+            return;
+        }
+        setSubmitting(true);
+        try {
+            const invoice = await gcomApi.invoices.consolidate({
+                delivery_note_ids: notes.map(n => n.id),
+                payment_method: overrideEnabled ? method : undefined,
+                payment_term_id: needsTermNow ? termId : undefined,
+                instrument: needsInstrumentNow ? instrument : undefined,
+                souche_kind: overrideEnabled ? soucheKind : undefined,
+            });
+            toast.success(`Facture ${invoice.invoice_number ?? `#${invoice.id}`} créée — ${notes.length} BL consolidés`);
+            onDone();
+            onClose();
+        } catch (err: unknown) {
+            const msg = (err as { response?: { data?: { message?: string } } })?.response?.data?.message;
+            toast.error(msg ?? 'Erreur lors de la consolidation');
+            if (!overrideEnabled) setOverrideEnabled(true);
+        } finally {
+            setSubmitting(false);
+        }
+    };
+
+    return (
+        <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/40 backdrop-blur-sm">
+            <div className="bg-white rounded-2xl shadow-2xl p-6 max-w-lg w-full mx-4 max-h-[85vh] overflow-y-auto">
+                <div className="flex items-center gap-3 mb-3">
+                    <div className="w-9 h-9 rounded-full bg-indigo-100 flex items-center justify-center">
+                        <Layers className="w-4 h-4 text-indigo-600" />
+                    </div>
+                    <div>
+                        <h3 className="text-base font-semibold text-gray-900">Consolider en une facture</h3>
+                        <p className="text-xs text-gray-500">{partner?.name ?? '—'} — {notes.length} bons de livraison</p>
+                    </div>
+                </div>
+
+                <div className="bg-gray-50 rounded-lg border border-gray-100 divide-y divide-gray-100 mb-3 max-h-40 overflow-y-auto">
+                    {notes.map(n => (
+                        <div key={n.id} className="flex items-center justify-between px-3 py-1.5 text-xs">
+                            <span className="font-mono text-indigo-600">{n.delivery_number ?? `#${n.id}`}</span>
+                            <span className="text-gray-600">{fmtMAD(n.total_amount)}</span>
+                        </div>
+                    ))}
+                </div>
+                <p className="text-sm text-gray-700 font-semibold mb-4">Total : {fmtMAD(total)}</p>
+
+                <label className="flex items-center gap-2 text-xs text-gray-600 cursor-pointer mb-3">
+                    <input
+                        type="checkbox"
+                        checked={overrideEnabled}
+                        onChange={e => setOverrideEnabled(e.target.checked)}
+                        className="rounded border-gray-300 text-sage-600 focus:ring-sage-400"
+                    />
+                    Forcer un mode de règlement (sinon détecté automatiquement si les commandes sont d'accord)
+                </label>
+
+                {overrideEnabled && (
+                    <div className="space-y-3 mb-4 bg-amber-50 border border-amber-200 rounded-lg p-3">
+                        <ConvertToInvoicePaymentFields
+                            invoicingMode={null}
+                            method={method}
+                            onMethodChange={setMethod}
+                            instrument={instrument}
+                            onInstrumentChange={setInstrument}
+                            banks={banks}
+                            bankOther={instrumentBankOther}
+                            onBankOtherChange={setInstrumentBankOther}
+                            creditTerms={creditTerms}
+                            termId={termId}
+                            onTermIdChange={setTermId}
+                            soucheKind={soucheKind}
+                            onSoucheKindChange={setSoucheKind}
+                            mixAvoirEnabled={false}
+                            onMixAvoirEnabledChange={() => {}}
+                            avoirAllocations={[]}
+                            onAvoirAllocationsChange={() => {}}
+                            partnerId={partner?.id ?? null}
+                            total={total}
+                            hideAvoirMix
+                        />
+                    </div>
+                )}
+
+                <div className="flex gap-3">
+                    <button
+                        onClick={confirm}
+                        disabled={submitting}
+                        className="flex-1 flex items-center justify-center gap-2 py-2 bg-sage-600 text-white text-sm font-medium rounded-lg hover:bg-sage-700 disabled:opacity-50 transition-colors"
+                    >
+                        {submitting ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <CheckCircle2 className="w-3.5 h-3.5" />}
+                        Consolider
+                    </button>
+                    <button onClick={onClose} disabled={submitting} className="flex-1 py-2 border border-gray-200 text-sm text-gray-600 rounded-lg hover:bg-gray-50 disabled:opacity-50 transition-colors">
+                        Annuler
+                    </button>
+                </div>
+            </div>
+        </div>
+    );
+};
 
 const PAGE_SIZE = 30;
 const EMPTY_INSTRUMENT: GcomInstrumentInput = { reference_number: '', due_date: '', bank_name: '', bank_account: '' };
@@ -143,6 +298,57 @@ export default function BonLivraisonPage() {
 
     useEffect(() => { loadNotes(1, false); }, [loadNotes]);
     const loadMore = () => { if (page < lastPage) loadNotes(page + 1, true); };
+
+    // ── Consolidate (2026-09-01) — pick ≥2 delivered/uninvoiced BLs from the
+    // same partner and group them into one invoice. A distinct selection from
+    // the single-row `selected` used for the detail view — a checkbox column
+    // (not the grid's own row-selection, which stays "single" for detail
+    // click-through), same manual Set<id> pattern as PortefeuilleInstrumentsPage's
+    // batch-deposit selection. ─────────────────────────────────────────────
+    const [consolidateIds, setConsolidateIds] = useState<Set<number>>(new Set());
+    const [consolidateModalOpen, setConsolidateModalOpen] = useState(false);
+    // Selection doesn't survive a filter change/reload — the underlying id
+    // set may no longer be visible, and a stale count would be misleading.
+    useEffect(() => { setConsolidateIds(new Set()); }, [partnerFilter, blStatusFilter]);
+
+    const toggleConsolidateRow = (note: GcomDeliveryNote) => {
+        if (!isConsolidateEligible(note)) return;
+        setConsolidateIds(prev => {
+            if (prev.has(note.id)) {
+                const next = new Set(prev);
+                next.delete(note.id);
+                return next;
+            }
+            if (prev.size > 0) {
+                const firstSelected = notes.find(n => prev.has(n.id));
+                if (firstSelected && firstSelected.partner?.id !== note.partner?.id) {
+                    toast.error('Sélectionnez des bons de livraison du même client uniquement.');
+                    return prev;
+                }
+            }
+            const next = new Set(prev);
+            next.add(note.id);
+            return next;
+        });
+    };
+
+    const consolidateNotes = useMemo(() => notes.filter(n => consolidateIds.has(n.id)), [notes, consolidateIds]);
+    const consolidateTotal = consolidateNotes.reduce((sum, n) => sum + (Number(n.total_amount) || 0), 0);
+
+    // "Select all" — scoped to one partner, same as the per-row guard: picks
+    // up the currently selected partner (if any) or the first eligible row's,
+    // so it stays correct even when the list isn't filtered to one client.
+    // Typical use: filter by client, then select all in one click.
+    const eligibleNotes = useMemo(() => notes.filter(isConsolidateEligible), [notes]);
+    const selectAllTargetPartnerId = consolidateNotes[0]?.partner?.id ?? eligibleNotes[0]?.partner?.id ?? null;
+    const eligibleForSelectAll = useMemo(
+        () => selectAllTargetPartnerId == null ? [] : eligibleNotes.filter(n => n.partner?.id === selectAllTargetPartnerId),
+        [eligibleNotes, selectAllTargetPartnerId],
+    );
+    const allEligibleSelected = eligibleForSelectAll.length > 0 && eligibleForSelectAll.every(n => consolidateIds.has(n.id));
+    const toggleAllConsolidate = () => {
+        setConsolidateIds(allEligibleSelected ? new Set() : new Set(eligibleForSelectAll.map(n => n.id)));
+    };
 
     // ── Selection / detail ───────────────────────────────────────────────────
     const [formMode, setFormMode] = useState<'view' | 'create'>('view');
@@ -368,19 +574,75 @@ export default function BonLivraisonPage() {
     const [convertingToInvoice, setConvertingToInvoice] = useState(false);
     // §17 — explicit override, 'declared' is the safe/common default.
     const [convertSoucheKind, setConvertSoucheKind] = useState<GcomSoucheKind>('declared');
+    // 2026-08-21 — the partner's billing mode (per-order/BL consolidation,
+    // periodic fin-de-mois) isn't embedded on the order/BL payload itself,
+    // so it's fetched once when the conversion flow opens. 1_FAC_PER_ORDER
+    // doesn't support an explicit souche_kind or payment_method override yet
+    // (backend either 422s or, verified live 2026-08-21, silently swaps the
+    // souche to its own default instead of honoring ours — hide both
+    // controls rather than risk a declared/internal mismatch the user never
+    // asked for). PERIODIC_FIN_DE_MOIS never allows manual conversion at
+    // all — blocked at openConvertToInvoice, before any modal opens.
+    const [convertInvoicingMode, setConvertInvoicingMode] = useState<'1_FAC_PER_BL' | '1_FAC_PER_ORDER' | 'PERIODIC_FIN_DE_MOIS' | null>(null);
+    const [convertModeChecking, setConvertModeChecking] = useState(false);
+    // 2026-09-01 — generalized payment_method override at convert-to-invoice:
+    // any real method (cash/card/cheque/effet/credit/transfer, avoir excluded
+    // — that's the separate avoir_allocations mechanism above) can now be
+    // swapped in regardless of what the BL was originally created with.
+    // Defaults to the BL's own stored method (openConvertToInvoice) so the
+    // common "no change" path never sends an override. Not offered at all
+    // for 1_FAC_PER_ORDER (doc: "not supported at all yet for this mode",
+    // matches the souche_kind restriction already gated on the same flag).
+    const [convertMethodOverride, setConvertMethodOverride] = useState<Exclude<GcomPaymentMethod, 'avoir'>>('cash');
+    const [convertOverrideCreditTerms, setConvertOverrideCreditTerms] = useState<PaymentTermOption[]>([]);
+    const [convertOverrideTermId, setConvertOverrideTermId] = useState<number | null>(null);
     // Bank dropdown for the instrument's bank_name (GET /masterdata/banks) —
     // falls back to free text if the list is empty or the bank isn't listed.
     const [banks, setBanks] = useState<Bank[]>([]);
     const [convertInstrumentBankOther, setConvertInstrumentBankOther] = useState(false);
     useEffect(() => { masterdataApi.banks.getAll().then(setBanks).catch(() => setBanks([])); }, []);
 
-    const openConvertToInvoice = () => {
+    const openConvertToInvoice = async () => {
         if (!selected) return;
         setConvertSoucheKind('declared');
         setConvertAvoirAllocations([]);
         setConvertMixAvoirEnabled(false);
         setConvertAvoirOverrideMethod('');
-        const method = selected.order?.financial_metadata?.payment_method;
+        setConvertInvoicingMode(null);
+        setConvertOverrideCreditTerms([]);
+        setConvertOverrideTermId(null);
+        const method: GcomPaymentMethod = selected.order?.financial_metadata?.payment_method ?? 'cash';
+        // The method-override selector never offers 'avoir' (see
+        // ConvertToInvoicePaymentFields) — an avoir-stored document takes the
+        // separate avoir panel branch below instead, where this state is unused.
+        setConvertMethodOverride(method === 'avoir' ? 'cash' : method);
+        if (selected.partner?.id) {
+            setConvertModeChecking(true);
+            try {
+                const [{ partner }, termsRes] = await Promise.all([
+                    getPartner(selected.partner.id),
+                    getPaymentTerms(selected.partner.id).catch(() => null),
+                ]);
+                const mode = partner.invoicing_mode ?? '1_FAC_PER_BL';
+                if (mode === 'PERIODIC_FIN_DE_MOIS') {
+                    toast.error('Ce client est facturé automatiquement en fin de mois — pas de conversion manuelle possible pour ce BL.');
+                    return;
+                }
+                setConvertInvoicingMode(mode);
+                if (termsRes) {
+                    const terms = termsRes.partner?.paymentTerms ?? termsRes.partner?.payment_terms ?? termsRes.availableTerms ?? termsRes.available_terms ?? [];
+                    const creditTerms = terms.filter(t => t.is_credit && !t.is_cash);
+                    setConvertOverrideCreditTerms(creditTerms);
+                    const defaultTerm = creditTerms.find(t => t.pivot?.is_default) ?? creditTerms[0] ?? null;
+                    setConvertOverrideTermId(defaultTerm?.id ?? null);
+                }
+            } catch {
+                // Partner fetch failing shouldn't block the conversion itself —
+                // fall back to the default (unrestricted) behavior.
+            } finally {
+                setConvertModeChecking(false);
+            }
+        }
         const needsInstrument = method === 'cheque' || method === 'effet';
         if (needsInstrument) {
             setConvertInstrument(EMPTY_INSTRUMENT);
@@ -394,11 +656,17 @@ export default function BonLivraisonPage() {
     };
     const closeInvoiceConfirm = () => setInvoiceConfirmOpen(false);
 
-    const doConvertToInvoice = async (instrument: GcomInstrumentInput | null, avoirAllocations?: GcomAvoirAllocation[], paymentMethodOverride?: 'cash' | 'card') => {
+    const doConvertToInvoice = async (instrument: GcomInstrumentInput | null, avoirAllocations?: GcomAvoirAllocation[], paymentMethodOverride?: Exclude<GcomPaymentMethod, 'avoir'>, paymentTermId?: number | null) => {
         if (!selected) return;
         setConvertingToInvoice(true);
         try {
-            const invoice = await gcomApi.deliveryNotes.convertToInvoice(selected.id, instrument, convertSoucheKind, avoirAllocations, paymentMethodOverride);
+            // 1_FAC_PER_ORDER doesn't support an explicit souche_kind or
+            // payment_method override yet — let backend pick its own defaults
+            // rather than risk a silent mismatch.
+            const soucheKindArg = convertInvoicingMode === '1_FAC_PER_ORDER' ? undefined : convertSoucheKind;
+            const overrideArg = convertInvoicingMode === '1_FAC_PER_ORDER' ? undefined : paymentMethodOverride;
+            const termIdArg = convertInvoicingMode === '1_FAC_PER_ORDER' ? undefined : paymentTermId;
+            const invoice = await gcomApi.deliveryNotes.convertToInvoice(selected.id, instrument, soucheKindArg, avoirAllocations, overrideArg, termIdArg);
             toast.success(`Facture ${invoice.invoice_number ?? `#${invoice.id}`} créée${invoice.souche_kind === 'internal' ? ' (souche interne)' : ''}`);
             setConvertPanelOpen(false);
             setInvoiceConfirmOpen(false);
@@ -410,6 +678,37 @@ export default function BonLivraisonPage() {
         } finally {
             setConvertingToInvoice(false);
         }
+    };
+
+    // Shared submit for both the "instrument panel" and "plain confirm modal"
+    // — both now render the same ConvertToInvoicePaymentFields, so both need
+    // the same validation/dispatch based on the currently selected
+    // convertMethodOverride, not which panel happened to open by default.
+    const confirmConvertToInvoice = () => {
+        if (!selected) return;
+        const total = Number(selected.total_amount) || 0;
+        const needsInstrumentNow = convertMethodOverride === 'cheque' || convertMethodOverride === 'effet';
+        if (needsInstrumentNow && (!convertInstrument.reference_number.trim() || !convertInstrument.due_date)) {
+            toast.error('Référence et échéance requises');
+            return;
+        }
+        const needsTermNow = convertMethodOverride === 'credit' || convertMethodOverride === 'transfer';
+        if (needsTermNow && convertOverrideCreditTerms.length === 0) {
+            toast.error('Aucun terme de paiement à crédit configuré pour ce client');
+            return;
+        }
+        if (convertMixAvoirEnabled && !avoirAllocationsWithinTotal(convertAvoirAllocations, total)) {
+            toast.error('Le total des avoirs sélectionnés dépasse le montant de la vente');
+            return;
+        }
+        const storedMethod = selected.order?.financial_metadata?.payment_method ?? 'cash';
+        const methodChanged = convertMethodOverride !== storedMethod;
+        void doConvertToInvoice(
+            needsInstrumentNow ? convertInstrument : null,
+            convertMixAvoirEnabled && convertAvoirAllocations.length > 0 ? convertAvoirAllocations : undefined,
+            methodChanged ? convertMethodOverride : undefined,
+            needsTermNow ? convertOverrideTermId : undefined,
+        );
     };
 
     // ── Cancellation (restocks) ──────────────────────────────────────────────
@@ -514,6 +813,36 @@ export default function BonLivraisonPage() {
 
     const columnDefs = useMemo<import('ag-grid-community').ColDef[]>(() => [
         {
+            // DataGrid's own defaultColDef enforces minWidth: 100 — must be
+            // overridden per-column here, otherwise width alone is ignored.
+            headerName: '', width: 32, minWidth: 32, maxWidth: 32, pinned: 'left' as const, sortable: false, resizable: false, filter: false,
+            headerComponent: () => (
+                <div className="flex items-center justify-center h-full" title="Tout sélectionner (client courant)">
+                    <input
+                        type="checkbox"
+                        checked={allEligibleSelected}
+                        onChange={toggleAllConsolidate}
+                        disabled={eligibleForSelectAll.length === 0}
+                        className="w-3.5 h-3.5 rounded border-gray-300 text-sage-600 focus:ring-sage-400"
+                    />
+                </div>
+            ),
+            cellRenderer: (p: ICellRendererParams<GcomDeliveryNote>) => {
+                if (!p.data || !isConsolidateEligible(p.data)) return <span className="flex items-center justify-center h-full text-gray-300 text-xs">—</span>;
+                return (
+                    <div className="flex items-center justify-center h-full" onClick={e => e.stopPropagation()}>
+                        <input
+                            type="checkbox"
+                            checked={consolidateIds.has(p.data.id)}
+                            onChange={() => toggleConsolidateRow(p.data!)}
+                            title="Sélectionner pour consolidation"
+                            className="w-3.5 h-3.5 rounded border-gray-300 text-sage-600 focus:ring-sage-400"
+                        />
+                    </div>
+                );
+            },
+        },
+        {
             field: 'delivery_number', headerName: 'BL', width: 150,
             valueGetter: (p: ValueGetterParams<GcomDeliveryNote>) => p.data?.delivery_number ?? `#${p.data?.id}`,
             cellRenderer: (p: ICellRendererParams<GcomDeliveryNote, string>) => (
@@ -562,7 +891,8 @@ export default function BonLivraisonPage() {
             },
             cellRenderer: (p: ICellRendererParams<GcomDeliveryNote, string>) => <span style={{ fontSize: '11px', color: '#6b7280' }}>{fmtDate(p.value)}</span>,
         },
-    ], []);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    ], [consolidateIds, allEligibleSelected, eligibleForSelectAll]);
 
     // ── Action panel ──────────────────────────────────────────────────────────
 
@@ -591,14 +921,14 @@ export default function BonLivraisonPage() {
             detailItems.push({ icon: RotateCcw, label: 'Effectuer un retour partiel', variant: 'warning', onClick: openReturnBatch });
         }
         if (canConvertToInvoice) {
-            detailItems.push({ icon: FileText, label: 'Convertir en Facture', variant: 'primary', onClick: openConvertToInvoice, disabled: convertingToInvoice });
+            detailItems.push({ icon: FileText, label: 'Convertir en Facture', variant: 'primary', onClick: openConvertToInvoice, disabled: convertingToInvoice || convertModeChecking });
         }
         if (canCancel) {
             detailItems.push({ icon: Ban, label: 'Annuler le BL', variant: 'danger', onClick: openCancel });
         }
         return [{ items: base }, { items: detailItems }];
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [selected, canConfirmDelivery, canConvertToInvoice, canCancel, canReturn, loading, convertingToInvoice, confirmingDelivery]);
+    }, [selected, canConfirmDelivery, canConvertToInvoice, canCancel, canReturn, loading, convertingToInvoice, convertModeChecking, confirmingDelivery]);
 
     // ─────────────────────────────────────────────────────────────────────────
     // RENDER
@@ -704,6 +1034,23 @@ export default function BonLivraisonPage() {
                             />
                         </div>
 
+                        {consolidateIds.size > 0 && (
+                            <div className="shrink-0 border-t border-indigo-100 bg-indigo-50 px-3 py-2 flex items-center justify-between gap-2">
+                                <div className="min-w-0">
+                                    <p className="text-[11px] font-semibold text-indigo-800">{consolidateIds.size} sélectionné(s) — {fmtMAD(consolidateTotal)}</p>
+                                    <button onClick={() => setConsolidateIds(new Set())} className="text-[10px] text-indigo-500 hover:underline">Vider la sélection</button>
+                                </div>
+                                <button
+                                    onClick={() => setConsolidateModalOpen(true)}
+                                    disabled={consolidateIds.size < 2}
+                                    title={consolidateIds.size < 2 ? 'Sélectionnez au moins 2 bons de livraison' : undefined}
+                                    className="shrink-0 flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-white bg-indigo-600 rounded-lg hover:bg-indigo-700 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                                >
+                                    <Layers className="w-3.5 h-3.5" /> Consolider
+                                </button>
+                            </div>
+                        )}
+
                         {page < lastPage && (
                             <div className="shrink-0 border-t border-gray-100 p-2">
                                 <button
@@ -752,83 +1099,35 @@ export default function BonLivraisonPage() {
 
                                 <div ref={containerRef} className="flex-1 overflow-y-auto p-4 space-y-3 scroll-smooth bg-slate-50">
 
-                                    {/* ── Convert-to-invoice instrument panel ──── */}
+                                    {/* ── Convert-to-invoice panel (instrument-first entry, but any method can be picked) ──── */}
                                     {convertPanelOpen && (
                                         <div className="bg-amber-50 border border-amber-200 rounded-lg p-4 space-y-3">
-                                            <p className="text-xs font-semibold text-amber-800">
-                                                Instrument requis pour la conversion en facture ({selected.order?.financial_metadata?.payment_method})
-                                            </p>
-                                            <div className="grid grid-cols-2 gap-2">
-                                                <input value={convertInstrument.reference_number} onChange={e => setConvertInstrument(p => ({ ...p, reference_number: e.target.value }))} placeholder="Référence *" className="px-2 py-1.5 text-xs border border-gray-200 rounded-md" />
-                                                <input type="date" value={convertInstrument.due_date} onChange={e => setConvertInstrument(p => ({ ...p, due_date: e.target.value }))} className="px-2 py-1.5 text-xs border border-gray-200 rounded-md" />
-                                                {banks.length > 0 && !convertInstrumentBankOther ? (
-                                                    <select
-                                                        value={convertInstrument.bank_name}
-                                                        onChange={e => {
-                                                            if (e.target.value === '__other__') { setConvertInstrumentBankOther(true); setConvertInstrument(p => ({ ...p, bank_name: '' })); }
-                                                            else setConvertInstrument(p => ({ ...p, bank_name: e.target.value }));
-                                                        }}
-                                                        className="px-2 py-1.5 text-xs border border-gray-200 rounded-md bg-white"
-                                                    >
-                                                        <option value="">Banque</option>
-                                                        {banks.map(b => <option key={b.id} value={b.name}>{b.name}</option>)}
-                                                        <option value="__other__">Autre…</option>
-                                                    </select>
-                                                ) : (
-                                                    <input value={convertInstrument.bank_name} onChange={e => setConvertInstrument(p => ({ ...p, bank_name: e.target.value }))} placeholder={banks.length > 0 ? 'Banque (saisie libre)' : 'Banque'} className="px-2 py-1.5 text-xs border border-gray-200 rounded-md" />
-                                                )}
-                                                <input value={convertInstrument.bank_account} onChange={e => setConvertInstrument(p => ({ ...p, bank_account: e.target.value }))} placeholder="N° compte" className="px-2 py-1.5 text-xs border border-gray-200 rounded-md" />
-                                            </div>
-                                            <div className="flex items-center gap-1.5">
-                                                <span className="text-[10px] text-gray-500 mr-0.5">Souche :</span>
-                                                {(['declared', 'internal'] as GcomSoucheKind[]).map(k => (
-                                                    <button
-                                                        key={k}
-                                                        onClick={() => setConvertSoucheKind(k)}
-                                                        className={`px-2.5 py-1 rounded-lg border text-[11px] font-medium transition-colors ${
-                                                            convertSoucheKind === k ? 'bg-indigo-600 border-indigo-600 text-white' : 'bg-white border-gray-200 text-gray-600 hover:bg-gray-50'
-                                                        }`}
-                                                    >
-                                                        {k === 'declared' ? 'Déclarée' : 'Interne'}
-                                                    </button>
-                                                ))}
-                                            </div>
-
-                                            {/* Optional avoir mix (2026-08-20) — avoir covers part of the total, this instrument settles the rest. */}
-                                            {canMixAvoirWith(selected.order?.financial_metadata?.payment_method) && (
-                                                <div className="space-y-2">
-                                                    <label className="flex items-center gap-2 text-xs text-gray-600 cursor-pointer">
-                                                        <input
-                                                            type="checkbox"
-                                                            checked={convertMixAvoirEnabled}
-                                                            onChange={e => { setConvertMixAvoirEnabled(e.target.checked); if (!e.target.checked) setConvertAvoirAllocations([]); }}
-                                                            className="rounded border-gray-300 text-sage-600 focus:ring-sage-400"
-                                                        />
-                                                        Appliquer un avoir en réduction du montant
-                                                    </label>
-                                                    {convertMixAvoirEnabled && (
-                                                        <AvoirAllocationPicker
-                                                            partnerId={selected.partner?.id ?? null}
-                                                            total={Number(selected.total_amount) || 0}
-                                                            value={convertAvoirAllocations}
-                                                            onChange={setConvertAvoirAllocations}
-                                                            mode="partial"
-                                                        />
-                                                    )}
-                                                </div>
-                                            )}
+                                            <p className="text-xs font-semibold text-amber-800">Conversion en facture</p>
+                                            <ConvertToInvoicePaymentFields
+                                                invoicingMode={convertInvoicingMode}
+                                                method={convertMethodOverride}
+                                                onMethodChange={setConvertMethodOverride}
+                                                instrument={convertInstrument}
+                                                onInstrumentChange={setConvertInstrument}
+                                                banks={banks}
+                                                bankOther={convertInstrumentBankOther}
+                                                onBankOtherChange={setConvertInstrumentBankOther}
+                                                creditTerms={convertOverrideCreditTerms}
+                                                termId={convertOverrideTermId}
+                                                onTermIdChange={setConvertOverrideTermId}
+                                                soucheKind={convertSoucheKind}
+                                                onSoucheKindChange={setConvertSoucheKind}
+                                                mixAvoirEnabled={convertMixAvoirEnabled}
+                                                onMixAvoirEnabledChange={setConvertMixAvoirEnabled}
+                                                avoirAllocations={convertAvoirAllocations}
+                                                onAvoirAllocationsChange={setConvertAvoirAllocations}
+                                                partnerId={selected.partner?.id ?? null}
+                                                total={Number(selected.total_amount) || 0}
+                                            />
 
                                             <div className="flex gap-2">
                                                 <button
-                                                    onClick={() => {
-                                                        if (!convertInstrument.reference_number.trim() || !convertInstrument.due_date) { toast.error('Référence et échéance requises'); return; }
-                                                        const total = Number(selected.total_amount) || 0;
-                                                        if (convertMixAvoirEnabled && !avoirAllocationsWithinTotal(convertAvoirAllocations, total)) {
-                                                            toast.error('Le total des avoirs sélectionnés dépasse le montant de la vente');
-                                                            return;
-                                                        }
-                                                        void doConvertToInvoice(convertInstrument, convertMixAvoirEnabled && convertAvoirAllocations.length > 0 ? convertAvoirAllocations : undefined);
-                                                    }}
+                                                    onClick={confirmConvertToInvoice}
                                                     disabled={convertingToInvoice}
                                                     className="flex items-center gap-2 px-3 py-1.5 bg-sage-600 text-white text-xs font-medium rounded-lg hover:bg-sage-700 disabled:opacity-50"
                                                 >
@@ -854,36 +1153,42 @@ export default function BonLivraisonPage() {
 
                                             {/* payment_method override (2026-08-20) — the avoir alone doesn't have
                                                 to cover 100%; switching this on lets the remainder be settled in
-                                                cash/card instead of requiring an exact avoir match. */}
-                                            <div className="space-y-1.5 pt-1 border-t border-amber-100">
-                                                <p className="text-[11px] text-gray-500">L'avoir ne couvre pas tout ? Réglez le reliquat par :</p>
-                                                <div className="flex gap-1.5">
-                                                    <button
-                                                        onClick={() => setConvertAvoirOverrideMethod('')}
-                                                        className={`px-2.5 py-1 rounded-lg border text-[11px] font-medium transition-colors ${
-                                                            !convertAvoirOverrideMethod ? 'bg-gray-700 border-gray-700 text-white' : 'bg-white border-gray-200 text-gray-600 hover:bg-gray-50'
-                                                        }`}
-                                                    >
-                                                        Avoir seul (100%)
-                                                    </button>
-                                                    <button
-                                                        onClick={() => setConvertAvoirOverrideMethod('cash')}
-                                                        className={`px-2.5 py-1 rounded-lg border text-[11px] font-medium transition-colors ${
-                                                            convertAvoirOverrideMethod === 'cash' ? 'bg-indigo-600 border-indigo-600 text-white' : 'bg-white border-gray-200 text-gray-600 hover:bg-gray-50'
-                                                        }`}
-                                                    >
-                                                        Espèces
-                                                    </button>
-                                                    <button
-                                                        onClick={() => setConvertAvoirOverrideMethod('card')}
-                                                        className={`px-2.5 py-1 rounded-lg border text-[11px] font-medium transition-colors ${
-                                                            convertAvoirOverrideMethod === 'card' ? 'bg-indigo-600 border-indigo-600 text-white' : 'bg-white border-gray-200 text-gray-600 hover:bg-gray-50'
-                                                        }`}
-                                                    >
-                                                        Carte
-                                                    </button>
+                                                cash/card instead of requiring an exact avoir match. Not supported
+                                                yet for 1_FAC_PER_ORDER (backend 422s it) — the avoir must cover
+                                                100% of this BL's total in that mode. */}
+                                            {convertInvoicingMode === '1_FAC_PER_ORDER' ? (
+                                                <p className="text-[10px] text-gray-400 italic pt-1 border-t border-amber-100">Le reliquat espèces/carte n'est pas encore disponible pour ce mode de facturation — l'avoir doit couvrir 100% du montant.</p>
+                                            ) : (
+                                                <div className="space-y-1.5 pt-1 border-t border-amber-100">
+                                                    <p className="text-[11px] text-gray-500">L'avoir ne couvre pas tout ? Réglez le reliquat par :</p>
+                                                    <div className="flex gap-1.5">
+                                                        <button
+                                                            onClick={() => setConvertAvoirOverrideMethod('')}
+                                                            className={`px-2.5 py-1 rounded-lg border text-[11px] font-medium transition-colors ${
+                                                                !convertAvoirOverrideMethod ? 'bg-gray-700 border-gray-700 text-white' : 'bg-white border-gray-200 text-gray-600 hover:bg-gray-50'
+                                                            }`}
+                                                        >
+                                                            Avoir seul (100%)
+                                                        </button>
+                                                        <button
+                                                            onClick={() => setConvertAvoirOverrideMethod('cash')}
+                                                            className={`px-2.5 py-1 rounded-lg border text-[11px] font-medium transition-colors ${
+                                                                convertAvoirOverrideMethod === 'cash' ? 'bg-indigo-600 border-indigo-600 text-white' : 'bg-white border-gray-200 text-gray-600 hover:bg-gray-50'
+                                                            }`}
+                                                        >
+                                                            Espèces
+                                                        </button>
+                                                        <button
+                                                            onClick={() => setConvertAvoirOverrideMethod('card')}
+                                                            className={`px-2.5 py-1 rounded-lg border text-[11px] font-medium transition-colors ${
+                                                                convertAvoirOverrideMethod === 'card' ? 'bg-indigo-600 border-indigo-600 text-white' : 'bg-white border-gray-200 text-gray-600 hover:bg-gray-50'
+                                                            }`}
+                                                        >
+                                                            Carte
+                                                        </button>
+                                                    </div>
                                                 </div>
-                                            </div>
+                                            )}
 
                                             <div className="flex gap-2">
                                                 <button
@@ -1105,7 +1410,7 @@ export default function BonLivraisonPage() {
             {/* ── Convert to Facture — plain confirmation (no instrument needed) ── */}
             {invoiceConfirmOpen && selected && (
                 <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm">
-                    <div className={`bg-white rounded-2xl shadow-2xl p-6 w-full mx-4 ${convertMixAvoirEnabled ? 'max-w-lg' : 'max-w-sm'}`}>
+                    <div className="bg-white rounded-2xl shadow-2xl p-6 max-w-lg w-full mx-4">
                         <div className="flex items-center gap-3 mb-3">
                             <div className="w-9 h-9 rounded-full bg-sage-100 flex items-center justify-center">
                                 <FileText className="w-4 h-4 text-sage-600" />
@@ -1115,55 +1420,34 @@ export default function BonLivraisonPage() {
                         <p className="text-sm text-gray-600 mb-3">
                             Confirmez-vous la conversion du BL <strong>{selected.delivery_number ?? `#${selected.id}`}</strong> en facture pour <strong>{selected.partner?.name}</strong>, d'un montant de <strong>{fmtMAD(selected.total_amount)}</strong> ?
                         </p>
-                        <div className="flex items-center gap-1.5 mb-3">
-                            <span className="text-[10px] text-gray-500 mr-0.5">Souche :</span>
-                            {(['declared', 'internal'] as GcomSoucheKind[]).map(k => (
-                                <button
-                                    key={k}
-                                    onClick={() => setConvertSoucheKind(k)}
-                                    className={`px-2.5 py-1 rounded-lg border text-[11px] font-medium transition-colors ${
-                                        convertSoucheKind === k ? 'bg-indigo-600 border-indigo-600 text-white' : 'bg-white border-gray-200 text-gray-600 hover:bg-gray-50'
-                                    }`}
-                                >
-                                    {k === 'declared' ? 'Déclarée' : 'Interne'}
-                                </button>
-                            ))}
-                        </div>
 
-                        {/* Optional avoir mix (2026-08-20) — not offered for credit/transfer (backend 422s that combination). */}
-                        {canMixAvoirWith(selected.order?.financial_metadata?.payment_method) && (
-                            <div className="space-y-2 mb-5">
-                                <label className="flex items-center gap-2 text-xs text-gray-600 cursor-pointer">
-                                    <input
-                                        type="checkbox"
-                                        checked={convertMixAvoirEnabled}
-                                        onChange={e => { setConvertMixAvoirEnabled(e.target.checked); if (!e.target.checked) setConvertAvoirAllocations([]); }}
-                                        className="rounded border-gray-300 text-sage-600 focus:ring-sage-400"
-                                    />
-                                    Appliquer un avoir en réduction du montant
-                                </label>
-                                {convertMixAvoirEnabled && (
-                                    <AvoirAllocationPicker
-                                        partnerId={selected.partner?.id ?? null}
-                                        total={Number(selected.total_amount) || 0}
-                                        value={convertAvoirAllocations}
-                                        onChange={setConvertAvoirAllocations}
-                                        mode="partial"
-                                    />
-                                )}
-                            </div>
-                        )}
+                        <div className="space-y-3 mb-5">
+                            <ConvertToInvoicePaymentFields
+                                invoicingMode={convertInvoicingMode}
+                                method={convertMethodOverride}
+                                onMethodChange={setConvertMethodOverride}
+                                instrument={convertInstrument}
+                                onInstrumentChange={setConvertInstrument}
+                                banks={banks}
+                                bankOther={convertInstrumentBankOther}
+                                onBankOtherChange={setConvertInstrumentBankOther}
+                                creditTerms={convertOverrideCreditTerms}
+                                termId={convertOverrideTermId}
+                                onTermIdChange={setConvertOverrideTermId}
+                                soucheKind={convertSoucheKind}
+                                onSoucheKindChange={setConvertSoucheKind}
+                                mixAvoirEnabled={convertMixAvoirEnabled}
+                                onMixAvoirEnabledChange={setConvertMixAvoirEnabled}
+                                avoirAllocations={convertAvoirAllocations}
+                                onAvoirAllocationsChange={setConvertAvoirAllocations}
+                                partnerId={selected.partner?.id ?? null}
+                                total={Number(selected.total_amount) || 0}
+                            />
+                        </div>
 
                         <div className="flex gap-3">
                             <button
-                                onClick={() => {
-                                    const total = Number(selected.total_amount) || 0;
-                                    if (convertMixAvoirEnabled && !avoirAllocationsWithinTotal(convertAvoirAllocations, total)) {
-                                        toast.error('Le total des avoirs sélectionnés dépasse le montant de la vente');
-                                        return;
-                                    }
-                                    doConvertToInvoice(null, convertMixAvoirEnabled && convertAvoirAllocations.length > 0 ? convertAvoirAllocations : undefined);
-                                }}
+                                onClick={confirmConvertToInvoice}
                                 disabled={convertingToInvoice}
                                 className="flex-1 flex items-center justify-center gap-2 py-2 bg-sage-600 text-white text-sm font-medium rounded-lg hover:bg-sage-700 disabled:opacity-50 transition-colors whitespace-nowrap"
                             >
@@ -1311,6 +1595,14 @@ export default function BonLivraisonPage() {
                         </table>
                     </div>
                 </ConfirmationModal>
+            )}
+
+            {consolidateModalOpen && consolidateNotes.length >= 2 && (
+                <ConsolidateModal
+                    notes={consolidateNotes}
+                    onClose={() => setConsolidateModalOpen(false)}
+                    onDone={() => { setConsolidateIds(new Set()); refresh(); }}
+                />
             )}
         </>
     );

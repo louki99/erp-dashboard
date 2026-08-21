@@ -17,6 +17,11 @@ import type {
     GcomRedeemCreditNotePayload,
     GcomRedeemCreditNoteResponse,
     GcomAvoirAllocation,
+    GcomPaymentMethod,
+    GcomConsolidateInvoicePayload,
+    GcomCaisseListResponse,
+    GcomCloseCaissePayload,
+    GcomCaisseCloseResult,
     GcomReturnDeliveryNoteLinePayload,
     GcomReturnDeliveryNoteLineResponse,
     GcomDeliveryNoteReturn,
@@ -163,6 +168,21 @@ export const gcomApi = {
         // affects the rendered output now, defaults to `ttc` if omitted.
         getPdfBlobUrl: (invoiceId: number, priceMode?: GcomPdfPriceMode): Promise<string> =>
             fetchPdfBlobUrl(`${BASE}/invoices/${invoiceId}/pdf`, priceMode),
+
+        // 2026-09-01 — groups ≥2 delivery notes (separate orders, same
+        // partner) into one invoice. A real JSON endpoint despite one
+        // doc line implying otherwise (verified live) — goes through the
+        // normal fetch wrapper like every other GCOM mutation, not a
+        // direct download link. See GcomConsolidateInvoicePayload's
+        // comment for the optional-unless-disagreement fields.
+        consolidate: async (payload: GcomConsolidateInvoicePayload): Promise<GcomInvoice> => {
+            const response = await apiClient.post<GcomConvertToInvoiceResponse>(
+                `${BASE}/invoices/consolidate`,
+                payload,
+                idempotent(),
+            );
+            return response.data.invoice;
+        },
     },
 
     quotes: {
@@ -232,17 +252,24 @@ export const gcomApi = {
         // explicit override, beats the PaymentTerm-derived default; omit to keep it.
         // `avoirAllocations` (2026-08-20) — required (and must sum exactly to the
         // sale total) when the BC's payment_method is 'avoir'.
-        // `paymentMethodOverride` (2026-08-20) — the ONLY way to settle a BC that was
-        // created with payment_method: 'avoir' but whose avoir doesn't cover 100% of
-        // the total. Only accepted when the stored method is genuinely 'avoir' (422
-        // otherwise), and restricted to 'cash'/'card' — cheque/effet/credit/transfer
-        // are rejected (`The selected payment method is invalid.`), same immediate-
-        // settlement-only limit as the plain avoir+cash mix. Requires avoirAllocations
-        // to be present too (a bare override with no avoir would just be a normal sale).
-        convertToInvoice: async (orderId: number, instrument?: GcomInstrumentInput | null, soucheKind?: GcomSoucheKind | null, avoirAllocations?: GcomAvoirAllocation[], paymentMethodOverride?: 'cash' | 'card'): Promise<GcomInvoice> => {
+        // `paymentMethodOverride` — generalized 2026-09-01: any real settlement
+        // method (cash/card/cheque/effet/credit/transfer) can now be swapped in
+        // at convert-to-invoice regardless of what the BC was created with —
+        // avoir is not a valid target here, that's the separate avoir_allocations
+        // mechanism above. Originally (2026-08-20) this was narrowly restricted
+        // to cash/card and only accepted when the stored method was genuinely
+        // 'avoir' — that narrow case (avoir too small, needs a cash/card
+        // remainder) still works the same way, it's just no longer the only
+        // case. `paymentTermId` — only meaningful when overriding to
+        // credit/transfer; optional, falls back to the partner's default
+        // payment term, 422 if neither resolves. Rejected with 422 if the
+        // document is already invoiced (closes the old silent-ignore gap: a
+        // retry/double-click used to 200 and silently keep the original
+        // method). Not supported at all yet for a 1_FAC_PER_ORDER partner.
+        convertToInvoice: async (orderId: number, instrument?: GcomInstrumentInput | null, soucheKind?: GcomSoucheKind | null, avoirAllocations?: GcomAvoirAllocation[], paymentMethodOverride?: Exclude<GcomPaymentMethod, 'avoir'>, paymentTermId?: number | null): Promise<GcomInvoice> => {
             const response = await apiClient.post<GcomConvertToInvoiceResponse>(
                 `${BASE}/orders/${orderId}/convert-to-invoice`,
-                { instrument: instrument ?? null, souche_kind: soucheKind ?? null, avoir_allocations: avoirAllocations ?? undefined, payment_method: paymentMethodOverride ?? undefined },
+                { instrument: instrument ?? null, souche_kind: soucheKind ?? null, avoir_allocations: avoirAllocations ?? undefined, payment_method: paymentMethodOverride ?? undefined, payment_term_id: paymentTermId ?? undefined },
                 idempotent(),
             );
             return response.data.invoice;
@@ -348,17 +375,20 @@ export const gcomApi = {
         // 2026-08-29: 422s if the BL is still in_transit — call confirmDelivery
         // first (the UI should gate this action on status === 'delivered', not
         // just rely on the 422).
-        // `avoirAllocations`/`paymentMethodOverride` (2026-08-20) — see
-        // orders.convertToInvoice's comment for both. The BL-specific bug backend
-        // fixed while building this: generateFromDeliveryNote() reads the BL's own
-        // total_amount snapshot (taken at BL creation), not the order's live total —
-        // stamp duty recalculated on the order alone would never have reached the
-        // invoice without also updating delivery_note.total_amount. Verified live on
-        // this exact endpoint (BC→BL→Facture chain, cash override + partial avoir).
-        convertToInvoice: async (deliveryNoteId: number, instrument?: GcomInstrumentInput | null, soucheKind?: GcomSoucheKind | null, avoirAllocations?: GcomAvoirAllocation[], paymentMethodOverride?: 'cash' | 'card'): Promise<GcomInvoice> => {
+        // `avoirAllocations`/`paymentMethodOverride`/`paymentTermId` — see
+        // orders.convertToInvoice's comment for all three (generalized
+        // 2026-09-01, same contract on this endpoint). The BL-specific bug
+        // backend fixed while building the original narrow version: generateFromDeliveryNote()
+        // reads the BL's own total_amount snapshot (taken at BL creation), not
+        // the order's live total — stamp duty recalculated on the order alone
+        // would never have reached the invoice without also updating
+        // delivery_note.total_amount. Verified live on this exact endpoint
+        // (BC→BL→Facture chain, cash override + partial avoir, and again for
+        // the generalized any-method override).
+        convertToInvoice: async (deliveryNoteId: number, instrument?: GcomInstrumentInput | null, soucheKind?: GcomSoucheKind | null, avoirAllocations?: GcomAvoirAllocation[], paymentMethodOverride?: Exclude<GcomPaymentMethod, 'avoir'>, paymentTermId?: number | null): Promise<GcomInvoice> => {
             const response = await apiClient.post<GcomConvertToInvoiceResponse>(
                 `${BASE}/delivery-notes/${deliveryNoteId}/convert-to-invoice`,
-                { instrument: instrument ?? null, souche_kind: soucheKind ?? null, avoir_allocations: avoirAllocations ?? undefined, payment_method: paymentMethodOverride ?? undefined },
+                { instrument: instrument ?? null, souche_kind: soucheKind ?? null, avoir_allocations: avoirAllocations ?? undefined, payment_method: paymentMethodOverride ?? undefined, payment_term_id: paymentTermId ?? undefined },
                 idempotent(),
             );
             return response.data.invoice;
@@ -617,6 +647,35 @@ export const gcomApi = {
         // for new ones.
         remove: async (userId: number): Promise<void> => {
             await apiClient.delete<GcomRepresentativeRemoveResponse>(`${BASE}/representatives/${userId}`, idempotent());
+        },
+    },
+
+    // Caisses individuelles (2026-08-20) — every GCOM cash-in now credits the
+    // CONNECTED user's own USER_CAISSE, not the branch's BRANCH_CAISSE (which
+    // becomes a pure coffre, fed only by the closure transfers below). If the
+    // acting user has no active journal for a given method, the underlying
+    // sale/règlement/redeem call 422s: "Aucun journal de caisse actif n'est
+    // assigné à votre compte utilisateur pour cette agence." — not something
+    // this namespace itself guards against, since the failure surfaces
+    // naturally through whichever sale/payment endpoint was actually called.
+    caisse: {
+        // My own caisses (one per method — ESP/CHQ/EFF/VIR) with live balances.
+        list: async (): Promise<GcomCaisseListResponse['data']> => {
+            const response = await apiClient.get<GcomCaisseListResponse>(`${BASE}/caisse`);
+            return response.data.data;
+        },
+
+        // Closes today's session for ONE method at a time (not all 4 at
+        // once) and immediately transfers the theoretical balance to the
+        // branch coffre — validated on the spot, no separate confirmation
+        // step. Cheque/effet transfers land one-per-instrument (an
+        // instrument isn't divisible), verified live — `data.transfers`
+        // reflects that. 422 if that method's session is already closed
+        // today ("Aucune nouvelle opération autorisée jusqu'à la prochaine
+        // ouverture."), verified live.
+        close: async (payload: GcomCloseCaissePayload): Promise<GcomCaisseCloseResult['data']> => {
+            const response = await apiClient.post<GcomCaisseCloseResult>(`${BASE}/caisse/close`, payload, idempotent());
+            return response.data.data;
         },
     },
 };
