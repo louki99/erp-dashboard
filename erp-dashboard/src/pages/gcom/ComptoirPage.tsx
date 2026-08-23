@@ -5,6 +5,7 @@ import toast from 'react-hot-toast';
 import type { ActionItemProps } from '@/components/layout/ActionPanel';
 import { GcomCatalogEntryScreen, type GcomCatalogEntrySubmitPayload } from '@/components/gcom/GcomCatalogEntryScreen';
 import { gcomApi } from '@/services/api/gcomApi';
+import { usePermissions } from '@/hooks/usePermissions';
 import type { GcomInvoice } from '@/types/gcom.types';
 
 const fmt = (n: number | string | undefined | null, decimals = 2) => {
@@ -16,6 +17,10 @@ const fmtMAD = (n: number | string | undefined | null) => `${fmt(n)} MAD`;
 const printInvoicePdf = async (invoiceId: number) => {
     try {
         const url = await gcomApi.invoices.getPdfBlobUrl(invoiceId);
+        // null = still generating (rare right after a fresh sale, before the
+        // warm-cache job has run) — a toast will let the user open/print it
+        // manually once ready, nothing to auto-print yet.
+        if (!url) return;
         const iframe = document.createElement('iframe');
         iframe.style.display = 'none';
         iframe.src = url;
@@ -31,6 +36,13 @@ const printInvoicePdf = async (invoiceId: number) => {
 
 export default function ComptoirPage() {
     const [pdfLoading, setPdfLoading] = useState(false);
+    // 2026-09-01 — manual negotiation now branché on direct-invoices too
+    // (same contract as BC/BL). See BonCommandePage.tsx's identical comment
+    // for the usePermissions/admin-bypass rationale.
+    const { has } = usePermissions();
+    const canPriceOverride = has('gcom-price-override');
+    const canDiscountLine = has('gcom-discount-line');
+    const canDiscountGlobal = has('gcom-discount-global');
 
     const handleSubmit = async (payload: GcomCatalogEntrySubmitPayload): Promise<GcomInvoice> => {
         try {
@@ -48,7 +60,7 @@ export default function ComptoirPage() {
         setPdfLoading(true);
         try {
             const url = await gcomApi.invoices.getPdfBlobUrl(invoiceId);
-            window.open(url, '_blank');
+            if (url) window.open(url, '_blank');
         } catch {
             toast.error('Impossible de charger le PDF');
         } finally {
@@ -63,6 +75,10 @@ export default function ComptoirPage() {
             needsInstrumentAtSubmit
             showSoucheKindSelector
             onSubmit={handleSubmit}
+            enableNegotiation
+            canPriceOverride={canPriceOverride}
+            canDiscountLine={canDiscountLine}
+            canDiscountGlobal={canDiscountGlobal}
             renderSuccess={(invoice) => (
                 <div className="flex-1 flex flex-col items-center justify-center p-8 text-center">
                     <div className="w-14 h-14 rounded-full bg-emerald-50 flex items-center justify-center mb-4">

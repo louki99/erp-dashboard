@@ -49,6 +49,18 @@ export interface GcomInstrumentInput {
 export interface GcomItemInput {
     product_id: number;
     quantity: number;
+    // 2026-09-01 — manual negotiation (POST /orders, POST .../lines,
+    // PATCH .../lines/{id} alike). unit_price requires gcom-price-override;
+    // discount_percent/discount_amount are mutually exclusive and require
+    // gcom-discount-line, capped by the paramétrable gcom.max_discount_percent
+    // unless the actor also holds gcom-discount-override-limit. Every line's
+    // net price is checked against the product's real PMP cost — selling
+    // below it 422s ("vente à perte interdite") unless the actor holds
+    // gcom-loss-sale-override (a distinct permission from the discount-cap
+    // override, deliberately — different risk owners on the terrain).
+    unit_price?: number;
+    discount_percent?: number;
+    discount_amount?: number;
 }
 
 // §17, built 2026-08-25/26 — 'declared' (fiscal-export series, must stay
@@ -71,6 +83,12 @@ export interface GcomDirectInvoicePayload {
     salesperson_id?: number | null;
     // Required when payment_method is 'avoir' (2026-08-20) — see GcomAvoirAllocation.
     avoir_allocations?: GcomAvoirAllocation[];
+    // 2026-09-01 — manual negotiation, same contract as POST /orders. Unlike
+    // a BC/BL, this settles immediately (no separate convert-to-invoice
+    // step) — same permissions (gcom-discount-global) and anti-loss-sale
+    // PMP guard apply at creation time here.
+    global_discount_percent?: number;
+    global_discount_amount?: number;
 }
 
 export interface GcomInvoiceItem {
@@ -263,7 +281,8 @@ export interface GcomCreditNote {
     // "AVR..." prefix — real agency-series number (2026-08-18 fix, was 500ing
     // before due to a series-resolution bug, now fixed).
     credit_note_number?: string;
-    credit_note_type?: 'financial' | 'return';
+    // 2026-09-02 — 'free_standing' added for the no-invoice "avoir libre".
+    credit_note_type?: 'financial' | 'return' | 'free_standing';
     status: GcomCreditNoteStatus;
     order_id?: number;
     invoice_id?: number;
@@ -364,6 +383,24 @@ export interface GcomCreateCreditNoteResponse {
     message?: string;
     credit_note: GcomCreditNote;
     invoice?: GcomInvoice;
+}
+
+// 2026-09-02 — POST /gcom/credit-notes, standalone (no invoice_id/order_id)
+// — the "avoir financier libre" gap, confirmed absent then delivered. A pure
+// commercial gesture with no originating sale: invoice_id/order_id both
+// null, auto-approved (CreditNoteStatus::APPROVED), real "AVR..." series.
+// Requires gcom-credit-note-free-standing; capped by the paramétrable
+// gcom.max_free_standing_credit_note_amount (default 2000 MAD, same
+// Partner→User→AccessProfile→Role→default resolution as
+// gcom.max_discount_percent), exceedable with
+// gcom-credit-note-free-standing-override-limit. No PDF yet for this kind
+// of avoir — the existing PDF route is nested under /invoices/{invoice}/...,
+// which doesn't apply here (backend-confirmed known gap, not requested in
+// the original scope).
+export interface GcomCreateFreeStandingCreditNotePayload {
+    partner_id: number;
+    amount: number;
+    reason: string;
 }
 
 // POST /delivery-notes/{deliveryNote}/lines/{item}/return — CAS 1: reduces a
@@ -525,6 +562,18 @@ export interface GcomOrderProductPivot {
     unit_price_ht?: number | string;
     line_tax_amount?: number | string;
     line_total_ht?: number | string;
+    // 2026-09-01 — manual negotiation. original_price is the catalog/
+    // undiscounted price actually used (resolved price, or the manual
+    // unit_price override if one was sent) — the audit trail for margin
+    // reporting. final_price is original_price after any per-line
+    // discount_percent/discount_amount. Neither field reflects a
+    // *global* order-level discount (that's baked into total_price/
+    // line_total_ht instead, proportionally, with no dedicated field of
+    // its own) — verified live, a global_discount_amount changed
+    // total_price/line_total_ht but left original_price/final_price
+    // identical to the undiscounted per-line resolution.
+    original_price?: number | string;
+    final_price?: number | string;
 }
 
 export interface GcomOrderProduct {
@@ -558,6 +607,10 @@ export interface GcomOrder {
     // note) — only reachable nested here, regardless of which GCOM endpoint
     // returned the order.
     salesperson_data?: { id: number; salesperson_id: number } | null;
+    // 2026-09-01 — document-level manual negotiation, POST /orders only
+    // (not settable on an existing order via PATCH — creation-time only).
+    global_discount_percent?: number | string | null;
+    global_discount_amount?: number | string | null;
 }
 
 export interface GcomCreateOrderPayload {
@@ -573,6 +626,14 @@ export interface GcomCreateOrderPayload {
     // back-office user entering a sale on behalf of a field salesperson.
     client_order_ref?: string | null;
     salesperson_id?: number | null;
+    // 2026-09-01 — document-level manual negotiation, creation-time only
+    // (no equivalent on any line-mutation endpoint) — mutually exclusive,
+    // requires gcom-discount-global, same max-percent cap/override-limit
+    // rule as a per-line discount_percent. Distributed proportionally to
+    // each line's HT total before VAT — see GcomItemInput's comment for
+    // the shared permission/PMP-guard mechanics.
+    global_discount_percent?: number;
+    global_discount_amount?: number;
 }
 
 export interface GcomOrderListFilters {
@@ -649,6 +710,12 @@ export interface GcomCancelOrderLinePayload {
 // orders never do, until BL/invoice conversion).
 export interface GcomUpdateOrderLinePayload {
     quantity: number;
+    // 2026-09-01 — same manual-negotiation fields as GcomItemInput. Omitted
+    // here, the line's own existing override/discount is simply dropped
+    // (re-priced fresh from catalog for the new quantity), not preserved.
+    unit_price?: number;
+    discount_percent?: number;
+    discount_amount?: number;
 }
 
 // POST /orders/{order}/lines — adds a brand-new product line to a BC (before
@@ -659,6 +726,10 @@ export interface GcomUpdateOrderLinePayload {
 export interface GcomAddOrderLinePayload {
     product_id: number;
     quantity: number;
+    // 2026-09-01 — same manual-negotiation fields as GcomItemInput.
+    unit_price?: number;
+    discount_percent?: number;
+    discount_amount?: number;
 }
 
 // ─── Delivery Notes (BL) — see docs/modules/28-gcom.md §8 "Delivery Notes (BL)" ─
@@ -683,6 +754,14 @@ export interface GcomDeliveryNoteItem {
     delivered_quantity?: number | string;
     unit_price?: number | string;
     unit?: string;
+    // 2026-09-01 — BL editing (§8 "BL editing"). Same meaning as
+    // GcomOrderProductPivot's original_price/final_price — null until a
+    // manual unit_price override and/or per-line discount is applied via
+    // POST/PATCH .../lines.
+    original_price?: number | string | null;
+    final_price?: number | string | null;
+    discount_percent?: number | string | null;
+    discount_amount?: number | string | null;
 }
 
 export interface GcomDeliveryNote {
@@ -691,12 +770,19 @@ export interface GcomDeliveryNote {
     order_id: number;
     status: GcomBlStatus;
     total_amount: number | string;
-    sub_total?: number | string; // proxied from the underlying order — see §8
+    sub_total?: number | string; // proxied from the underlying order — recomputed from the BL's own current items on every edit (2026-09-01), see §8
     tax_amount?: number | string; // same
     delivery_date?: string;
     notes?: string | null;
     invoice_id?: number | null;
     items?: GcomDeliveryNoteItem[];
+    // 2026-09-01 — settable via POST /delivery-notes/{id}/discount (a
+    // dedicated endpoint, not a PATCH on the BL itself), unlike a BC where
+    // this is creation-time-only. Re-negotiable any number of times —
+    // backend always redistributes from each line's stable pre-discount
+    // price, never compounds a repeat call on top of the last one.
+    global_discount_percent?: number | string | null;
+    global_discount_amount?: number | string | null;
     partner?: { id: number; name: string; code?: string };
     order?: { id: number; order_code?: string; bc_status?: string; financial_metadata?: GcomOrderFinancialMetadata };
     // 2026-08-27 — mirrored automatically from the underlying order.
@@ -753,10 +839,67 @@ export interface GcomCreateDeliveryNotePayload {
     transporter_name?: string | null;
     // 2026-08-30 — see GcomConvertToBlPayload's comment, same semantics.
     status?: 'in_transit' | 'delivered';
+    // 2026-09-02 — payload aligned with GcomCreateOrderPayload: createDirectDeliveryNote()
+    // already creates its underlying order via the same GcomOrderService::createOrder(), so
+    // the whole negotiation pipeline (RBAC, gcom.max_discount_percent cap, proportional-to-HT
+    // distribution, PMP anti-loss-sale guard) was already there — only controller validation
+    // was missing. See GcomCreateOrderPayload's comment for the shared semantics.
+    global_discount_percent?: number;
+    global_discount_amount?: number;
 }
 
 export interface GcomCancelDeliveryNotePayload {
     reason: string;
+}
+
+// ─── BL editing (2026-09-01, §8 "BL editing") — distinct from the CAS-1
+// customer-facing return endpoint above: a plain pre-invoice correction, no
+// DeliveryNoteReturn row. All 3 require gcom-delivery-note-edit, invoice_id
+// IS NULL, and status in_transit/delivered (a draft BL has no stock deducted
+// yet, so the delta logic doesn't apply). Unlike a BC line (never touches
+// stock), every edit here moves real stock immediately: add = full deduct,
+// update = delta only (grew → deducts the difference, shrank → restocks the
+// difference), remove = full restock. Removing the last line cancels the
+// whole BL+order, same rule as the BC line-cancel endpoint.
+// KNOWN BUG (2026-09-01, live-verified, precise repro found): addLine 500s
+// specifically for a product with ZERO available stock — an unhandled
+// exception instead of the graceful 422 convert-to-bl gives for the same
+// situation ("Cannot deduct X from product #Y... Current physical stock:
+// 0.000."). A product WITH stock succeeds normally (201). My first report to
+// backend used a 0-stock test product without realizing it and looked like a
+// blanket failure — this is the corrected, narrower diagnosis. Still not
+// wired up to any UI action until backend confirms the fix, since we can't
+// tell client-side whether a given product currently has 0 stock everywhere
+// it'd need to.
+export interface GcomAddDeliveryNoteLinePayload {
+    product_id: number;
+    quantity: number;
+    unit_price?: number;
+    discount_percent?: number;
+    discount_amount?: number;
+}
+
+export interface GcomUpdateDeliveryNoteLinePayload {
+    quantity?: number;
+    unit_price?: number;
+    discount_percent?: number;
+    discount_amount?: number;
+}
+
+export interface GcomRemoveDeliveryNoteLinePayload {
+    reason: string;
+}
+
+// 2026-09-01 — POST /delivery-notes/{id}/discount. Unlike a BC (discount
+// fixed once at creation), a BL can be renegotiated repeatedly — backend
+// always redistributes from each line's stable pre-discount price (locked
+// on the first call), never the currently-discounted one, so a 20% call
+// followed by a 10% call gives a fresh 10% off the original, not a
+// compounded ~28%. Live-verified. Send `{}` to clear an applied discount
+// entirely (also verified — restores the pre-discount total_amount).
+export interface GcomApplyDeliveryNoteDiscountPayload {
+    global_discount_percent?: number;
+    global_discount_amount?: number;
 }
 
 // ─── Règlement & Lettrage — see docs/modules/28-gcom.md §8 "Payments" ──────
@@ -1221,4 +1364,29 @@ export interface GcomConsolidateInvoicePayload {
     payment_term_id?: number | null;
     instrument?: GcomInstrumentInput | null;
     souche_kind?: GcomSoucheKind | null;
+}
+
+// 2026-09-02 — GET /gcom/parameters?module=GCOM (note: NOT the bare
+// /parameters?module=GCOM the doc's own code sample header shows — that
+// 404s live, verified). Queryable registry for GCOM's 2 thresholds
+// (gcom.max_discount_percent, gcom.max_free_standing_credit_note_amount) —
+// `current_value` is resolved for the ACTING user (Partner→User→
+// AccessProfile→Role→default chain), same value the backend actually
+// enforces server-side. Read-only for now: no admin endpoint can change a
+// gcom.* value yet (the generic ConfigurationSettingAdminController
+// validates 'key' => 'exists:sfa_params,key', which every gcom.* key fails
+// since they're config-file-only, never a sfa_params row) — a known,
+// backend-acknowledged gap, not something to build an editing UI for.
+export interface GcomParameter {
+    key: string;
+    type: 'decimal' | string;
+    default: number;
+    current_value: number;
+    description?: string;
+}
+
+export interface GcomParametersResponse {
+    success: boolean;
+    module: string;
+    parameters: GcomParameter[];
 }

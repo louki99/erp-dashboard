@@ -654,6 +654,17 @@ tbody tr:hover {
   background: linear-gradient(to right, #2d3748 0%, #4a5568 20%, #2d3748 40%, #2d3748 100%);
 }
 
+/* Indeterminate progress bar — GCOM PDF-generation toast (src/lib/gcom/pdfReadyToast.tsx) */
+@keyframes pdf-toast-indeterminate {
+  0% {
+    transform: translateX(-100%);
+  }
+
+  100% {
+    transform: translateX(250%);
+  }
+}
+
 /* Professional Focus Styles */
 .focus-ring {
   @apply focus:ring-2 focus:ring-sage-500 focus:ring-offset-2 focus:outline-none;

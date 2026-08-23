@@ -25,6 +25,8 @@ import { getPartners, getPartner, getPaymentTerms } from '@/services/api/partner
 import { telesalesApi } from '@/services/api/telesalesApi';
 import { masterdataApi, type Bank } from '@/services/api/masterdataApi';
 import { PAYMENT_METHODS } from '@/lib/gcom/paymentMethods';
+import { usePermissions } from '@/hooks/usePermissions';
+import { useGcomParameters } from '@/hooks/useGcomParameters';
 import type { Partner, PaymentTermOption } from '@/types/partner.types';
 import type { CatalogProduct } from '@/types/telesalesAgent.types';
 import type {
@@ -76,6 +78,13 @@ type ConvertTarget = { type: 'order'; id: number } | { type: 'bl'; id: number };
 export default function BonCommandePage() {
     const navigate = useNavigate();
     const [searchParams] = useSearchParams();
+    // 2026-09-01 — manual negotiation (price override/discounts) gating.
+    // root/admin bypass every check (usePermissions' own isAdminUser short-
+    // circuit) — these only actually restrict a real commercial/manager role.
+    const { has } = usePermissions();
+    const canPriceOverride = has('gcom-price-override');
+    const canDiscountLine = has('gcom-discount-line');
+    const { maxDiscountPercent } = useGcomParameters();
 
     // ── List filters ─────────────────────────────────────────────────────────
     const [bcStatusFilter, setBcStatusFilter] = useState<'all' | GcomBcStatus>('all');
@@ -219,7 +228,7 @@ export default function BonCommandePage() {
         setPdfLoading(true);
         try {
             const url = await gcomApi.orders.getPdfBlobUrl(selected.id, priceMode);
-            window.open(url, '_blank');
+            if (url) window.open(url, '_blank');
             setPdfModalOpen(false);
         } catch {
             toast.error('Impossible de charger le PDF');
@@ -240,6 +249,8 @@ export default function BonCommandePage() {
                 notes: payload.notes,
                 client_order_ref: payload.client_order_ref,
                 salesperson_id: payload.salesperson_id,
+                global_discount_percent: payload.global_discount_percent,
+                global_discount_amount: payload.global_discount_amount,
             });
             toast.success('Bon de commande créé');
             return order;
@@ -511,25 +522,41 @@ export default function BonCommandePage() {
         }
     };
 
-    // ── Update line quantity (the inverse of cancel — raise it) ─────────────────
+    // ── Update line quantity (the inverse of cancel — raise it), plus manual
+    // negotiation (2026-09-01) — unit_price/discount are re-priced fresh for
+    // the new quantity, omitting them just drops any existing override. ──────
     const [updateQtyTarget, setUpdateQtyTarget] = useState<GcomOrderProduct | null>(null);
     const [updateQtyValue, setUpdateQtyValue] = useState<number | ''>('');
+    const [updateUnitPrice, setUpdateUnitPrice] = useState<number | ''>('');
+    const [updateDiscountMode, setUpdateDiscountMode] = useState<'' | 'percent' | 'amount'>('');
+    const [updateDiscountValue, setUpdateDiscountValue] = useState<number | ''>('');
     const [updatingQty, setUpdatingQty] = useState(false);
 
-    const openUpdateQty = (line: GcomOrderProduct) => { setUpdateQtyTarget(line); setUpdateQtyValue(Number(line.pivot.quantity)); };
+    const openUpdateQty = (line: GcomOrderProduct) => {
+        setUpdateQtyTarget(line);
+        setUpdateQtyValue(Number(line.pivot.quantity));
+        setUpdateUnitPrice('');
+        setUpdateDiscountMode('');
+        setUpdateDiscountValue('');
+    };
     const closeUpdateQtyDialog = () => setUpdateQtyTarget(null);
 
     const confirmUpdateQty = async () => {
         if (!updateQtyTarget || !selected || updateQtyValue === '' || updateQtyValue <= 0) { toast.error('Quantité invalide'); return; }
         setUpdatingQty(true);
         try {
-            await gcomApi.orders.updateLine(selected.id, updateQtyTarget.pivot.id, { quantity: updateQtyValue });
-            toast.success('Quantité mise à jour');
+            await gcomApi.orders.updateLine(selected.id, updateQtyTarget.pivot.id, {
+                quantity: updateQtyValue,
+                unit_price: canPriceOverride && updateUnitPrice !== '' ? updateUnitPrice : undefined,
+                discount_percent: canDiscountLine && updateDiscountMode === 'percent' && updateDiscountValue !== '' ? updateDiscountValue : undefined,
+                discount_amount: canDiscountLine && updateDiscountMode === 'amount' && updateDiscountValue !== '' ? updateDiscountValue : undefined,
+            });
+            toast.success('Ligne mise à jour');
             setUpdateQtyTarget(null);
             refresh();
         } catch (err: unknown) {
             const msg = (err as { response?: { data?: { message?: string } } })?.response?.data?.message;
-            toast.error(msg ?? 'Erreur lors de la mise à jour de la quantité');
+            toast.error(msg ?? 'Erreur lors de la mise à jour de la ligne');
         } finally {
             setUpdatingQty(false);
         }
@@ -545,6 +572,13 @@ export default function BonCommandePage() {
     const [addLineLastPage, setAddLineLastPage] = useState(1);
     const [addLineSelected, setAddLineSelected] = useState<Record<number, boolean>>({});
     const [addLineQuantities, setAddLineQuantities] = useState<Record<number, number>>({});
+    // 2026-09-01 — manual negotiation, permission-gated (canPriceOverride/
+    // canDiscountLine). Keyed the same way as addLineQuantities — only
+    // discount_percent is offered here (not discount_amount) to keep this
+    // compact multi-row table usable; the single-line update-quantity modal
+    // offers the full percent/amount choice for the less common case.
+    const [addLineUnitPrices, setAddLineUnitPrices] = useState<Record<number, number>>({});
+    const [addLineDiscountPercents, setAddLineDiscountPercents] = useState<Record<number, number>>({});
     const [addingLine, setAddingLine] = useState(false);
     const addLineDebounce = useRef<ReturnType<typeof setTimeout> | null>(null);
     // Remembers every row ever loaded (across pages/searches) so the confirm
@@ -577,6 +611,8 @@ export default function BonCommandePage() {
         setAddLineSearch('');
         setAddLineSelected({});
         setAddLineQuantities({});
+        setAddLineUnitPrices({});
+        setAddLineDiscountPercents({});
         addLineCache.current.clear();
         setAddLineModalOpen(true);
         loadAddLineCatalog('', 1);
@@ -611,8 +647,15 @@ export default function BonCommandePage() {
         // list; parallel calls risk a server-side race on the same row.
         for (const productId of productIds) {
             const quantity = addLineQuantities[productId] ?? 1;
+            const unitPrice = addLineUnitPrices[productId];
+            const discountPercent = addLineDiscountPercents[productId];
             try {
-                await gcomApi.orders.addLine(selected.id, { product_id: productId, quantity });
+                await gcomApi.orders.addLine(selected.id, {
+                    product_id: productId,
+                    quantity,
+                    unit_price: canPriceOverride && unitPrice ? unitPrice : undefined,
+                    discount_percent: canDiscountLine && discountPercent ? discountPercent : undefined,
+                });
                 successCount++;
             } catch (err: unknown) {
                 const msg = (err as { response?: { data?: { message?: string } } })?.response?.data?.message;
@@ -739,6 +782,10 @@ export default function BonCommandePage() {
                 onSubmitted={handleOrderCreated}
                 cancelActionItem={{ icon: X, label: 'Annuler', variant: 'warning', onClick: () => setFormMode('view') }}
                 confirmBeforeSubmit
+                enableNegotiation
+                canPriceOverride={canPriceOverride}
+                canDiscountLine={canDiscountLine}
+                canDiscountGlobal={has('gcom-discount-global')}
             />
         );
     }
@@ -824,7 +871,7 @@ export default function BonCommandePage() {
                                 loading={loading}
                                 rowActionLoading={detailLoading}
                                 rowSelection="single"
-                                onRowClicked={e => { if (e.data) selectOrder(e.data); }}
+                                onRowClicked={e => { if (e.data) { selectOrder(e.data); navigate(`/gcom/bons-commande?id=${e.data.id}`, { replace: true }); } }}
                                 defaultSelectedIds={row => row.id === selected?.id}
                             />
                         </div>
@@ -1089,7 +1136,24 @@ export default function BonCommandePage() {
                                                 columns={[
                                                     { key: 'article', header: 'Article', render: it => <span className="font-medium text-gray-800">{it.name}</span> },
                                                     { key: 'qty', header: 'Qté', align: 'right', width: 'w-16', render: it => <span className="text-gray-600">{fmt(it.pivot.quantity, 0)}</span> },
-                                                    { key: 'pu', header: 'P.U. HT', align: 'right', width: 'w-24', render: it => <span className="text-gray-600">{fmtMAD(it.pivot.unit_price_ht)}</span> },
+                                                    {
+                                                        key: 'pu', header: 'P.U. TTC', align: 'right', width: 'w-24',
+                                                        render: it => {
+                                                            // original_price/final_price only diverge when a manual
+                                                            // unit_price override and/or per-line discount was applied
+                                                            // (2026-09-01) — show the struck-through original alongside
+                                                            // the real net price when they differ, plain price otherwise.
+                                                            const original = Number(it.pivot.original_price) || 0;
+                                                            const final = Number(it.pivot.final_price) || Number(it.pivot.price) || 0;
+                                                            const negotiated = original > 0 && Math.abs(original - final) > 0.005;
+                                                            return negotiated ? (
+                                                                <div className="leading-tight">
+                                                                    <p className="text-gray-400 line-through text-[10px]">{fmtMAD(original)}</p>
+                                                                    <p className="text-amber-700 font-semibold">{fmtMAD(final)}</p>
+                                                                </div>
+                                                            ) : <span className="text-gray-600">{fmtMAD(it.pivot.price)}</span>;
+                                                        },
+                                                    },
                                                     { key: 'total', header: 'Total TTC', align: 'right', width: 'w-24', render: it => <span className="font-bold text-gray-900">{fmtMAD(it.pivot.total_price)}</span> },
                                                     ...(noDocumentsYet ? [{
                                                         key: 'actions', header: '', align: 'center' as const, width: 'w-16',
@@ -1181,12 +1245,12 @@ export default function BonCommandePage() {
                             <div className="w-9 h-9 rounded-full bg-sage-100 flex items-center justify-center">
                                 <Edit2 className="w-4 h-4 text-sage-600" />
                             </div>
-                            <h3 className="text-base font-semibold text-gray-900">Modifier la quantité</h3>
+                            <h3 className="text-base font-semibold text-gray-900">Modifier la ligne</h3>
                         </div>
                         <p className="text-sm text-gray-600 mb-3">
                             <strong>{updateQtyTarget.name}</strong> (quantité actuelle : {fmt(updateQtyTarget.pivot.quantity, 0)})
                         </p>
-                        <div className="mb-5">
+                        <div className="mb-3">
                             <label className="block text-xs font-medium text-gray-600 mb-1">Nouvelle quantité *</label>
                             <input
                                 type="number" min={1} autoFocus
@@ -1195,6 +1259,49 @@ export default function BonCommandePage() {
                                 className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-sage-400"
                             />
                         </div>
+
+                        {/* 2026-09-01 — manual negotiation, permission-gated. Omitted =
+                            simply re-priced fresh from catalog, dropping any prior override. */}
+                        {canPriceOverride && (
+                            <div className="mb-3">
+                                <label className="block text-xs font-medium text-gray-600 mb-1">Prix unitaire HT (optionnel — vide = prix catalogue)</label>
+                                <input
+                                    type="number" min={0} step="0.01"
+                                    value={updateUnitPrice}
+                                    onChange={e => setUpdateUnitPrice(e.target.value === '' ? '' : parseFloat(e.target.value))}
+                                    placeholder={fmtMAD(updateQtyTarget.pivot.unit_price_ht)}
+                                    className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-sage-400"
+                                />
+                            </div>
+                        )}
+                        {canDiscountLine && (
+                            <div className="mb-5">
+                                <label className="block text-xs font-medium text-gray-600 mb-1">Remise (optionnel)</label>
+                                <div className="flex gap-1.5">
+                                    <select
+                                        value={updateDiscountMode}
+                                        onChange={e => { setUpdateDiscountMode(e.target.value as '' | 'percent' | 'amount'); setUpdateDiscountValue(''); }}
+                                        className="px-2 py-2 text-sm border border-gray-200 rounded-lg bg-white focus:outline-none focus:ring-1 focus:ring-sage-400"
+                                    >
+                                        <option value="">Aucune</option>
+                                        <option value="percent">%</option>
+                                        <option value="amount">MAD</option>
+                                    </select>
+                                    {updateDiscountMode && (
+                                        <input
+                                            type="number" min={0} step="0.01" autoFocus
+                                            value={updateDiscountValue}
+                                            onChange={e => setUpdateDiscountValue(e.target.value === '' ? '' : parseFloat(e.target.value))}
+                                            className="flex-1 px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-sage-400"
+                                        />
+                                    )}
+                                </div>
+                                {maxDiscountPercent != null && (
+                                    <p className="text-[11px] text-gray-400 mt-1">Plafond sans dérogation : {maxDiscountPercent}%</p>
+                                )}
+                            </div>
+                        )}
+
                         <div className="flex gap-3">
                             <button
                                 onClick={confirmUpdateQty}
@@ -1272,6 +1379,31 @@ export default function BonCommandePage() {
                                             />
                                         ),
                                     },
+                                    ...(canPriceOverride ? [{
+                                        key: 'unitPriceOverride', header: 'Prix négocié', align: 'center' as const, width: 'w-24',
+                                        render: (p: CatalogProduct) => (
+                                            <input
+                                                type="number" min={0} step="0.01"
+                                                value={addLineUnitPrices[p.id] ?? ''}
+                                                onChange={e => setAddLineUnitPrices(prev => ({ ...prev, [p.id]: parseFloat(e.target.value) || 0 }))}
+                                                onFocus={() => { if (!addLineSelected[p.id]) toggleAddLineSelect(p.id); }}
+                                                placeholder={String(p.price ?? '')}
+                                                className="w-20 text-center px-1 py-1 text-xs border border-gray-200 rounded-md focus:outline-none focus:ring-1 focus:ring-sage-400"
+                                            />
+                                        ),
+                                    }] : []),
+                                    ...(canDiscountLine ? [{
+                                        key: 'discount', header: maxDiscountPercent != null ? `Remise % (max ${maxDiscountPercent})` : 'Remise %', align: 'center' as const, width: 'w-24',
+                                        render: (p: CatalogProduct) => (
+                                            <input
+                                                type="number" min={0} max={100} step="0.1"
+                                                value={addLineDiscountPercents[p.id] ?? ''}
+                                                onChange={e => setAddLineDiscountPercents(prev => ({ ...prev, [p.id]: parseFloat(e.target.value) || 0 }))}
+                                                onFocus={() => { if (!addLineSelected[p.id]) toggleAddLineSelect(p.id); }}
+                                                className="w-16 text-center px-1 py-1 text-xs border border-gray-200 rounded-md focus:outline-none focus:ring-1 focus:ring-sage-400"
+                                            />
+                                        ),
+                                    }] : []),
                                 ]}
                             />
                         )}

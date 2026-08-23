@@ -187,7 +187,7 @@ export default function DevisPage() {
         setPdfLoading(true);
         try {
             const url = await gcomApi.quotes.getPdfBlobUrl(selected.id, priceMode);
-            window.open(url, '_blank');
+            if (url) window.open(url, '_blank');
             setPdfModalOpen(false);
         } catch {
             toast.error('Impossible de charger le PDF');
@@ -434,7 +434,7 @@ export default function DevisPage() {
                                 loading={loading}
                                 rowActionLoading={detailLoading}
                                 rowSelection="single"
-                                onRowClicked={e => { if (e.data) selectQuote(e.data); }}
+                                onRowClicked={e => { if (e.data) { selectQuote(e.data); navigate(`/gcom/devis?id=${e.data.id}`, { replace: true }); } }}
                                 defaultSelectedIds={row => row.id === selected?.id}
                             />
                         </div>

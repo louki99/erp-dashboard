@@ -27,7 +27,7 @@ const todayISO = () => new Date().toISOString().slice(0, 10);
 const openBordereauPdf = async (bankDepositId: number) => {
     try {
         const url = await gcomApi.financialInstruments.getBankDepositPdfBlobUrl(bankDepositId);
-        window.open(url, '_blank');
+        if (url) window.open(url, '_blank');
     } catch {
         toast.error('Impossible de charger le bordereau PDF');
     }

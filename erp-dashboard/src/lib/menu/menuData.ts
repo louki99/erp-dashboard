@@ -1111,6 +1111,21 @@ export const MENU_MODULES: MenuModule[] = [
           },
         ],
       },
+      {
+        id: 'administration',
+        title: 'Administration',
+        items: [
+          {
+            id: 'gcom:parametres',
+            label: 'Paramètres',
+            route: '/settings/configuration?q=gcom',
+            icon: Sliders,
+            description: 'Plafonds remise et avoir libre (gcom.max_discount_percent, gcom.max_free_standing_credit_note_amount) — écran de configuration global, par rôle/utilisateur/client/agence',
+            keywords: ['parametre', 'paramètres', 'configuration', 'plafond', 'remise', 'discount', 'avoir libre'],
+            permission: 'admin.settings.general',
+          },
+        ],
+      },
     ],
   },
 ];

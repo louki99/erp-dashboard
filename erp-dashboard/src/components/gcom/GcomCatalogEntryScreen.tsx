@@ -2,7 +2,7 @@ import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react'
 import {
     ShoppingCart, Search, X, Trash2, Loader2,
     User, Users, Building2, AlertTriangle, Calendar, Warehouse, LayoutGrid, ListFilter,
-    Maximize2, Minimize2, Info, Hash, Truck, CheckCircle2, EyeOff, ArrowUpDown,
+    Maximize2, Minimize2, Info, Hash, Truck, CheckCircle2, EyeOff, ArrowUpDown, GripHorizontal, Percent,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 
@@ -13,6 +13,7 @@ import { PartnerPickerModal } from '@/components/gcom/PartnerPickerModal';
 import { AvoirAllocationPicker } from '@/components/gcom/AvoirAllocationPicker';
 import { avoirAllocationsMatchTotal, avoirAllocationsWithinTotal, canMixAvoirWith } from '@/lib/gcom/avoirAllocations';
 import { useAuth } from '@/context/AuthContext';
+import { useGcomParameters } from '@/hooks/useGcomParameters';
 
 import { getPartners, getPaymentTerms } from '@/services/api/partnerApi';
 import { telesalesApi } from '@/services/api/telesalesApi';
@@ -83,6 +84,11 @@ export interface GcomCatalogEntrySubmitPayload {
      * settles immediately; BC/BL creation only accept payment_method as a
      * hint, allocations happen later at convert-to-invoice). */
     avoir_allocations?: GcomAvoirAllocation[];
+    /** 2026-09-01 — document-level manual negotiation, only meaningful when
+     * `enableNegotiation` is set (BC creation only — POST /orders is the
+     * only creation endpoint that accepts these). */
+    global_discount_percent?: number;
+    global_discount_amount?: number;
 }
 
 export interface GcomCatalogEntryScreenProps<TResult> {
@@ -116,6 +122,17 @@ export interface GcomCatalogEntryScreenProps<TResult> {
      * creation endpoints that accepts delivery_date directly. Shows a date
      * input next to notes, defaults to empty (backend defaults to today). */
     showDeliveryDateField?: boolean;
+    /** 2026-09-01 — BC-only (POST /orders is the only creation endpoint with
+     * manual-negotiation support so far). Master switch for the per-line
+     * price-override/discount columns and the global-discount footer
+     * inputs. Deliberately decoupled from the RBAC system itself — the
+     * caller (BonCommandePage) resolves its own usePermissions() and passes
+     * the 3 results below, so this shared component stays permission-agnostic
+     * like every other gating prop here. */
+    enableNegotiation?: boolean;
+    canPriceOverride?: boolean;
+    canDiscountLine?: boolean;
+    canDiscountGlobal?: boolean;
 }
 
 const EMPTY_INSTRUMENT: GcomInstrumentInput = { reference_number: '', due_date: '', bank_name: '', bank_account: '' };
@@ -136,8 +153,13 @@ export function GcomCatalogEntryScreen<TResult>({
     showExpiresAt = false,
     showSoucheKindSelector = false,
     showDeliveryDateField = false,
+    enableNegotiation = false,
+    canPriceOverride = false,
+    canDiscountLine = false,
+    canDiscountGlobal = false,
 }: GcomCatalogEntryScreenProps<TResult>) {
     const { user } = useAuth();
+    const { maxDiscountPercent } = useGcomParameters();
 
     // ── Partner selection ─────────────────────────────────────────────────────
     const [partnerSearch, setPartnerSearch] = useState('');
@@ -264,17 +286,73 @@ export function GcomCatalogEntryScreen<TResult>({
     }, [isExpanded]);
     const qtyRefs = useRef<(HTMLInputElement | null)[]>([]);
 
+    // ── Resizable bottom panel (payment + totals) ───────────────────────────
+    // Grown wide with the negotiation columns (2026-09-01) — a fixed height
+    // ate too much of the catalog table's vertical space, so the boundary is
+    // now a drag handle instead. Height, not flex, so the panel keeps its
+    // size across re-renders; the catalog grid above stays `flex-1` and just
+    // absorbs whatever's left.
+    const BOTTOM_PANEL_MIN = 96;
+    const BOTTOM_PANEL_DEFAULT = 230;
+    const [bottomPanelHeight, setBottomPanelHeight] = useState(BOTTOM_PANEL_DEFAULT);
+    const resizingRef = useRef(false);
+
+    const startResize = (e: React.MouseEvent) => {
+        e.preventDefault();
+        resizingRef.current = true;
+        const startY = e.clientY;
+        const startHeight = bottomPanelHeight;
+        const maxHeight = Math.round(window.innerHeight * 0.75);
+        const onMove = (moveEvent: MouseEvent) => {
+            if (!resizingRef.current) return;
+            const delta = startY - moveEvent.clientY;
+            setBottomPanelHeight(Math.min(maxHeight, Math.max(BOTTOM_PANEL_MIN, startHeight + delta)));
+        };
+        const onUp = () => {
+            resizingRef.current = false;
+            window.removeEventListener('mousemove', onMove);
+            window.removeEventListener('mouseup', onUp);
+        };
+        window.addEventListener('mousemove', onMove);
+        window.addEventListener('mouseup', onUp);
+    };
+
     const setQuantity = (productId: number, quantity: number) => {
         setQuantities(prev => ({ ...prev, [productId]: Math.max(0, quantity) }));
     };
 
     const selectedCount = useMemo(() => Object.values(quantities).filter(q => q > 0).length, [quantities]);
 
+    // ── Manual negotiation (2026-09-01, BC only via enableNegotiation) ──────
+    // Keyed the same way as `quantities` — per-product override maps, kept
+    // even for a row currently at qty 0 so a value typed early isn't lost if
+    // the user sets the quantity afterward.
+    const [unitPriceOverrides, setUnitPriceOverrides] = useState<Record<number, number>>({});
+    const [discountPercents, setDiscountPercents] = useState<Record<number, number>>({});
+    const [globalDiscountMode, setGlobalDiscountMode] = useState<'' | 'percent' | 'amount'>('');
+    const [globalDiscountValue, setGlobalDiscountValue] = useState<number | ''>('');
+
+    // Net TTC unit price for a row, folding in a manual override and/or
+    // per-line discount — local preview only, the real figure is whatever
+    // the API resolves and returns (global discount is deliberately NOT
+    // folded in here, its proportional-to-HT distribution algorithm lives
+    // server-side and isn't worth duplicating just for an estimate).
+    const netUnitPriceTTC = (row: CatalogProduct): number => {
+        const base = unitPriceOverrides[row.id] || Number(row.price) || 0;
+        const discountPct = discountPercents[row.id];
+        return discountPct ? base * (1 - discountPct / 100) : base;
+    };
+
     // Hide-rupture + sort only make sense on the live catalog view — a row
     // the user already selected should never disappear from "Sélectionnés"
     // just because it later went to 0 stock or the sort order changed.
     const [hideOutOfStock, setHideOutOfStock] = useState(false);
     const [catalogSort, setCatalogSort] = useState<'default' | 'stock_desc' | 'stock_asc' | 'price_desc' | 'price_asc'>('default');
+    // Purely a display toggle — negotiation columns stay fully functional (values already
+    // entered aren't cleared when hidden), this just declutters the table when the user
+    // isn't negotiating on this particular sale. Default true = same layout as before this
+    // toggle existed.
+    const [showNegotiationColumns, setShowNegotiationColumns] = useState(true);
 
     const displayedRows: CatalogProduct[] = useMemo(() => {
         const base = showOnlySelected
@@ -329,7 +407,7 @@ export function GcomCatalogEntryScreen<TResult>({
         if (input) { input.focus(); input.select(); }
     };
 
-    const clearSelection = () => setQuantities({});
+    const clearSelection = () => { setQuantities({}); setUnitPriceOverrides({}); setDiscountPercents({}); };
 
     // ── Payment ───────────────────────────────────────────────────────────────
     const [paymentMethod, setPaymentMethod] = useState<GcomPaymentMethod>('cash');
@@ -404,13 +482,15 @@ export function GcomCatalogEntryScreen<TResult>({
     const { estimatedHT, estimatedTax, estimatedStamp, estimatedTTC } = useMemo(() => {
         let ht = 0, ttc = 0;
         selectedLines.forEach(l => {
-            const lineTTC = (Number(l.product.price) || 0) * l.quantity;
-            ttc += lineTTC;
-            ht += priceHT(l.product) * l.quantity;
+            const unitTTC = enableNegotiation ? netUnitPriceTTC(l.product) : (Number(l.product.price) || 0);
+            const unitHT = enableNegotiation ? unitTTC / (1 + (l.product.tax_rate || 0) / 100) : priceHT(l.product);
+            ttc += unitTTC * l.quantity;
+            ht += unitHT * l.quantity;
         });
         const stamp = paymentMethod === 'cash' ? ht * STAMP_DUTY_RATE : 0;
         return { estimatedHT: ht, estimatedTax: ttc - ht, estimatedStamp: stamp, estimatedTTC: ttc + stamp };
-    }, [selectedLines, paymentMethod]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [selectedLines, paymentMethod, enableNegotiation, unitPriceOverrides, discountPercents]);
 
     // ── Submit ────────────────────────────────────────────────────────────────
     const [submitting, setSubmitting] = useState(false);
@@ -459,7 +539,14 @@ export function GcomCatalogEntryScreen<TResult>({
         try {
             const created = await onSubmit({
                 partner_id: selectedPartner.id,
-                items: selectedLines.map(l => ({ product_id: l.product.id, quantity: l.quantity })),
+                items: selectedLines.map(l => ({
+                    product_id: l.product.id,
+                    quantity: l.quantity,
+                    unit_price: enableNegotiation && canPriceOverride && unitPriceOverrides[l.product.id] ? unitPriceOverrides[l.product.id] : undefined,
+                    discount_percent: enableNegotiation && canDiscountLine && discountPercents[l.product.id] ? discountPercents[l.product.id] : undefined,
+                })),
+                global_discount_percent: enableNegotiation && canDiscountGlobal && globalDiscountMode === 'percent' && globalDiscountValue !== '' ? globalDiscountValue : undefined,
+                global_discount_amount: enableNegotiation && canDiscountGlobal && globalDiscountMode === 'amount' && globalDiscountValue !== '' ? globalDiscountValue : undefined,
                 payment_method: paymentMethod,
                 payment_term_id: methodDef.needsTerm ? paymentTermId : null,
                 notes: notes.trim() || undefined,
@@ -498,6 +585,8 @@ export function GcomCatalogEntryScreen<TResult>({
         setDeliveryDate('');
         setDriverInfo('');
         setTransporterName('');
+        setGlobalDiscountMode('');
+        setGlobalDiscountValue('');
         setBlStatus('in_transit');
         setInstrumentBankOther(false);
         setAvoirAllocations([]);
@@ -808,6 +897,18 @@ export function GcomCatalogEntryScreen<TResult>({
                                         <EyeOff className="w-3.5 h-3.5 text-gray-400" />
                                         Masquer les ruptures
                                     </label>
+                                    {enableNegotiation && (canPriceOverride || canDiscountLine || canDiscountGlobal) && (
+                                        <label className="flex items-center gap-1.5 text-[11px] font-medium text-gray-600 cursor-pointer select-none">
+                                            <input
+                                                type="checkbox"
+                                                checked={showNegotiationColumns}
+                                                onChange={e => setShowNegotiationColumns(e.target.checked)}
+                                                className="rounded border-gray-300 text-sage-600 focus:ring-sage-400"
+                                            />
+                                            <Percent className="w-3.5 h-3.5 text-gray-400" />
+                                            Négociation
+                                        </label>
+                                    )}
                                     <div className="flex items-center gap-1.5">
                                         <ArrowUpDown className="w-3.5 h-3.5 text-gray-400" />
                                         <select
@@ -882,6 +983,14 @@ export function GcomCatalogEntryScreen<TResult>({
                                                     <th className="text-left font-semibold px-3 py-2.5 bg-sage-600 text-white/90">Article</th>
                                                     <th className="text-right font-semibold px-3 py-2.5 w-20 bg-sage-600 text-white/90">Stock</th>
                                                     <th className="text-right font-semibold px-3 py-2.5 w-28 bg-sage-600 text-white/90">P.U. HT</th>
+                                                    {enableNegotiation && canPriceOverride && showNegotiationColumns && (
+                                                        <th className="text-center font-semibold px-3 py-2.5 w-24 bg-sage-600 text-white/90">Prix négocié</th>
+                                                    )}
+                                                    {enableNegotiation && canDiscountLine && showNegotiationColumns && (
+                                                        <th className="text-center font-semibold px-3 py-2.5 w-24 bg-sage-600 text-white/90">
+                                                            {maxDiscountPercent != null ? `Remise % (max ${maxDiscountPercent})` : 'Remise %'}
+                                                        </th>
+                                                    )}
                                                     <th className="text-center font-semibold px-3 py-2.5 w-24 bg-sage-600 text-white/90">Quantité</th>
                                                     <th className="text-right font-semibold px-3 py-2.5 w-32 bg-sage-600 text-white/90">Total TTC</th>
                                                     <th className="w-10 bg-sage-600"></th>
@@ -890,7 +999,7 @@ export function GcomCatalogEntryScreen<TResult>({
                                             <tbody className="divide-y divide-gray-100">
                                                 {displayedRows.map((row, idx) => {
                                                     const quantity = quantities[row.id] ?? 0;
-                                                    const lineTTC = (Number(row.price) || 0) * quantity;
+                                                    const lineTTC = (enableNegotiation ? netUnitPriceTTC(row) : (Number(row.price) || 0)) * quantity;
                                                     const short = row.stock_available != null && quantity > row.stock_available;
                                                     const outOfStock = row.stock_available === 0;
                                                     const selected = quantity > 0;
@@ -912,6 +1021,30 @@ export function GcomCatalogEntryScreen<TResult>({
                                                                     <span className="block text-[9px] text-amber-600 font-medium">générique</span>
                                                                 )}
                                                             </td>
+                                                            {enableNegotiation && canPriceOverride && showNegotiationColumns && (
+                                                                <td className="px-2 py-1.5">
+                                                                    <input
+                                                                        type="number" min={0} step="0.01"
+                                                                        value={unitPriceOverrides[row.id] ?? ''}
+                                                                        placeholder={String(row.price ?? '')}
+                                                                        disabled={!selectedPartner}
+                                                                        onChange={e => setUnitPriceOverrides(prev => ({ ...prev, [row.id]: parseFloat(e.target.value) || 0 }))}
+                                                                        className="w-full text-center px-2 py-1 text-xs border border-gray-200 rounded-md focus:outline-none focus:ring-1 focus:ring-sage-400 disabled:bg-gray-50 disabled:cursor-not-allowed"
+                                                                    />
+                                                                </td>
+                                                            )}
+                                                            {enableNegotiation && canDiscountLine && showNegotiationColumns && (
+                                                                <td className="px-2 py-1.5">
+                                                                    <input
+                                                                        type="number" min={0} max={100} step="0.1"
+                                                                        value={discountPercents[row.id] ?? ''}
+                                                                        placeholder="0"
+                                                                        disabled={!selectedPartner}
+                                                                        onChange={e => setDiscountPercents(prev => ({ ...prev, [row.id]: parseFloat(e.target.value) || 0 }))}
+                                                                        className="w-full text-center px-2 py-1 text-xs border border-gray-200 rounded-md focus:outline-none focus:ring-1 focus:ring-sage-400 disabled:bg-gray-50 disabled:cursor-not-allowed"
+                                                                    />
+                                                                </td>
+                                                            )}
                                                             <td className="px-2 py-1.5">
                                                                 {outOfStock ? (
                                                                     <span className="block text-center text-[10px] font-semibold text-red-500 py-1.5">Rupture</span>
@@ -960,8 +1093,20 @@ export function GcomCatalogEntryScreen<TResult>({
                             </div>
                             </div>
 
+                            {/* ── Drag handle — resizes the bottom panel below. Deliberately
+                                loud (thick, gray-100 fill, visible icon + "Redimensionner"
+                                label) — a bare thin bar here went unnoticed entirely. ──── */}
+                            <div
+                                onMouseDown={startResize}
+                                className="shrink-0 h-6 flex items-center justify-center gap-1.5 cursor-row-resize select-none bg-gray-100 border-y border-gray-300 hover:bg-sage-100 active:bg-sage-200 transition-colors"
+                                title="Glisser pour redimensionner"
+                            >
+                                <GripHorizontal className="w-4 h-4 text-gray-400" />
+                                <span className="text-[10px] font-medium text-gray-400 uppercase tracking-wide">Redimensionner</span>
+                            </div>
+
                             {/* ── Bottom panel: totals + payment + validate ──── */}
-                            <div className="shrink-0 bg-white border-t border-gray-200 px-5 py-4">
+                            <div className="shrink-0 bg-white px-5 py-4 overflow-y-auto" style={{ height: bottomPanelHeight }}>
                                 <div className="flex items-start gap-6">
                                     {/* Payment method + conditional fields */}
                                     <div className="flex-1 space-y-3">
@@ -1143,6 +1288,36 @@ export function GcomCatalogEntryScreen<TResult>({
 
                                     {/* Totals + validate */}
                                     <div className="w-64 shrink-0 space-y-2">
+                                        {enableNegotiation && canDiscountGlobal && showNegotiationColumns && (
+                                            <div className="space-y-1.5 pb-2 border-b border-gray-100">
+                                                <label className="block text-[10px] font-medium text-gray-500">Remise globale (document)</label>
+                                                <div className="flex gap-1.5">
+                                                    <select
+                                                        value={globalDiscountMode}
+                                                        onChange={e => { setGlobalDiscountMode(e.target.value as '' | 'percent' | 'amount'); setGlobalDiscountValue(''); }}
+                                                        className="px-2 py-1.5 text-xs border border-gray-200 rounded-lg bg-white focus:outline-none focus:ring-1 focus:ring-sage-400"
+                                                    >
+                                                        <option value="">Aucune</option>
+                                                        <option value="percent">%</option>
+                                                        <option value="amount">MAD</option>
+                                                    </select>
+                                                    {globalDiscountMode && (
+                                                        <input
+                                                            type="number" min={0} step="0.01"
+                                                            value={globalDiscountValue}
+                                                            onChange={e => setGlobalDiscountValue(e.target.value === '' ? '' : parseFloat(e.target.value))}
+                                                            className="flex-1 min-w-0 px-2 py-1.5 text-xs border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-sage-400"
+                                                        />
+                                                    )}
+                                                </div>
+                                                {globalDiscountMode === 'percent' && maxDiscountPercent != null && (
+                                                    <p className="text-[9px] text-gray-400">Plafond sans dérogation : {maxDiscountPercent}%</p>
+                                                )}
+                                                {globalDiscountMode && globalDiscountValue !== '' && (
+                                                    <p className="text-[9px] text-amber-600">Réparti proportionnellement sur les lignes — non reflété dans l'estimation ci-dessous, confirmé à la validation.</p>
+                                                )}
+                                            </div>
+                                        )}
                                         <div className="space-y-1 text-xs">
                                             <div className="flex justify-between text-gray-500"><span>Total HT</span><span>{fmtMAD(estimatedHT)}</span></div>
                                             <div className="flex justify-between text-gray-500"><span>TVA</span><span>{fmtMAD(estimatedTax)}</span></div>

@@ -303,7 +303,7 @@ export default function FacturesPage() {
         setAvoirPdfLoadingId(creditNoteId);
         try {
             const url = await gcomApi.invoices.getCreditNotePdfBlobUrl(selected.id, creditNoteId);
-            window.open(url, '_blank');
+            if (url) window.open(url, '_blank');
         } catch {
             toast.error("Impossible de charger le PDF de l'avoir");
         } finally {
@@ -322,7 +322,7 @@ export default function FacturesPage() {
         setPdfLoading(true);
         try {
             const url = await gcomApi.invoices.getPdfBlobUrl(selected.id, priceMode);
-            window.open(url, '_blank');
+            if (url) window.open(url, '_blank');
             setPdfModalOpen(false);
         } catch {
             toast.error('Impossible de charger le PDF');
@@ -502,7 +502,7 @@ export default function FacturesPage() {
                             loading={loading}
                             rowActionLoading={detailLoading}
                             rowSelection="single"
-                            onRowClicked={e => { if (e.data) selectInvoice(e.data); }}
+                            onRowClicked={e => { if (e.data) { selectInvoice(e.data); navigate(`/gcom/factures?id=${e.data.id}`, { replace: true }); } }}
                             defaultSelectedIds={row => row.id === selected?.id}
                         />
                     </div>

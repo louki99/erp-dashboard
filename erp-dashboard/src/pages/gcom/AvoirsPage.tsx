@@ -3,7 +3,7 @@ import { useNavigate, useSearchParams } from 'react-router-dom';
 import type { ICellRendererParams, ValueGetterParams } from 'ag-grid-community';
 import {
     RotateCcw, RefreshCw, RotateCcw as ResetIcon, Filter, ChevronDown,
-    Loader2, CheckCircle2, Banknote, Building2, FileText, Package,
+    Loader2, CheckCircle2, Banknote, Building2, FileText, Package, Plus, Download,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 
@@ -15,6 +15,8 @@ import { AsyncCombobox, type ComboboxOption } from '@/components/common/AsyncCom
 import { gcomApi } from '@/services/api/gcomApi';
 import { financeApi } from '@/services/api/financeApi';
 import { getPartners } from '@/services/api/partnerApi';
+import { usePermissions } from '@/hooks/usePermissions';
+import { useGcomParameters } from '@/hooks/useGcomParameters';
 import type {
     GcomCreditNote, GcomCreditNoteStatus, GcomCreditNotesGlobalListFilters, GcomRefundMethod,
 } from '@/types/gcom.types';
@@ -71,6 +73,97 @@ const REFUND_METHODS: { value: GcomRefundMethod; label: string }[] = [
 const remaining = (cn: GcomCreditNote) => Number(cn.remaining_amount ?? cn.refund_amount) || 0;
 const needsRedeem = (cn: GcomCreditNote) => remaining(cn) > 0;
 const isRedeemed = (cn: GcomCreditNote) => (Number(cn.refund_amount) || 0) > 0 && remaining(cn) <= 0;
+
+// ─── Create free-standing avoir modal (2026-09-02) — a pure commercial
+// gesture with no originating invoice/order (invoice_id/order_id both null).
+// Financial mutation, modal like every other one on this page. ─────────────
+
+const CreateFreeStandingModal = ({
+    searchPartners, onClose, onDone,
+}: { searchPartners: (q: string) => Promise<ComboboxOption[]>; onClose: () => void; onDone: () => void }) => {
+    const { maxFreeStandingCreditNoteAmount } = useGcomParameters();
+    const [partner, setPartner] = useState<ComboboxOption | null>(null);
+    const [amount, setAmount] = useState('');
+    const [reason, setReason] = useState('');
+    const [saving, setSaving] = useState(false);
+
+    const confirm = async () => {
+        if (!partner) { toast.error('Sélectionnez un client'); return; }
+        const parsed = parseFloat(amount);
+        if (!parsed || parsed <= 0) { toast.error('Montant invalide'); return; }
+        if (!reason.trim()) { toast.error('Motif requis'); return; }
+        setSaving(true);
+        try {
+            const cn = await gcomApi.creditNotes.createFreeStanding({ partner_id: Number(partner.id), amount: parsed, reason: reason.trim() });
+            toast.success(`Avoir ${cn.credit_note_number ?? `#${cn.id}`} créé`);
+            onDone();
+            onClose();
+        } catch (err: unknown) {
+            const msg = (err as { response?: { data?: { message?: string } } })?.response?.data?.message;
+            toast.error(msg ?? "Erreur lors de la création de l'avoir");
+        } finally {
+            setSaving(false);
+        }
+    };
+
+    return (
+        <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/40 backdrop-blur-sm">
+            <div className="bg-white rounded-2xl shadow-2xl p-6 max-w-sm w-full mx-4">
+                <div className="flex items-center gap-3 mb-3">
+                    <div className="w-9 h-9 rounded-full bg-amber-100 flex items-center justify-center">
+                        <RotateCcw className="w-4 h-4 text-amber-600" />
+                    </div>
+                    <h3 className="text-base font-semibold text-gray-900">Créer un avoir libre</h3>
+                </div>
+                <p className="text-xs text-gray-500 mb-4">
+                    Geste commercial sans facture d'origine — auto-approuvé, plafonné selon vos droits.
+                </p>
+                <div className="mb-3">
+                    <label className="block text-xs font-medium text-gray-600 mb-1">Client *</label>
+                    <AsyncCombobox value={partner} onChange={setPartner} onSearch={searchPartners} placeholder="Rechercher un client…" />
+                </div>
+                <div className="mb-3">
+                    <label className="block text-xs font-medium text-gray-600 mb-1">Montant *</label>
+                    <input
+                        type="number" min={0.01} step="0.01" autoFocus
+                        value={amount}
+                        onChange={e => setAmount(e.target.value)}
+                        className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-sage-400"
+                    />
+                    {maxFreeStandingCreditNoteAmount != null && (
+                        <p className="text-[11px] text-gray-400 mt-1">
+                            Plafond sans dérogation : {maxFreeStandingCreditNoteAmount.toLocaleString('fr-MA')} MAD
+                        </p>
+                    )}
+                </div>
+                <div className="mb-5">
+                    <label className="block text-xs font-medium text-gray-600 mb-1">Motif *</label>
+                    <textarea
+                        value={reason}
+                        onChange={e => setReason(e.target.value)}
+                        rows={2}
+                        maxLength={255}
+                        placeholder="Geste commercial, remise fidélité…"
+                        className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-sage-400 resize-none"
+                    />
+                </div>
+                <div className="flex gap-3">
+                    <button
+                        onClick={confirm}
+                        disabled={saving}
+                        className="flex-1 flex items-center justify-center gap-2 py-2 bg-sage-600 text-white text-sm font-medium rounded-lg hover:bg-sage-700 disabled:opacity-50 transition-colors"
+                    >
+                        {saving ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <CheckCircle2 className="w-3.5 h-3.5" />}
+                        Créer
+                    </button>
+                    <button onClick={onClose} disabled={saving} className="flex-1 py-2 border border-gray-200 text-sm text-gray-600 rounded-lg hover:bg-gray-50 disabled:opacity-50 transition-colors">
+                        Annuler
+                    </button>
+                </div>
+            </div>
+        </div>
+    );
+};
 
 // ─── Redeem modal — a financial mutation, one of the few places this
 // codebase's "no modals" convention doesn't apply (matches the destructive-
@@ -289,6 +382,12 @@ const AvoirDetailPanel = ({ creditNote, detailLoading, onRedeem }: { creditNote:
 export const AvoirsPage = () => {
     const navigate = useNavigate();
     const [searchParams] = useSearchParams();
+    // 2026-09-02 — free-standing avoir creation gating. See
+    // BonCommandePage.tsx's identical comment for the usePermissions/
+    // admin-bypass rationale.
+    const { has } = usePermissions();
+    const canCreateFreeStanding = has('gcom-credit-note-free-standing');
+    const [createFreeStandingOpen, setCreateFreeStandingOpen] = useState(false);
     const [rows, setRows] = useState<GcomCreditNote[]>([]);
     const [loading, setLoading] = useState(false);
     const [statusFilter, setStatusFilter] = useState<GcomCreditNoteStatus | 'ALL'>('ALL');
@@ -303,6 +402,25 @@ export const AvoirsPage = () => {
     const [selected, setSelected] = useState<GcomCreditNote | null>(null);
     const [detailLoading, setDetailLoading] = useState(false);
     const [redeemTarget, setRedeemTarget] = useState<GcomCreditNote | null>(null);
+    const [pdfLoading, setPdfLoading] = useState(false);
+
+    // PDF only exists for an invoice-linked avoir (POST /invoices/{invoice}/
+    // credit-notes/{creditNote}/pdf) — a free-standing one (no invoice_id) has
+    // no PDF route at all yet, backend-confirmed gap, not something to build
+    // a button for. Gate strictly on `creditNote.invoice`, not just presence
+    // of an id, to match what the ActionPanel's "Voir la facture" already checks.
+    const openAvoirPdf = async (creditNote: GcomCreditNote) => {
+        if (!creditNote.invoice) return;
+        setPdfLoading(true);
+        try {
+            const url = await gcomApi.invoices.getCreditNotePdfBlobUrl(creditNote.invoice.id, creditNote.id);
+            if (url) window.open(url, '_blank');
+        } catch {
+            toast.error('Impossible de charger le PDF');
+        } finally {
+            setPdfLoading(false);
+        }
+    };
 
     const searchPartners = useCallback(async (q: string): Promise<ComboboxOption[]> => {
         const res = await getPartners({ q, per_page: 30 });
@@ -475,7 +593,7 @@ export const AvoirsPage = () => {
                     columnDefs={columnDefs}
                     loading={loading}
                     rowSelection="single"
-                    onRowClicked={e => { if (e.data) selectRow(e.data); }}
+                    onRowClicked={e => { if (e.data) { selectRow(e.data); navigate(`/gcom/avoirs?id=${e.data.id}`, { replace: true }); } }}
                     defaultSelectedIds={row => row.id === selected?.id}
                 />
             </div>
@@ -494,6 +612,13 @@ export const AvoirsPage = () => {
 
     const actionGroups = useMemo(() => {
         const groups: { items: ActionItemProps[] }[] = [];
+        const base: ActionItemProps[] = [
+            { icon: RefreshCw, label: 'Actualiser', onClick: load, disabled: loading },
+        ];
+        if (canCreateFreeStanding) {
+            base.push({ icon: Plus, label: 'Créer un avoir libre', variant: 'sage', onClick: () => setCreateFreeStandingOpen(true) });
+        }
+        groups.push({ items: base });
         if (selected) {
             const items: ActionItemProps[] = [];
             if (needsRedeem(selected)) {
@@ -501,6 +626,7 @@ export const AvoirsPage = () => {
             }
             if (selected.invoice) {
                 items.push({ icon: FileText, label: 'Voir la facture', onClick: () => navigate(`/gcom/factures?id=${selected.invoice!.id}`) });
+                items.push({ icon: Download, label: 'Imprimer', onClick: () => openAvoirPdf(selected), disabled: pdfLoading });
             }
             if (selected.partner) {
                 items.push({ icon: Building2, label: 'Relevé de compte', onClick: () => navigate(`/gcom/reglement?partnerId=${selected.partner!.id}&tab=ledger`) });
@@ -509,7 +635,7 @@ export const AvoirsPage = () => {
         }
         return groups;
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [selected]);
+    }, [selected, canCreateFreeStanding, loading, pdfLoading]);
 
     return (
         <>
@@ -519,6 +645,13 @@ export const AvoirsPage = () => {
                     creditNote={redeemTarget}
                     onClose={() => setRedeemTarget(null)}
                     onDone={refresh}
+                />
+            )}
+            {createFreeStandingOpen && (
+                <CreateFreeStandingModal
+                    searchPartners={searchPartners}
+                    onClose={() => setCreateFreeStandingOpen(false)}
+                    onDone={load}
                 />
             )}
         </>

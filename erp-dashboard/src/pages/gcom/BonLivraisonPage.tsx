@@ -4,7 +4,7 @@ import type { ICellRendererParams, ValueGetterParams } from 'ag-grid-community';
 import {
     Truck, Search, X, Plus, Loader2, CheckCircle2,
     RefreshCw, Building2, AlertTriangle, Info, Package,
-    FileText, Ban, Calendar, Download, RotateCcw, Layers,
+    FileText, Ban, Calendar, Download, RotateCcw, Layers, Edit2,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 
@@ -25,6 +25,8 @@ import { gcomApi } from '@/services/api/gcomApi';
 import { getPartners, getPartner, getPaymentTerms } from '@/services/api/partnerApi';
 import { masterdataApi, type Bank } from '@/services/api/masterdataApi';
 import { productsApi } from '@/services/api/productsApi';
+import { usePermissions } from '@/hooks/usePermissions';
+import { useGcomParameters } from '@/hooks/useGcomParameters';
 import { RETURN_CONDITIONS, RETURN_CONDITION_LABEL } from '@/lib/gcom/returnConditions';
 import { RETURN_REASONS, RETURN_REASON_LABEL } from '@/lib/gcom/returnReasons';
 import type { Partner, PaymentTermOption } from '@/types/partner.types';
@@ -240,6 +242,14 @@ const EMPTY_INSTRUMENT: GcomInstrumentInput = { reference_number: '', due_date: 
 export default function BonLivraisonPage() {
     const navigate = useNavigate();
     const [searchParams] = useSearchParams();
+    // 2026-09-01 — BL editing gating. See BonCommandePage.tsx's identical
+    // comment for the usePermissions/admin-bypass rationale.
+    const { has } = usePermissions();
+    const canPriceOverride = has('gcom-price-override');
+    const canDiscountLine = has('gcom-discount-line');
+    const canDiscountGlobal = has('gcom-discount-global');
+    const canEditBl = has('gcom-delivery-note-edit');
+    const { maxDiscountPercent } = useGcomParameters();
 
     // ── List filters ─────────────────────────────────────────────────────────
     const [blStatusFilter, setBlStatusFilter] = useState<'all' | GcomBlStatus>('all');
@@ -482,7 +492,7 @@ export default function BonLivraisonPage() {
         setPdfLoading(true);
         try {
             const url = await gcomApi.deliveryNotes.getPdfBlobUrl(selected.id, priceMode);
-            window.open(url, '_blank');
+            if (url) window.open(url, '_blank');
             setPdfModalOpen(false);
         } catch {
             toast.error('Impossible de charger le PDF');
@@ -499,7 +509,7 @@ export default function BonLivraisonPage() {
         setReturnPdfLoadingId(returnId);
         try {
             const url = await gcomApi.deliveryNotes.getReturnPdfBlobUrl(selected.id, returnId);
-            window.open(url, '_blank');
+            if (url) window.open(url, '_blank');
         } catch {
             toast.error('Impossible de charger le bon de retour');
         } finally {
@@ -523,6 +533,8 @@ export default function BonLivraisonPage() {
                 driver_info: payload.driver_info,
                 transporter_name: payload.transporter_name,
                 status: payload.status,
+                global_discount_percent: payload.global_discount_percent,
+                global_discount_amount: payload.global_discount_amount,
             });
             toast.success(note.status === 'delivered' ? 'Bon de livraison créé — livré' : 'Bon de livraison créé — en transit');
             return note;
@@ -735,6 +747,125 @@ export default function BonLivraisonPage() {
         }
     };
 
+    // ── BL line editing (2026-09-01) — distinct from the CAS-1 return below:
+    // a plain pre-invoice correction (data-entry mistake), no DeliveryNoteReturn
+    // row. Only offered when invoice_id is null and status is in_transit/
+    // delivered (a draft BL has no stock deducted yet — see canEditBlLine).
+    // addLine is deliberately NOT wired up here — live-verified 500 on this
+    // tenant regardless of payload, reported to backend, not shipped until
+    // confirmed fixed. ─────────────────────────────────────────────────────
+    const [updateLineTarget, setUpdateLineTarget] = useState<GcomDeliveryNoteItem | null>(null);
+    const [updateLineQty, setUpdateLineQty] = useState<number | ''>('');
+    const [updateLineUnitPrice, setUpdateLineUnitPrice] = useState<number | ''>('');
+    const [updateLineDiscountMode, setUpdateLineDiscountMode] = useState<'' | 'percent' | 'amount'>('');
+    const [updateLineDiscountValue, setUpdateLineDiscountValue] = useState<number | ''>('');
+    const [updatingLine, setUpdatingLine] = useState(false);
+
+    const openUpdateLine = (item: GcomDeliveryNoteItem) => {
+        setUpdateLineTarget(item);
+        setUpdateLineQty(Number(item.delivered_quantity ?? item.ordered_quantity));
+        setUpdateLineUnitPrice('');
+        setUpdateLineDiscountMode('');
+        setUpdateLineDiscountValue('');
+    };
+    const closeUpdateLine = () => setUpdateLineTarget(null);
+
+    const confirmUpdateLine = async () => {
+        if (!updateLineTarget || !selected || updateLineQty === '' || updateLineQty <= 0) { toast.error('Quantité invalide'); return; }
+        setUpdatingLine(true);
+        try {
+            await gcomApi.deliveryNotes.updateLine(selected.id, updateLineTarget.id, {
+                quantity: updateLineQty,
+                unit_price: canPriceOverride && updateLineUnitPrice !== '' ? updateLineUnitPrice : undefined,
+                discount_percent: canDiscountLine && updateLineDiscountMode === 'percent' && updateLineDiscountValue !== '' ? updateLineDiscountValue : undefined,
+                discount_amount: canDiscountLine && updateLineDiscountMode === 'amount' && updateLineDiscountValue !== '' ? updateLineDiscountValue : undefined,
+            });
+            toast.success('Ligne mise à jour — stock ajusté');
+            setUpdateLineTarget(null);
+            refresh();
+        } catch (err: unknown) {
+            const msg = (err as { response?: { data?: { message?: string } } })?.response?.data?.message;
+            toast.error(msg ?? 'Erreur lors de la mise à jour de la ligne');
+        } finally {
+            setUpdatingLine(false);
+        }
+    };
+
+    const [removeLineTarget, setRemoveLineTarget] = useState<GcomDeliveryNoteItem | null>(null);
+    const [removeLineReason, setRemoveLineReason] = useState('');
+    const [removingLine, setRemovingLine] = useState(false);
+
+    const openRemoveLine = (item: GcomDeliveryNoteItem) => { setRemoveLineTarget(item); setRemoveLineReason(''); };
+    const closeRemoveLine = () => setRemoveLineTarget(null);
+
+    const confirmRemoveLine = async () => {
+        if (!removeLineTarget || !selected || !removeLineReason.trim()) { toast.error('Motif requis'); return; }
+        setRemovingLine(true);
+        try {
+            await gcomApi.deliveryNotes.removeLine(selected.id, removeLineTarget.id, { reason: removeLineReason.trim() });
+            toast.success('Ligne supprimée — stock réintégré');
+            setRemoveLineTarget(null);
+            refresh();
+        } catch (err: unknown) {
+            const msg = (err as { response?: { data?: { message?: string } } })?.response?.data?.message;
+            toast.error(msg ?? 'Erreur lors de la suppression de la ligne');
+        } finally {
+            setRemovingLine(false);
+        }
+    };
+
+    // ── BL global discount (2026-09-01) — can be renegotiated any number of
+    // times, backend always redistributes from each line's stable
+    // pre-discount price, never compounds. `{}` clears it entirely. ───────
+    const [discountModalOpen, setDiscountModalOpen] = useState(false);
+    const [discountMode, setDiscountMode] = useState<'percent' | 'amount'>('percent');
+    const [discountValue, setDiscountValue] = useState<number | ''>('');
+    const [applyingDiscount, setApplyingDiscount] = useState(false);
+
+    const openDiscountModal = () => {
+        if (!selected) return;
+        if (selected.global_discount_percent != null) { setDiscountMode('percent'); setDiscountValue(Number(selected.global_discount_percent)); }
+        else if (selected.global_discount_amount != null) { setDiscountMode('amount'); setDiscountValue(Number(selected.global_discount_amount)); }
+        else { setDiscountMode('percent'); setDiscountValue(''); }
+        setDiscountModalOpen(true);
+    };
+    const closeDiscountModal = () => setDiscountModalOpen(false);
+
+    const confirmApplyDiscount = async () => {
+        if (!selected || discountValue === '' || discountValue <= 0) { toast.error('Valeur invalide'); return; }
+        setApplyingDiscount(true);
+        try {
+            await gcomApi.deliveryNotes.applyDiscount(selected.id, {
+                global_discount_percent: discountMode === 'percent' ? discountValue : undefined,
+                global_discount_amount: discountMode === 'amount' ? discountValue : undefined,
+            });
+            toast.success('Remise globale appliquée');
+            setDiscountModalOpen(false);
+            refresh();
+        } catch (err: unknown) {
+            const msg = (err as { response?: { data?: { message?: string } } })?.response?.data?.message;
+            toast.error(msg ?? "Erreur lors de l'application de la remise");
+        } finally {
+            setApplyingDiscount(false);
+        }
+    };
+
+    const clearDiscount = async () => {
+        if (!selected) return;
+        setApplyingDiscount(true);
+        try {
+            await gcomApi.deliveryNotes.applyDiscount(selected.id, {});
+            toast.success('Remise globale retirée');
+            setDiscountModalOpen(false);
+            refresh();
+        } catch (err: unknown) {
+            const msg = (err as { response?: { data?: { message?: string } } })?.response?.data?.message;
+            toast.error(msg ?? 'Erreur lors du retrait de la remise');
+        } finally {
+            setApplyingDiscount(false);
+        }
+    };
+
     // ── Return — CAS 1 of the returns architecture (§9bis), batch entry ─────────
     // Only possible before the BL is invoiced (same guard as convert/cancel) —
     // once invoiced, a return goes through the invoice's avoir instead (CAS 2,
@@ -904,6 +1035,9 @@ export default function BonLivraisonPage() {
     const canConvertToInvoice = selected?.status === 'delivered' && !selected.invoice_id;
     const canCancel = (selected?.status === 'in_transit' || selected?.status === 'delivered') && !selected.invoice_id;
     const canReturn = canConvertToInvoice && (selected?.items ?? []).some(it => currentLineQty(it) > 0);
+    // 2026-09-01 — same guard the backend enforces: invoice_id IS NULL and
+    // status in_transit/delivered (a draft BL has no stock deducted yet).
+    const canEditBlLine = canEditBl && !selected?.invoice_id && (selected?.status === 'in_transit' || selected?.status === 'delivered');
 
     const actionGroups = useMemo((): { items: ActionItemProps[] }[] => {
         const base: ActionItemProps[] = [
@@ -944,6 +1078,10 @@ export default function BonLivraisonPage() {
                 onSubmit={handleCreateNoteSubmit}
                 onSubmitted={handleNoteCreated}
                 cancelActionItem={{ icon: X, label: 'Annuler', variant: 'warning', onClick: () => setFormMode('view') }}
+                enableNegotiation
+                canPriceOverride={canPriceOverride}
+                canDiscountLine={canDiscountLine}
+                canDiscountGlobal={canDiscountGlobal}
             />
         );
     }
@@ -1029,7 +1167,7 @@ export default function BonLivraisonPage() {
                                 loading={loading}
                                 rowActionLoading={detailLoading}
                                 rowSelection="single"
-                                onRowClicked={e => { if (e.data) selectNote(e.data); }}
+                                onRowClicked={e => { if (e.data) { selectNote(e.data); navigate(`/gcom/bons-livraison?id=${e.data.id}`, { replace: true }); } }}
                                 defaultSelectedIds={row => row.id === selected?.id}
                             />
                         </div>
@@ -1250,6 +1388,31 @@ export default function BonLivraisonPage() {
                                                     </div>
                                                 </div>
 
+                                                {canEditBlLine && canDiscountGlobal && (
+                                                    <div className="flex items-center justify-between bg-white rounded-lg p-3 border border-gray-100">
+                                                        <div>
+                                                            <p className="text-[10px] text-gray-400 uppercase tracking-wider mb-1">Remise globale</p>
+                                                            {selected.global_discount_percent != null ? (
+                                                                <p className="text-sm font-semibold text-amber-700">-{fmt(selected.global_discount_percent, 0)}%</p>
+                                                            ) : selected.global_discount_amount != null ? (
+                                                                <p className="text-sm font-semibold text-amber-700">-{fmtMAD(selected.global_discount_amount)}</p>
+                                                            ) : (
+                                                                <p className="text-sm text-gray-400">Aucune</p>
+                                                            )}
+                                                        </div>
+                                                        <div className="flex gap-2">
+                                                            <button onClick={openDiscountModal} className="text-xs font-medium text-sage-600 hover:underline">
+                                                                {selected.global_discount_percent != null || selected.global_discount_amount != null ? 'Modifier' : 'Appliquer'}
+                                                            </button>
+                                                            {(selected.global_discount_percent != null || selected.global_discount_amount != null) && (
+                                                                <button onClick={clearDiscount} disabled={applyingDiscount} className="text-xs font-medium text-red-500 hover:underline disabled:opacity-50">
+                                                                    Retirer
+                                                                </button>
+                                                            )}
+                                                        </div>
+                                                    </div>
+                                                )}
+
                                                 <div className="flex items-center gap-1.5 px-1">
                                                     <Calendar className="w-3.5 h-3.5 text-gray-300" />
                                                     <p className="text-xs font-medium text-gray-700">{fmtDate(selected.delivery_date)}</p>
@@ -1342,8 +1505,37 @@ export default function BonLivraisonPage() {
                                                             );
                                                         },
                                                     },
-                                                    { key: 'pu', header: 'P.U.', align: 'right', width: 'w-24', render: (it: GcomDeliveryNoteItem) => <span className="text-gray-600">{fmtMAD(it.unit_price)}</span> },
-                                                    { key: 'total', header: 'Total', align: 'right', width: 'w-24', render: (it: GcomDeliveryNoteItem) => <span className="font-bold text-gray-900">{fmtMAD((Number(it.unit_price) || 0) * currentLineQty(it))}</span> },
+                                                    {
+                                                        key: 'pu', header: 'P.U.', align: 'right', width: 'w-24',
+                                                        render: (it: GcomDeliveryNoteItem) => {
+                                                            // 2026-09-01 — original_price/final_price only diverge once a
+                                                            // manual unit_price override and/or per-line discount was
+                                                            // applied via the new BL-editing endpoints.
+                                                            const original = Number(it.original_price) || 0;
+                                                            const final = Number(it.final_price) || Number(it.unit_price) || 0;
+                                                            const negotiated = original > 0 && Math.abs(original - final) > 0.005;
+                                                            return negotiated ? (
+                                                                <div className="leading-tight">
+                                                                    <p className="text-gray-400 line-through text-[10px]">{fmtMAD(original)}</p>
+                                                                    <p className="text-amber-700 font-semibold">{fmtMAD(final)}</p>
+                                                                </div>
+                                                            ) : <span className="text-gray-600">{fmtMAD(it.unit_price)}</span>;
+                                                        },
+                                                    },
+                                                    { key: 'total', header: 'Total', align: 'right', width: 'w-24', render: (it: GcomDeliveryNoteItem) => <span className="font-bold text-gray-900">{fmtMAD((Number(it.final_price) || Number(it.unit_price) || 0) * currentLineQty(it))}</span> },
+                                                    ...(canEditBlLine ? [{
+                                                        key: 'actions', header: '', align: 'center' as const, width: 'w-16',
+                                                        render: (it: GcomDeliveryNoteItem) => (
+                                                            <div className="flex items-center justify-center gap-2">
+                                                                <button onClick={() => openUpdateLine(it)} className="text-gray-400 hover:text-sage-600" title="Modifier la ligne">
+                                                                    <Edit2 className="w-3.5 h-3.5" />
+                                                                </button>
+                                                                <button onClick={() => openRemoveLine(it)} className="text-red-400 hover:text-red-600" title="Supprimer la ligne">
+                                                                    <X className="w-3.5 h-3.5" />
+                                                                </button>
+                                                            </div>
+                                                        ),
+                                                    }] : []),
                                                 ]}
                                             />
                                         </SageCollapsible>
@@ -1496,6 +1688,186 @@ export default function BonLivraisonPage() {
                                 Confirmer
                             </button>
                             <button onClick={closeCancel} disabled={cancelling} className="flex-1 py-2 border border-gray-200 text-sm text-gray-600 rounded-lg hover:bg-gray-50 disabled:opacity-50 transition-colors">
+                                Annuler
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* ── Update BL line modal (2026-09-01) ───────────────────────────── */}
+            {updateLineTarget && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm">
+                    <div className="bg-white rounded-2xl shadow-2xl p-6 max-w-sm w-full mx-4">
+                        <div className="flex items-center gap-3 mb-3">
+                            <div className="w-9 h-9 rounded-full bg-sage-100 flex items-center justify-center">
+                                <Edit2 className="w-4 h-4 text-sage-600" />
+                            </div>
+                            <h3 className="text-base font-semibold text-gray-900">Modifier la ligne</h3>
+                        </div>
+                        <p className="text-sm text-gray-600 mb-3">
+                            <strong>{productLabel(updateLineTarget.product_id)}</strong> (quantité actuelle : {fmt(currentLineQty(updateLineTarget), 0)})
+                        </p>
+                        <p className="text-[11px] text-amber-600 bg-amber-50 border border-amber-100 rounded-lg px-2.5 py-1.5 mb-3">
+                            Le stock réel sera ajusté immédiatement (delta uniquement).
+                        </p>
+                        <div className="mb-3">
+                            <label className="block text-xs font-medium text-gray-600 mb-1">Nouvelle quantité *</label>
+                            <input
+                                type="number" min={1} autoFocus
+                                value={updateLineQty}
+                                onChange={e => setUpdateLineQty(e.target.value === '' ? '' : parseInt(e.target.value, 10))}
+                                className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-sage-400"
+                            />
+                        </div>
+                        {canPriceOverride && (
+                            <div className="mb-3">
+                                <label className="block text-xs font-medium text-gray-600 mb-1">Prix unitaire (optionnel — vide = prix catalogue)</label>
+                                <input
+                                    type="number" min={0} step="0.01"
+                                    value={updateLineUnitPrice}
+                                    onChange={e => setUpdateLineUnitPrice(e.target.value === '' ? '' : parseFloat(e.target.value))}
+                                    placeholder={fmtMAD(updateLineTarget.unit_price)}
+                                    className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-sage-400"
+                                />
+                            </div>
+                        )}
+                        {canDiscountLine && (
+                            <div className="mb-5">
+                                <label className="block text-xs font-medium text-gray-600 mb-1">Remise (optionnel)</label>
+                                <div className="flex gap-1.5">
+                                    <select
+                                        value={updateLineDiscountMode}
+                                        onChange={e => { setUpdateLineDiscountMode(e.target.value as '' | 'percent' | 'amount'); setUpdateLineDiscountValue(''); }}
+                                        className="px-2 py-2 text-sm border border-gray-200 rounded-lg bg-white focus:outline-none focus:ring-1 focus:ring-sage-400"
+                                    >
+                                        <option value="">Aucune</option>
+                                        <option value="percent">%</option>
+                                        <option value="amount">MAD</option>
+                                    </select>
+                                    {updateLineDiscountMode && (
+                                        <input
+                                            type="number" min={0} step="0.01" autoFocus
+                                            value={updateLineDiscountValue}
+                                            onChange={e => setUpdateLineDiscountValue(e.target.value === '' ? '' : parseFloat(e.target.value))}
+                                            className="flex-1 px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-sage-400"
+                                        />
+                                    )}
+                                </div>
+                                {maxDiscountPercent != null && (
+                                    <p className="text-[11px] text-gray-400 mt-1">Plafond sans dérogation : {maxDiscountPercent}%</p>
+                                )}
+                            </div>
+                        )}
+                        <div className="flex gap-3">
+                            <button
+                                onClick={confirmUpdateLine}
+                                disabled={updatingLine || updateLineQty === '' || updateLineQty <= 0}
+                                className="flex-1 flex items-center justify-center gap-2 py-2 bg-sage-600 text-white text-sm font-medium rounded-lg hover:bg-sage-700 disabled:opacity-50 transition-colors"
+                            >
+                                {updatingLine ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <CheckCircle2 className="w-3.5 h-3.5" />}
+                                Confirmer
+                            </button>
+                            <button onClick={closeUpdateLine} disabled={updatingLine} className="flex-1 py-2 border border-gray-200 text-sm text-gray-600 rounded-lg hover:bg-gray-50 disabled:opacity-50 transition-colors">
+                                Annuler
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* ── Remove BL line modal (2026-09-01) ───────────────────────────── */}
+            {removeLineTarget && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm">
+                    <div className="bg-white rounded-2xl shadow-2xl p-6 max-w-sm w-full mx-4">
+                        <div className="flex items-center gap-3 mb-3">
+                            <div className="w-9 h-9 rounded-full bg-red-100 flex items-center justify-center">
+                                <AlertTriangle className="w-4 h-4 text-red-600" />
+                            </div>
+                            <h3 className="text-base font-semibold text-gray-900">Supprimer la ligne</h3>
+                        </div>
+                        <p className="text-sm text-gray-600 mb-3">
+                            <strong>{productLabel(removeLineTarget.product_id)}</strong> — le stock sera immédiatement réintégré.
+                            {(selected?.items?.length ?? 0) <= 1 && (
+                                <span className="block mt-1.5 text-amber-600 font-medium">Dernière ligne — supprimer annulera le bon de livraison entier.</span>
+                            )}
+                        </p>
+                        <div className="mb-5">
+                            <label className="block text-xs font-medium text-gray-600 mb-1">Motif *</label>
+                            <textarea
+                                value={removeLineReason}
+                                onChange={e => setRemoveLineReason(e.target.value)}
+                                rows={2}
+                                maxLength={255}
+                                className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-sage-400 resize-none"
+                                placeholder="Erreur de saisie…"
+                            />
+                        </div>
+                        <div className="flex gap-3">
+                            <button
+                                onClick={confirmRemoveLine}
+                                disabled={removingLine || !removeLineReason.trim()}
+                                className="flex-1 flex items-center justify-center gap-2 py-2 bg-red-600 text-white text-sm font-medium rounded-lg hover:bg-red-700 disabled:opacity-50 transition-colors"
+                            >
+                                {removingLine ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Ban className="w-3.5 h-3.5" />}
+                                Confirmer
+                            </button>
+                            <button onClick={closeRemoveLine} disabled={removingLine} className="flex-1 py-2 border border-gray-200 text-sm text-gray-600 rounded-lg hover:bg-gray-50 disabled:opacity-50 transition-colors">
+                                Annuler
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* ── BL global discount modal (2026-09-01) ───────────────────────── */}
+            {discountModalOpen && selected && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm">
+                    <div className="bg-white rounded-2xl shadow-2xl p-6 max-w-sm w-full mx-4">
+                        <div className="flex items-center gap-3 mb-3">
+                            <div className="w-9 h-9 rounded-full bg-sage-100 flex items-center justify-center">
+                                <RotateCcw className="w-4 h-4 text-sage-600" />
+                            </div>
+                            <h3 className="text-base font-semibold text-gray-900">Remise globale</h3>
+                        </div>
+                        <p className="text-sm text-gray-600 mb-3">
+                            <strong>{selected.delivery_number ?? `#${selected.id}`}</strong> — total actuel {fmtMAD(selected.total_amount)}.
+                        </p>
+                        <p className="text-[11px] text-gray-400 mb-3">
+                            Renégociable à volonté — chaque application repart du prix d'origine des lignes, jamais d'une remise déjà en place.
+                        </p>
+                        <div className="mb-5">
+                            <label className="block text-xs font-medium text-gray-600 mb-1">Remise</label>
+                            <div className="flex gap-1.5">
+                                <select
+                                    value={discountMode}
+                                    onChange={e => { setDiscountMode(e.target.value as 'percent' | 'amount'); setDiscountValue(''); }}
+                                    className="px-2 py-2 text-sm border border-gray-200 rounded-lg bg-white focus:outline-none focus:ring-1 focus:ring-sage-400"
+                                >
+                                    <option value="percent">%</option>
+                                    <option value="amount">MAD</option>
+                                </select>
+                                <input
+                                    type="number" min={0} step="0.01" autoFocus
+                                    value={discountValue}
+                                    onChange={e => setDiscountValue(e.target.value === '' ? '' : parseFloat(e.target.value))}
+                                    className="flex-1 px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-sage-400"
+                                />
+                            </div>
+                            {discountMode === 'percent' && maxDiscountPercent != null && (
+                                <p className="text-[11px] text-gray-400 mt-1">Plafond sans dérogation : {maxDiscountPercent}%</p>
+                            )}
+                        </div>
+                        <div className="flex gap-3">
+                            <button
+                                onClick={confirmApplyDiscount}
+                                disabled={applyingDiscount || discountValue === '' || discountValue <= 0}
+                                className="flex-1 flex items-center justify-center gap-2 py-2 bg-sage-600 text-white text-sm font-medium rounded-lg hover:bg-sage-700 disabled:opacity-50 transition-colors"
+                            >
+                                {applyingDiscount ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <CheckCircle2 className="w-3.5 h-3.5" />}
+                                Appliquer
+                            </button>
+                            <button onClick={closeDiscountModal} disabled={applyingDiscount} className="flex-1 py-2 border border-gray-200 text-sm text-gray-600 rounded-lg hover:bg-gray-50 disabled:opacity-50 transition-colors">
                                 Annuler
                             </button>
                         </div>

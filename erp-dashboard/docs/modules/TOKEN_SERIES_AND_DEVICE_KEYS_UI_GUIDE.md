@@ -333,6 +333,8 @@ Authorization: Bearer {token}
 
 > Le champ `usage` indique combien de device_keys et de POS devices référencent cette série. À vérifier avant suppression.
 
+**Bug réel corrigé (2026-09-02, signalé par l'équipe UI)** : `show`/`update`/`destroy` renvoyaient un `500` générique pour **tout** code (`FD97`, `ERPDIST01`, peu importe le scope) alors que la liste fonctionnait normalement. Cause : le contrôleur s'appuie sur le binding de route implicite de Laravel (`show(TokenSerie $tokenSerie)`), et le modèle `TokenSerie` n'avait pas de `getRouteKeyName()` — Laravel liait donc par défaut sur `id` (bigint), et un code non numérique comme `FD97` remontait telle quelle jusqu'à Postgres (`invalid input syntax for type bigint`), une exception non interceptée plutôt qu'un `404` propre. Corrigé en faisant de `code` la clé de route (déjà unique en base, et déjà ce que toutes les URLs utilisent).
+
 ---
 
 ### `PUT /{code}` — Modifier

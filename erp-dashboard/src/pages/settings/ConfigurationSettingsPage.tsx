@@ -1,4 +1,5 @@
 import React, { useState, useCallback, useEffect, useRef, useMemo } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import {
     Settings2, Search, Save, RefreshCw, AlertTriangle, RotateCcw,
     ChevronRight, ChevronDown, X, Check, Loader2, Shield, User, Users, Building2,
@@ -82,11 +83,13 @@ const NAMESPACE_LABELS: Record<string, string> = {
     visit: 'Visite terrain / SFA', wms: 'WMS / Entrepôt', order: 'Commandes',
     delivery: 'Livraison', finance: 'Finance / Crédit', erp: 'ERP / Intégrations',
     conventional: 'Chargement conventionnel', itinerary: 'Tournées / Itinéraires',
+    gcom: 'GCOM / Vente comptoir',
 };
 
 const NAMESPACE_ICONS: Record<string, string> = {
     visit: '📍', wms: '🏭', order: '📦', delivery: '🚚',
     finance: '💰', erp: '🔗', conventional: '🏗️', itinerary: '🗺️',
+    gcom: '🧾',
 };
 
 // ─── Reset modal ──────────────────────────────────────────────────────────────
@@ -200,10 +203,18 @@ const ValueEditor: React.FC<{
 // ─── Main page ────────────────────────────────────────────────────────────────
 
 export const ConfigurationSettingsPage = () => {
-    const [activeScopeKey, setActiveScopeKey] = useState<ScopeKey>('ROLE');
-    const [selectedEntity, setSelectedEntity] = useState<{ id: number; name: string } | null>(null);
+    const [searchParams] = useSearchParams();
+    const initialQuery = searchParams.get('q') ?? '';
+
+    // Arriving via a shortcut like /settings/configuration?q=gcom — jump straight to
+    // SYSTEM scope (no entity picker needed) with the search pre-filled, instead of
+    // landing on an empty ROLE-scope picker the user has to click through first.
+    const [activeScopeKey, setActiveScopeKey] = useState<ScopeKey>(initialQuery ? 'SYSTEM' : 'ROLE');
+    const [selectedEntity, setSelectedEntity] = useState<{ id: number; name: string } | null>(
+        initialQuery ? { id: 0, name: 'Paramètres Système' } : null
+    );
     const [entitySearch, setEntitySearch] = useState('');
-    const [globalSearch, setGlobalSearch] = useState('');
+    const [globalSearch, setGlobalSearch] = useState(initialQuery);
     const [resetTarget, setResetTarget] = useState<string | null>(null);
     const [showScopeModal, setShowScopeModal] = useState(false);
     const [expandedNs, setExpandedNs] = useState<Set<string>>(new Set(Object.keys(NAMESPACE_LABELS)));

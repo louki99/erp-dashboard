@@ -204,6 +204,61 @@
 > date fallback instead of the partner's real term — affected the
 > pre-existing monthly cron too, not just this new endpoint. See §8's
 > "`POST /invoices/consolidate`" for full detail.
+> **Built 2026-09-01, "FEU VERT TOTAL"**: manual negotiation on `POST
+> /orders` and its line-mutation endpoints — per-line `unit_price`
+> override, per-line `discount_percent`/`discount_amount` (mutually
+> exclusive), a document-level global discount distributed
+> proportionally to each line's HT (VAT-inclusive TTC impact), and a
+> real PMP (Prix Moyen Pondéré) cost engine on `stocks.pmp_cost`
+> (recalculated synchronously by `StockUpdateService::addStock()` on
+> every real purchase reception, never on transfers/returns) backing an
+> absolute anti-loss-sale guard. 6 new kebab-case RBAC permissions
+> (`gcom-price-override`, `gcom-discount-line`, `gcom-discount-global`,
+> `gcom-discount-override-limit`, `gcom-loss-sale-override`,
+> `gcom-delivery-note-edit`), a paramétrable `gcom.max_discount_percent`
+> threshold (`ParameterService`, same Partner→User→AccessProfile→Role
+> resolution `sales.max_discount_percent` uses). See §8's "Manual
+> negotiation" section for full detail.
+> **Built 2026-09-01, "FEU VERT TOTAL" part 2**: BL editing —
+> `POST /delivery-notes/{id}/lines`, `PATCH .../lines/{item}`,
+> `POST .../lines/{item}/remove`, gated on `gcom-delivery-note-edit`.
+> Same manual-negotiation payload as the BC line endpoints, but a BL
+> already deducted stock at creation (a BC never does), so every edit
+> reacts on real stock immediately — by the DELTA on a quantity change,
+> never a blind re-deduct/re-add. `delivery_notes` carries no HT/tax
+> columns of its own; the underlying order's `sub_total`/`tax_amount`
+> (proxied for display) are recomputed directly from the BL's own
+> current items after every edit so that proxy never goes stale. See
+> §8's "BL editing" subsection for full detail.
+> **Built 2026-09-01, UI team follow-up**: document-level discount on an
+> EXISTING BL (`POST /delivery-notes/{id}/discount`) — genuinely
+> different from a BC's (set once, at creation, never revisited): a BL's
+> real use case is re-negotiation after delivery, possibly more than
+> once, so this redistributes from each item's `final_price` (locked in
+> the first time any global discount touches it) rather than its
+> current `unit_price` — safely re-appliable, a second call with a
+> different value never compounds on the first. Also: the full manual-
+> negotiation engine (override/discount/global-discount/anti-loss-sale
+> guard) extended to `POST /direct-invoices` (Comptoir/Facture Directe),
+> same permissions, same pipeline. Two real bugs found and fixed along
+> the way: `InvoiceService`'s two invoice-item-creation call sites
+> hardcoded `discount_percent`/`discount_amount` to `0` regardless of
+> the source line's real discount (billing was unaffected — `unit_price`
+> already carried it net — but the margin-reporting audit trail was
+> silently lost on every invoice); `Order::products()`'s `withPivot()`
+> never even included those two columns, so reading them would have
+> returned `null` regardless. See §8's "BL editing"/"Direct Invoice"
+> subsections for full detail.
+> **Fixed 2026-09-01** (UI team, order BCORBI-A01-000066): the printed
+> BC PDF ignored a global discount entirely — it recomputed each line's
+> montant from the raw per-unit price instead of reading the already-
+> discounted `total_price`/`line_total_ht` columns, and REM. always
+> showed "—". Investigating this surfaced a more serious sibling bug:
+> BC→BL conversion copied that same stale price onto each new BL item,
+> which — since `DeliveryNoteItem` has no separate line-total column to
+> fall back on — meant any BC with a global discount would have
+> silently **overcharged** on the eventual BL→Facture invoice. Both
+> fixed; see §8's `GET /orders/{order}/pdf` entry for full detail.
 > **Audience**: this doc is written for two readers — backend maintainers
 > (architecture/rationale, §1–7, §9–12) and **frontend/UI integrators**
 > (§8 API Reference and §13–16, which are self-contained — you can build a
@@ -677,17 +732,154 @@ for whether line items print HT or TTC (defaults to `ht` if omitted).
 `Backend\DocumentController` already exposes for other channels, not a
 GCOM-specific renderer. Not a JSON endpoint.
 
+**Real bug fixed 2026-09-01** (UI team, order BCORBI-A01-000066): the
+printed PDF used to ignore a global discount entirely — `App\Documents\
+DocumentDataResolver::resolveBc()` recomputed each line's montant from
+the raw per-unit `price` × quantity instead of reading the already-
+correctly-discounted `total_price`/`line_total_ht` columns (a global
+discount is distributed into those two at write time,
+`GcomPricingCalculator::applyGlobalDiscount()`, never back into
+`price`/`final_price`). The REM. column also always printed "—",
+reading a nonexistent `promotion_discount` field instead of deriving
+the real effective discount from `original_price` vs the net total.
+Fixed to read the persisted totals directly (same pattern
+`resolveDevis()` already used correctly for `QuoteItem`). Investigating
+this surfaced a more serious sibling bug in the same family: BC→BL
+conversion copied that same stale per-unit price onto each new
+`DeliveryNoteItem` — since that table has no separate line-total column
+to fall back on (unlike `order_products`/`invoice_items`), its
+`unit_price` is the SOLE source `InvoiceService::
+generateFromDeliveryNote()` bills from, so any BC with a global
+discount applied at creation would have silently **overcharged** on
+the eventual BL→Facture invoice while the BL's own `total_amount`
+(mirrored straight from the order) displayed correctly the whole time.
+Fixed in `GcomDeliveryNoteService::createDeliveryNoteFromOrder()` to
+derive the BL item's `unit_price` from the order line's own
+`total_price`/`quantity` instead of copying `price` directly. Data
+audit at fix time: 6 GCOM orders had a global discount live, none yet
+converted to a BL — the overcharge risk was real but had not yet
+actually billed anyone.
+
+**Operational gotcha hit deploying this fix**: `DocumentService` caches
+rendered PDFs on disk (MinIO), auto-invalidated only when a Blade
+**template** file's mtime changes (`templateChangedSince()`) — a fix
+to `DocumentDataResolver` (PHP data-prep, not the template) does NOT
+trigger that check, so an already-cached PDF for an order keeps
+serving its stale, pre-fix bytes indefinitely until something calls
+`DocumentService::invalidate($type, $id)` explicitly. Any deploy that
+changes a resolver's OUTPUT (not just a template) must manually
+invalidate the affected documents' cache — done by id for the 6
+affected orders above at fix time, but there's no general "invalidate
+everything on deploy" mechanism, so this is a step to remember for any
+future resolver fix, not just this one.
+
+**PDF generation latency fix (2026-09-02)**: BC/BL/Invoice PDF downloads
+were taking up to ~60s. Root cause: `GotenbergClient` retried on ANY
+exception with `retry($retryAttempts=2, ...)`, including a slow-but-alive
+render that simply hit the 30s `timeout` — doubling worst-case latency
+instead of recovering anything. Fixed by setting `retry_attempts=1` (no
+retry) and bumping `timeout` to 45s, in `config/gotenberg.php`'s defaults
+AND every `.env*` (the live `.env.docker.production` pins these explicitly,
+so the config default alone doesn't take effect — must edit both).
+Separately, a new best-effort `App\Jobs\WarmDocumentPdfCache` job is
+dispatched (`->onQueue('documents')`, already covered by Horizon's
+`default-supervisor`) right after a BC/BL/Invoice/avoir is created —
+`GcomOrderService::createOrder()`, `GcomDeliveryNoteService::
+createDeliveryNoteFromOrder()`/`validateDraft()` (skips DRAFT), all
+5 invoice-creating entry points in `GcomDirectInvoiceService`, and
+`GcomCreditNoteService::createCreditNote()` (2026-09-02, closing the last
+gap — `createFreeStandingCreditNote()` isn't warmed, it has no PDF route
+yet) — so the interactive download usually hits an already-warm MinIO
+cache instead of waiting on Gotenberg synchronously. The job no-ops under
+PHPUnit (`app()->runningUnitTests()` / `PHPUNIT_COMPOSER_INSTALL`) — the
+whole suite forces `QUEUE_CONNECTION=sync`, so without that guard it ran
+real Gotenberg calls inline inside every test that creates a document
+(one test hit 138s, another blew PHP's 128MB `memory_limit` reading the
+Guzzle response body). A Gotenberg CPU/memory reservation was considered
+and dropped: the actual host is 2 vCPU / 3.8GB, already running ~24
+containers with swap saturated — a reservation wouldn't add capacity
+that doesn't exist, so it wouldn't have moved the needle.
+
+**PDF stays in sync after an edit + "generating" status + real-time
+ready notification (2026-09-03)** — Team UI asked directly: does editing
+a BL/BC/Facture/Devis regenerate its PDF automatically, and can the
+in-progress state be surfaced to the user? Investigated precisely rather
+than assumed, and found two real gaps: `DocumentService::invalidate()`
+existed (docblocked "call after the document is updated") but had ZERO
+callers anywhere in the app, and `WarmDocumentPdfCache` (above) was only
+ever dispatched at document CREATION — an edited document kept serving
+its stale pre-edit PDF until the 60min cache TTL happened to expire, with
+no data-driven invalidation at all.
+
+- `DocumentService::scheduleRegeneration($type, $id, $options = [])` —
+  invalidates the current cache, sets a short-lived (2min safety-net TTL)
+  "generating" flag, and dispatches `WarmDocumentPdfCache` to re-render in
+  the background. Call this after ANY mutation to a document's printed
+  content.
+- **Wired into every real GCOM mutation** that changes what a document
+  prints: BC line add/update/cancel + full cancel
+  (`GcomOrderService`); BL line add/update/remove, global discount,
+  partial return (CAS 1), delivery confirmation, full cancel
+  (`GcomDeliveryNoteService`, mostly funneled through the shared
+  `recomputeBlAndOrderTotals()` hook); Devis creation (was never
+  pre-warmed at all before this — closed for consistency with the other
+  3 types) + item edits + send (`QuoteService`); Invoice
+  `remaining_amount`/`status` changes from a credit-note debt reduction
+  or an avoir imputation (`GcomCreditNoteService`), and from a deferred
+  règlement/lettering (`GcomPaymentController::store()` — schedules one
+  regeneration per invoice actually lettered, explicit allocations or
+  auto-lettered either way).
+- **`GET .../pdf` now returns `202` while a regeneration is genuinely in
+  flight**, instead of either racing the background job with a
+  synchronous render or (before this feature existed) silently serving
+  the file that was just invalidated:
+  ```json
+  { "success": false, "status": "generating", "message": "Le document est en cours de régénération suite à une modification récente. Merci de réessayer dans quelques secondes.", "type": "bl", "id": 34, "retry_after_seconds": 3 }
+  ```
+  `Retry-After: 3` header included. Falls back to the pre-existing
+  synchronous on-demand render once the flag clears either way (job
+  finished, or its 2min safety-net TTL lapsed) — this endpoint still
+  always eventually returns a real PDF, it just doesn't fight a job
+  that's already rendering the exact same file. **Frontend must handle
+  this**: a plain `<a href>`/iframe pointed at the PDF endpoint will show
+  broken JSON during the "generating" window — check status/Content-Type
+  before rendering inline, show a "please wait" state, retry after the
+  given delay (or react to the WebSocket event below instead of polling).
+- **Real-time ready notification**: `App\Events\DocumentPdfReady`
+  broadcasts on a private channel `documents.{type}.{id}` (event name
+  `document.pdf.ready`, payload `{type, id, status}`, status `'ready'` or
+  `'failed'`) once `WarmDocumentPdfCache` finishes — subscribe to
+  dismiss/refresh a "please wait" UI without polling. Channel
+  authorization (`routes/channels.php`) gates on the same coarse-grained
+  `manage-gcom` permission every other GCOM endpoint already requires —
+  no per-document ownership ACL exists to check more narrowly against.
+- **Test-suite-only exception**: `scheduleRegeneration()` skips the
+  actual `invalidate()` disk call specifically when running automated
+  tests (`WarmDocumentPdfCache` dispatched right after already no-ops in
+  tests too, so there's nothing real for it to usefully precede there).
+  Real gap hit building this: `invalidate()`'s S3/MinIO round trip had
+  never been exercised by the test suite before (zero prior callers) —
+  once wired into every edit path, dozens of otherwise-unrelated
+  business-logic tests started triggering it as an incidental side
+  effect, and each real disk resolution left memory PHPUnit's one
+  long-lived test process never reclaimed, OOMing partway through a real
+  test file (confirmed by isolating it against the pre-feature commit
+  under identical host load: passed clean). Not a production concern — a
+  real PHP-FPM/queue-worker request is short-lived or periodically
+  recycled. `invalidate()` itself stays fully real/unguarded.
+
 **`POST /orders`** 🔁 — flow #1 (second hop, if not started from a quote)
 / #3 / #4's BC leg.
 ```json
 {
   "partner_id": 12,
-  "items": [{ "product_id": 42, "quantity": 3 }],
+  "items": [{ "product_id": 42, "quantity": 3, "unit_price": 95.0, "discount_percent": 8 }],
   "payment_method": "credit",
   "payment_term_id": 5,
   "notes": "Commande mensuelle",
   "client_order_ref": "PO-CLIENT-0042",
-  "salesperson_id": null
+  "salesperson_id": null,
+  "global_discount_amount": 50
 }
 ```
 `payment_term_id` is **required** if `payment_method` is `credit`/`transfer`
@@ -712,6 +904,81 @@ top-level field is needed for display.
 → `201`, `{ "success": true, "message": "Order created", "order": {...} }`
 
 Does **not** touch stock or create an invoice — see §3.
+
+### Manual negotiation — price override, discounts, anti-loss-sale guard (2026-09-01)
+
+Available on `POST /orders`, `POST /orders/{order}/lines`, and
+`PATCH /orders/{order}/lines/{orderProduct}` (all three items below).
+Every check below runs BEFORE any write — a `422` never leaves a
+partial edit behind.
+
+- **`items[].unit_price`** — manual override of the catalog-resolved
+  price for that line, requires the **`gcom-price-override`**
+  permission (`422` otherwise). `order_products.original_price` still
+  carries the catalog/undiscounted price actually used (override or
+  resolved) — the audit trail for margin reporting.
+- **`items[].discount_percent`** / **`items[].discount_amount`** —
+  per-line discount, **mutually exclusive** on the same line (`422` if
+  both are sent). Requires **`gcom-discount-line`**. A `discount_percent`
+  above the paramétrable `gcom.max_discount_percent` threshold (default
+  10%, resolved Partner → User → AccessProfile → Role → default via
+  `ParameterService`, same mechanism the legacy SFA
+  `sales.max_discount_percent` uses — configurable per partner/user/role
+  through the existing paramètres admin screen, no new one built) is
+  rejected (`422`) unless the actor also holds
+  **`gcom-discount-override-limit`**.
+- **`global_discount_percent`** / **`global_discount_amount`**
+  (`POST /orders` only — document-level) — mutually exclusive, requires
+  **`gcom-discount-global`**, same max-percent cap as above when
+  expressed as a percent. Distributed **proportionally to each line's
+  HT total, before VAT** (team's own spec) — the rounding remainder is
+  assigned to the last eligible line (skips any line already at 0 HT,
+  e.g. a fully-returned BL line) so the sum of lines always reconciles
+  exactly to the requested discount. Because the discount is applied on
+  the HT side, its impact on `total_amount` (TTC) is VAT-inclusive: a
+  100 MAD discount on a 19%-VAT line reduces the total by 119 MAD, not
+  100 — it removes the VAT that would have applied to the discounted
+  HT along with it.
+- **Anti-loss-sale guard** — every line's NET unit price (after any
+  override/discount) is compared HT against `stocks.pmp_cost` (real
+  PMP — Prix Moyen Pondéré, recalculated synchronously by
+  `StockUpdateService::addStock()` on every real purchase reception,
+  never on transfers/returns) for the product's warehouse. Below cost
+  is rejected outright (`422`, *"vente à perte interdite"*) — **no
+  soft block, no threshold** — bypassable only by
+  **`gcom-loss-sale-override`** (deliberately a *different* permission
+  from `gcom-discount-override-limit`: exceeding the discount cap and
+  selling below cost are different risks with different owners on the
+  terrain). A product with no PMP recorded yet (never received via
+  `PurchaseReception`) skips the guard silently — nothing to compare
+  against.
+
+**Permissions** (all new, kebab-case, seeded via migration — granted to
+`root`/`admin` by default, same as `manage-gcom`; assign a subset to a
+real commercial/manager role as needed):
+
+| Permission | Grants |
+|---|---|
+| `gcom-price-override` | Manual `unit_price` on a line |
+| `gcom-discount-line` | Per-line `discount_percent`/`discount_amount` |
+| `gcom-discount-global` | Document-level global discount |
+| `gcom-discount-override-limit` | Exceed `gcom.max_discount_percent` |
+| `gcom-loss-sale-override` | Sell below `stocks.pmp_cost` anyway (déstockage, near-expiry, damaged goods) |
+| `gcom-delivery-note-edit` | Edit a line on an existing, not-yet-invoiced BL — see "BL editing" below |
+
+**BL editing itself (2026-09-01, "FEU VERT TOTAL" part 2)** is built —
+see the "BL editing" subsection under "Delivery Notes (BL)" below for
+the full endpoint contracts, including `POST /delivery-notes/{id}/discount`
+(2026-09-01, UI team follow-up) for a document-level discount on an
+**existing** BL — safely re-appliable, unlike a BC's (set once, at
+`POST /orders`, never revisited). Manual negotiation (per-line
+override/discount, global discount, anti-loss-sale guard) is also now
+wired into `POST /direct-invoices` (Comptoir/Facture Directe) — same
+pipeline, same permissions — see "Direct Invoice" below. Global
+discount is still NOT settable via `PATCH /orders/{order}/lines/{orderProduct}`
+for an already-created BC (only at `POST /orders` itself) — a
+dedicated "change the BC's global discount after creation" endpoint,
+mirroring the BL one, would be new scope if ever needed.
 
 **`POST /orders/{order}/convert-to-invoice`** 🔁 — flow #3 (BC → Facture,
 no BL). Body: `{ "instrument"?, "souche_kind"? }` (`instrument` same shape
@@ -775,16 +1042,20 @@ invoice yet.
 existing BC, same "before any BL/invoice" guard as the other line-level
 actions below.
 ```json
-{ "product_id": 77, "quantity": 4 }
+{ "product_id": 77, "quantity": 4, "unit_price": 90.0, "discount_percent": 5 }
 ```
 Price is resolved fresh via the same pricing engine `POST /orders` uses —
-not something the client computes. Rejects a `product_id` already on the
+not something the client computes. `unit_price`/`discount_percent`/
+`discount_amount` (2026-09-01) — same rules, permissions, and
+anti-loss-sale guard as `POST /orders`' own manual-negotiation section
+above. Rejects a `product_id` already on the
 order (`422`) — use the `PATCH` update-line endpoint below to change an
 existing line's quantity instead. For a credit-sale BC, adding a line
 always grows the total, so the credit limit is unconditionally re-checked.
 → `201`, `{ "success": true, "message": "Order line added", "order": {...} }`
 → `422` if the product is already on the order, `quantity` is missing/≤ 0,
-a BL/invoice already exists, or the new total breaches the credit limit.
+a BL/invoice already exists, the new total breaches the credit limit, a
+missing permission, or the net price falls below cost.
 
 **`POST /orders/{order}/lines/{orderProduct}/cancel`** 🔁 — partial or
 full single-line cancellation, same "before any BL/invoice" guard.
@@ -804,19 +1075,25 @@ quantity in **either** direction (the cancel endpoint above only ever
 reduces/removes). Same "before any BL/invoice" guard, same `orderProduct`
 id gotcha as above.
 ```json
-{ "quantity": 15 }
+{ "quantity": 15, "unit_price": 88.0, "discount_amount": 20 }
 ```
 Price is re-resolved fresh for the new quantity (not linearly rescaled),
 so a price-list change since the BC was created is picked up — other,
 untouched lines on the same order keep their original creation-time price.
+`unit_price`/`discount_percent`/`discount_amount` (2026-09-01) — same
+rules, permissions, and anti-loss-sale guard as `POST /orders`' own
+manual-negotiation section above; omitted, the line's own existing
+override/discount is simply dropped (re-priced from catalog, same as
+before this feature).
 For a credit-sale BC, the credit limit is re-checked only when the new
 total is **higher** than before a reduction never needs re-checking.
 Stock is **not** touched — a GCOM BC never touches stock either way (see
 §3); there is nothing to reflect until the BC is converted to a BL/invoice.
 → `200`, `{ "success": true, "message": "Order line updated", "order": {...} }`
 → `422` if `quantity` is missing/≤ 0 (use the cancel endpoint to remove a
-line), a BL/invoice already exists, or the new total breaches the
-partner's credit limit.
+line), a BL/invoice already exists, the new total breaches the
+partner's credit limit, a missing permission, or the net price falls
+below cost.
 
 ### Delivery Notes (BL)
 
@@ -849,7 +1126,7 @@ stock timing never depended on delivery status).
 ```json
 {
   "partner_id": 12,
-  "items": [{ "product_id": 42, "quantity": 3 }],
+  "items": [{ "product_id": 42, "quantity": 3, "unit_price": 95.0, "discount_percent": 8 }],
   "payment_method": "cash",
   "notes": "Livraison directe comptoir",
   "delivery_date": "2026-09-01",
@@ -857,9 +1134,25 @@ stock timing never depended on delivery status).
   "salesperson_id": null,
   "driver_info": "Yassine — 0600112233",
   "transporter_name": "Transport Atlas",
-  "status": "in_transit"
+  "status": "in_transit",
+  "global_discount_amount": 50
 }
 ```
+**Manual negotiation fields** (2026-09-02, aligned with `POST /orders` —
+requested so a comptoir/dépôt BL doesn't need a second round-trip through
+the line-editing endpoints just to apply a negotiated price):
+`items[].unit_price`/`discount_percent`/`discount_amount` and
+`global_discount_percent`/`global_discount_amount` go through the exact
+same pipeline as `POST /orders` §8 above — same RBAC gates
+(`gcom-price-override`/`gcom-discount-line`/`gcom-discount-global`/
+`gcom-discount-override-limit`), the same `gcom.max_discount_percent`
+cap, the same proportional-to-HT global discount distribution, and the
+same anti-loss-sale check against `stocks.pmp_cost`
+(`gcom-loss-sale-override` to bypass) — nothing new was built for BL
+specifically, `createDirectDeliveryNote()` creates its transparent
+underlying BC through the identical `GcomOrderService::createOrder()`
+call BC itself uses.
+
 `delivery_date` (optional, `YYYY-MM-DD`, 2026-08-27) — defaults to today
 if omitted, same semantics as `convert-to-bl`'s own `delivery_date`
 (previously this direct-creation endpoint had no way to set it at all —
@@ -987,6 +1280,112 @@ buried in `StockMovement.notes`, unreachable from any GET.
 → `422` if the BL is already invoiced, `quantity` exceeds the line's
 current quantity, or `reason` isn't one of the values above.
 
+### BL editing (2026-09-01, "FEU VERT TOTAL" part 2)
+
+Add/update/remove a line on an existing, not-yet-invoiced BL — distinct
+from the return endpoint above (that's a customer-facing return with a
+condition/reason audit trail; this is a plain pre-invoice correction,
+e.g. a data-entry mistake, no `DeliveryNoteReturn` row). All three
+require **`gcom-delivery-note-edit`**. Confirmed guard (team's own
+arbitrage): `invoice_id IS NULL` — there is no "caisse session" concept
+a BL is ever tied to (settlement only ever happens at invoicing, §3).
+Also requires `status` to be `in_transit`/`delivered` — a `draft` BL
+has no stock deducted yet (§13), so the delta logic below doesn't apply
+to it; scoped out with a clear `422` rather than silently mishandled.
+
+Same manual-negotiation payload/permissions/anti-loss-sale guard as
+`POST /orders`'s own section above (`unit_price` → `gcom-price-override`,
+`discount_percent`/`discount_amount` → `gcom-discount-line` + the
+`gcom.max_discount_percent` cap, `gcom-loss-sale-override` for a
+below-`pmp_cost` sale) — **not re-documented here**, only what's
+BL-specific: unlike a BC line edit (which never touches stock — a BC
+never deducts any), a BL already deducted stock at creation, so every
+edit here reacts on real stock **immediately**, by the delta:
+
+**`POST /delivery-notes/{deliveryNote}/lines`** 🔁
+```json
+{ "product_id": 77, "quantity": 4, "unit_price": 90.0, "discount_percent": 5 }
+```
+Deducts stock for the full new quantity. Rejects a `product_id`
+already on the BL (`422`) — use `PATCH` below instead.
+→ `201`, `{ "success": true, "message": "Delivery note line added", "delivery_note": {...} }`
+
+**`PATCH /delivery-notes/{deliveryNote}/lines/{item}`** 🔁
+```json
+{ "quantity": 8, "unit_price": 88.0 }
+```
+`{item}` is the `DeliveryNoteItem` row id, same as the return endpoint.
+Stock moves by the **delta** only: quantity grew → deducts the
+difference; quantity shrank → restocks the difference (never a blind
+re-deduct/re-add cycle). Omitting `unit_price`/`discount_percent`/
+`discount_amount` re-prices from catalog, dropping any existing
+override on that line.
+→ `200`, `{ "success": true, "message": "Delivery note line updated", "delivery_note": {...} }`
+
+**`POST /delivery-notes/{deliveryNote}/lines/{item}/remove`** 🔁
+```json
+{ "reason": "Erreur de saisie" }
+```
+Removes the line entirely, restocking its full remaining quantity as a
+flat `adjustment` movement (no condition routing, no
+`DeliveryNoteReturn` row — that machinery is for the customer-facing
+return endpoint above, not this one). Removing the **last** remaining
+line cancels the whole BL (`bl.status` → `cancelled`,
+`order.bc_status` → `cancelled`, same "a document with zero lines
+isn't a valid state" rule `POST /orders/{order}/lines/{orderProduct}/cancel`
+already applies to a BC) — same effect as `POST /delivery-notes/{id}/cancel`,
+just reached by emptying the BL one line at a time instead.
+→ `200`, `{ "success": true, "message": "Delivery note line removed", "delivery_note": {...} }`
+
+**`POST /delivery-notes/{deliveryNote}/discount`** 🔁 (2026-09-01, UI team
+follow-up) — sets, replaces, or clears the BL's document-level discount.
+Requires `gcom-delivery-note-edit` **and** `gcom-discount-global`.
+```json
+{ "global_discount_percent": 15 }
+```
+or `{ "global_discount_amount": 60 }` (mutually exclusive), or `{}` to
+**clear** a previously-applied discount.
+
+Genuinely different from a BC's global discount (set once, at
+`POST /orders`, never revisited by a later line edit) — a BL's real
+use case is a commercial re-negotiating **after** delivery, possibly
+more than once. **Safely re-appliable**: unlike naively redistributing
+from each line's current `unit_price` (which would compound — a 20%
+call followed by a 10% call would wrongly yield ~28% off, not a fresh
+10%), this always redistributes from each item's `final_price` — the
+stable, post-line-discount/pre-global-discount price, permanently set
+once at BL creation (or by a later `addLine`/`updateLine` call) and
+never touched again by this endpoint.
+
+**Fixed 2026-09-03** (Team UI live-testing report on the BL payload
+alignment feature, §"Alignement payload BL" below): a BL created via the
+manual-negotiation payload (`POST /delivery-notes` with its own
+creation-time `global_discount_percent`/`items[].discount_percent`) used
+to have `final_price` seeded from the already-globally-discounted total
+instead of the pre-global-discount price — so a later call here would
+silently compound on top of the creation-time discount rather than
+redistributing fresh. Note that the fresh discount is computed on top of
+the *permanent* line-level discount (if any) — it's only the global
+portion that resets on every call, matching a BC's own line/global split
+where line discounts are never re-litigated by a global one.
+→ `200`, `{ "success": true, "message": "Delivery note discount updated", "delivery_note": {...} }`
+
+**HT/TVA + discount proxy staying in sync**: `delivery_notes`/
+`delivery_note_items` carry no HT/tax-breakdown columns of their own —
+only a flat TTC `total_amount` (see
+`GcomDeliveryNoteController::withHtTvaBreakdown()`'s own docblock: the
+`sub_total`/`tax_amount` a `GET` response shows are proxied from the
+underlying `order`). Every edit above recomputes those order-level
+fields directly from the BL's own current items (not the order's
+original `order_products`, which the BL may now have diverged from) —
+the proxy never goes stale after a BL edit. The same method also proxies
+`global_discount_percent`/`global_discount_amount` onto the BL's own
+root (2026-09-03, Team UI report — these were only visible nested under
+`order` before): preferring the BL's own column (set by a real
+`POST .../discount` call) and falling back to the order's value (the
+creation-time-only case, since a discount set purely at `POST
+/delivery-notes` never gets backfilled onto the BL row itself).
+
 **`GET /delivery-notes/{deliveryNote}/returns`** — 2026-08-18. Every CAS 1
 return event recorded against this BL (any line), newest first.
 → `{ "success": true, "returns": [{ "id": 7, "delivery_note_item_id": 12, "product": {"code": "P001", "name": "..."}, "quantity": "3.000", "condition": "damaged", "reason": "DAMAGED", "stock_location": "GCB01-DAMAGED", "returned_by": {"id": 3, "name": "..."}, "returned_at": "2026-08-18T10:30:00.000000Z" }] }`
@@ -1008,14 +1407,15 @@ should call.
 ```json
 {
   "partner_id": 12,
-  "items": [{ "product_id": 42, "quantity": 3 }],
+  "items": [{ "product_id": 42, "quantity": 3, "unit_price": 95.0, "discount_percent": 5 }],
   "payment_method": "cash",
   "notes": "Vente comptoir",
   "payment_term_id": null,
   "instrument": null,
   "souche_kind": null,
   "client_order_ref": null,
-  "salesperson_id": null
+  "salesperson_id": null,
+  "global_discount_amount": 20
 }
 ```
 `souche_kind` — 2026-08-26, see §17 — `'declared'`|`'internal'`, optional.
@@ -1027,6 +1427,17 @@ mark one specific comptoir sale internal. Omit to use the
 resolved term is flagged internal). `client_order_ref` (optional,
 2026-08-27) — see the note on `POST /orders` above. `salesperson_id`
 (optional, 2026-08-27) — see the note on `POST /orders` above.
+`items[].unit_price`/`discount_percent`/`discount_amount` and
+`global_discount_percent`/`global_discount_amount` (2026-09-01, UI team
+follow-up: "vente comptoir avec négociation globale immédiate") —
+identical rules/permissions/anti-loss-sale guard as `POST /orders`'s own
+manual-negotiation section — real terrain case: a loyal client, a
+one-off commercial gesture on the whole basket rather than product by
+product. Reuses the exact same pipeline as the BC path (`GcomOrderBuilder::
+build()` already persists the discount fields), so the resulting
+invoice's `items[].unit_price` already reflects it net; `invoices.
+discount_amount`/`global_discount_percent` also carry the request
+forward onto the invoice header for record.
 → `201`, `{ "success": true, "message": "Invoice created", "invoice": { "id": 88, "status": "fully_paid", "total_amount": "75.19", "remaining_amount": "0.00", "souche_kind": "declared", "token_serie_id": 4, "client_order_ref": null, "items": [...], "partner": {...}, "order": {...} } }`
 
 ### Invoices (mostly consultation — see consolidate below)
@@ -1200,6 +1611,58 @@ directly, not `refund_processed_at` — see below), `consumed_amount`,
 **`GET /credit-notes/{creditNote}`** — same shape as one row above, for
 deep-linking.
 
+**`POST /credit-notes`** 🔁 (2026-09-02) — "avoir libre": a commercial
+gesture with no originating order/invoice at all, unlike
+`POST /invoices/{invoice}/credit-notes` above. Validated with the UI team
+before building: reuses the exact same encours/numbering machinery an
+invoice-linked avoir already gets (`ExposureCalculator` sums every
+`APPROVED` `credit_notes` row by `partner_id` alone, no `invoice_id`/
+`order_id` filter; `CreditNote::generateNumber()` draws from the same
+branch-scoped `'AVR'` `TokenSerie` series) — auto-approved, same as every
+other GCOM avoir (no derogation workflow anywhere in GCOM).
+```json
+{ "partner_id": 1485, "amount": 150.0, "reason": "Geste commercial" }
+```
+Requires the **`gcom-credit-note-free-standing`** permission (`422`
+otherwise) — an invoice-linked avoir only needs `manage-gcom`, since it's
+capped by the invoice's own total by construction; this one has no
+natural ceiling. Amount is capped by the paramétrable
+`gcom.max_free_standing_credit_note_amount` (`ParameterService`-resolved,
+`Partner` → `User` → `AccessProfile` → `Role` → default **2000.0**,
+same chain `gcom.max_discount_percent` uses) unless the actor holds
+**`gcom-credit-note-free-standing-override-limit`**.
+→ `201`, `{ "success": true, "message": "Free-standing credit note created", "credit_note": {...} }`
+
+`credit_notes.order_id` is now nullable (was a hard `NOT NULL` FK) —
+`invoice_id` was already nullable. `credit_note_type` is `'free_standing'`
+for this path (`'return'`/`'financial'` for the invoice-linked ones).
+`refund_amount` is `0`, not the full amount — see
+`GcomCreditNoteService::createFreeStandingCreditNote()`'s docblock for why
+(`ExposureCalculator`'s `total_amount - refund_amount` encours formula
+would otherwise net to zero for a free-standing avoir, silently
+contradicting the whole point of the feature — a real gap only the
+feature's own test caught, not present in the original arbitrage with
+the UI team). `remaining_amount` (what `redeem`/`imputeAvoirs()` actually
+draw from) is unaffected — still the full amount.
+
+Known gap: no PDF endpoint yet (the existing one is nested under
+`/invoices/{invoice}/...`, which doesn't exist for a free-standing avoir)
+— not requested in the original ask, flagged here for whenever it is.
+
+**Real bug found and fixed (2026-09-02, reported by the UI team right
+after creating one)**: a freshly-created free-standing avoir never
+appeared in `GET /credit-notes` — `GcomCreditNoteController::all()`'s
+"is this a GCOM credit note" scope was `whereHas('order', canal=GCOM)`,
+and a free-standing avoir has no `order` at all, so it matched nowhere.
+`show()`/`redeem()` had the identical guard shape
+(`$creditNote->order?->canal !== 'GCOM'`) and 404'd for the same reason —
+no test had exercised either endpoint against a free-standing avoir
+before this was reported. Fixed by also matching
+`credit_note_type = 'free_standing'` in all three places (factored into
+a shared `isGcomCreditNote()` helper for `show()`/`redeem()`).
+`redeemCreditNote()`'s own write (`TreasuryIntakeLine.order_id`) was
+already nullable, so nothing else needed changing downstream.
+
 **`POST /credit-notes/{creditNote}/redeem`** 🔁 (2026-08-31, now partial)
 — resolves (part of) a credit note's outstanding `remaining_amount`
 (money owed back to the partner because the original invoice was
@@ -1320,6 +1783,25 @@ BL endpoint, this also updates the BL's own `total_amount` —
 `generateFromDeliveryNote()` reads that stored snapshot (taken at BL
 creation), never the order's live total, so the recalculated amount
 would otherwise never reach the invoice.
+
+**Fixed 2026-09-03** (Team UI report — a genuinely wrong invoice total,
+not just a display bug): the line-total recompute this override does
+used to always sum `order.orderProducts` — the BC's ORIGINAL snapshot —
+even for the BL endpoint. A BL's items can have since diverged from that
+snapshot via the BL line-editing feature (§ "BL editing" above —
+add/update/remove line, global discount — none of which ever touches
+`order_products`, only `delivery_note_items`). Converting such an edited
+BL to invoice **with** a `payment_method` override silently discarded
+the edit: the stale order-level total got written to `bl.total_amount`
+right before `generateFromDeliveryNote()` copied that same wrong value
+onto the freshly-created invoice's own `total_amount`/`subtotal`/
+`remaining_amount` — a real financial document born with the wrong
+amount, not merely a stale read. Fixed to sum the BL's own current items
+when one is given (same formula `GcomDeliveryNoteService::
+recomputeBlAndOrderTotals()` already uses for the BL's own totals);
+`convert-to-invoice` on a BC with no BL (flow #3) is unaffected — there's
+no BL to have diverged from, so `order.orderProducts` stays correct
+there.
 
 **"Espèces différé" — the driving real case**: a BL created
 `payment_method: "cash"` whose client can't pay on the spot when it's
@@ -1643,6 +2125,80 @@ if the screen needs to reflect the reopened state immediately.
   "bank_account": "011780000012345678"  // optional
 }
 ```
+
+### Parameter registry
+
+**`GET /api/backend/gcom/parameters?module=GCOM`** (2026-09-02, full path
+spelled out here — every other heading in this §8 is relative to
+`/api/backend/gcom/` per the section's own convention, which reads fine
+in context but 404s if copy-pasted as `/parameters` on its own, as
+reported by the UI team) — queryable registry for
+GCOM's own thresholds, the counterpart to SFA's own
+`config/data/sfa_parameter_definitions.php` (~140 keys) which this
+endpoint does NOT expose (GCOM-only today; `module` is validated against
+`['GCOM']`, accepted rather than hardcoded so wiring SFA in here later
+isn't a breaking shape change). Before this, `gcom.max_discount_percent`/
+`gcom.max_free_standing_credit_note_amount` existed purely as string
+literals + hardcoded fallback constants inside
+`GcomDiscountAuthorizationService`/`GcomCreditNoteService` — no endpoint
+anywhere could enumerate them.
+```json
+{
+  "success": true,
+  "module": "GCOM",
+  "parameters": [
+    {
+      "key": "gcom.max_discount_percent",
+      "type": "decimal",
+      "default": 10.0,
+      "current_value": 10.0,
+      "description": "Remise max (%) sur une ligne ou une remise globale sans la permission gcom-discount-override-limit."
+    },
+    {
+      "key": "gcom.max_free_standing_credit_note_amount",
+      "type": "decimal",
+      "default": 2000.0,
+      "current_value": 2000.0,
+      "description": "..."
+    }
+  ]
+}
+```
+`current_value` is resolved for the ACTING user (`ParameterService::get()`'s
+normal Partner → User → AccessProfile → Role → default chain, no
+`$partner` passed — this is the actor's own effective default, not a
+specific partner's override).
+
+**Writing a value (2026-09-02, fast-follow — fixed)**: goes through the
+existing generic `configuration_settings` admin API
+(`ConfigurationSettingAdminController`, full path
+`/api/backend/access-control/configuration-settings` — a *different* base
+prefix than every other endpoint in this §8, not a GCOM-specific write
+endpoint), same as every other configurable key. Body:
+`{ "configurable_type": "Spatie\\Permission\\Models\\Role", "configurable_id": 5, "key": "gcom.max_discount_percent", "value": 12 }`
+(`POST` to create/upsert, `PUT /{id}` to update an existing row —
+`configurable_type` accepts `Role`/`User`/`Partner`/`AccessProfile`/`Branch`,
+see `allowedConfigurableTypes()`). Bulk variants exist too:
+`POST .../roles/{role}/configuration-settings/bulk` (and `users/`,
+`partners/`) with `{ "settings": [{ "key": ..., "value": ... }, ...] }`.
+Getting there took two fixes, not one:
+1. That controller's `store()`/`update()`/`bulkUpsert*()` validated
+   `'key' => 'exists:sfa_params,key'` — rejects every `gcom.*` key
+   outright (config-file-only, never rows in `sfa_params`). Replaced with
+   `resolveParamValueType()`/`validParamKeyRule()`, checking both
+   `sfa_params` and `ParameterService::gcomDefinitions()`.
+2. That alone wasn't enough — `configuration_settings.key` has a hard
+   Postgres FK to `sfa_params.key` (`cascadeOnUpdate`/`restrictOnDelete`),
+   so the INSERT was rejected at the DB level before the app code above
+   ever ran. Dropping the FK was considered and rejected: `SettingsService`/
+   `AppSetting`/`GeneraleSettingController` all write to
+   `configuration_settings` directly with no key validation of their own —
+   the FK is their only typo safety net. Fixed instead by registering
+   GCOM's keys as real `sfa_params` rows (migration
+   `2026_09_02_100000_register_gcom_parameters_in_sfa_params_for_fk`,
+   `description` prefixed `"GCOM: "` so they don't read as SFA settings on
+   a raw `sfa_params` browse) — same `updateOrInsert` pattern the FK's own
+   creating migration already used for its "orphan key" backfill step.
 
 ### Response & error envelope
 
@@ -2014,6 +2570,50 @@ while building GCOM, then confirmed against the actual codebase.
    hardening the catch block to throw a diagnosable `DomainException`
    instead of a bare `firstOrFail()` if a genuine mismatch ever recurs.
 
+10. **N+1 audit (2026-09-02)** — systematic pass over the 8 GCOM
+    controllers' index/list methods. 6 of 8 already eager-load correctly
+    (`Order`, `DeliveryNote`, `Invoice`, `CreditNote`, `Payment`,
+    `Representative` — `GcomPartnerStatementsBuilder`/
+    `GcomPartnerLedgerBuilder`, §6, are the reference pattern: batch/
+    `GROUP BY` before any loop, `->with()` before any relation access in a
+    transform). Two real findings, both fixed:
+    - `GcomCaisseController::index()` called `TreasuryJournalService::
+      computeBalance()` inside a `->map()` over the caller's journals — 3
+      unbatched `SUM()` queries per journal (12 for the standard
+      ESP/CHQ/EFF/VIR set). Added `TreasuryJournalService::
+      computeBalances()` — same per-journal discrepancy-detection/
+      audit-log/`RecalculateJournalBalanceJob` side effect, but the 3 SUMs
+      each run once, `GROUP BY journal_id`, across every journal.
+    - `GcomFinancialInstrumentController::batchDeposit()` ran one
+      `whereHas()->find($id)` query per instrument id inside the "remise
+      en banque groupée" loop — 20 round-trips for a 20-cheque batch.
+      Replaced with one `whereIn()->get()->keyBy('id')` lookup before the
+      loop.
+
+11. **Numbering concurrency (2026-09-02, raised by the UI team as an
+    integrity check)** — `DocumentNumberingService::
+    generateFromFlatTokenSeries()` called `TokenSerie::query()->
+    lockForUpdate()` (both directly and via `resolveBranchTokenSerie()`)
+    with no `DB::transaction()` anywhere in its call chain. `lockForUpdate()`
+    only actually holds its row lock for the lifetime of an enclosing
+    transaction — without one, Postgres treats the `SELECT ... FOR UPDATE`
+    as its own autocommit statement and releases the lock immediately
+    after it returns, before the counter increment even runs. Two
+    concurrent requests for the same series (e.g. two users on the same
+    branch both converting a BC to a Facture at the same moment) could
+    both read the same `next_number` and race. Real duplicate document
+    numbers were never actually possible —
+    `registerDocumentNumberOrThrowConflict()`'s unique-constraint catch on
+    `document_numbers` caught that — but the loser of the race got a hard
+    `SyncConflictException` (a failed request the user would have to
+    retry) instead of being transparently serialized behind the lock like
+    "lockForUpdate" implies. Fixed by wrapping the whole critical section
+    in `DB::transaction()` — when called from inside a caller's own
+    transaction (every `GcomOrderService`/`GcomDeliveryNoteService`/
+    `GcomDirectInvoiceService` flow wraps its whole document-creation
+    operation), Laravel nests it as a savepoint and the lock correctly
+    holds for the outer transaction's full lifetime.
+
 ---
 
 ## 11. Known Gaps — Deliberately Deferred
@@ -2365,8 +2965,9 @@ Still open:
 | `tests/Feature/Gcom/GcomPaymentMethodOverrideAtInvoicingTest.php` | §8 (2026-09-01) — general payment_method override at convert-to-invoice: BL→Facture overrides cash to credit for "espèces différé" (pending/paid_amount:0/no TreasuryIntakeLine, explicit payment_term_id honored), settled the next day via the normal POST /payments deferred règlement into the actor's own ESP caisse; BC→Facture overrides a stored credit method to cash (real Treasury movement, fully_paid); override to cheque still requires instrument details; rejects avoir as an override target; rejects overriding once the document is already invoiced (a repeat call without an override still returns the existing invoice unchanged); rejects a credit override with no resolvable payment term (no explicit one supplied, no partner default); a credit override still runs the real credit-limit check (422 for a partner with a 1 MAD limit) |
 | `tests/Feature/Gcom/GcomReturnsConditionTest.php` | §9bis — CAS 1 (BL partial return pre-invoice, net billing on convert), condition routing (sellable/damaged/technical → available/DAMAGED/QUARANTINE) shared by BL returns and credit-note restocks, guards (already invoiced, over-quantity rejected, invalid `reason`), `CreditNoteItem.is_scrap`/`stock_location`, `DeliveryNoteReturn` persistence + `GET .../returns` + bon de retour PDF + cross-BL 404 (2026-08-18), HTTP layer. **2026-08-31**: 100% single-line return zeroes the line and leaves sibling lines untouched, the zeroed line is excluded from the invoice (not resurrected to the original order quantity — the real bug this surfaced), `GET /delivery-notes/{id}` still returns the zeroed line in `items[]` |
 | `tests/Feature/Gcom/GcomOrderLineCancellationTest.php` | Partial/full single-line BC cancellation, order-total recomputation, HTTP layer |
-| `tests/Feature/Gcom/GcomOrderLineUpdateTest.php` | BC line quantity increase/decrease, re-pricing, stock untouched, credit re-check on increase only, HTTP layer |
-| `tests/Feature/Gcom/GcomOrderLineAdditionTest.php` | Adding a new product line to an existing BC, rejects duplicate product, stock untouched, credit re-check, HTTP layer |
+| `tests/Feature/Gcom/GcomOrderLineUpdateTest.php` | BC line quantity increase/decrease, re-pricing, stock untouched, credit re-check on increase only, HTTP layer. Signature gained an explicit `User $actor` param (2026-09-01, needed for the new discount/margin-guard checks) — every call site updated |
+| `tests/Feature/Gcom/GcomOrderLineAdditionTest.php` | Adding a new product line to an existing BC, rejects duplicate product, stock untouched, credit re-check, HTTP layer. Same `$actor` signature change as the update-line test above |
+| `tests/Feature/Gcom/GcomPricingDiscountEngineTest.php` | Manual negotiation (2026-09-01) — `unit_price` override rejected without `gcom-price-override`, honored with it; line `discount_percent` rejected without `gcom-discount-line`, honored within the paramétrable `gcom.max_discount_percent` (default 10%), rejected beyond it without `gcom-discount-override-limit`, honored with it; rejects `discount_percent`+`discount_amount` together on one line; global discount rejected without `gcom-discount-global`, distributed proportionally to each line's HT and reconciles exactly (VAT-inclusive TTC impact verified against the 19% fallback rate); anti-loss-sale guard rejects a line net-priced below `stocks.pmp_cost`, honored with `gcom-loss-sale-override`, skips silently with no PMP recorded, also enforced on add-line/update-line |
 | `tests/Feature/Gcom/GcomConvertToBlOptionsTest.php` | `convert-to-bl`'s `delivery_date`/`payment_method` body — explicit date honored, defaults, stamp-duty recalculation both directions, credit re-check on switching to a non-immediate method, `is_credit_sale`/`payment_term_id` re-sync, HTTP layer |
 | `tests/Feature/Gcom/GcomTreasuryUnificationTest.php` | Treasury unification (§4/§6/§7) — `payment_transfers`+`letterings` created for cash/card/cheque comptoir sales and BC→Facture/BL→Facture immediate settlements, none created for credit sales, cheque gets both a `FinancialInstrument` and a `payment_transfers` row, and the credit-sale-via-BL-was-wrongly-fully_paid regression |
 | `tests/Feature/Gcom/GcomInvoiceDetailPaymentInfoTest.php` | `GET /invoices/{invoice}`'s `payments`/`financial_instrument` fields — cash/cheque comptoir, empty for an unsettled credit invoice, populated once a deferred règlement lands |
@@ -2381,6 +2982,7 @@ Still open:
 | `tests/Feature/Gcom/GcomCaisseClosureTest.php` | §16 "Clôture de caisse et versement au coffre" (2026-08-20+) — `GET /gcom/caisse` lists the caller's own caisses with live computed balances and `is_closed_today` (false before, true for the just-closed journal only — a sibling caisse stays false), closing ESP transfers the closure's theoretical balance to the branch coffre auto-accepted (a counted-balance discrepancy never changes the transferred amount), closing CHQ creates one transfer per pending cheque (never a lump sum), closing an empty caisse transfers nothing, no assigned caisse gets a 422. **Multi-sessions (2026-08-31)**: `index` also exposes `has_open_session`/`session_number`; closing with nothing currently open (already closed today, untouched since) is rejected (`422 TREASURY_NO_OPEN_SESSION`) without creating a phantom session; a second same-day session closes and transfers independently of the first, coffre balance ends up as the sum of both |
 | `tests/Feature/Gcom/GcomInvoicePdfTest.php` | `GET /invoices/{invoice}/pdf` — real PDF bytes returned, correct `Content-Type`, 404 for non-GCOM invoices, HT vs. TTC renders differ and cache separately (2026-08-18, migration onto the BC/Devis/BL pipeline) |
 | `tests/Feature/Gcom/GcomDocumentPdfTest.php` | `GET /orders/{order}/pdf`, `/delivery-notes/{deliveryNote}/pdf`, `/quotes/{id}/pdf` — real PDF bytes for BC/BL/Devis, 404 for non-GCOM BC/BL, 403 for someone else's Devis, HT vs. TTC renders differ and cache separately |
+| `tests/Feature/Gcom/GcomDocumentDiscountRenderingTest.php` | Real bug (2026-09-01, UI team, order BCORBI-A01-000066) — `DocumentDataResolver::resolveBc()`'s PDF data reflects a `global_discount_percent` in `total_ht`/`total_ttc`/line totals (not the raw pre-discount amount) with a correctly-derived REM.% (not always "—"); BC→BL conversion carries the discount onto the new `DeliveryNoteItem.unit_price` (not the stale pre-discount `order_products.price`) and the BL's own `total_amount` reconciles with the sum of its items; BC→BL→Facture ultimately bills the discounted amount, not the pre-discount one (the real overcharge risk this surfaced) |
 | `tests/Feature/Gcom/GcomDocumentNumberingBranchScopingTest.php` | Locks in that BC/Devis/BL/bon de retour/Facture/Avoir each consume their own branch's `TokenSerie` series, never a coexisting generic wildcard default and never another branch's series (real bug this test was built to catch, §10) — Devis added 2026-08-23 once its numbering migrated off the random scheme |
 | `tests/Feature/Gcom/GcomBootstrapPayloadConditioningTest.php` | §11 "Setup/Bootstrap payload conditioning" — a GCOM-only company's login `settings` excludes the ~140 `sfa_parameter_definitions.php` keys, SFA/HYBRID companies still get the full set (unaffected), an explicit `ConfigurationSetting` override on a registered key still reaches a GCOM company's settings (extraKeys path never skipped) |
 | `tests/Feature/Gcom/GcomFinancialInstrumentPortfolioTest.php` | §8 "Portefeuille" — `GET /financial-instruments` lists across every partner of the company, never leaks another company's instruments, filters by `status`/`instrument_type`/`bank_id`/`due_date` range, `branch_id` best-effort matches an at-sale instrument; `POST /financial-instruments/batch-deposit` deposits every valid id in one call, is best-effort (one wrong-state instrument doesn't block the others), and treats another company's id as not found rather than processing it |
@@ -2389,11 +2991,13 @@ Still open:
 | `tests/Feature/Gcom/GcomStampDutyWaiverAndSalespersonOverrideTest.php` | 2026-08-27 — `partner.waive_stamp_duty` honored on BC creation and on the line-edit recompute path (adding a line to a waived partner's order stays waived), non-waived partner still charged normally (regression); explicit `salesperson_id` honored on direct-invoice and direct-BL creation, defaults to the acting user when omitted, rejects a non-existent user id with 422 |
 | `tests/Feature/Gcom/GcomRepresentativeTest.php` | §18 (2026-08-27/28) — creates a représentant with the dedicated role, lists scoped to the actor's company only (excludes plain staff and another company's représentant — real BelongsToCompany creating-hook trap found writing this test), `show` 404s for a non-représentant, update (branch/active status), role removal without deleting the user, BC creation accepts a registered représentant as `salesperson_id` and rejects a non-représentant with 422 |
 | `tests/Feature/Gcom/GcomBlDeliveryLifecycleTest.php` | §13/§18 (2026-08-29/30) — a direct BL and a BC→BL conversion are both born `in_transit`; `confirm-delivery` transitions to `delivered` and sets `delivered_at`, rejects an already-delivered BL; `convert-to-invoice` rejects a still-`in_transit` BL and succeeds once delivered; cancelling an `in_transit` BL restocks immediately (locks in that `cancelDeliveryNote()` needed zero changes); `driver_info`/`transporter_name` stored on both direct BL creation and convert-to-bl; full lifecycle confirms stock deducts once (at creation) and settlement still only triggers at convert-to-invoice, unchanged; configurable `status: 'delivered'` at creation (both endpoints) skips `in_transit` entirely, still deducts stock, is immediately invoiceable, and rejects a subsequent `confirm-delivery` call; omitting `status` still defaults to `in_transit`. **2026-08-31**: `status: 'draft'` creates no number/no stock movement (`delivery_number` placeholder), `POST .../validate` draws the real number and deducts stock exactly once, can target `delivered` directly, rejects validating a non-draft BL, cancelling a draft does not restock, `draft` also honored on `convert-to-bl` |
+| `tests/Feature/Gcom/GcomDeliveryNoteEditingTest.php` | BL editing (2026-09-01) — rejects add-line without `gcom-delivery-note-edit`; adding a line deducts stock and recomputes the BL's `total_amount` AND the order-level HT/TVA proxy; rejects a duplicate product; increasing/decreasing a line's quantity deducts/restocks exactly the delta; a manual discount on update requires `gcom-discount-line` (rejected without it); removing a line restocks it fully; removing the last line cancels the whole BL (and the order); rejects editing an already-invoiced or still-draft BL; the anti-loss-sale guard runs on BL edits too. **Global discount** (2026-09-01, UI team follow-up): rejected without `gcom-discount-global`; applied proportionally and flows through to the eventual invoice unchanged (`convert-to-invoice` after); re-applying a DIFFERENT value never compounds on a previous call (real bug caught and fixed here — see GcomDeliveryNoteService::setGlobalDiscount()); sending neither field clears a previously-applied discount, restoring the original total exactly |
+| `tests/Feature/Gcom/GcomDirectInvoicePricingTest.php` | Manual negotiation extended to Comptoir/Facture Directe (2026-09-01) — `unit_price` override rejected without `gcom-price-override`; a manual override + line discount together compute the expected net total; a global discount is rejected without `gcom-discount-global` and, once granted, distributes correctly and lands on the created invoice (`invoice.items` count + total verified); the anti-loss-sale guard rejects a below-`pmp_cost` line and is bypassable with `gcom-loss-sale-override` |
 | `tests/Feature/Gcom/GcomBlPayloadAlignmentTest.php` | 2026-08-27 — `delivery_date` on direct BL creation (`POST /delivery-notes`, previously convert-to-bl only, defaults to today when omitted, rejects malformed dates), `client_order_ref` stored on a BC and mirrored onto a direct BL + its underlying order, mirrored onto a direct invoice, and flows through the full BC→BL→Facture chain with no extra parameter needed on the conversion endpoints |
 | `tests/Feature/Gcom/GcomMultiSoucheNumberingTest.php` | §17 multi-souche numbering (2026-08-25/26) — a credit sale via a declared/internal `PaymentTerm` draws from the matching branch series, internal and declared invoices advance separate counters (declared sequence stays gap-free), creating an internal-souche invoice fails loudly when the branch's internal series isn't provisioned (never falls back to declared), stock deducts and treasury settlement posts identically regardless of souche, explicit `souche_kind` override beats the `PaymentTerm` default on all three invoice-creation endpoints (Comptoir, BC→Facture, BL→Facture), invalid `souche_kind` rejected with 422, an unprovisioned branch's internal request returns a clean 422 on all three endpoints (not a 500) |
 | `tests/Feature/CompanySalesModeTest.php` | `sales_mode` GET/PUT, default value, invalid-mode rejection, permission gate |
 | `tests/Feature/Warehouse/InventoryCheckTest.php` | Generic (not GCOM-scoped) — inventaire lifecycle, included here since it shares `StockService`/`StockUpdateService` with GCOM |
-| `tests/Feature/Warehouse/PurchaseReceptionValidationTest.php` | Generic — stock reception validate/reverse, same reason |
+| `tests/Feature/Warehouse/PurchaseReceptionValidationTest.php` | Generic — stock reception validate/reverse, same reason. **PMP (2026-09-01)**: a first reception adopts its own `unit_cost` as the PMP outright, a second reception at a different cost blends into the correct weighted average, a stock transfer (no cost involved) never touches the PMP |
 | `tests/Feature/Invoicing/GeneratePeriodicInvoicesCommandGcomExclusionTest.php` | §11 "`invoicing_mode` not consulted in GCOM" (2026-08-31) — a GCOM BL for a `PERIODIC_FIN_DE_MOIS` partner is never swept into the legacy `invoices:generate-periodic` cron, a non-GCOM BL for the same partner still consolidates normally (regression guard), a mix of GCOM + non-GCOM BLs only ever consolidates the non-GCOM one |
 | `tests/Feature/Gcom/GcomInvoicingModeTest.php` | §8/§11 "`invoicing_mode` wired into GCOM" (2026-08-31) — `1_FAC_PER_ORDER`: blocks convert-to-invoice with a clear pending-count 422 until every non-cancelled sibling BL is delivered, then consolidates all uninvoiced siblings into ONE invoice (callable from any sibling, idempotent on retry), real USER_CAISSE settlement happens, a cancelled sibling is never waited on or included, `payment_method` override is rejected. `PERIODIC_FIN_DE_MOIS`: convert-to-invoice always rejects on demand; `gcom:generate-periodic-invoices` consolidates only `canal='GCOM'` BLs for periodic partners, leaves a non-GCOM sibling for the legacy command |
 | `tests/Feature/Gcom/GcomInvoiceConsolidationTest.php` | §8 `POST /invoices/consolidate` (2026-09-01) — consolidates 2 delivered BLs from DIFFERENT orders of the same partner into one invoice (real settlement, both orders' worth credited to the actor's caisse); rejects fewer than 2 ids, an unknown id, BLs from different partners, a not-yet-delivered BL, an already-invoiced BL; requires an explicit `payment_method` when the selected orders' natural methods disagree (succeeds once supplied); requires an explicit `souche_kind` when the selected orders' natural souches disagree (succeeds once supplied, draws from the right TokenSerie); still requires `instrument` details for a cheque settlement; still runs the real credit-limit check when overriding to credit |
