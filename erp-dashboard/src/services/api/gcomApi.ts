@@ -176,7 +176,7 @@ const withCacheBust = <T extends object>(params: T | undefined): T & { _: string
 
 const pollPdfInBackground = async (
     url: string,
-    params: Record<string, string> | undefined,
+    params: Record<string, unknown> | undefined,
     toastId: string,
     firstDelayMs: number,
 ): Promise<void> => {
@@ -203,8 +203,11 @@ const pollPdfInBackground = async (
     }
 };
 
-const fetchPdfBlobUrl = (url: string, priceMode?: GcomPdfPriceMode): Promise<string | null> => {
-    const params = priceMode ? { price_mode: priceMode } : undefined;
+// 2026-09-03 — generalized from a (url, priceMode) pair to a plain (url,
+// params) pair once the Relevé de Compte PDF needed to reuse this (it takes
+// GcomLedgerFilters — {from, to} — not a price mode). Callers that need
+// price_mode build that one-key object themselves now.
+const fetchPdfBlobUrl = (url: string, params?: Record<string, unknown>): Promise<string | null> => {
     const requestPromise = apiClient.get(url, { responseType: 'blob', params: withCacheBust(params) });
 
     return new Promise<string | null>((resolve, reject) => {
@@ -314,7 +317,7 @@ export const gcomApi = {
         // architecture gap, not a one-off bug). `price_mode` genuinely
         // affects the rendered output now, defaults to `ttc` if omitted.
         getPdfBlobUrl: (invoiceId: number, priceMode?: GcomPdfPriceMode): Promise<string | null> =>
-            fetchPdfBlobUrl(`${BASE}/invoices/${invoiceId}/pdf`, priceMode),
+            fetchPdfBlobUrl(`${BASE}/invoices/${invoiceId}/pdf`, priceMode ? { price_mode: priceMode } : undefined),
 
         // 2026-09-01 — groups ≥2 delivery notes (separate orders, same
         // partner) into one invoice. A real JSON endpoint despite one
@@ -373,7 +376,7 @@ export const gcomApi = {
 
         // Default HT if `priceMode` omitted (unchanged behavior).
         getPdfBlobUrl: (quoteId: number, priceMode?: GcomPdfPriceMode): Promise<string | null> =>
-            fetchPdfBlobUrl(`${BASE}/quotes/${quoteId}/pdf`, priceMode),
+            fetchPdfBlobUrl(`${BASE}/quotes/${quoteId}/pdf`, priceMode ? { price_mode: priceMode } : undefined),
     },
 
     orders: {
@@ -482,7 +485,7 @@ export const gcomApi = {
 
         // Default HT if `priceMode` omitted (unchanged behavior).
         getPdfBlobUrl: (orderId: number, priceMode?: GcomPdfPriceMode): Promise<string | null> =>
-            fetchPdfBlobUrl(`${BASE}/orders/${orderId}/pdf`, priceMode),
+            fetchPdfBlobUrl(`${BASE}/orders/${orderId}/pdf`, priceMode ? { price_mode: priceMode } : undefined),
     },
 
     deliveryNotes: {
@@ -627,7 +630,7 @@ export const gcomApi = {
 
         // Default TTC if `priceMode` omitted (unchanged behavior).
         getPdfBlobUrl: (deliveryNoteId: number, priceMode?: GcomPdfPriceMode): Promise<string | null> =>
-            fetchPdfBlobUrl(`${BASE}/delivery-notes/${deliveryNoteId}/pdf`, priceMode),
+            fetchPdfBlobUrl(`${BASE}/delivery-notes/${deliveryNoteId}/pdf`, priceMode ? { price_mode: priceMode } : undefined),
     },
 
     partners: {
@@ -660,13 +663,19 @@ export const gcomApi = {
         // endpoint above, so the PDF can never diverge from what the screen
         // shows. No `download` param sent — inline view via window.open,
         // matching every other GCOM PDF button in this module.
-        getLedgerPdfBlobUrl: async (partnerId: number, filters?: GcomLedgerFilters): Promise<string> => {
-            const response = await apiClient.get(`${BASE}/partners/${partnerId}/ledger/pdf`, {
-                responseType: 'blob',
-                params: filters,
-            });
-            return URL.createObjectURL(response.data as Blob);
-        },
+        //
+        // 2026-09-03 — routed through the shared fetchPdfBlobUrl (generalized
+        // the same day from a (url, priceMode) pair to a plain (url, params)
+        // pair specifically so this could reuse it) instead of its own raw
+        // apiClient.get() — same 202/slow-render race-timeout/cache-bust
+        // handling every other GCOM PDF button gets, no separate
+        // implementation to keep in sync. Doesn't matter that this endpoint
+        // isn't in backend's documented "PDF stays in sync" mutation list
+        // (BC/BL/Devis/Facture/Avoir only) — the race-against-timeout half of
+        // fetchPdfBlobUrl protects against a slow-but-plain-200 Gotenberg
+        // render regardless of whether a given endpoint ever returns 202.
+        getLedgerPdfBlobUrl: (partnerId: number, filters?: GcomLedgerFilters): Promise<string | null> =>
+            fetchPdfBlobUrl(`${BASE}/partners/${partnerId}/ledger/pdf`, filters as unknown as Record<string, unknown> | undefined),
 
         // Relevé de Compte Global (2026-08-30) — company-wide, mass-aggregated
         // server-side (~6 GROUP BY queries, not a per-partner loop). Excludes
@@ -693,6 +702,17 @@ export const gcomApi = {
             const response = await apiClient.post<GcomRegisterPaymentResponse>(`${BASE}/payments`, payload, idempotent());
             return response.data.payment;
         },
+
+        // Reçu d'encaissement (2026-09-03) — same DocumentService/documents._layout
+        // pipeline and "PDF stays in sync" 202/cache-bust handling as every other
+        // GCOM PDF, via the shared fetchPdfBlobUrl. Amount-in-words, imputation
+        // table (live "Reste à Payer" per invoice, not frozen at payment time),
+        // and the new solde dû are all computed server-side through the same
+        // GcomPartnerLedgerBuilder /statement and /ledger already use — never a
+        // third source of truth that could drift, directly closing the class of
+        // bug the remaining_amount fix (2026-09-03) addressed.
+        getPdfBlobUrl: (paymentId: number): Promise<string | null> =>
+            fetchPdfBlobUrl(`${BASE}/payments/${paymentId}/pdf`),
     },
 
     // Lifecycle transitions for chèque/effet instruments (2026-08-18) — not

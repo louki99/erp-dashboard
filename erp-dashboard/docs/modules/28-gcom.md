@@ -867,6 +867,41 @@ no data-driven invalidation at all.
   under identical host load: passed clean). Not a production concern — a
   real PHP-FPM/queue-worker request is short-lived or periodically
   recycled. `invalidate()` itself stays fully real/unguarded.
+- **`Cache-Control: no-store` on `GET .../pdf` (2026-09-03, Team UI
+  report)** — was `private, max-age=300`, which let a BROWSER resurface
+  its own stale copy on an identical URL for up to 5 minutes, completely
+  invisible to `scheduleRegeneration()`'s server-side invalidation: an
+  edit followed by a same-URL print within that window could still show
+  the pre-edit PDF, entirely at the browser-cache layer (Team UI had
+  worked around it client-side with a cache-busting query param before
+  this fix landed). Applies to both the real PDF response and the `202`
+  "generating" branch. These documents are small (well under 100KB in
+  practice) and can change at any moment a GCOM edit happens, so the
+  bandwidth a longer `max-age` would save is negligible against the
+  correctness cost — `DocumentService`'s own MinIO cache already keeps a
+  re-fetch of an unchanged document fast regardless.
+- **Cold-render latency is a Gotenberg/host issue, not a GCOM resolver
+  one** (2026-09-03, investigated after a reported 31.5s cold render):
+  `DocumentDataResolver::resolveBl()` (and siblings) eager-load
+  everything needed with no N+1 pattern — confirmed by reading the code,
+  not assumed. Gotenberg's own access logs show the real cause: its
+  internal Chromium browser periodically becomes unresponsive
+  (`"browser health check failed: context deadline exceeded"`) and has to
+  restart; a PDF request landing in that window blocks until Gotenberg's
+  internal timeout (~30-34s) before either succeeding or failing with
+  `503`/`500` (`"process restart before task"` /
+  `"browser start already in progress"`). Reproducible beyond the one BL
+  reported — multiple independent occurrences visible in the same log
+  window. Root cause is this host's known resource ceiling (2 vCPU /
+  3.8GB, ~24 containers, swap saturated — see the 2026-09-02 PDF-latency
+  fix above), not application code. Re-adding a blind retry was
+  considered and rejected again for the same reason it was removed
+  2026-09-02: retrying on every error would double the worst-case latency
+  instead of recovering anything. Left as a known infra constraint,
+  partially absorbed by the pre-warm job (most real users hit an
+  already-warm cache) — a real fix needs either more Gotenberg capacity
+  or a smarter (health-check-aware, not blind) retry, both out of scope
+  for a quick patch.
 
 **`POST /orders`** 🔁 — flow #1 (second hop, if not started from a quote)
 / #3 / #4's BC leg.
@@ -1564,6 +1599,70 @@ Not a JSON endpoint: point a browser `<a href>`/download button directly
 at this URL (with the auth header), don't run it through your normal JSON
 fetch wrapper.
 
+**Real bug found 2026-09-04** (Team UI report on a consolidated invoice —
+TVA showing 0 despite every line correctly carrying its own tax_amount):
+all three BL-derived invoice-creation paths —
+`InvoiceService::generateFromDeliveryNote()` (`1_FAC_PER_BL`, the
+default, most common mode), `generateFromOrderDeliveries()`
+(`1_FAC_PER_ORDER`), and `generatePeriodicInvoice()`
+(`PERIODIC_FIN_DE_MOIS` + the ad-hoc multi-order `consolidateDeliveryNotes()`
+above) — seeded `subtotal`/`total_amount` at creation from
+`$bl->original_total`/`$bl->final_total`, columns `DeliveryNote` doesn't
+actually have. The fallback always silently resolved to the raw,
+TTC-inclusive `total_amount` for BOTH fields, making `subtotal` and
+`total_amount` end up identical — and `tax_amount` was never included in
+any of the three `Invoice::create()` calls at all, staying at its 0.00
+default regardless of what every individual `invoice_item` correctly
+computed. Not limited to consolidation — this affected every GCOM invoice
+ever created from a BL, single or merged. A repo-wide scan found 15
+already-affected production invoices; all corrected in place from their
+own (already-correct) line items.
+
+Fixed with a shared `recomputeInvoiceTotalsFromItems()` helper, called
+after an invoice's items are actually created (and after any promotion
+adjustment) in all three methods — sums the real per-item
+`tax_amount`/`line_total` rather than trusting anything derived from the
+source BLs. Two related findings surfaced fixing this:
+- **Stamp duty** ("droit de timbre", cash-only by Moroccan law) lives
+  only on the `Order` (`StampDutyService`) — `Invoice` has no
+  `stamp_duty` column at all, and it's neither part of any product line
+  nor of `tax_amount`. Omitting it would silently drop a real,
+  already-collected amount from a cash invoice's total — each caller now
+  passes the sum of `stamp_duty` across whichever order(s) actually back
+  the invoice. `Order.stamp_duty` is itself a PHP-level `Attribute`
+  accessor reading through `financialMetadata`, not a real column
+  (stale `$fillable`/`$casts` entries on `Order` claim otherwise) — a
+  raw query-builder `->sum('stamp_duty')` throws `SQLSTATE[42703]`
+  in production; must load real `Order` models and sum via the
+  `Collection` instead, which does invoke the accessor.
+- **`createInvoiceItemsFromBlItems()` preferred `DeliveryNoteItem.final_price`
+  over `unit_price`** when pricing an invoice line — harmless before
+  2026-09-03 (the two fields were normally kept equal), but the BL
+  global-discount-compounding fix (§ above) deliberately repurposed
+  `final_price` into a narrow "pre-global-discount anchor" for
+  `setGlobalDiscount()`'s own re-negotiation logic — it no longer
+  reflects a document-level discount the way `unit_price` does.
+  Preferring it here silently billed the pre-global-discount amount on
+  an invoice generated from a BL created (or re-negotiated) with a
+  global discount. Previously invisible because the header total was
+  trusted directly from `bl.total_amount` rather than summed from these
+  items — surfaced by the `recomputeInvoiceTotalsFromItems()` fix, which
+  correctly sums the items and exposed the pre-existing per-item bug
+  underneath. Fixed to prefer `unit_price`.
+
+**Real production incident, 2026-08-23** (Team UI report): `recomputeInvoiceTotalsFromItems()`
+isn't only called once at creation — it can run again later against the
+SAME invoice (e.g. a header/stamp_duty correction applied after the
+fact). It used to set `remaining_amount => $totalAmount` unconditionally,
+which is correct on first creation (`paid_amount` is always `0` then)
+but silently erases any payment already collected on a second call:
+two already fully-paid invoices (74, 77) had `remaining_amount`/`status`
+reset back to unpaid while `paid_amount` stayed untouched, desyncing the
+"Factures Ouvertes" list from the partner's real (correctly-aggregated)
+ledger balance. Fixed to net `remaining_amount` against the invoice's
+current `paid_amount` instead of blindly overwriting it; no behavior
+change on the normal creation path.
+
 ### Avoir (Credit Notes) — see §9 for the full design
 
 **`GET /invoices/{invoice}/credit-notes`** — list credit notes issued
@@ -1859,8 +1958,13 @@ immediately).
   /api/backend/masterdata/payment-methods`. If omitted, it falls back
   through the resolution chain documented just below. **This is the field
   the "Nouveau Règlement" screen's method dropdown should actually submit
-  — not `payment_term_id`.** `payment_term_id` still controls the
-  échéance/timing side and is separately required either way.
+  — not `payment_term_id`.**
+- `payment_term_id` (**optional since 2026-09-05** — was required before
+  that; see the dedicated note further below) — a règlement is an
+  encashment that can cover several open invoices with different credit
+  terms, so forcing one term onto the payment itself never matched the
+  business reality. Still accepted when the caller wants to log which
+  term this règlement was collected against, just never required.
 - `instrument` (required when `payment_method_id` resolves to
   cheque/effet, same shape as everywhere else in GCOM: `{
   reference_number, due_date, bank_name?, bank_account? }`) — a cheque/
@@ -1881,12 +1985,29 @@ immediately).
 
 → `201`, `{ "success": true, "message": "Payment registered and lettered", "payment": {...}, "lettering": { ... LetteringService::getPaymentLetteringSummary() shape ... } }`
 
-**`bank_id` is required** whenever `payment_term_id` resolves to a non-cash
-term (`PaymentTransferService::registerPayment()`'s own guard) — populate
-the picker from `GET /api/backend/masterdata/banks` (outside GCOM's own
-routes, same "no duplicate master-data endpoints" rule as partners/
-products — real gap found 2026-08-16, `Bank` the model already existed but
-no listing endpoint anywhere did). → `{ "success": true, "data": [{ "id": 3, "code": "...", "name": "Attijariwafa Bank", "swift_code": "...", "is_active": true }] }`
+**`bank_id` is required** whenever the *resolved* `payment_method_id`
+has `payment_methods.requires_bank = true` (`PaymentTransferService::
+registerPayment()`'s own guard) — populate the picker from `GET
+/api/backend/masterdata/banks` (outside GCOM's own routes, same "no
+duplicate master-data endpoints" rule as partners/products — real gap
+found 2026-08-16, `Bank` the model already existed but no listing
+endpoint anywhere did). → `{ "success": true, "data": [{ "id": 3, "code": "...", "name": "Attijariwafa Bank", "swift_code": "...", "is_active": true }] }`
+
+**Fixed 2026-09-05** (Team UI question: why require `payment_term_id` at
+all on a règlement?): this check used to read
+`$paymentTerm->is_bank_transfer`/`is_cash` — the wrong, indirect source,
+and one that silently skipped the check entirely for a payment with no
+term at all. `payment_methods.requires_bank` is the real, purpose-built
+column for this exact decision (seeded correctly: `CASH`/`CARD`/
+`MOBILE` = `false`, `CHEQUE`/`EFFET`/`VIREMENT` = `true` —
+`database/sql/26_payment_domain_v2_seed.sql`), reads off the
+already-resolved payment method, and needs no `payment_term_id` to work
+— which is what made `payment_term_id` safe to make optional in the
+first place. Also more correct than the old check for an explicit
+`payment_method_id` override that disagrees with the term's own stored
+method (e.g. a cash term, but this one instance is explicitly settled by
+transfer) — the old term-only check would have missed that case even
+before `payment_term_id` became optional.
 
 **How `payment_method_id` is resolved** (real bug fixed 2026-08-16: every
 payment term genuinely attached to a real partner failed with either
@@ -1920,6 +2041,37 @@ different-looking error for the same missing configuration.
 **`GET /partners/{partner}/open-invoices`** — convenience lookup for
 building a "which invoices does this règlement cover" picker.
 → `{ "success": true, "invoices": [{ "id": 88, "invoice_number": "INV-...", "invoice_date": "...", "due_date": "...", "total_amount": "...", "paid_amount": "...", "remaining_amount": "...", "status": "pending" }] }`
+
+**`GET /payments/{payment}/pdf`** 🔁 (2026-08-23, Team UI request) — reçu
+d'encaissement / quittance de paiement. Same `DocumentService` pipeline
+every other GCOM document uses (`?download=true` for attachment instead
+of inline; see `DocumentDataResolver::resolvePaymentReceipt()`). Not
+gated on any GCOM-canal check (unlike `/invoices/{invoice}/pdf`) —
+`PaymentTransferService`/`LetteringService` are deliberately
+channel-agnostic (§7 above), so a payment has no channel marker to check
+against in the first place.
+
+Content: partner identity (name/code/ICE), branch + the caissier
+(`received_by`), the amount both numerically and spelled out in French
+words (`Support\AmountInWordsService` — hand-rolled; `NumberFormatter::
+SPELLOUT` was tried first but silently falls back to English on this
+environment's ICU data), payment method + — for chèque/effet — the
+linked `FinancialInstrument`'s reference/bank/échéance when one was
+registered (`GcomInstrumentRegistrar`), falling back to the payment's
+own `bank_id`/`reference`/`maturity_date` otherwise. The imputation
+table lists every invoice this payment was lettered against (`N°
+Facture`, date, `total_amount` TTC, amount imputed on this payment,
+and that invoice's **current** `remaining_amount` — reflecting this and
+any other lettering already applied, not a snapshot frozen at print
+time). The closing "nouveau solde dû" line reuses `GcomPartnerLedgerBuilder`
+— the exact same source `/partners/{partner}/statement` and `/ledger`
+already serve — so the receipt can never show a different balance than
+the rest of the UI for the same partner.
+
+Each `Lettering` row only carries `order_id` (not `invoice_id` — a
+pre-existing gap noted on `LetteringService::getPaymentLetteringSummary()`),
+so the invoice per line is resolved the same way `LetteringService::
+unletter()` already does: `Invoice::where('order_id', ...)`.
 
 ### Per-partner financial views — see §6 for the full design rationale
 
@@ -4402,3 +4554,76 @@ unchanged. Open questions if picked up:
   answer once.
 - Cross-partner applications: still out of scope either way (an avoir
   only ever applies within the same partner).
+
+## 19. Notification Center — GCOM Alerts Summary
+
+Built 2026-08-23 (Team UI cadrage for the bell icon + sidebar badges).
+One endpoint, `GET /gcom/alerts/summary` (`?branch_id?`), aggregating 8
+operational alert categories behind a single lightweight response —
+`App\Domains\Gcom\Alerts\Services\GcomAlertsSummaryService`, each
+category a plain `count`/`total_amount` pair from a cheap aggregate
+query (no N+1 model hydration — meant to be polled often, not a report).
+
+```json
+{
+  "success": true,
+  "alerts": {
+    "overdue_invoices": { "count": 5, "total_amount": 14250.00 },
+    "uninvoiced_delivery_notes": { "count": 2, "total_amount": 3400.00 },
+    "unallocated_credit_notes": { "count": 1, "total_amount": 500.00 },
+    "pending_instruments_due": { "count": 3, "total_amount": 8900.00 },
+    "rejected_instruments": { "count": 1, "total_amount": 1200.00 },
+    "unclosed_cash_sessions": { "count": 1 },
+    "pending_orders": { "count": 4, "total_amount": 11200.00 },
+    "expiring_quotes": { "count": 2, "total_amount": 3000.00 },
+    "total_alerts_count": 19
+  }
+}
+```
+
+`total_amount` is always the ACTIONABLE figure (what's actually still
+owed/outstanding), never a document's gross face value — e.g. overdue
+invoices report `remaining_amount`, not `total_amount`.
+
+Category definitions:
+- **`overdue_invoices`** — same `status='overdue'` filter `GET
+  /invoices?status=overdue` already uses (a literal DB status, only
+  flipped by the daily `invoices:escalate-overdue` command or a
+  payment-driven status recompute — not a live `due_date < now()`
+  check).
+- **`uninvoiced_delivery_notes`** — `DeliveryNote` with `status =
+  'delivered'` and `invoice_id IS NULL`.
+- **`unallocated_credit_notes`** — `credit_note_type = 'free_standing'`,
+  `status = APPROVED`, `remaining_amount > 0`.
+- **`pending_instruments_due`** — `FinancialInstrument` (chèque/effet),
+  `status = PENDING`, `due_date` within 7 days (also catches an already-
+  overdue-but-still-undeposited instrument, since the window is `<=`).
+- **`rejected_instruments`** — `status = REJECTED` (the state an
+  instrument sits in after `ReverseSettlementOnInstrumentRejected` has
+  already reopened the invoice — these need a fresh règlement/re-deposit,
+  not a status check).
+- **`unclosed_cash_sessions`** — `TreasuryJournalClosure` `status =
+  OPEN`, `opened_at` more than 24h ago (no `total_amount` — a session's
+  balance isn't a single meaningful figure at this level).
+- **`pending_orders`** — **proxy, not a literal match to "BC en attente
+  d'expédition dépassant la date d'expédition prévue"**: confirmed by a
+  full grep of the BC creation path that `Order` carries no "planned
+  ship date" column at all (`delivery_date` only exists on `DeliveryNote`,
+  set once a BL is actually created). Proxied as: GCOM orders with no
+  `DeliveryNote` that reached `DELIVERED`, older than 3 days. A real
+  "date d'expédition prévue" field on `Order`/BC is separate, unbuilt
+  scope if wanted.
+- **`expiring_quotes`** — `status = sent`, `expires_at` within 7 days
+  and not already past. Branch-scoped via the quote's own creator
+  (`user_id` → `User.branch_id`) — `Quote` has no branch column of its
+  own.
+
+Branch scoping (`?branch_id=`) goes through `Order.branch_id` wherever a
+category traces back to an order (invoices/BLs/orders themselves via
+`whereHas('order', ...)`), `CreditNote.branch_id` directly (a real
+column), `TreasuryJournal.branch_id` via the journal relation for cash
+sessions, and — for the two categories with no branch column at all
+(`FinancialInstrument`, `Quote`) — the registering/creating user's own
+`branch_id` as a proxy, same pattern
+`DocumentDataResolver::resolvePaymentReceipt()` already uses for a
+payment's own branch.

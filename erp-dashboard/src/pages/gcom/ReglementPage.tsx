@@ -5,7 +5,7 @@ import type { AgGridReact } from 'ag-grid-react';
 import {
     Landmark, Search, X, Loader2, RefreshCw, Plus,
     Building2, FileText, Wallet, History, TrendingUp, TrendingDown, Scale,
-    Upload, CheckCircle2, Ban, AlertTriangle, Lock, RotateCcw, Maximize2, Minimize2,
+    Upload, CheckCircle2, Ban, AlertTriangle, Lock, RotateCcw, Maximize2, Minimize2, Download,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 
@@ -16,8 +16,8 @@ import { DataGrid } from '@/components/common/DataGrid';
 import { ReglementForm } from '@/components/gcom/ReglementForm';
 
 import { gcomApi } from '@/services/api/gcomApi';
-import { getPartners, getPartner, getPaymentTerms } from '@/services/api/partnerApi';
-import type { Partner, PaymentTermOption } from '@/types/partner.types';
+import { getPartners, getPartner } from '@/services/api/partnerApi';
+import type { Partner } from '@/types/partner.types';
 import type {
     GcomOpenInvoice, GcomPayment, GcomFinancialInstrument, GcomLedgerEntry,
     GcomInvoiceStatus, GcomInstrumentStatus, GcomLedgerEntryType,
@@ -234,11 +234,24 @@ export default function ReglementPage() {
     const [instrumentStatusFilter, setInstrumentStatusFilter] = useState<'all' | GcomInstrumentStatus>('all');
     const [payments, setPayments] = useState<GcomPayment[]>([]);
     const [loadingPayments, setLoadingPayments] = useState(false);
+    // Reçu d'encaissement reprint (2026-09-03) — per-row loading id, same
+    // pattern as every other per-row PDF button in GCOM (Avoirs/BL return).
+    const [receiptPdfLoadingId, setReceiptPdfLoadingId] = useState<number | null>(null);
+    const openReceiptPdf = async (paymentId: number) => {
+        setReceiptPdfLoadingId(paymentId);
+        try {
+            const url = await gcomApi.payments.getPdfBlobUrl(paymentId);
+            if (url) window.open(url, '_blank');
+        } catch {
+            toast.error('Impossible de charger le reçu PDF');
+        } finally {
+            setReceiptPdfLoadingId(null);
+        }
+    };
     const [ledger, setLedger] = useState<GcomLedgerEntry[]>([]);
     const [loadingLedger, setLoadingLedger] = useState(false);
     const [ledgerFrom, setLedgerFrom] = useState('');
     const [ledgerTo, setLedgerTo] = useState('');
-    const [partnerTerms, setPartnerTerms] = useState<PaymentTermOption[]>([]);
 
     // Fullscreen toggle for the active tab's content (Factures Ouvertes/
     // Chèques & Effets/Historique des Paiements/Relevé de Compte, whichever
@@ -452,15 +465,11 @@ export default function ReglementPage() {
         setActiveTab('invoices');
         setLedgerFrom('');
         setLedgerTo('');
-        setPartnerTerms([]);
         loadOpenInvoices(p.id);
         loadInstruments(p.id);
         loadPayments(p.id);
         loadLedger(p.id);
         loadAccountSummary(p.id);
-        getPaymentTerms(p.id)
-            .then(res => setPartnerTerms(res.partner?.paymentTerms ?? res.partner?.payment_terms ?? res.availableTerms ?? res.available_terms ?? []))
-            .catch(() => setPartnerTerms([]));
     };
 
     // Deep-link from another GCOM screen (e.g. the global Relevé de Compte
@@ -507,7 +516,7 @@ export default function ReglementPage() {
                 from: ledgerFrom || undefined,
                 to: ledgerTo || undefined,
             });
-            window.open(url, '_blank');
+            if (url) window.open(url, '_blank');
         } catch {
             toast.error('Impossible de charger le relevé de compte PDF');
         } finally {
@@ -659,7 +668,25 @@ export default function ReglementPage() {
             field: 'status', headerName: 'Statut', width: 120,
             cellRenderer: (p: ICellRendererParams<GcomPayment, string>) => <span style={{ fontSize: '11px', color: '#6b7280', textTransform: 'capitalize' }}>{p.value ?? '—'}</span>,
         },
-    ], []);
+        {
+            colId: 'receipt', headerName: '', width: 56, sortable: false, filter: false, resizable: false,
+            cellRenderer: (p: ICellRendererParams<GcomPayment>) => {
+                if (!p.data) return null;
+                const paymentId = p.data.id;
+                const loading = receiptPdfLoadingId === paymentId;
+                return (
+                    <button
+                        onClick={() => openReceiptPdf(paymentId)}
+                        disabled={loading}
+                        title="Imprimer le reçu"
+                        style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: '100%', height: '100%', color: '#6b7280', opacity: loading ? 0.5 : 1 }}
+                    >
+                        {loading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Download className="w-3.5 h-3.5" />}
+                    </button>
+                );
+            },
+        },
+    ], [receiptPdfLoadingId]);
 
     const ledgerColumnDefs = useMemo<import('ag-grid-community').ColDef[]>(() => [
         {
@@ -764,7 +791,7 @@ export default function ReglementPage() {
                             partner={selectedPartner}
                             openInvoices={openInvoices}
                             loadingInvoices={loadingInvoices}
-                            partnerTerms={partnerTerms}
+                            accountSummary={accountSummary}
                             onCancel={() => setShowReglementForm(false)}
                             onSuccess={() => { setShowReglementForm(false); refresh(); }}
                         />

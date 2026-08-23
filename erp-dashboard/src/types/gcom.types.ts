@@ -904,20 +904,16 @@ export interface GcomApplyDeliveryNoteDiscountPayload {
 
 // ─── Règlement & Lettrage — see docs/modules/28-gcom.md §8 "Payments" ──────
 //
-// Verified live 2026-08-15 against ORBIS. Two real integration constraints
-// found that the doc doesn't call out:
-//  - `payment_term_id` must resolve to a real `payment_method_id` on the
-//    PaymentTerm record — a term with none (e.g. generic NET30) 422s with
-//    "Unable to resolve a payment method for this payment term." In
-//    practice: only use the partner's own attached payment terms here
-//    (same `getPaymentTerms(partnerId)` call already used by Comptoir/BC),
-//    not an arbitrary term id.
-//  - When the resolved payment method needs a bank, `bank_id` is required
-//    (422 "Bank is required for this payment method" otherwise) — and there
-//    is currently **no discoverable endpoint to list banks** (`/masterdata/banks`,
-//    `/banks`, `/finance/banks` all 404). The UI can only offer a raw numeric
-//    bank id input until backend adds a lookup endpoint — flagged, not a
-//    frontend bug.
+// Verified live 2026-08-15 against ORBIS, revised 2026-09-03 once
+// payment_term_id became optional (see GcomRegisterPaymentPayload's own
+// comment). Still true: if you DO send a `payment_term_id`, it must resolve
+// to a real `payment_method_id` on the PaymentTerm record — a term with none
+// (e.g. generic NET30) 422s with "Unable to resolve a payment method for
+// this payment term." In practice: only use the partner's own attached
+// payment terms (`getPaymentTerms(partnerId)`, same call Comptoir/BC use),
+// not an arbitrary term id — though omitting it entirely sidesteps this
+// altogether. Bank lookup (`GET /masterdata/banks`) exists now — the earlier
+// "no discoverable endpoint" gap noted here is closed.
 
 export interface GcomOpenInvoice {
     id: number;
@@ -962,18 +958,30 @@ export interface GcomPaymentAllocationInput {
 export interface GcomRegisterPaymentPayload {
     partner_id: number;
     amount: number;
-    payment_term_id: number;
-    // Added 2026-08-16 — the dropdown the "moyen de paiement" select actually
-    // submits now. payment_term_id (échéance) stays separate and still required
-    // — the two are NOT merged, per backend's explicit instruction.
+    // Made optional server-side 2026-09-03 (commit 61258a3a) — was required
+    // until then. `'nullable|exists:payment_terms,id'` now; omit entirely and
+    // payment_method_id resolution falls back through: explicit
+    // payment_method_id → the term's own method (if a term was given) → cash
+    // auto-resolve if the term is cash → the partner's
+    // partner_financial_profiles.default_payment_method_id. Still accepted if
+    // you want to log which credit term a règlement was collected against
+    // (useful for reporting), just never required. The two dropdowns (this
+    // one and payment_method_id) are still NOT merged, per backend's earlier
+    // explicit instruction — that part is unchanged.
+    payment_term_id?: number | null;
     payment_method_id?: number;
     reference?: string;
     bank_id?: number | null;
     maturity_date?: string | null;
     notes?: string;
-    // Required only when payment_method_id resolves to Chèque/Effet (verified
-    // live: masterdata's own `type: 'check'` reliably identifies these two —
-    // 422 with a clear message if omitted while a check-type method is chosen).
+    // Required only when the RESOLVED payment method's own `requires_bank` is
+    // true (masterdata `GET /payment-methods`, e.g. Chèque/Effet/Virement
+    // bancaire — verified live 2026-09-03: CHEQUE 422s "Bank is required..."
+    // without one, CASH succeeds without one). Previously thought to depend on
+    // the payment_term instead (every term here being a credit term always
+    // needing a bank) — backend confirmed that's no longer how it resolves,
+    // now reads payment_methods.requires_bank off the resolved method
+    // directly, independent of payment_term_id.
     instrument?: GcomInstrumentInput;
     allocations?: GcomPaymentAllocationInput[];
     auto_letter?: boolean;
