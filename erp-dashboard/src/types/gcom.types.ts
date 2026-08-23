@@ -1214,6 +1214,42 @@ export interface GcomLedgerResponse {
     ledger: GcomLedgerEntry[];
 }
 
+// ─── Proactive alerts (2026-09-03) — GET /gcom/alerts/summary ────────────
+// Aggregated counts feeding the notification bell (previously fully
+// decorative — see MasterLayout.tsx). `total_amount` is always the
+// actionable/remaining amount, never the document's raw total (e.g.
+// overdue_invoices uses remaining_amount, not total_amount) —
+// unclosed_cash_sessions is the one category with no dirham amount to show
+// (a session, not a monetary document). `pending_orders` ("BC en attente
+// d'expédition") is a backend-acknowledged proxy, not a real field: Order has
+// no "planned ship date" column (only DeliveryNote.delivery_date, set at BL
+// creation, not BC), so it's GCOM orders with no BL that's reached DELIVERED
+// yet, older than 3 days — good enough for a vigilance signal, not exact.
+// pending_instruments_due/rejected_instruments/expiring_quotes are branch-scoped
+// via the creating/recording user's branch (FinancialInstrument and Quote have
+// no branch column of their own), same convention as the payment receipt PDF.
+export interface GcomAlertCategory {
+    count: number;
+    total_amount?: number;
+}
+
+export interface GcomAlertsSummary {
+    overdue_invoices: GcomAlertCategory;
+    uninvoiced_delivery_notes: GcomAlertCategory;
+    unallocated_credit_notes: GcomAlertCategory;
+    pending_instruments_due: GcomAlertCategory;
+    rejected_instruments: GcomAlertCategory;
+    unclosed_cash_sessions: GcomAlertCategory;
+    pending_orders: GcomAlertCategory;
+    expiring_quotes: GcomAlertCategory;
+    total_alerts_count: number;
+}
+
+export interface GcomAlertsSummaryResponse {
+    success: boolean;
+    alerts: GcomAlertsSummary;
+}
+
 // ─── Représentants (§18, built 2026-08-27/28) ─────────────────────────────
 // A représentant is a plain User holding the gcom_representative Spatie
 // role — thin GCOM-scoped façade over User::create()/assignRole(), gated

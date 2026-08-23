@@ -24,6 +24,8 @@ import type {
     GcomCaisseListResponse,
     GcomParameter,
     GcomParametersResponse,
+    GcomAlertsSummary,
+    GcomAlertsSummaryResponse,
     GcomCloseCaissePayload,
     GcomCaisseCloseResult,
     GcomReturnDeliveryNoteLinePayload,
@@ -913,6 +915,17 @@ export const gcomApi = {
         get: async (module: 'GCOM' = 'GCOM'): Promise<GcomParameter[]> => {
             const response = await apiClient.get<GcomParametersResponse>(`${BASE}/parameters`, { params: { module } });
             return response.data.parameters;
+        },
+    },
+
+    // Proactive alerts (2026-09-03) — feeds the notification bell. See
+    // GcomAlertsSummary's own comment for the per-category semantics/caveats.
+    alerts: {
+        summary: async (branchId?: number): Promise<GcomAlertsSummary> => {
+            const response = await apiClient.get<GcomAlertsSummaryResponse>(`${BASE}/alerts/summary`, {
+                params: branchId ? { branch_id: branchId } : undefined,
+            });
+            return response.data.alerts;
         },
     },
 };

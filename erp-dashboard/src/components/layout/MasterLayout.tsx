@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import Split from 'react-split';
 import { cn } from '@/lib/utils';
-import { Search, Star, ChevronDown, ChevronLeft, ChevronRight, Maximize2, Minimize2, Bell, Moon, Sun, LayoutGrid } from 'lucide-react';
+import { Search, Star, ChevronDown, ChevronLeft, ChevronRight, Maximize2, Minimize2, Moon, Sun, LayoutGrid } from 'lucide-react';
 import { CommandMenu } from './CommandMenu';
 import { AppLauncher } from './AppLauncher';
 import { ConfirmationModal } from '@/components/common/ConfirmationModal';
@@ -9,6 +9,7 @@ import { ConfirmationModal } from '@/components/common/ConfirmationModal';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '@/context/AuthContext';
 import { LanguageSwitcher } from '@/components/common/LanguageSwitcher';
+import { GcomAlertsBell } from '@/components/gcom/GcomAlertsBell';
 import { useWorkspaceFavorites } from '@/hooks/useWorkspaceFavorites';
 import { trackRecentPage } from '@/hooks/useRecentPages';
 
@@ -296,10 +297,7 @@ export const MasterLayout: React.FC<MasterLayoutProps> = ({
                     {/* Language Switcher */}
                     <LanguageSwitcher />
 
-                    <button className="p-2 rounded-full hover:bg-white/10 text-gray-400 hover:text-white transition-colors relative">
-                        <Bell className="w-5 h-5" />
-                        <span className="absolute top-1.5 right-1.5 w-2 h-2 bg-red-500 rounded-full border-2 border-[#1a1a1a]"></span>
-                    </button>
+                    <GcomAlertsBell />
 
                     <div className="h-6 w-px bg-white/10 hidden md:block"></div>
 
