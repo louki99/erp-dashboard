@@ -48,6 +48,8 @@ import type {
     GcomOrder,
     GcomOrderListFilters,
     GcomOrderListResponse,
+    GcomOrderListViewRow,
+    GcomOrderListViewResponse,
     GcomOrderShowResponse,
     GcomOrderMutationResponse,
     GcomCreateOrderPayload,
@@ -63,6 +65,8 @@ import type {
     GcomDeliveryNote,
     GcomDeliveryNoteListFilters,
     GcomDeliveryNoteListResponse,
+    GcomDeliveryNoteListViewRow,
+    GcomDeliveryNoteListViewResponse,
     GcomDeliveryNoteShowResponse,
     GcomDeliveryNoteMutationResponse,
     GcomCreateDeliveryNotePayload,
@@ -387,6 +391,14 @@ export const gcomApi = {
             return response.data.orders;
         },
 
+        // Lean grid-only projection (2026-09-03) — see GcomOrderListViewRow's
+        // comment. Use for the BC datagrid; use list() (above) wherever full
+        // GcomOrder fields are needed.
+        listView: async (filters?: GcomOrderListFilters): Promise<GcomPaginator<GcomOrderListViewRow>> => {
+            const response = await apiClient.get<GcomOrderListViewResponse>(`${BASE}/orders/list-view`, { params: filters });
+            return response.data.orders;
+        },
+
         get: async (orderId: number): Promise<GcomOrder> => {
             const response = await apiClient.get<GcomOrderShowResponse>(`${BASE}/orders/${orderId}`);
             return response.data.order;
@@ -493,6 +505,14 @@ export const gcomApi = {
     deliveryNotes: {
         list: async (filters?: GcomDeliveryNoteListFilters): Promise<GcomPaginator<GcomDeliveryNote>> => {
             const response = await apiClient.get<GcomDeliveryNoteListResponse>(`${BASE}/delivery-notes`, { params: filters });
+            return response.data.delivery_notes;
+        },
+
+        // Lean grid-only projection (2026-09-03) — see GcomDeliveryNoteListViewRow's
+        // comment. Use for the BL datagrid; use list() (above) wherever full
+        // GcomDeliveryNote fields are needed.
+        listView: async (filters?: GcomDeliveryNoteListFilters): Promise<GcomPaginator<GcomDeliveryNoteListViewRow>> => {
+            const response = await apiClient.get<GcomDeliveryNoteListViewResponse>(`${BASE}/delivery-notes/list-view`, { params: filters });
             return response.data.delivery_notes;
         },
 

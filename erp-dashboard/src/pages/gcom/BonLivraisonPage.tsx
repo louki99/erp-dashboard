@@ -289,6 +289,11 @@ export default function BonLivraisonPage() {
     const loadNotes = useCallback(async (pageNum: number, append: boolean) => {
         setLoading(true);
         try {
+            // NOT switched to listView() yet, unlike BC — ConsolidateModal needs
+            // partner.id (getPaymentTerms(partner.id)), which the lean projection
+            // doesn't carry (only asked for partner.name in the original field
+            // spec — a real gap, found via tsc, not by re-reading the spec).
+            // Revert to listView() once backend adds partner.id to it.
             const res = await gcomApi.deliveryNotes.list({
                 partner_id: partnerFilter?.id,
                 status: blStatusFilter === 'all' ? undefined : blStatusFilter,

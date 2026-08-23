@@ -724,6 +724,27 @@ practice only `confirmed`|`cancelled` ever appear — see §13),
 **`GET /orders/{order}`** — 404 if the order isn't a GCOM order. Response
 includes `products` (line items), `partner`, `invoices`, `deliveryNotes`.
 
+**`GET /orders/list-view`** 🔁 (2026-08-23, UI team report) — lightweight
+BC datagrid feed. `GET /orders` above returns full `Order` models —
+measured ~3.2KB/row (129 fields available across order + partner +
+`financial_metadata` + `salesperson_data`, mostly cancellation/
+preparation/physical-metrics workflow internals no grid renders) — this
+endpoint selects only the 6 fields a BC datagrid actually displays,
+**at the DB level**, not just a smaller JSON encode of the same fully-
+hydrated row. Same `partner_id`/`bc_status` filters as `GET /orders`,
+same pagination shape.
+→ `{ "success": true, "orders": { "data": [{ "id": 88, "order_code": "BCORBI-...", "partner": { "name": "..." }, "bc_status": "confirmed", "payment_method": "cash", "total_amount": 200.00, "created_at": "2026-08-23T10:00:00+00:00" }], ...pagination... } }`
+
+Not a replacement for `GET /orders` — detail screens still need the full
+model. `id` is included beyond the UI team's literal 6-field ask (a grid
+row needs a stable key). The same 129-vs-6 pattern almost certainly
+applies to `GET /delivery-notes`, `/invoices`, `/quotes` too (per the UI
+team's own report) — **not built for those yet**, deliberately: their
+exact minimal datagrid field sets weren't specified, and guessing risks
+either missing a field the real grid renders or dropping one nobody
+asked to drop. Flag if/when those three grids' exact field lists are
+confirmed — straightforward to extend with the same pattern.
+
 **`GET /orders/{order}/pdf`** — streams the BC PDF (`Content-Type:
 application/pdf`). `?download=1` for an attachment, `?price_mode=ht|ttc`
 for whether line items print HT or TTC (defaults to `ht` if omitted).
@@ -1144,6 +1165,19 @@ need to reach into `delivery_note.order` for them.
 `partner_id?`, `status?` (in practice only `delivered`|`cancelled` for
 GCOM — no separate confirm/load/transit steps, a BL is `delivered` the
 moment it's created; see §13), `per_page?`.
+
+**`GET /delivery-notes/list-view`** 🔁 (2026-08-23, UI team report) —
+lightweight BL datagrid feed, same pattern as `GET /orders/list-view`
+above. Full `GET /delivery-notes` measured ~1.3KB/row (41 root fields
++11 on `partner`) for a grid that renders 7: `delivery_number`,
+`partner.name`, `status`, `invoice_id` (the "Facturé" column — truthy/
+falsy, not the full invoice), `total_amount`, `delivery_date`. Selects
+only those at the DB level; unlike `withHtTvaBreakdown()` on the full
+endpoint, `total_amount` here is `delivery_notes`' own flat TTC column
+directly — no order-proxied HT/TVA computation, the grid only ever
+shows TTC. Same `partner_id`/`status` filters as the full index. `id`
+included beyond the UI team's literal list (row key/navigation).
+→ `{ "success": true, "delivery_notes": { "data": [{ "id": 34, "delivery_number": "BLORBI-A01-00003", "partner": { "name": "..." }, "status": "delivered", "invoice_id": null, "total_amount": 26.00, "delivery_date": "2026-08-23T10:00:00+00:00" }], ...pagination... } }`
 
 **`GET /delivery-notes/{deliveryNote}`** — 404 if not from a GCOM order.
 

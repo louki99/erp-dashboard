@@ -648,6 +648,35 @@ export interface GcomOrderListResponse {
     orders: GcomPaginator<GcomOrder>;
 }
 
+// GET /orders/list-view (2026-09-03) — lean grid-only projection, selected at
+// the DB level (a restricted `select()`, not the full model serialized down),
+// built after reporting that the full GET /orders list endpoint sends 88
+// top-level fields + nested partner (11)/financial_metadata (18)/
+// salesperson_data (12) per row for a grid that only ever reads 6 of them.
+// ~14.5x smaller in practice (6.6KB vs 95.8KB for the same 30-row page,
+// live-measured). Same partner_id/bc_status filters and pagination shape as
+// the full endpoint. `payment_method` is flat here (not nested under
+// financial_metadata like the full GcomOrder) — deliberately simpler for a
+// grid column, confirmed fine, not changed to match the nested shape.
+// Selecting a row still always re-fetches the full GcomOrder via GET
+// /orders/{id} (BonCommandePage.tsx's selectOrder — "regardless of what the
+// list row already had"), so this projection only ever needs to carry
+// exactly what the grid renders, nothing more.
+export interface GcomOrderListViewRow {
+    id: number;
+    order_code: string;
+    partner: { name: string };
+    bc_status: GcomBcStatus;
+    payment_method: GcomPaymentMethod;
+    total_amount: number | string;
+    created_at: string;
+}
+
+export interface GcomOrderListViewResponse {
+    success: boolean;
+    orders: GcomPaginator<GcomOrderListViewRow>;
+}
+
 export interface GcomOrderShowResponse {
     success: boolean;
     order: GcomOrder;
@@ -805,6 +834,28 @@ export interface GcomDeliveryNoteListFilters {
 export interface GcomDeliveryNoteListResponse {
     success: boolean;
     delivery_notes: GcomPaginator<GcomDeliveryNote>;
+}
+
+// GET /delivery-notes/list-view (2026-09-03) — same lean-projection pattern as
+// GcomOrderListViewRow (see its own comment for the full rationale/measured
+// gain). total_amount here is the BL's own flat TTC column directly, not the
+// HT/TVA-proxied-from-order value the full GcomDeliveryNote juggles — the
+// grid only ever renders TTC, so no need to carry that complexity into this
+// projection. invoice_id stays null until the BL is invoiced; the "Facturé"
+// column is just Boolean(invoice_id) client-side.
+export interface GcomDeliveryNoteListViewRow {
+    id: number;
+    delivery_number: string;
+    partner: { name: string };
+    status: GcomBlStatus;
+    invoice_id: number | null;
+    total_amount: number | string;
+    delivery_date: string;
+}
+
+export interface GcomDeliveryNoteListViewResponse {
+    success: boolean;
+    delivery_notes: GcomPaginator<GcomDeliveryNoteListViewRow>;
 }
 
 export interface GcomDeliveryNoteShowResponse {

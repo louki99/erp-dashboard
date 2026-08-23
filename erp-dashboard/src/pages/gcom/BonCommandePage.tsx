@@ -30,7 +30,7 @@ import { useGcomParameters } from '@/hooks/useGcomParameters';
 import type { Partner, PaymentTermOption } from '@/types/partner.types';
 import type { CatalogProduct } from '@/types/telesalesAgent.types';
 import type {
-    GcomPaymentMethod, GcomOrder, GcomOrderProduct, GcomBcStatus, GcomInstrumentInput, GcomPdfPriceMode, GcomSoucheKind, GcomAvoirAllocation,
+    GcomPaymentMethod, GcomOrder, GcomOrderProduct, GcomOrderListViewRow, GcomBcStatus, GcomInstrumentInput, GcomPdfPriceMode, GcomSoucheKind, GcomAvoirAllocation,
 } from '@/types/gcom.types';
 
 // ─── helpers ─────────────────────────────────────────────────────────────────
@@ -115,7 +115,7 @@ export default function BonCommandePage() {
     }, [partnerSearch, partnerFilter, runPartnerSearch]);
 
     // ── List ──────────────────────────────────────────────────────────────────
-    const [orders, setOrders] = useState<GcomOrder[]>([]);
+    const [orders, setOrders] = useState<GcomOrderListViewRow[]>([]);
     const [loading, setLoading] = useState(true);
     const [page, setPage] = useState(1);
     const [lastPage, setLastPage] = useState(1);
@@ -124,7 +124,7 @@ export default function BonCommandePage() {
     const loadOrders = useCallback(async (pageNum: number, append: boolean) => {
         setLoading(true);
         try {
-            const res = await gcomApi.orders.list({
+            const res = await gcomApi.orders.listView({
                 partner_id: partnerFilter?.id,
                 bc_status: bcStatusFilter === 'all' ? undefined : bcStatusFilter,
                 per_page: PAGE_SIZE,
@@ -189,9 +189,15 @@ export default function BonCommandePage() {
         return () => container.removeEventListener('scroll', onScroll);
     }, [openSections, activeTab]);
 
-    const selectOrder = useCallback(async (row: GcomOrder) => {
+    const selectOrder = useCallback(async (row: GcomOrderListViewRow | GcomOrder) => {
         setFormMode('view');
-        setSelected(row);
+        // Optimistic partial paint (header/name visible immediately) — always
+        // overwritten within the fetch below, same spirit as the deep-link
+        // effect's own `{ id } as GcomOrder` a few lines down. A row from the
+        // lean list-view endpoint doesn't have every GcomOrder field (e.g.
+        // partner.id) but has everything this optimistic paint actually
+        // renders before detailLoading clears.
+        setSelected(row as GcomOrder);
         setActiveTab('informations');
         setDetailLoading(true);
         try {
@@ -680,32 +686,34 @@ export default function BonCommandePage() {
     const columnDefs = useMemo<import('ag-grid-community').ColDef[]>(() => [
         {
             field: 'order_code', headerName: 'BC', width: 150,
-            valueGetter: (p: ValueGetterParams<GcomOrder>) => p.data?.order_code ?? `#${p.data?.id}`,
-            cellRenderer: (p: ICellRendererParams<GcomOrder, string>) => (
+            valueGetter: (p: ValueGetterParams<GcomOrderListViewRow>) => p.data?.order_code ?? `#${p.data?.id}`,
+            cellRenderer: (p: ICellRendererParams<GcomOrderListViewRow, string>) => (
                 <span style={{ fontFamily: 'monospace', fontSize: '11px', fontWeight: 700, color: '#4338ca' }}>{p.value}</span>
             ),
         },
         {
             field: 'partner.name', headerName: 'Client', flex: 1, minWidth: 130,
-            cellRenderer: (p: ICellRendererParams<GcomOrder, string>) => <span style={{ fontSize: '12px', fontWeight: 500 }}>{p.value ?? '—'}</span>,
+            cellRenderer: (p: ICellRendererParams<GcomOrderListViewRow, string>) => <span style={{ fontSize: '12px', fontWeight: 500 }}>{p.value ?? '—'}</span>,
         },
         {
             field: 'bc_status', headerName: 'Statut', width: 100,
             filter: 'agSetColumnFilter',
             filterParams: { valueFormatter: (p: { value: GcomBcStatus }) => BC_STATUS_META[p.value]?.label ?? p.value },
-            cellRenderer: (p: ICellRendererParams<GcomOrder>) => p.data ? <StatusBadge status={p.data.bc_status} /> : null,
+            cellRenderer: (p: ICellRendererParams<GcomOrderListViewRow>) => p.data ? <StatusBadge status={p.data.bc_status} /> : null,
         },
         {
-            field: 'financial_metadata.payment_method', headerName: 'Règlement', width: 100,
-            cellRenderer: (p: ICellRendererParams<GcomOrder, GcomPaymentMethod>) => (
+            // Flat on this lean endpoint (not nested under financial_metadata
+            // like the full GcomOrder) — confirmed with backend, kept flat.
+            field: 'payment_method', headerName: 'Règlement', width: 100,
+            cellRenderer: (p: ICellRendererParams<GcomOrderListViewRow, GcomPaymentMethod>) => (
                 <span style={{ fontSize: '11px', color: '#6b7280' }}>{PAYMENT_METHODS.find(m => m.value === p.value)?.label ?? p.value ?? '—'}</span>
             ),
         },
         {
             colId: 'total_amount', headerName: 'Total TTC', width: 100,
             filter: 'agNumberColumnFilter',
-            valueGetter: (p: ValueGetterParams<GcomOrder>) => Number(p.data?.total_amount) || 0,
-            cellRenderer: (p: ICellRendererParams<GcomOrder, number>) => (
+            valueGetter: (p: ValueGetterParams<GcomOrderListViewRow>) => Number(p.data?.total_amount) || 0,
+            cellRenderer: (p: ICellRendererParams<GcomOrderListViewRow, number>) => (
                 <span style={{ fontSize: '11px', fontWeight: 700, color: '#111827' }}>{fmtMAD(p.value)}</span>
             ),
         },
@@ -720,7 +728,7 @@ export default function BonCommandePage() {
                     return cellDate < filterDate ? -1 : cellDate > filterDate ? 1 : 0;
                 },
             },
-            cellRenderer: (p: ICellRendererParams<GcomOrder, string>) => <span style={{ fontSize: '11px', color: '#6b7280' }}>{fmtDate(p.value)}</span>,
+            cellRenderer: (p: ICellRendererParams<GcomOrderListViewRow, string>) => <span style={{ fontSize: '11px', color: '#6b7280' }}>{fmtDate(p.value)}</span>,
         },
     ], []);
 
