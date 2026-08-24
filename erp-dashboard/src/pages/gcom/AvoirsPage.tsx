@@ -17,6 +17,7 @@ import { financeApi } from '@/services/api/financeApi';
 import { getPartners } from '@/services/api/partnerApi';
 import { usePermissions } from '@/hooks/usePermissions';
 import { useGcomParameters } from '@/hooks/useGcomParameters';
+import { useCreditNotes, useCreditNote, useCreateFreeStandingCreditNote, useRedeemCreditNote } from '@/hooks/gcom/useGcomCreditNotes';
 import type {
     GcomCreditNote, GcomCreditNoteStatus, GcomCreditNotesGlobalListFilters, GcomRefundMethod,
 } from '@/types/gcom.types';
@@ -79,13 +80,14 @@ const isRedeemed = (cn: GcomCreditNote) => (Number(cn.refund_amount) || 0) > 0 &
 // Financial mutation, modal like every other one on this page. ─────────────
 
 const CreateFreeStandingModal = ({
-    searchPartners, onClose, onDone,
-}: { searchPartners: (q: string) => Promise<ComboboxOption[]>; onClose: () => void; onDone: () => void }) => {
+    searchPartners, onClose,
+}: { searchPartners: (q: string) => Promise<ComboboxOption[]>; onClose: () => void }) => {
     const { maxFreeStandingCreditNoteAmount } = useGcomParameters();
     const [partner, setPartner] = useState<ComboboxOption | null>(null);
     const [amount, setAmount] = useState('');
     const [reason, setReason] = useState('');
     const [saving, setSaving] = useState(false);
+    const createFreeStanding = useCreateFreeStandingCreditNote();
 
     const confirm = async () => {
         if (!partner) { toast.error('Sélectionnez un client'); return; }
@@ -94,9 +96,8 @@ const CreateFreeStandingModal = ({
         if (!reason.trim()) { toast.error('Motif requis'); return; }
         setSaving(true);
         try {
-            const cn = await gcomApi.creditNotes.createFreeStanding({ partner_id: Number(partner.id), amount: parsed, reason: reason.trim() });
+            const cn = await createFreeStanding.mutateAsync({ partner_id: Number(partner.id), amount: parsed, reason: reason.trim() });
             toast.success(`Avoir ${cn.credit_note_number ?? `#${cn.id}`} créé`);
-            onDone();
             onClose();
         } catch (err: unknown) {
             const msg = (err as { response?: { data?: { message?: string } } })?.response?.data?.message;
@@ -169,12 +170,13 @@ const CreateFreeStandingModal = ({
 // codebase's "no modals" convention doesn't apply (matches the destructive-
 // action exception used elsewhere in GCOM) ───────────────────────────────────
 
-const RedeemModal = ({ creditNote, onClose, onDone }: { creditNote: GcomCreditNote; onClose: () => void; onDone: () => void }) => {
+const RedeemModal = ({ creditNote, onClose }: { creditNote: GcomCreditNote; onClose: () => void }) => {
     const remainingAmount = remaining(creditNote);
     const [method, setMethod] = useState<GcomRefundMethod>('cash');
     const [reference, setReference] = useState('');
     const [amount, setAmount] = useState(String(remainingAmount));
     const [saving, setSaving] = useState(false);
+    const redeemCreditNote = useRedeemCreditNote();
 
     const confirm = async () => {
         const parsed = parseFloat(amount);
@@ -183,9 +185,11 @@ const RedeemModal = ({ creditNote, onClose, onDone }: { creditNote: GcomCreditNo
         setSaving(true);
         try {
             const isFull = Math.abs(parsed - remainingAmount) < 0.005;
-            await gcomApi.creditNotes.redeem(creditNote.id, { method, reference: reference.trim() || undefined, amount: isFull ? undefined : parsed });
+            await redeemCreditNote.mutateAsync({
+                id: creditNote.id,
+                payload: { method, reference: reference.trim() || undefined, amount: isFull ? undefined : parsed },
+            });
             toast.success(isFull ? 'Avoir remboursé intégralement — caisse mise à jour' : 'Remboursement partiel enregistré — caisse mise à jour');
-            onDone();
             onClose();
         } catch (err: unknown) {
             const msg = (err as { response?: { data?: { message?: string } } })?.response?.data?.message;
@@ -388,19 +392,31 @@ export const AvoirsPage = () => {
     const { has } = usePermissions();
     const canCreateFreeStanding = has('gcom-credit-note-free-standing');
     const [createFreeStandingOpen, setCreateFreeStandingOpen] = useState(false);
-    const [rows, setRows] = useState<GcomCreditNote[]>([]);
-    const [loading, setLoading] = useState(false);
     const [statusFilter, setStatusFilter] = useState<GcomCreditNoteStatus | 'ALL'>('ALL');
     const [partnerFilter, setPartnerFilter] = useState<ComboboxOption | null>(null);
     const [branchFilter, setBranchFilter] = useState<ComboboxOption | null>(null);
     const [dateFrom, setDateFrom] = useState('');
     const [dateTo, setDateTo] = useState('');
+    const creditNotesFilters = useMemo((): GcomCreditNotesGlobalListFilters => {
+        const filters: GcomCreditNotesGlobalListFilters = { per_page: 100 };
+        if (statusFilter !== 'ALL') filters.status = statusFilter;
+        if (partnerFilter) filters.partner_id = Number(partnerFilter.id);
+        if (branchFilter) filters.branch_id = Number(branchFilter.id);
+        if (dateFrom) filters.from = dateFrom;
+        if (dateTo) filters.to = dateTo;
+        return filters;
+    }, [statusFilter, partnerFilter, branchFilter, dateFrom, dateTo]);
+    const creditNotesQuery = useCreditNotes(creditNotesFilters);
+    const rows = useMemo(() => creditNotesQuery.data?.data ?? [], [creditNotesQuery.data]);
+    const loading = creditNotesQuery.isLoading;
     // Collapsed by default — the filter block ate most of the left panel's
     // vertical space, crowding out the grid it's supposed to be filtering.
     const [filtersOpen, setFiltersOpen] = useState(false);
 
-    const [selected, setSelected] = useState<GcomCreditNote | null>(null);
-    const [detailLoading, setDetailLoading] = useState(false);
+    const [selectedId, setSelectedId] = useState<number | null>(null);
+    const creditNoteDetailQuery = useCreditNote(selectedId);
+    const selected = creditNoteDetailQuery.data ?? null;
+    const detailLoading = creditNoteDetailQuery.isLoading;
     const [redeemTarget, setRedeemTarget] = useState<GcomCreditNote | null>(null);
     const [pdfLoading, setPdfLoading] = useState(false);
 
@@ -431,49 +447,18 @@ export const AvoirsPage = () => {
         return (res.data ?? []).map(b => ({ id: b.id, label: b.name, sub: b.code }));
     }, []);
 
-    const load = useCallback(async () => {
-        setLoading(true);
-        try {
-            const filters: GcomCreditNotesGlobalListFilters = { per_page: 100 };
-            if (statusFilter !== 'ALL') filters.status = statusFilter;
-            if (partnerFilter) filters.partner_id = Number(partnerFilter.id);
-            if (branchFilter) filters.branch_id = Number(branchFilter.id);
-            if (dateFrom) filters.from = dateFrom;
-            if (dateTo) filters.to = dateTo;
-            const res = await gcomApi.creditNotes.list(filters);
-            setRows(res.data);
-        } catch {
-            toast.error('Erreur lors du chargement des avoirs');
-            setRows([]);
-        } finally {
-            setLoading(false);
-        }
-    }, [statusFilter, partnerFilter, branchFilter, dateFrom, dateTo]);
-
-    useEffect(() => { load(); }, [load]);
-
-    // Row click selects an avoir and re-fetches the single-GET detail (picks
-    // up items[], not present on the list rows) — same pattern as BC/BL/Facture.
-    const selectRow = useCallback(async (cn: GcomCreditNote) => {
-        setSelected(cn);
-        setDetailLoading(true);
-        try {
-            setSelected(await gcomApi.creditNotes.get(cn.id));
-        } catch {
-            toast.error('Erreur chargement de l\'avoir');
-        } finally {
-            setDetailLoading(false);
-        }
+    // Row click selects an avoir — useCreditNote(selectedId) fetches the
+    // single-GET detail (picks up items[], not present on the list rows),
+    // same pattern as BC/BL/Facture.
+    const selectRow = useCallback((cn: { id: number }) => {
+        setSelectedId(cn.id);
     }, []);
 
     // Deep-link (?id=) — the single-GET endpoint was added specifically for this.
     useEffect(() => {
         const idParam = searchParams.get('id');
         const id = idParam ? parseInt(idParam, 10) : NaN;
-        if (Number.isNaN(id)) return;
-        gcomApi.creditNotes.get(id)
-            .then(setSelected)
-            .catch(() => toast.error('Avoir introuvable'));
+        if (!Number.isNaN(id)) setSelectedId(id);
     // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
 
@@ -492,9 +477,9 @@ export const AvoirsPage = () => {
         [rows],
     );
 
-    const refresh = () => {
-        load();
-        if (selected) gcomApi.creditNotes.get(selected.id).then(setSelected).catch(() => {});
+    const handleManualRefresh = () => {
+        creditNotesQuery.refetch();
+        creditNoteDetailQuery.refetch();
     };
 
     const columnDefs = useMemo<import('ag-grid-community').ColDef[]>(() => [
@@ -530,7 +515,7 @@ export const AvoirsPage = () => {
                     <RotateCcw className="w-4 h-4 text-amber-600" />
                     <h2 className="text-sm font-bold text-gray-900">Avoirs</h2>
                     <span className="px-2 py-0.5 text-[10px] font-semibold rounded-full bg-sage-50 text-sage-600 border border-sage-100">{rows.length}</span>
-                    <button onClick={load} disabled={loading} className="ml-auto p-1 text-gray-400 hover:text-sage-600 disabled:opacity-50" title="Rafraîchir">
+                    <button onClick={handleManualRefresh} disabled={loading} className="ml-auto p-1 text-gray-400 hover:text-sage-600 disabled:opacity-50" title="Rafraîchir">
                         <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} />
                     </button>
                 </div>
@@ -613,7 +598,7 @@ export const AvoirsPage = () => {
     const actionGroups = useMemo(() => {
         const groups: { items: ActionItemProps[] }[] = [];
         const base: ActionItemProps[] = [
-            { icon: RefreshCw, label: 'Actualiser', onClick: load, disabled: loading },
+            { icon: RefreshCw, label: 'Actualiser', onClick: handleManualRefresh, disabled: loading },
         ];
         if (canCreateFreeStanding) {
             base.push({ icon: Plus, label: 'Créer un avoir libre', variant: 'sage', onClick: () => setCreateFreeStandingOpen(true) });
@@ -644,14 +629,12 @@ export const AvoirsPage = () => {
                 <RedeemModal
                     creditNote={redeemTarget}
                     onClose={() => setRedeemTarget(null)}
-                    onDone={refresh}
                 />
             )}
             {createFreeStandingOpen && (
                 <CreateFreeStandingModal
                     searchPartners={searchPartners}
                     onClose={() => setCreateFreeStandingOpen(false)}
-                    onDone={load}
                 />
             )}
         </>

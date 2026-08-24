@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Loader2, Plus, X, AlertTriangle, Copy, Upload, Edit, ArrowRight } from 'lucide-react';
+import { Loader2, Plus, X, AlertTriangle, Copy, Upload, Edit, ArrowRight, Download } from 'lucide-react';
 import type {
     PriceList,
     PriceOverride,
@@ -695,6 +695,20 @@ interface ModalImportProps {
     loading: boolean;
 }
 
+function downloadImportTemplate(productIdentifier: 'code' | 'id') {
+    const identifierColumn = productIdentifier === 'id' ? 'product_id' : 'product_code';
+    const headers = [identifierColumn, 'sales_price', 'return_price', 'min_sales_price', 'max_sales_price', 'discount_rate', 'discount_amount'];
+    const exampleRow = [productIdentifier === 'id' ? '123' : 'PROD-001', '100.00', '95.00', '90.00', '110.00', '10', '0'];
+    const csv = [headers, exampleRow].map((r) => r.join(',')).join('\n');
+    const blob = new Blob([csv], { type: 'text/csv' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `modele-import-prix-${identifierColumn}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+}
+
 export const ModalImport: React.FC<ModalImportProps> = ({
     importFile: _unusedImportFile,
     setImportFile,
@@ -709,6 +723,19 @@ export const ModalImport: React.FC<ModalImportProps> = ({
         <ModalWrapper onClose={onClose} size="md">
             <ModalHeader icon={Upload} title={t('pricing.priceLists.line.importCsv')} onClose={onClose} />
             <div className="p-5 space-y-4">
+                <div className="flex items-center justify-between p-3 bg-sage-50 border border-sage-100 rounded-lg">
+                    <p className="text-xs text-sage-700">{t('pricing.priceLists.import.templateHint')}</p>
+                    <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={() => downloadImportTemplate(importParams.product_identifier)}
+                        className="shrink-0 ml-3"
+                    >
+                        <Download className="w-3.5 h-3.5 mr-1.5" />
+                        {t('common.downloadTemplate')}
+                    </Button>
+                </div>
                 <Field label={t('common.file')} required>
                     <input
                         type="file"

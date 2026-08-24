@@ -6,6 +6,7 @@ import type { ActionItemProps } from '@/components/layout/ActionPanel';
 import { GcomCatalogEntryScreen, type GcomCatalogEntrySubmitPayload } from '@/components/gcom/GcomCatalogEntryScreen';
 import { gcomApi } from '@/services/api/gcomApi';
 import { usePermissions } from '@/hooks/usePermissions';
+import { useCreateDirectInvoice } from '@/hooks/gcom/useGcomInvoices';
 import type { GcomInvoice } from '@/types/gcom.types';
 
 const fmt = (n: number | string | undefined | null, decimals = 2) => {
@@ -43,10 +44,11 @@ export default function ComptoirPage() {
     const canPriceOverride = has('gcom-price-override');
     const canDiscountLine = has('gcom-discount-line');
     const canDiscountGlobal = has('gcom-discount-global');
+    const createDirectInvoice = useCreateDirectInvoice();
 
     const handleSubmit = async (payload: GcomCatalogEntrySubmitPayload): Promise<GcomInvoice> => {
         try {
-            const invoice = await gcomApi.directInvoices.create(payload);
+            const invoice = await createDirectInvoice.mutateAsync(payload);
             toast.success('Facture créée');
             printInvoicePdf(invoice.id);
             return invoice;
@@ -79,6 +81,7 @@ export default function ComptoirPage() {
             canPriceOverride={canPriceOverride}
             canDiscountLine={canDiscountLine}
             canDiscountGlobal={canDiscountGlobal}
+            draftKey="gcom-comptoir-create"
             renderSuccess={(invoice) => (
                 <div className="flex-1 flex flex-col items-center justify-center p-8 text-center">
                     <div className="w-14 h-14 rounded-full bg-emerald-50 flex items-center justify-center mb-4">

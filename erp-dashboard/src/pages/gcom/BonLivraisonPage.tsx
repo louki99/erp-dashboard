@@ -22,6 +22,12 @@ import { ConvertToInvoicePaymentFields } from '@/components/gcom/ConvertToInvoic
 import { avoirAllocationsMatchTotal, avoirAllocationsWithinTotal } from '@/lib/gcom/avoirAllocations';
 
 import { gcomApi } from '@/services/api/gcomApi';
+import {
+    useNotes, useNote, useNoteReturns, useCreateNote, useConfirmBlDelivery, useCancelNote,
+    useUpdateNoteLine, useRemoveNoteLine, useApplyNoteDiscount, useReturnNoteLine,
+} from '@/hooks/gcom/useGcomDeliveryNotes';
+import { useConvertToInvoice } from '@/hooks/gcom/useGcomOrders';
+import { useConsolidateInvoices } from '@/hooks/gcom/useGcomInvoices';
 import { getPartners, getPartner, getPaymentTerms } from '@/services/api/partnerApi';
 import { masterdataApi, type Bank } from '@/services/api/masterdataApi';
 import { productsApi } from '@/services/api/productsApi';
@@ -31,7 +37,7 @@ import { RETURN_CONDITIONS, RETURN_CONDITION_LABEL } from '@/lib/gcom/returnCond
 import { RETURN_REASONS, RETURN_REASON_LABEL } from '@/lib/gcom/returnReasons';
 import type { Partner, PaymentTermOption } from '@/types/partner.types';
 import type {
-    GcomDeliveryNote, GcomDeliveryNoteItem, GcomBlStatus, GcomInstrumentInput, GcomPdfPriceMode, GcomReturnCondition, GcomReturnReason, GcomDeliveryNoteReturn, GcomSoucheKind, GcomAvoirAllocation, GcomPaymentMethod,
+    GcomDeliveryNote, GcomDeliveryNoteItem, GcomBlStatus, GcomInstrumentInput, GcomPdfPriceMode, GcomReturnCondition, GcomReturnReason, GcomSoucheKind, GcomAvoirAllocation, GcomPaymentMethod,
 } from '@/types/gcom.types';
 
 // ─── helpers ─────────────────────────────────────────────────────────────────
@@ -93,6 +99,7 @@ const TABS: TabItem[] = [
 const ConsolidateModal = ({ notes, onClose, onDone }: { notes: GcomDeliveryNote[]; onClose: () => void; onDone: () => void }) => {
     const partner = notes[0]?.partner ?? null;
     const total = notes.reduce((sum, n) => sum + (Number(n.total_amount) || 0), 0);
+    const consolidateInvoices = useConsolidateInvoices();
 
     // Off by default — payment_method/souche_kind are only REQUIRED when the
     // selected orders disagree; most manual groupings are a single wholesale
@@ -137,7 +144,7 @@ const ConsolidateModal = ({ notes, onClose, onDone }: { notes: GcomDeliveryNote[
         }
         setSubmitting(true);
         try {
-            const invoice = await gcomApi.invoices.consolidate({
+            const invoice = await consolidateInvoices.mutateAsync({
                 delivery_note_ids: notes.map(n => n.id),
                 payment_method: overrideEnabled ? method : undefined,
                 payment_term_id: needsTermNow ? termId : undefined,
@@ -234,7 +241,6 @@ const ConsolidateModal = ({ notes, onClose, onDone }: { notes: GcomDeliveryNote[
     );
 };
 
-const PAGE_SIZE = 30;
 const EMPTY_INSTRUMENT: GcomInstrumentInput = { reference_number: '', due_date: '', bank_name: '', bank_account: '' };
 
 // ─── Component ───────────────────────────────────────────────────────────────
@@ -280,39 +286,16 @@ export default function BonLivraisonPage() {
     }, [partnerSearch, partnerFilter, runPartnerSearch]);
 
     // ── List ──────────────────────────────────────────────────────────────────
-    const [notes, setNotes] = useState<GcomDeliveryNote[]>([]);
-    const [loading, setLoading] = useState(true);
-    const [page, setPage] = useState(1);
-    const [lastPage, setLastPage] = useState(1);
-    const [total, setTotal] = useState(0);
-
-    const loadNotes = useCallback(async (pageNum: number, append: boolean) => {
-        setLoading(true);
-        try {
-            // NOT switched to listView() yet, unlike BC — ConsolidateModal needs
-            // partner.id (getPaymentTerms(partner.id)), which the lean projection
-            // doesn't carry (only asked for partner.name in the original field
-            // spec — a real gap, found via tsc, not by re-reading the spec).
-            // Revert to listView() once backend adds partner.id to it.
-            const res = await gcomApi.deliveryNotes.list({
-                partner_id: partnerFilter?.id,
-                status: blStatusFilter === 'all' ? undefined : blStatusFilter,
-                per_page: PAGE_SIZE,
-                page: pageNum,
-            });
-            setNotes(prev => append ? [...prev, ...res.data] : res.data);
-            setPage(res.current_page);
-            setLastPage(res.last_page);
-            setTotal(res.total);
-        } catch {
-            toast.error('Erreur chargement des bons de livraison');
-        } finally {
-            setLoading(false);
-        }
-    }, [partnerFilter, blStatusFilter]);
-
-    useEffect(() => { loadNotes(1, false); }, [loadNotes]);
-    const loadMore = () => { if (page < lastPage) loadNotes(page + 1, true); };
+    // NOT switched to listView() — ConsolidateModal needs partner.id, which the
+    // lean projection doesn't carry (see useNotes' own comment).
+    const notesQuery = useNotes({
+        partner_id: partnerFilter?.id,
+        status: blStatusFilter === 'all' ? undefined : blStatusFilter,
+    });
+    const notes = useMemo(() => notesQuery.data?.pages.flatMap(p => p.data) ?? [], [notesQuery.data]);
+    const loading = notesQuery.isLoading || notesQuery.isFetchingNextPage;
+    const total = notesQuery.data?.pages[0]?.total ?? 0;
+    const loadMore = () => notesQuery.fetchNextPage();
 
     // ── Consolidate (2026-09-01) — pick ≥2 delivered/uninvoiced BLs from the
     // same partner and group them into one invoice. A distinct selection from
@@ -367,8 +350,10 @@ export default function BonLivraisonPage() {
 
     // ── Selection / detail ───────────────────────────────────────────────────
     const [formMode, setFormMode] = useState<'view' | 'create'>('view');
-    const [selected, setSelected] = useState<GcomDeliveryNote | null>(null);
-    const [detailLoading, setDetailLoading] = useState(false);
+    const [selectedId, setSelectedId] = useState<number | null>(null);
+    const noteDetailQuery = useNote(selectedId);
+    const selected = noteDetailQuery.data ?? null;
+    const detailLoading = noteDetailQuery.isLoading;
 
     const [activeTab, setActiveTab] = useState('informations');
     const [openSections, setOpenSections] = useState<Record<string, boolean>>({ informations: true, lignes: true, retours: true });
@@ -410,42 +395,23 @@ export default function BonLivraisonPage() {
         return () => container.removeEventListener('scroll', onScroll);
     }, [openSections, activeTab]);
 
-    const [returns, setReturns] = useState<GcomDeliveryNoteReturn[]>([]);
-    const [returnsLoading, setReturnsLoading] = useState(false);
+    const returnsQuery = useNoteReturns(selectedId);
+    const returns = returnsQuery.data ?? [];
+    const returnsLoading = returnsQuery.isLoading;
 
-    const selectNote = useCallback(async (row: GcomDeliveryNote) => {
+    // List-row sync (Statut/Facturé staying current after a mutation) now
+    // comes from invalidating both noteKeys.list and noteKeys.detail on every
+    // mutation's onSuccess, not a manual setNotes patch here.
+    const selectNote = useCallback((row: { id: number }) => {
         setFormMode('view');
-        setSelected(row);
         setActiveTab('informations');
-        setDetailLoading(true);
-        setReturns([]);
-        try {
-            const fresh = await gcomApi.deliveryNotes.get(row.id);
-            setSelected(fresh);
-            // Keep the grid row in sync with the detail fetch — without this,
-            // a BL invoiced/confirmed/cancelled since the list last loaded
-            // (another tab, another user, or just time passing) shows stale
-            // Statut/Facturé in the grid while the detail panel already has
-            // the truth, which reads as a contradiction/bug to the user.
-            setNotes(prev => prev.map(n => n.id === fresh.id ? fresh : n));
-        } catch {
-            toast.error('Erreur chargement du bon de livraison');
-        } finally {
-            setDetailLoading(false);
-        }
-        setReturnsLoading(true);
-        try {
-            setReturns(await gcomApi.deliveryNotes.listReturns(row.id));
-        } catch {
-            setReturns([]);
-        } finally {
-            setReturnsLoading(false);
-        }
+        setSelectedId(row.id);
     }, []);
 
-    const refresh = () => {
-        loadNotes(1, false);
-        if (selected) selectNote(selected);
+    const handleManualRefresh = () => {
+        notesQuery.refetch();
+        noteDetailQuery.refetch();
+        returnsQuery.refetch();
     };
 
     // Delivery-note items only carry `product_id` (verified live — no nested
@@ -484,7 +450,7 @@ export default function BonLivraisonPage() {
     useEffect(() => {
         const idParam = searchParams.get('id');
         const id = idParam ? parseInt(idParam, 10) : NaN;
-        if (!Number.isNaN(id)) selectNote({ id } as GcomDeliveryNote);
+        if (!Number.isNaN(id)) selectNote({ id });
     // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
 
@@ -524,9 +490,11 @@ export default function BonLivraisonPage() {
 
     const openCreate = () => setFormMode('create');
 
+    const createNote = useCreateNote();
+
     const handleCreateNoteSubmit = async (payload: GcomCatalogEntrySubmitPayload): Promise<GcomDeliveryNote> => {
         try {
-            const note = await gcomApi.deliveryNotes.create({
+            const note = await createNote.mutateAsync({
                 partner_id: payload.partner_id,
                 items: payload.items,
                 payment_method: payload.payment_method,
@@ -551,19 +519,18 @@ export default function BonLivraisonPage() {
 
     const handleNoteCreated = (note: GcomDeliveryNote) => {
         setFormMode('view');
-        loadNotes(1, false);
         selectNote(note);
     };
 
     // ── Confirmer la livraison (2026-08-29) — in_transit → delivered ────────
     const [confirmingDelivery, setConfirmingDelivery] = useState(false);
+    const confirmBlDeliveryMutation = useConfirmBlDelivery();
     const confirmDelivery = async () => {
         if (!selected) return;
         setConfirmingDelivery(true);
         try {
-            await gcomApi.deliveryNotes.confirmDelivery(selected.id);
+            await confirmBlDeliveryMutation.mutateAsync({ blId: selected.id, orderId: selected.order_id });
             toast.success('Livraison confirmée');
-            refresh();
         } catch (err: unknown) {
             const msg = (err as { response?: { data?: { message?: string } } })?.response?.data?.message;
             toast.error(msg ?? 'Erreur lors de la confirmation de livraison');
@@ -628,7 +595,7 @@ export default function BonLivraisonPage() {
         setConvertInvoicingMode(null);
         setConvertOverrideCreditTerms([]);
         setConvertOverrideTermId(null);
-        const method: GcomPaymentMethod = selected.order?.financial_metadata?.payment_method ?? 'cash';
+        const method: GcomPaymentMethod = selected.order_payment_method ?? 'cash';
         // The method-override selector never offers 'avoir' (see
         // ConvertToInvoicePaymentFields) — an avoir-stored document takes the
         // separate avoir panel branch below instead, where this state is unused.
@@ -672,6 +639,7 @@ export default function BonLivraisonPage() {
         }
     };
     const closeInvoiceConfirm = () => setInvoiceConfirmOpen(false);
+    const convertToInvoice = useConvertToInvoice();
 
     const doConvertToInvoice = async (instrument: GcomInstrumentInput | null, avoirAllocations?: GcomAvoirAllocation[], paymentMethodOverride?: Exclude<GcomPaymentMethod, 'avoir'>, paymentTermId?: number | null) => {
         if (!selected) return;
@@ -683,12 +651,14 @@ export default function BonLivraisonPage() {
             const soucheKindArg = convertInvoicingMode === '1_FAC_PER_ORDER' ? undefined : convertSoucheKind;
             const overrideArg = convertInvoicingMode === '1_FAC_PER_ORDER' ? undefined : paymentMethodOverride;
             const termIdArg = convertInvoicingMode === '1_FAC_PER_ORDER' ? undefined : paymentTermId;
-            const invoice = await gcomApi.deliveryNotes.convertToInvoice(selected.id, instrument, soucheKindArg, avoirAllocations, overrideArg, termIdArg);
+            const invoice = await convertToInvoice.mutateAsync({
+                target: { type: 'bl', id: selected.id }, instrument, soucheKind: soucheKindArg, avoirAllocations,
+                paymentMethodOverride: overrideArg, paymentTermId: termIdArg,
+            });
             toast.success(`Facture ${invoice.invoice_number ?? `#${invoice.id}`} créée${invoice.souche_kind === 'internal' ? ' (souche interne)' : ''}`);
             setConvertPanelOpen(false);
             setInvoiceConfirmOpen(false);
             setConvertAvoirPanelOpen(false);
-            refresh();
         } catch (err: unknown) {
             const msg = (err as { response?: { data?: { message?: string } } })?.response?.data?.message;
             toast.error(msg ?? 'Erreur lors de la conversion en facture');
@@ -718,7 +688,7 @@ export default function BonLivraisonPage() {
             toast.error('Le total des avoirs sélectionnés dépasse le montant de la vente');
             return;
         }
-        const storedMethod = selected.order?.financial_metadata?.payment_method ?? 'cash';
+        const storedMethod = selected.order_payment_method ?? 'cash';
         const methodChanged = convertMethodOverride !== storedMethod;
         void doConvertToInvoice(
             needsInstrumentNow ? convertInstrument : null,
@@ -735,15 +705,15 @@ export default function BonLivraisonPage() {
 
     const openCancel = () => { setCancelOpen(true); setCancelReason(''); };
     const closeCancel = () => setCancelOpen(false);
+    const cancelNote = useCancelNote();
 
     const confirmCancel = async () => {
         if (!selected || !cancelReason.trim()) { toast.error('Motif requis'); return; }
         setCancelling(true);
         try {
-            await gcomApi.deliveryNotes.cancel(selected.id, { reason: cancelReason.trim() });
+            await cancelNote.mutateAsync({ id: selected.id, payload: { reason: cancelReason.trim() } });
             toast.success('Bon de livraison annulé — stock réintégré');
             setCancelOpen(false);
-            refresh();
         } catch (err: unknown) {
             const msg = (err as { response?: { data?: { message?: string } } })?.response?.data?.message;
             toast.error(msg ?? "Erreur lors de l'annulation");
@@ -774,20 +744,24 @@ export default function BonLivraisonPage() {
         setUpdateLineDiscountValue('');
     };
     const closeUpdateLine = () => setUpdateLineTarget(null);
+    const updateNoteLine = useUpdateNoteLine();
 
     const confirmUpdateLine = async () => {
         if (!updateLineTarget || !selected || updateLineQty === '' || updateLineQty <= 0) { toast.error('Quantité invalide'); return; }
         setUpdatingLine(true);
         try {
-            await gcomApi.deliveryNotes.updateLine(selected.id, updateLineTarget.id, {
-                quantity: updateLineQty,
-                unit_price: canPriceOverride && updateLineUnitPrice !== '' ? updateLineUnitPrice : undefined,
-                discount_percent: canDiscountLine && updateLineDiscountMode === 'percent' && updateLineDiscountValue !== '' ? updateLineDiscountValue : undefined,
-                discount_amount: canDiscountLine && updateLineDiscountMode === 'amount' && updateLineDiscountValue !== '' ? updateLineDiscountValue : undefined,
+            await updateNoteLine.mutateAsync({
+                id: selected.id,
+                itemId: updateLineTarget.id,
+                payload: {
+                    quantity: updateLineQty,
+                    unit_price: canPriceOverride && updateLineUnitPrice !== '' ? updateLineUnitPrice : undefined,
+                    discount_percent: canDiscountLine && updateLineDiscountMode === 'percent' && updateLineDiscountValue !== '' ? updateLineDiscountValue : undefined,
+                    discount_amount: canDiscountLine && updateLineDiscountMode === 'amount' && updateLineDiscountValue !== '' ? updateLineDiscountValue : undefined,
+                },
             });
             toast.success('Ligne mise à jour — stock ajusté');
             setUpdateLineTarget(null);
-            refresh();
         } catch (err: unknown) {
             const msg = (err as { response?: { data?: { message?: string } } })?.response?.data?.message;
             toast.error(msg ?? 'Erreur lors de la mise à jour de la ligne');
@@ -802,15 +776,15 @@ export default function BonLivraisonPage() {
 
     const openRemoveLine = (item: GcomDeliveryNoteItem) => { setRemoveLineTarget(item); setRemoveLineReason(''); };
     const closeRemoveLine = () => setRemoveLineTarget(null);
+    const removeNoteLine = useRemoveNoteLine();
 
     const confirmRemoveLine = async () => {
         if (!removeLineTarget || !selected || !removeLineReason.trim()) { toast.error('Motif requis'); return; }
         setRemovingLine(true);
         try {
-            await gcomApi.deliveryNotes.removeLine(selected.id, removeLineTarget.id, { reason: removeLineReason.trim() });
+            await removeNoteLine.mutateAsync({ id: selected.id, itemId: removeLineTarget.id, payload: { reason: removeLineReason.trim() } });
             toast.success('Ligne supprimée — stock réintégré');
             setRemoveLineTarget(null);
-            refresh();
         } catch (err: unknown) {
             const msg = (err as { response?: { data?: { message?: string } } })?.response?.data?.message;
             toast.error(msg ?? 'Erreur lors de la suppression de la ligne');
@@ -835,18 +809,21 @@ export default function BonLivraisonPage() {
         setDiscountModalOpen(true);
     };
     const closeDiscountModal = () => setDiscountModalOpen(false);
+    const applyNoteDiscount = useApplyNoteDiscount();
 
     const confirmApplyDiscount = async () => {
         if (!selected || discountValue === '' || discountValue <= 0) { toast.error('Valeur invalide'); return; }
         setApplyingDiscount(true);
         try {
-            await gcomApi.deliveryNotes.applyDiscount(selected.id, {
-                global_discount_percent: discountMode === 'percent' ? discountValue : undefined,
-                global_discount_amount: discountMode === 'amount' ? discountValue : undefined,
+            await applyNoteDiscount.mutateAsync({
+                id: selected.id,
+                payload: {
+                    global_discount_percent: discountMode === 'percent' ? discountValue : undefined,
+                    global_discount_amount: discountMode === 'amount' ? discountValue : undefined,
+                },
             });
             toast.success('Remise globale appliquée');
             setDiscountModalOpen(false);
-            refresh();
         } catch (err: unknown) {
             const msg = (err as { response?: { data?: { message?: string } } })?.response?.data?.message;
             toast.error(msg ?? "Erreur lors de l'application de la remise");
@@ -859,10 +836,9 @@ export default function BonLivraisonPage() {
         if (!selected) return;
         setApplyingDiscount(true);
         try {
-            await gcomApi.deliveryNotes.applyDiscount(selected.id, {});
+            await applyNoteDiscount.mutateAsync({ id: selected.id, payload: {} });
             toast.success('Remise globale retirée');
             setDiscountModalOpen(false);
-            refresh();
         } catch (err: unknown) {
             const msg = (err as { response?: { data?: { message?: string } } })?.response?.data?.message;
             toast.error(msg ?? 'Erreur lors du retrait de la remise');
@@ -897,6 +873,7 @@ export default function BonLivraisonPage() {
     const setBatchQty = (itemId: number, value: number | '') => setReturnBatchQty(prev => ({ ...prev, [itemId]: value }));
     const setBatchCondition = (itemId: number, value: GcomReturnCondition) => setReturnBatchCondition(prev => ({ ...prev, [itemId]: value }));
     const setBatchReason = (itemId: number, value: GcomReturnReason | '') => setReturnBatchReason(prev => ({ ...prev, [itemId]: value }));
+    const returnNoteLine = useReturnNoteLine();
 
     const confirmReturnBatch = async () => {
         if (!selected) return;
@@ -922,10 +899,10 @@ export default function BonLivraisonPage() {
                 continue;
             }
             try {
-                await gcomApi.deliveryNotes.returnLine(selected.id, it.id, {
-                    quantity: qty,
-                    reason,
-                    condition: returnBatchCondition[it.id] ?? 'sellable',
+                await returnNoteLine.mutateAsync({
+                    id: selected.id,
+                    itemId: it.id,
+                    payload: { quantity: qty, reason, condition: returnBatchCondition[it.id] ?? 'sellable' },
                 });
                 successCount++;
             } catch (err: unknown) {
@@ -936,7 +913,6 @@ export default function BonLivraisonPage() {
         setReturningBatch(false);
         if (successCount > 0) {
             toast.success(`${successCount} ligne${successCount > 1 ? 's' : ''} retournée${successCount > 1 ? 's' : ''} — stock réintégré`);
-            refresh();
         }
         if (failures.length > 0) {
             toast.error(failures.join(' • '));
@@ -1047,7 +1023,7 @@ export default function BonLivraisonPage() {
     const actionGroups = useMemo((): { items: ActionItemProps[] }[] => {
         const base: ActionItemProps[] = [
             { icon: Plus, label: 'Nouveau BL', variant: 'sage', onClick: openCreate },
-            { icon: RefreshCw, label: 'Actualiser', variant: 'default', onClick: refresh, disabled: loading },
+            { icon: RefreshCw, label: 'Actualiser', variant: 'default', onClick: handleManualRefresh, disabled: loading },
         ];
         if (!selected) return [{ items: base }];
         const detailItems: ActionItemProps[] = [
@@ -1087,6 +1063,7 @@ export default function BonLivraisonPage() {
                 canPriceOverride={canPriceOverride}
                 canDiscountLine={canDiscountLine}
                 canDiscountGlobal={canDiscountGlobal}
+                draftKey="gcom-bl-create"
             />
         );
     }
@@ -1194,7 +1171,7 @@ export default function BonLivraisonPage() {
                             </div>
                         )}
 
-                        {page < lastPage && (
+                        {notesQuery.hasNextPage && (
                             <div className="shrink-0 border-t border-gray-100 p-2">
                                 <button
                                     onClick={loadMore}
@@ -1444,16 +1421,16 @@ export default function BonLivraisonPage() {
                                                     </div>
                                                 )}
 
-                                                {(selected.order || selected.invoice_id) && (
+                                                {(selected.order_id || selected.invoice_id) && (
                                                     <div className="bg-gray-50 rounded-lg p-3 border border-gray-100">
                                                         <p className="text-[10px] text-gray-400 uppercase tracking-wider mb-2">Documents liés</p>
                                                         <div className="flex flex-wrap items-center gap-2">
-                                                            {selected.order && (
+                                                            {selected.order_id && (
                                                                 <button
-                                                                    onClick={() => navigate(`/gcom/bons-commande?id=${selected.order!.id}`)}
+                                                                    onClick={() => navigate(`/gcom/bons-commande?id=${selected.order_id}`)}
                                                                     className="flex items-center gap-1 text-xs font-medium text-gray-700 bg-white border border-gray-200 rounded-md px-2 py-1 hover:bg-sage-50 hover:border-sage-200 hover:text-sage-700 transition-colors"
                                                                 >
-                                                                    <Package className="w-3 h-3 text-gray-400" /> {selected.order.order_code ?? `BC #${selected.order.id}`}
+                                                                    <Package className="w-3 h-3 text-gray-400" /> {selected.order_code ?? `BC #${selected.order_id}`}
                                                                 </button>
                                                             )}
                                                             {selected.invoice_id && (
@@ -1978,7 +1955,7 @@ export default function BonLivraisonPage() {
                 <ConsolidateModal
                     notes={consolidateNotes}
                     onClose={() => setConsolidateModalOpen(false)}
-                    onDone={() => { setConsolidateIds(new Set()); refresh(); }}
+                    onDone={() => setConsolidateIds(new Set())}
                 />
             )}
         </>

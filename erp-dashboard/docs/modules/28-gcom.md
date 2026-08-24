@@ -721,8 +721,28 @@ orders never appear here). Query: `partner_id?`, `bc_status?` (in
 practice only `confirmed`|`cancelled` ever appear — see §13),
 `per_page?`.
 
-**`GET /orders/{order}`** — 404 if the order isn't a GCOM order. Response
-includes `products` (line items), `partner`, `invoices`, `deliveryNotes`.
+**`GET /orders/{order}`** 🔁 (trimmed 2026-08-23, UI team audit of the BC
+detail screen's actual frontend code) — 404 if the order isn't a GCOM
+order. Was the full `Order` model + full `products`/`partner`/
+`invoices`/`deliveryNotes` (~7.3KB for a single-line order); confirmed
+100% dedicated to this one screen (exactly one route registration for
+this controller method across the whole backend, GCOM is a
+backend-web-only surface by design, and `show()` 404s on any non-GCOM
+order — no other consumer, mobile or otherwise, could reach it).
+Trimmed to:
+- Flat: `id`, `order_code`, `bc_status`, `sub_total`, `tax_amount`,
+  `total_amount`, `cancellation_reason_code`, `created_at`, `bc_notes`.
+  **`bc_notes` is the only notes field `Order` has** — no `notes`
+  column or alias exists anywhere; a frontend reading `selected.notes`
+  was silently reading undefined.
+- `products[]`: `id`, `name`, `pivot: { id, quantity, price,
+  total_price, original_price, final_price, unit_price_ht }`.
+- `partner`: `id`, `name` only — the rest (address, etc.) is refetched
+  separately via `GET /partners/{id}` when actually needed.
+- `invoices[]`: `id`, `invoice_number` only.
+- `delivery_notes[]`: `id`, `status`, `total_amount` only.
+- `financial_metadata`: `payment_method`, `stamp_duty` only.
+→ `{ "success": true, "order": { "id": 110, "order_code": "BCORBI-...", "bc_status": "confirmed", "sub_total": "...", "tax_amount": "...", "total_amount": "...", "cancellation_reason_code": null, "created_at": "...", "bc_notes": "...", "products": [{ "id": 1, "name": "...", "pivot": { "id": 1, "quantity": 1, "price": 100.0, "total_price": 100.0, "original_price": null, "final_price": null, "unit_price_ht": 84.03 } }], "partner": { "id": 1, "name": "..." }, "invoices": [{ "id": 88, "invoice_number": "INV-..." }], "delivery_notes": [{ "id": 34, "status": "delivered", "total_amount": 100.0 }], "financial_metadata": { "payment_method": "cash", "stamp_duty": 0.0 } } }`
 
 **`GET /orders/list-view`** 🔁 (2026-08-23, UI team report) — lightweight
 BC datagrid feed. `GET /orders` above returns full `Order` models —
@@ -1179,7 +1199,32 @@ shows TTC. Same `partner_id`/`status` filters as the full index. `id`
 included beyond the UI team's literal list (row key/navigation).
 → `{ "success": true, "delivery_notes": { "data": [{ "id": 34, "delivery_number": "BLORBI-A01-00003", "partner": { "name": "..." }, "status": "delivered", "invoice_id": null, "total_amount": 26.00, "delivery_date": "2026-08-23T10:00:00+00:00" }], ...pagination... } }`
 
-**`GET /delivery-notes/{deliveryNote}`** — 404 if not from a GCOM order.
+**`GET /delivery-notes/{deliveryNote}`** 🔁 (trimmed 2026-08-23, UI team
+audit of the BL detail screen's actual frontend code — same
+100%-dedicated confirmation as `GET /orders/{order}`'s own trim above)
+— 404 if not from a GCOM order. Was the full `DeliveryNote` model plus
+a fully-hydrated nested `order` (~75 fields, `salesperson_data`/
+`financial_metadata` included) — the screen reads exactly 3 values off
+that nested order (`id`, `order_code`,
+`financial_metadata.payment_method`), so the nested `order` object is
+gone entirely, replaced with 3 flat fields (`order_id`, `order_code`,
+`order_payment_method`) — per the UI team's own recommendation, the
+single biggest contributor to the old response's weight. `sub_total`/
+`tax_amount`/`global_discount_percent`/`global_discount_amount` stay
+proxied from the order (`delivery_notes` has no columns of its own for
+the first two — see this section's intro above). `items[]` drops the
+product name/code (resolved client-side via a separate product cache)
+down to `id`, `product_id`, `ordered_quantity`, `delivered_quantity`,
+`unit_price`, `original_price`, `final_price`. `partner` is `id`/`name`
+only, same as the BC trim.
+
+Also confirmed while auditing this: `delivery_notes` (the table) has a
+real column literally named `delivery_notes` (distinct from `notes`) —
+grepped across the whole backend, zero app-code reads or writes it.
+Dead legacy column, excluded from this trimmed response; a genuine
+drop-column cleanup candidate if anyone wants to pick it up, not done
+here (out of scope for a response-shape trim).
+→ `{ "success": true, "delivery_note": { "id": 35, "delivery_number": "BLORBI-...", "status": "delivered", "total_amount": 100.0, "sub_total": "...", "tax_amount": "...", "delivery_date": "...", "notes": null, "invoice_id": null, "global_discount_percent": null, "global_discount_amount": null, "driver_info": null, "transporter_name": null, "delivered_at": "...", "items": [{ "id": 1, "product_id": 5, "ordered_quantity": 1, "delivered_quantity": 1, "unit_price": 100.0, "original_price": null, "final_price": null }], "partner": { "id": 1, "name": "..." }, "order_id": 110, "order_code": "BCORBI-...", "order_payment_method": "cash" } }`
 
 **`GET /delivery-notes/{deliveryNote}/pdf`** — streams the BL PDF
 (`Content-Type: application/pdf`). `?download=1` for an attachment,
@@ -3051,6 +3096,17 @@ Still open:
   without it for now. Full scope/dependencies/open-questions written up
   in §16's "Backlog — Rapprochement bancaire" subsection (2026-08-22) so
   nothing here needs re-deriving when a real trigger eventually shows up.
+
+- **Invoice total mismatch after a full-line damaged/technical return**
+  (found 2026-08-23, regression sweep for the `GET /orders`/
+  `/delivery-notes` detail-endpoint trim — unrelated to that trim,
+  reproduces identically on the pre-trim code too, confirmed by direct
+  isolation). `GcomReturnsConditionTest::returning_the_entire_line_
+  quantity_zeroes_it_and_leaves_other_lines_billable` expects
+  `total_amount = 500.00` (10 units × 100 kept, one line fully returned
+  as damaged) but gets `503.75` — a 3.75 discrepancy not yet root-caused.
+  Not fixed here (out of scope for the trim); flagged so it doesn't get
+  silently attributed to unrelated work later.
 
 - ~~Devis (Quote) numbering doesn't use the branch-scoped `TokenSerie`
   system.~~ **Fixed 2026-08-23** ("FEU VERT TOTAL") — the last GCOM

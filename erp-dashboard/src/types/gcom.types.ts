@@ -114,6 +114,15 @@ export interface GcomDeliveryNoteRef {
     total_amount?: number | string;
 }
 
+// 2026-08-23 — the trimmed GET /orders/{id} response nests only `id` +
+// `invoice_number` per invoice (just enough for a link chip + count) — NOT
+// the full GcomInvoice shape (which requires status/total_amount/
+// remaining_amount, none of which this trimmed nested array carries).
+export interface GcomOrderInvoiceRef {
+    id: number;
+    invoice_number?: string;
+}
+
 // Order financial fields the doc implies are flat on the order — in practice
 // they're nested here instead.
 export interface GcomOrderFinancialMetadata {
@@ -552,8 +561,12 @@ export interface GcomOrderProductPivot {
     // endpoints were unreachable from the frontend — don't fall back to the
     // product's own `id` (GcomOrderProduct.id below), that never worked.
     id: number;
-    order_id: number;
-    product_id: number;
+    // 2026-08-23 — order_id/product_id/unit/tax_rate/line_tax_amount/
+    // line_total_ht dropped from the trimmed GET /orders/{id} response
+    // (none were ever read anywhere in this file); kept optional rather
+    // than removed in case another endpoint still embeds them.
+    order_id?: number;
+    product_id?: number;
     quantity: number | string;
     unit?: string;
     price?: number | string;          // unit price TTC
@@ -581,7 +594,10 @@ export interface GcomOrderProduct {
     // NOT the order-line identifier. Use `pivot.id` for line-level mutations.
     id: number;
     name: string;
-    code: string;
+    // 2026-08-23 — dropped from the trimmed GET /orders/{id} response (never
+    // read anywhere in this file); kept optional rather than removed in case
+    // another endpoint still embeds it.
+    code?: string;
     pivot: GcomOrderProductPivot;
 }
 
@@ -593,12 +609,14 @@ export interface GcomOrder {
     tax_amount?: number | string;
     total_amount: number | string;
     payable_amount?: number | string;
-    notes?: string | null;
+    // 2026-08-23 — the real field is `bc_notes`; there is no `notes` column
+    // on Order (confirmed by backend after a frontend bug read the wrong name).
+    bc_notes?: string | null;
     cancellation_reason_code?: string | null;
     created_at?: string;
     products?: GcomOrderProduct[];
     partner?: { id: number; name: string; code?: string };
-    invoices?: GcomInvoice[];
+    invoices?: GcomOrderInvoiceRef[];
     delivery_notes?: GcomDeliveryNoteRef[];
     financial_metadata?: GcomOrderFinancialMetadata;
     // 2026-08-27 — customer's own PO/reference number, separate from notes.
@@ -813,7 +831,11 @@ export interface GcomDeliveryNote {
     global_discount_percent?: number | string | null;
     global_discount_amount?: number | string | null;
     partner?: { id: number; name: string; code?: string };
-    order?: { id: number; order_code?: string; bc_status?: string; financial_metadata?: GcomOrderFinancialMetadata };
+    // 2026-08-23 — backend flattened these off the previously fully-embedded
+    // `order` object (a lean detail-endpoint trim, since only these 2 values
+    // were ever read) — order_id above is the id, no separate order.id.
+    order_code?: string;
+    order_payment_method?: GcomPaymentMethod;
     // 2026-08-27 — mirrored automatically from the underlying order.
     client_order_ref?: string | null;
     // All 3 added 2026-08-29 — display/traceability only, not a Driver FK

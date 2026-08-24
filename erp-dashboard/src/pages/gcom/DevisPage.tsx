@@ -17,6 +17,7 @@ import { GcomLinesTable } from '@/components/gcom/GcomLinesTable';
 import { PdfPriceModeModal } from '@/components/gcom/PdfPriceModeModal';
 
 import { gcomApi } from '@/services/api/gcomApi';
+import { useQuotes, useQuote, useCreateQuote, useConvertQuoteToOrder, useConvertQuoteToInvoice } from '@/hooks/gcom/useGcomQuotes';
 import { getPaymentTerms } from '@/services/api/partnerApi';
 import { PAYMENT_METHODS } from '@/lib/gcom/paymentMethods';
 import type { PaymentTermOption } from '@/types/partner.types';
@@ -65,7 +66,6 @@ const TABS: TabItem[] = [
     { id: 'lignes', label: 'Lignes', icon: Package },
 ];
 
-const PAGE_SIZE = 30;
 const EMPTY_INSTRUMENT: GcomInstrumentInput = { reference_number: '', due_date: '', bank_name: '', bank_account: '' };
 
 // ─── Component ───────────────────────────────────────────────────────────────
@@ -79,38 +79,18 @@ export default function DevisPage() {
     const [statusFilter, setStatusFilter] = useState<'all' | GcomQuoteStatus>('all');
 
     // ── List ──────────────────────────────────────────────────────────────────
-    const [quotes, setQuotes] = useState<GcomQuote[]>([]);
-    const [loading, setLoading] = useState(true);
-    const [page, setPage] = useState(1);
-    const [lastPage, setLastPage] = useState(1);
-    const [total, setTotal] = useState(0);
-
-    const loadQuotes = useCallback(async (pageNum: number, append: boolean) => {
-        setLoading(true);
-        try {
-            const res = await gcomApi.quotes.list({
-                status: statusFilter === 'all' ? undefined : statusFilter,
-                per_page: PAGE_SIZE,
-                page: pageNum,
-            });
-            setQuotes(prev => append ? [...prev, ...res.data] : res.data);
-            setPage(res.current_page);
-            setLastPage(res.last_page);
-            setTotal(res.total);
-        } catch {
-            toast.error('Erreur chargement des devis');
-        } finally {
-            setLoading(false);
-        }
-    }, [statusFilter]);
-
-    useEffect(() => { loadQuotes(1, false); }, [loadQuotes]);
-    const loadMore = () => { if (page < lastPage) loadQuotes(page + 1, true); };
+    const quotesQuery = useQuotes({ status: statusFilter === 'all' ? undefined : statusFilter });
+    const quotes = useMemo(() => quotesQuery.data?.pages.flatMap(p => p.data) ?? [], [quotesQuery.data]);
+    const loading = quotesQuery.isLoading || quotesQuery.isFetchingNextPage;
+    const total = quotesQuery.data?.pages[0]?.total ?? 0;
+    const loadMore = () => quotesQuery.fetchNextPage();
 
     // ── Selection / detail ───────────────────────────────────────────────────
     const [formMode, setFormMode] = useState<'view' | 'create'>('view');
-    const [selected, setSelected] = useState<GcomQuote | null>(null);
-    const [detailLoading, setDetailLoading] = useState(false);
+    const [selectedId, setSelectedId] = useState<number | null>(null);
+    const quoteDetailQuery = useQuote(selectedId);
+    const selected = quoteDetailQuery.data ?? null;
+    const detailLoading = quoteDetailQuery.isLoading;
 
     const [activeTab, setActiveTab] = useState('informations');
     const [openSections, setOpenSections] = useState<Record<string, boolean>>({ informations: true, lignes: true });
@@ -152,30 +132,22 @@ export default function DevisPage() {
         return () => container.removeEventListener('scroll', onScroll);
     }, [openSections, activeTab]);
 
-    const selectQuote = useCallback(async (row: GcomQuote) => {
+    const selectQuote = useCallback((row: { id: number }) => {
         setFormMode('view');
-        setSelected(row);
         setActiveTab('informations');
-        setDetailLoading(true);
-        try {
-            setSelected(await gcomApi.quotes.get(row.id));
-        } catch {
-            toast.error('Erreur chargement du devis');
-        } finally {
-            setDetailLoading(false);
-        }
+        setSelectedId(row.id);
     }, []);
 
-    const refresh = () => {
-        loadQuotes(1, false);
-        if (selected) selectQuote(selected);
+    const handleManualRefresh = () => {
+        quotesQuery.refetch();
+        quoteDetailQuery.refetch();
     };
 
     // Deep-link from another GCOM document's "Documents liés" chip (?id=123).
     useEffect(() => {
         const idParam = searchParams.get('id');
         const id = idParam ? parseInt(idParam, 10) : NaN;
-        if (!Number.isNaN(id)) selectQuote({ id } as GcomQuote);
+        if (!Number.isNaN(id)) selectQuote({ id });
     // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
 
@@ -198,9 +170,11 @@ export default function DevisPage() {
 
     const openCreate = () => setFormMode('create');
 
+    const createQuote = useCreateQuote();
+
     const handleCreateQuoteSubmit = async (payload: GcomCatalogEntrySubmitPayload): Promise<GcomQuote> => {
         try {
-            const quote = await gcomApi.quotes.create({
+            const quote = await createQuote.mutateAsync({
                 partner_id: payload.partner_id,
                 items: payload.items,
                 notes: payload.notes,
@@ -216,7 +190,6 @@ export default function DevisPage() {
 
     const handleQuoteCreated = (quote: GcomQuote) => {
         setFormMode('view');
-        loadQuotes(1, false);
         selectQuote(quote);
     };
 
@@ -244,6 +217,7 @@ export default function DevisPage() {
             .catch(() => setConvertOrderTerms([]));
     };
     const closeConvertOrderModal = () => setConvertOrderModalOpen(false);
+    const convertQuoteToOrder = useConvertQuoteToOrder();
 
     const confirmConvertToOrder = async () => {
         if (!selected) return;
@@ -251,13 +225,15 @@ export default function DevisPage() {
         if (methodDef.needsTerm && convertOrderTermId == null) { toast.error('Terme de paiement requis'); return; }
         setConvertingToOrder(true);
         try {
-            await gcomApi.quotes.convertToOrder(selected.id, {
-                payment_method: convertOrderMethod,
-                payment_term_id: methodDef.needsTerm ? convertOrderTermId : null,
+            await convertQuoteToOrder.mutateAsync({
+                id: selected.id,
+                payload: {
+                    payment_method: convertOrderMethod,
+                    payment_term_id: methodDef.needsTerm ? convertOrderTermId : null,
+                },
             });
             toast.success('Devis converti en bon de commande');
             setConvertOrderModalOpen(false);
-            refresh();
         } catch (err: unknown) {
             const msg = (err as { response?: { data?: { message?: string } } })?.response?.data?.message;
             toast.error(msg ?? 'Erreur lors de la conversion en BC');
@@ -291,6 +267,7 @@ export default function DevisPage() {
     const closeConvertInvoiceModal = () => setConvertInvoiceModalOpen(false);
 
     const invoiceMethodDef = PAYMENT_METHODS.find(m => m.value === convertInvoiceMethod)!;
+    const convertQuoteToInvoice = useConvertQuoteToInvoice();
 
     const confirmConvertToInvoice = async () => {
         if (!selected) return;
@@ -301,14 +278,16 @@ export default function DevisPage() {
         }
         setConvertingToInvoice(true);
         try {
-            const res = await gcomApi.quotes.convert(selected.id, {
-                payment_method: convertInvoiceMethod,
-                payment_term_id: invoiceMethodDef.needsTerm ? convertInvoiceTermId : null,
-                instrument: invoiceMethodDef.needsInstrument ? convertInvoiceInstrument : null,
+            const res = await convertQuoteToInvoice.mutateAsync({
+                id: selected.id,
+                payload: {
+                    payment_method: convertInvoiceMethod,
+                    payment_term_id: invoiceMethodDef.needsTerm ? convertInvoiceTermId : null,
+                    instrument: invoiceMethodDef.needsInstrument ? convertInvoiceInstrument : null,
+                },
             });
             toast.success(`Facture ${res.invoice.invoice_number ?? `#${res.invoice.id}`} créée`);
             setConvertInvoiceModalOpen(false);
-            refresh();
         } catch (err: unknown) {
             const msg = (err as { response?: { data?: { message?: string } } })?.response?.data?.message;
             toast.error(msg ?? 'Erreur lors de la conversion en facture');
@@ -365,7 +344,7 @@ export default function DevisPage() {
     const actionGroups = useMemo((): { items: ActionItemProps[] }[] => {
         const base: ActionItemProps[] = [
             { icon: Plus, label: 'Nouveau devis', variant: 'sage', onClick: openCreate },
-            { icon: RefreshCw, label: 'Actualiser', variant: 'default', onClick: refresh, disabled: loading },
+            { icon: RefreshCw, label: 'Actualiser', variant: 'default', onClick: handleManualRefresh, disabled: loading },
         ];
         if (!selected) return [{ items: base }];
         const detailItems: ActionItemProps[] = [
@@ -396,6 +375,7 @@ export default function DevisPage() {
                 onSubmit={handleCreateQuoteSubmit}
                 onSubmitted={handleQuoteCreated}
                 cancelActionItem={{ icon: X, label: 'Annuler', variant: 'warning', onClick: () => setFormMode('view') }}
+                draftKey="gcom-devis-create"
             />
         );
     }
@@ -439,7 +419,7 @@ export default function DevisPage() {
                             />
                         </div>
 
-                        {page < lastPage && (
+                        {quotesQuery.hasNextPage && (
                             <div className="shrink-0 border-t border-gray-100 p-2">
                                 <button
                                     onClick={loadMore}

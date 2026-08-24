@@ -21,6 +21,11 @@ import { ConvertToInvoicePaymentFields } from '@/components/gcom/ConvertToInvoic
 import { avoirAllocationsMatchTotal, avoirAllocationsWithinTotal } from '@/lib/gcom/avoirAllocations';
 
 import { gcomApi } from '@/services/api/gcomApi';
+import {
+    useOrders, useOrder, useCreateOrder, useConvertOrderToBl, useConvertToInvoice,
+    useCancelOrder, useCancelOrderLine, useUpdateOrderLine, useAddOrderLine,
+} from '@/hooks/gcom/useGcomOrders';
+import { useConfirmBlDelivery } from '@/hooks/gcom/useGcomDeliveryNotes';
 import { getPartners, getPartner, getPaymentTerms } from '@/services/api/partnerApi';
 import { telesalesApi } from '@/services/api/telesalesApi';
 import { masterdataApi, type Bank } from '@/services/api/masterdataApi';
@@ -68,7 +73,6 @@ const TABS: TabItem[] = [
     { id: 'lignes', label: 'Lignes', icon: Package },
 ];
 
-const PAGE_SIZE = 30;
 const EMPTY_INSTRUMENT: GcomInstrumentInput = { reference_number: '', due_date: '', bank_name: '', bank_account: '' };
 
 type ConvertTarget = { type: 'order'; id: number } | { type: 'bl'; id: number };
@@ -115,39 +119,21 @@ export default function BonCommandePage() {
     }, [partnerSearch, partnerFilter, runPartnerSearch]);
 
     // ── List ──────────────────────────────────────────────────────────────────
-    const [orders, setOrders] = useState<GcomOrderListViewRow[]>([]);
-    const [loading, setLoading] = useState(true);
-    const [page, setPage] = useState(1);
-    const [lastPage, setLastPage] = useState(1);
-    const [total, setTotal] = useState(0);
-
-    const loadOrders = useCallback(async (pageNum: number, append: boolean) => {
-        setLoading(true);
-        try {
-            const res = await gcomApi.orders.listView({
-                partner_id: partnerFilter?.id,
-                bc_status: bcStatusFilter === 'all' ? undefined : bcStatusFilter,
-                per_page: PAGE_SIZE,
-                page: pageNum,
-            });
-            setOrders(prev => append ? [...prev, ...res.data] : res.data);
-            setPage(res.current_page);
-            setLastPage(res.last_page);
-            setTotal(res.total);
-        } catch {
-            toast.error('Erreur chargement des bons de commande');
-        } finally {
-            setLoading(false);
-        }
-    }, [partnerFilter, bcStatusFilter]);
-
-    useEffect(() => { loadOrders(1, false); }, [loadOrders]);
-    const loadMore = () => { if (page < lastPage) loadOrders(page + 1, true); };
+    const ordersQuery = useOrders({
+        partner_id: partnerFilter?.id,
+        bc_status: bcStatusFilter === 'all' ? undefined : bcStatusFilter,
+    });
+    const orders = useMemo(() => ordersQuery.data?.pages.flatMap(p => p.data) ?? [], [ordersQuery.data]);
+    const loading = ordersQuery.isLoading || ordersQuery.isFetchingNextPage;
+    const total = ordersQuery.data?.pages[0]?.total ?? 0;
+    const loadMore = () => ordersQuery.fetchNextPage();
 
     // ── Selection / detail ───────────────────────────────────────────────────
     const [formMode, setFormMode] = useState<'view' | 'create'>('view');
-    const [selected, setSelected] = useState<GcomOrder | null>(null);
-    const [detailLoading, setDetailLoading] = useState(false);
+    const [selectedId, setSelectedId] = useState<number | null>(null);
+    const orderDetailQuery = useOrder(selectedId);
+    const selected = orderDetailQuery.data ?? null;
+    const detailLoading = orderDetailQuery.isLoading;
 
     const [activeTab, setActiveTab] = useState('informations');
     const [openSections, setOpenSections] = useState<Record<string, boolean>>({ informations: true, lignes: true });
@@ -189,31 +175,15 @@ export default function BonCommandePage() {
         return () => container.removeEventListener('scroll', onScroll);
     }, [openSections, activeTab]);
 
-    const selectOrder = useCallback(async (row: GcomOrderListViewRow | GcomOrder) => {
+    const selectOrder = useCallback((row: { id: number }) => {
         setFormMode('view');
-        // Optimistic partial paint (header/name visible immediately) — always
-        // overwritten within the fetch below, same spirit as the deep-link
-        // effect's own `{ id } as GcomOrder` a few lines down. A row from the
-        // lean list-view endpoint doesn't have every GcomOrder field (e.g.
-        // partner.id) but has everything this optimistic paint actually
-        // renders before detailLoading clears.
-        setSelected(row as GcomOrder);
         setActiveTab('informations');
-        setDetailLoading(true);
-        try {
-            // Re-fetch via GET regardless of what the list row already had, so the
-            // detail view always has full products/invoices/delivery_notes.
-            setSelected(await gcomApi.orders.get(row.id));
-        } catch {
-            toast.error('Erreur chargement du bon de commande');
-        } finally {
-            setDetailLoading(false);
-        }
+        setSelectedId(row.id);
     }, []);
 
-    const refresh = () => {
-        loadOrders(1, false);
-        if (selected) selectOrder(selected);
+    const handleManualRefresh = () => {
+        ordersQuery.refetch();
+        orderDetailQuery.refetch();
     };
 
     // Deep-link from another GCOM document's "Documents liés" chip
@@ -222,7 +192,7 @@ export default function BonCommandePage() {
     useEffect(() => {
         const idParam = searchParams.get('id');
         const id = idParam ? parseInt(idParam, 10) : NaN;
-        if (!Number.isNaN(id)) selectOrder({ id } as GcomOrder);
+        if (!Number.isNaN(id)) selectOrder({ id });
     // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
 
@@ -245,9 +215,11 @@ export default function BonCommandePage() {
 
     const openCreate = () => setFormMode('create');
 
+    const createOrder = useCreateOrder();
+
     const handleCreateOrderSubmit = async (payload: GcomCatalogEntrySubmitPayload): Promise<GcomOrder> => {
         try {
-            const order = await gcomApi.orders.create({
+            const order = await createOrder.mutateAsync({
                 partner_id: payload.partner_id,
                 items: payload.items,
                 payment_method: payload.payment_method,
@@ -268,7 +240,6 @@ export default function BonCommandePage() {
 
     const handleOrderCreated = (order: GcomOrder) => {
         setFormMode('view');
-        loadOrders(1, false);
         selectOrder(order);
     };
 
@@ -299,21 +270,24 @@ export default function BonCommandePage() {
         setBlModalOpen(true);
     };
     const closeConvertToBlModal = () => setBlModalOpen(false);
+    const convertOrderToBl = useConvertOrderToBl();
 
     const confirmConvertToBl = async () => {
         if (!selected) return;
         setConvertingToBl(true);
         try {
-            await gcomApi.orders.convertToBl(selected.id, {
-                delivery_date: blDeliveryDate,
-                payment_method: blPaymentMethod,
-                driver_info: blDriverInfo.trim() || undefined,
-                transporter_name: blTransporterName.trim() || undefined,
-                status: blStatus,
+            await convertOrderToBl.mutateAsync({
+                id: selected.id,
+                payload: {
+                    delivery_date: blDeliveryDate,
+                    payment_method: blPaymentMethod,
+                    driver_info: blDriverInfo.trim() || undefined,
+                    transporter_name: blTransporterName.trim() || undefined,
+                    status: blStatus,
+                },
             });
             toast.success(blStatus === 'delivered' ? 'Bon de commande converti en BL — livré' : 'Bon de commande converti en BL — en transit');
             setBlModalOpen(false);
-            refresh();
         } catch (err: unknown) {
             const msg = (err as { response?: { data?: { message?: string } } })?.response?.data?.message;
             toast.error(msg ?? 'Erreur lors de la conversion en BL');
@@ -324,13 +298,13 @@ export default function BonCommandePage() {
 
     // ── Confirmer la livraison du BL lié (2026-08-29) ────────────────────────
     const [confirmingBlDelivery, setConfirmingBlDelivery] = useState(false);
+    const confirmBlDeliveryMutation = useConfirmBlDelivery();
     const confirmBlDelivery = async () => {
-        if (!blForConversion) return;
+        if (!blForConversion || !selected) return;
         setConfirmingBlDelivery(true);
         try {
-            await gcomApi.deliveryNotes.confirmDelivery(blForConversion.id);
+            await confirmBlDeliveryMutation.mutateAsync({ blId: blForConversion.id, orderId: selected.id });
             toast.success('Livraison confirmée');
-            refresh();
         } catch (err: unknown) {
             const msg = (err as { response?: { data?: { message?: string } } })?.response?.data?.message;
             toast.error(msg ?? 'Erreur lors de la confirmation de livraison');
@@ -439,6 +413,8 @@ export default function BonCommandePage() {
 
     const closeInvoiceConfirm = () => { setInvoiceConfirmOpen(false); setConvertTarget(null); };
 
+    const convertToInvoice = useConvertToInvoice();
+
     const doConvertToInvoice = async (target: ConvertTarget, instrument: GcomInstrumentInput | null, avoirAllocations?: GcomAvoirAllocation[], paymentMethodOverride?: Exclude<GcomPaymentMethod, 'avoir'>, paymentTermId?: number | null) => {
         setConvertingToInvoice(true);
         try {
@@ -448,15 +424,15 @@ export default function BonCommandePage() {
             const soucheKindArg = convertInvoicingMode === '1_FAC_PER_ORDER' ? undefined : convertSoucheKind;
             const overrideArg = convertInvoicingMode === '1_FAC_PER_ORDER' ? undefined : paymentMethodOverride;
             const termIdArg = convertInvoicingMode === '1_FAC_PER_ORDER' ? undefined : paymentTermId;
-            const invoice = target.type === 'order'
-                ? await gcomApi.orders.convertToInvoice(target.id, instrument, soucheKindArg, avoirAllocations, overrideArg, termIdArg)
-                : await gcomApi.deliveryNotes.convertToInvoice(target.id, instrument, soucheKindArg, avoirAllocations, overrideArg, termIdArg);
+            const invoice = await convertToInvoice.mutateAsync({
+                target, instrument, soucheKind: soucheKindArg, avoirAllocations,
+                paymentMethodOverride: overrideArg, paymentTermId: termIdArg,
+            });
             toast.success(`Facture ${invoice.invoice_number ?? `#${invoice.id}`} créée${invoice.souche_kind === 'internal' ? ' (souche interne)' : ''}`);
             setConvertPanelOpen(false);
             setInvoiceConfirmOpen(false);
             setConvertAvoirPanelOpen(false);
             setConvertTarget(null);
-            refresh();
         } catch (err: unknown) {
             const msg = (err as { response?: { data?: { message?: string } } })?.response?.data?.message;
             toast.error(msg ?? 'Erreur lors de la conversion en facture');
@@ -503,23 +479,25 @@ export default function BonCommandePage() {
     const openCancelOrder = () => { setCancelTarget({ type: 'order' }); setCancelReason(''); };
     const openCancelLine = (line: GcomOrderProduct) => { setCancelTarget({ type: 'line', line }); setCancelReason(''); setCancelQuantity(''); };
     const closeCancelDialog = () => setCancelTarget(null);
+    const cancelOrder = useCancelOrder();
+    const cancelOrderLine = useCancelOrderLine();
 
     const confirmCancel = async () => {
         if (!cancelTarget || !selected || !cancelReason.trim()) { toast.error('Motif requis'); return; }
         setCancelling(true);
         try {
             if (cancelTarget.type === 'order') {
-                await gcomApi.orders.cancel(selected.id, { reason: cancelReason.trim() });
+                await cancelOrder.mutateAsync({ id: selected.id, payload: { reason: cancelReason.trim() } });
                 toast.success('Bon de commande annulé');
             } else {
-                await gcomApi.orders.cancelLine(selected.id, cancelTarget.line.pivot.id, {
-                    reason: cancelReason.trim(),
-                    quantity: cancelQuantity === '' ? undefined : cancelQuantity,
+                await cancelOrderLine.mutateAsync({
+                    id: selected.id,
+                    lineId: cancelTarget.line.pivot.id,
+                    payload: { reason: cancelReason.trim(), quantity: cancelQuantity === '' ? undefined : cancelQuantity },
                 });
                 toast.success('Ligne annulée');
             }
             setCancelTarget(null);
-            refresh();
         } catch (err: unknown) {
             const msg = (err as { response?: { data?: { message?: string } } })?.response?.data?.message;
             toast.error(msg ?? "Erreur lors de l'annulation");
@@ -546,20 +524,24 @@ export default function BonCommandePage() {
         setUpdateDiscountValue('');
     };
     const closeUpdateQtyDialog = () => setUpdateQtyTarget(null);
+    const updateOrderLine = useUpdateOrderLine();
 
     const confirmUpdateQty = async () => {
         if (!updateQtyTarget || !selected || updateQtyValue === '' || updateQtyValue <= 0) { toast.error('Quantité invalide'); return; }
         setUpdatingQty(true);
         try {
-            await gcomApi.orders.updateLine(selected.id, updateQtyTarget.pivot.id, {
-                quantity: updateQtyValue,
-                unit_price: canPriceOverride && updateUnitPrice !== '' ? updateUnitPrice : undefined,
-                discount_percent: canDiscountLine && updateDiscountMode === 'percent' && updateDiscountValue !== '' ? updateDiscountValue : undefined,
-                discount_amount: canDiscountLine && updateDiscountMode === 'amount' && updateDiscountValue !== '' ? updateDiscountValue : undefined,
+            await updateOrderLine.mutateAsync({
+                id: selected.id,
+                lineId: updateQtyTarget.pivot.id,
+                payload: {
+                    quantity: updateQtyValue,
+                    unit_price: canPriceOverride && updateUnitPrice !== '' ? updateUnitPrice : undefined,
+                    discount_percent: canDiscountLine && updateDiscountMode === 'percent' && updateDiscountValue !== '' ? updateDiscountValue : undefined,
+                    discount_amount: canDiscountLine && updateDiscountMode === 'amount' && updateDiscountValue !== '' ? updateDiscountValue : undefined,
+                },
             });
             toast.success('Ligne mise à jour');
             setUpdateQtyTarget(null);
-            refresh();
         } catch (err: unknown) {
             const msg = (err as { response?: { data?: { message?: string } } })?.response?.data?.message;
             toast.error(msg ?? 'Erreur lors de la mise à jour de la ligne');
@@ -643,6 +625,8 @@ export default function BonCommandePage() {
         setAddLineQuantities(prev => ({ ...prev, [productId]: Math.max(1, quantity) }));
     };
 
+    const addOrderLine = useAddOrderLine();
+
     const confirmAddLines = async () => {
         const productIds = Object.entries(addLineSelected).filter(([, checked]) => checked).map(([id]) => Number(id));
         if (!selected || productIds.length === 0) { toast.error('Sélectionnez au moins un article'); return; }
@@ -656,11 +640,14 @@ export default function BonCommandePage() {
             const unitPrice = addLineUnitPrices[productId];
             const discountPercent = addLineDiscountPercents[productId];
             try {
-                await gcomApi.orders.addLine(selected.id, {
-                    product_id: productId,
-                    quantity,
-                    unit_price: canPriceOverride && unitPrice ? unitPrice : undefined,
-                    discount_percent: canDiscountLine && discountPercent ? discountPercent : undefined,
+                await addOrderLine.mutateAsync({
+                    id: selected.id,
+                    payload: {
+                        product_id: productId,
+                        quantity,
+                        unit_price: canPriceOverride && unitPrice ? unitPrice : undefined,
+                        discount_percent: canDiscountLine && discountPercent ? discountPercent : undefined,
+                    },
                 });
                 successCount++;
             } catch (err: unknown) {
@@ -672,7 +659,6 @@ export default function BonCommandePage() {
         setAddingLine(false);
         if (successCount > 0) {
             toast.success(`${successCount} article${successCount > 1 ? 's' : ''} ajouté${successCount > 1 ? 's' : ''}`);
-            refresh();
         }
         if (failures.length > 0) {
             toast.error(failures.join(' • '));
@@ -750,7 +736,7 @@ export default function BonCommandePage() {
     const actionGroups = useMemo((): { items: ActionItemProps[] }[] => {
         const base: ActionItemProps[] = [
             { icon: Plus, label: 'Nouveau BC', variant: 'sage', onClick: openCreate },
-            { icon: RefreshCw, label: 'Actualiser', variant: 'default', onClick: refresh, disabled: loading },
+            { icon: RefreshCw, label: 'Actualiser', variant: 'default', onClick: handleManualRefresh, disabled: loading },
         ];
         if (!selected) return [{ items: base }];
         const detailItems: ActionItemProps[] = [
@@ -794,6 +780,7 @@ export default function BonCommandePage() {
                 canPriceOverride={canPriceOverride}
                 canDiscountLine={canDiscountLine}
                 canDiscountGlobal={has('gcom-discount-global')}
+                draftKey="gcom-bc-create"
             />
         );
     }
@@ -884,7 +871,7 @@ export default function BonCommandePage() {
                             />
                         </div>
 
-                        {page < lastPage && (
+                        {ordersQuery.hasNextPage && (
                             <div className="shrink-0 border-t border-gray-100 p-2">
                                 <button
                                     onClick={loadMore}
@@ -1119,10 +1106,10 @@ export default function BonCommandePage() {
                                                     </div>
                                                 )}
 
-                                                {selected.notes && (
+                                                {selected.bc_notes && (
                                                     <div className="bg-gray-50 rounded-lg p-3 border border-gray-100">
                                                         <p className="text-[10px] text-gray-400 uppercase tracking-wider mb-1">Notes</p>
-                                                        <p className="text-sm text-gray-700">{selected.notes}</p>
+                                                        <p className="text-sm text-gray-700">{selected.bc_notes}</p>
                                                     </div>
                                                 )}
                                             </div>

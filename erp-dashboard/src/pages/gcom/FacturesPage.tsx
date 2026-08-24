@@ -16,10 +16,11 @@ import { GcomLinesTable } from '@/components/gcom/GcomLinesTable';
 import { PdfPriceModeModal } from '@/components/gcom/PdfPriceModeModal';
 
 import { gcomApi } from '@/services/api/gcomApi';
+import { useInvoices, useInvoice, useInvoiceCreditNotes, useCreateCreditNote } from '@/hooks/gcom/useGcomInvoices';
 import { getPartners } from '@/services/api/partnerApi';
 import { RETURN_CONDITIONS } from '@/lib/gcom/returnConditions';
 import type { Partner } from '@/types/partner.types';
-import type { GcomInvoice, GcomInvoiceStatus, GcomInvoiceItem, GcomCreditNote, GcomPdfPriceMode, GcomReturnCondition } from '@/types/gcom.types';
+import type { GcomInvoice, GcomInvoiceStatus, GcomInvoiceItem, GcomPdfPriceMode, GcomReturnCondition } from '@/types/gcom.types';
 
 // ─── helpers ─────────────────────────────────────────────────────────────────
 
@@ -76,8 +77,6 @@ const INSTRUMENT_STATUS_META: Record<string, { label: string; dot: string; text:
     REJECTED: { label: 'Rejeté', dot: 'bg-red-500', text: 'text-red-700' },
 };
 
-const PAGE_SIZE = 30;
-
 const StatusBadge = ({ status }: { status: GcomInvoiceStatus }) => {
     const meta = STATUS_META[status] ?? { label: status, dot: 'bg-gray-400', text: 'text-gray-500' };
     return (
@@ -125,43 +124,25 @@ export default function FacturesPage() {
     }, [partnerSearch, partnerFilter, runPartnerSearch]);
 
     // ── List ──────────────────────────────────────────────────────────────────
-    const [invoices, setInvoices] = useState<GcomInvoice[]>([]);
-    const [loading, setLoading] = useState(true);
-    const [page, setPage] = useState(1);
-    const [lastPage, setLastPage] = useState(1);
-    const [total, setTotal] = useState(0);
-
-    const loadInvoices = useCallback(async (pageNum: number, append: boolean) => {
-        setLoading(true);
-        try {
-            const res = await gcomApi.invoices.list({
-                partner_id: partnerFilter?.id,
-                status: statusFilter === 'all' ? undefined : statusFilter,
-                from: dateFrom || undefined,
-                to: dateTo || undefined,
-                per_page: PAGE_SIZE,
-                page: pageNum,
-            });
-            setInvoices(prev => append ? [...prev, ...res.data] : res.data);
-            setPage(res.current_page);
-            setLastPage(res.last_page);
-            setTotal(res.total);
-        } catch {
-            toast.error('Erreur chargement des factures');
-        } finally {
-            setLoading(false);
-        }
-    }, [partnerFilter, statusFilter, dateFrom, dateTo]);
-
-    useEffect(() => { loadInvoices(1, false); }, [loadInvoices]);
-
-    const loadMore = () => { if (page < lastPage) loadInvoices(page + 1, true); };
+    const invoicesQuery = useInvoices({
+        partner_id: partnerFilter?.id,
+        status: statusFilter === 'all' ? undefined : statusFilter,
+        from: dateFrom || undefined,
+        to: dateTo || undefined,
+    });
+    const invoices = useMemo(() => invoicesQuery.data?.pages.flatMap(p => p.data) ?? [], [invoicesQuery.data]);
+    const loading = invoicesQuery.isLoading || invoicesQuery.isFetchingNextPage;
+    const total = invoicesQuery.data?.pages[0]?.total ?? 0;
+    const loadMore = () => invoicesQuery.fetchNextPage();
 
     // ── Selection / detail ───────────────────────────────────────────────────
-    const [selected, setSelected] = useState<GcomInvoice | null>(null);
-    const [detailLoading, setDetailLoading] = useState(false);
-    const [creditNotes, setCreditNotes] = useState<GcomCreditNote[]>([]);
-    const [creditNotesLoading, setCreditNotesLoading] = useState(false);
+    const [selectedId, setSelectedId] = useState<number | null>(null);
+    const invoiceDetailQuery = useInvoice(selectedId);
+    const selected = invoiceDetailQuery.data ?? null;
+    const detailLoading = invoiceDetailQuery.isLoading;
+    const creditNotesQuery = useInvoiceCreditNotes(selectedId);
+    const creditNotes = creditNotesQuery.data ?? [];
+    const creditNotesLoading = creditNotesQuery.isLoading;
 
     // Scroll-spy state (same pattern as ClientGroupsPage/PartnerManagementPage)
     const [activeTab, setActiveTab] = useState('informations');
@@ -204,38 +185,22 @@ export default function FacturesPage() {
         return () => container.removeEventListener('scroll', onScroll);
     }, [openSections, activeTab]);
 
-    const selectInvoice = useCallback(async (row: GcomInvoice) => {
-        setSelected(row);
+    const selectInvoice = useCallback((row: { id: number }) => {
         setActiveTab('informations');
-        setDetailLoading(true);
-        setCreditNotes([]);
-        try {
-            setSelected(await gcomApi.invoices.get(row.id));
-        } catch {
-            toast.error('Erreur chargement de la facture');
-        } finally {
-            setDetailLoading(false);
-        }
-        setCreditNotesLoading(true);
-        try {
-            setCreditNotes(await gcomApi.invoices.creditNotes(row.id));
-        } catch {
-            setCreditNotes([]);
-        } finally {
-            setCreditNotesLoading(false);
-        }
+        setSelectedId(row.id);
     }, []);
 
-    const refresh = () => {
-        loadInvoices(1, false);
-        if (selected) selectInvoice(selected);
+    const handleManualRefresh = () => {
+        invoicesQuery.refetch();
+        invoiceDetailQuery.refetch();
+        creditNotesQuery.refetch();
     };
 
     // Deep-link from another GCOM document's "Documents liés"/"Origine" chip (?id=123).
     useEffect(() => {
         const idParam = searchParams.get('id');
         const id = idParam ? parseInt(idParam, 10) : NaN;
-        if (!Number.isNaN(id)) selectInvoice({ id } as GcomInvoice);
+        if (!Number.isNaN(id)) selectInvoice({ id });
     // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
 
@@ -269,25 +234,29 @@ export default function FacturesPage() {
         setAvoirItemQty(prev => ({ ...prev, [itemId]: Math.max(1, quantity) }));
     };
 
+    const createCreditNote = useCreateCreditNote();
+
     const confirmCreateAvoir = async () => {
         if (!selected || !avoirReason.trim()) { toast.error('Motif requis'); return; }
         const selectedItems = (selected.items ?? []).filter(it => avoirItemSelected[it.id]);
         setCreatingAvoir(true);
         try {
-            await gcomApi.invoices.createCreditNote(selected.id, {
-                amount: avoirAmount.trim() ? parseFloat(avoirAmount) : undefined,
-                reason: avoirReason.trim(),
-                items: selectedItems.length > 0
-                    ? selectedItems.map(it => ({
-                        product_id: it.product_id,
-                        quantity: avoirItemQty[it.id] ?? (Number(it.quantity) || 1),
-                        condition: avoirItemCondition[it.id] ?? 'sellable',
-                    }))
-                    : undefined,
+            await createCreditNote.mutateAsync({
+                invoiceId: selected.id,
+                payload: {
+                    amount: avoirAmount.trim() ? parseFloat(avoirAmount) : undefined,
+                    reason: avoirReason.trim(),
+                    items: selectedItems.length > 0
+                        ? selectedItems.map(it => ({
+                            product_id: it.product_id,
+                            quantity: avoirItemQty[it.id] ?? (Number(it.quantity) || 1),
+                            condition: avoirItemCondition[it.id] ?? 'sellable',
+                        }))
+                        : undefined,
+                },
             });
             toast.success('Avoir créé');
             setAvoirModalOpen(false);
-            refresh();
         } catch (err: unknown) {
             const msg = (err as { response?: { data?: { message?: string } } })?.response?.data?.message;
             toast.error(msg ?? "Erreur lors de la création de l'avoir");
@@ -394,7 +363,7 @@ export default function FacturesPage() {
     const actionGroups = useMemo((): { items: ActionItemProps[] }[] => {
         const groups: { items: ActionItemProps[] }[] = [{
             items: [
-                { icon: RefreshCw, label: 'Actualiser', variant: 'default', onClick: refresh, disabled: loading },
+                { icon: RefreshCw, label: 'Actualiser', variant: 'default', onClick: handleManualRefresh, disabled: loading },
                 { icon: Download, label: 'Imprimer', variant: 'primary', onClick: () => setPdfModalOpen(true), disabled: !selected || pdfLoading },
             ],
         }];
@@ -507,7 +476,7 @@ export default function FacturesPage() {
                         />
                     </div>
 
-                    {page < lastPage && (
+                    {invoicesQuery.hasNextPage && (
                         <div className="shrink-0 border-t border-gray-100 p-2">
                             <button
                                 onClick={loadMore}

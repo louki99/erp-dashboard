@@ -42,8 +42,10 @@
     "header": "Header",
     "id": "ID",
     "identifier": "Identifier",
+    "mode": "Mode",
     "merge": "Merge",
     "replace": "Replace",
+    "downloadTemplate": "Download template",
     "clear": "Clear",
     "all": "All",
     "none": "None",
@@ -814,7 +816,8 @@
       },
       "import": {
         "success": "Import completed",
-        "replaceWarning": "Replace mode will delete all existing details of this line before import."
+        "replaceWarning": "Replace mode will delete all existing details of this line before import.",
+        "templateHint": "Not sure about the expected format? Download a blank template with the right columns."
       }
     },
     "overrides": {

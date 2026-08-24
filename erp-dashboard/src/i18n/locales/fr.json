@@ -42,8 +42,10 @@
     "header": "En-tête",
     "id": "ID",
     "identifier": "Identifiant",
+    "mode": "Mode",
     "merge": "Fusionner",
     "replace": "Remplacer",
+    "downloadTemplate": "Télécharger le modèle",
     "clear": "Effacer",
     "all": "Tous",
     "none": "Aucun",
@@ -752,7 +754,8 @@
       },
       "import": {
         "success": "Import terminé",
-        "replaceWarning": "Le mode Remplacer supprimera tous les détails existants de cette ligne avant l'import."
+        "replaceWarning": "Le mode Remplacer supprimera tous les détails existants de cette ligne avant l'import.",
+        "templateHint": "Pas sûr du format attendu ? Téléchargez un modèle vierge avec les bonnes colonnes."
       }
     },
     "overrides": {

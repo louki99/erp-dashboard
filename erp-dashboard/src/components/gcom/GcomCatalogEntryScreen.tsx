@@ -3,6 +3,7 @@ import {
     ShoppingCart, Search, X, Trash2, Loader2,
     User, Users, Building2, AlertTriangle, Calendar, Warehouse, LayoutGrid, ListFilter,
     Maximize2, Minimize2, Info, Hash, Truck, CheckCircle2, EyeOff, ArrowUpDown, GripHorizontal, Percent,
+    BookOpen, ChevronRight,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 
@@ -14,6 +15,7 @@ import { AvoirAllocationPicker } from '@/components/gcom/AvoirAllocationPicker';
 import { avoirAllocationsMatchTotal, avoirAllocationsWithinTotal, canMixAvoirWith } from '@/lib/gcom/avoirAllocations';
 import { useAuth } from '@/context/AuthContext';
 import { useGcomParameters } from '@/hooks/useGcomParameters';
+import { useGcomDraft, draftRelativeTime } from '@/hooks/useGcomDraft';
 
 import { getPartners, getPaymentTerms } from '@/services/api/partnerApi';
 import { telesalesApi } from '@/services/api/telesalesApi';
@@ -133,6 +135,12 @@ export interface GcomCatalogEntryScreenProps<TResult> {
     canPriceOverride?: boolean;
     canDiscountLine?: boolean;
     canDiscountGlobal?: boolean;
+    /** 2026-08-24 — opt-in per caller. When set, the in-progress draft
+     * (client, lines, payment fields, notes...) autosaves to IndexedDB so a
+     * token expiry or accidental refresh doesn't lose several minutes of
+     * entry. Must be unique per screen (e.g. "gcom-bc-create"). Omit to skip
+     * persistence entirely. */
+    draftKey?: string;
 }
 
 const EMPTY_INSTRUMENT: GcomInstrumentInput = { reference_number: '', due_date: '', bank_name: '', bank_account: '' };
@@ -157,6 +165,7 @@ export function GcomCatalogEntryScreen<TResult>({
     canPriceOverride = false,
     canDiscountLine = false,
     canDiscountGlobal = false,
+    draftKey,
 }: GcomCatalogEntryScreenProps<TResult>) {
     const { user } = useAuth();
     const { maxDiscountPercent } = useGcomParameters();
@@ -460,6 +469,67 @@ export function GcomCatalogEntryScreen<TResult>({
         masterdataApi.banks.getAll().then(setBanks).catch(() => setBanks([]));
     }, [needsInstrumentAtSubmit]);
 
+    // ── Draft persistence (2026-08-24) ──────────────────────────────────────────
+    // Snapshot mirrors reset()'s own field list below — keep the two in sync.
+    const [dismissedDraftBanner, setDismissedDraftBanner] = useState(false);
+    const { draft: pendingDraft, saveDraft, clearDraft } = useGcomDraft(draftKey);
+    const draftSnapshot = useMemo(() => ({
+        selectedPartner, paymentTermId, quantities, unitPriceOverrides, discountPercents,
+        globalDiscountMode, globalDiscountValue, paymentMethod, instrument, notes, expiresAt,
+        soucheKind, clientOrderRef, salespersonId, deliveryDate, driverInfo, transporterName,
+        blStatus, instrumentBankOther, avoirAllocations, mixAvoirEnabled,
+    }), [
+        selectedPartner, paymentTermId, quantities, unitPriceOverrides, discountPercents,
+        globalDiscountMode, globalDiscountValue, paymentMethod, instrument, notes, expiresAt,
+        soucheKind, clientOrderRef, salespersonId, deliveryDate, driverInfo, transporterName,
+        blStatus, instrumentBankOther, avoirAllocations, mixAvoirEnabled,
+    ]);
+    useEffect(() => {
+        if (!draftKey) return;
+        // Don't autosave a blank form, and don't autosave over a draft the user
+        // just restored/dismissed this session (pendingDraft banner still shown).
+        const meaningful = !!selectedPartner || Object.values(quantities).some(q => q > 0);
+        if (!meaningful) return;
+        saveDraft(draftSnapshot as unknown as Record<string, unknown>, selectedPartner?.name ?? '');
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [draftKey, draftSnapshot]);
+
+    const restoreDraft = () => {
+        if (!pendingDraft) return;
+        const d = pendingDraft.data as typeof draftSnapshot;
+        setDismissedDraftBanner(true);
+        if (d.selectedPartner) {
+            selectPartner(d.selectedPartner);
+            // selectPartner re-fetches payment terms and picks its own default —
+            // override with the draft's actual value once that settles.
+            setTimeout(() => setPaymentTermId(d.paymentTermId), 0);
+        }
+        setQuantities(d.quantities ?? {});
+        setUnitPriceOverrides(d.unitPriceOverrides ?? {});
+        setDiscountPercents(d.discountPercents ?? {});
+        setGlobalDiscountMode(d.globalDiscountMode ?? '');
+        setGlobalDiscountValue(d.globalDiscountValue ?? '');
+        setPaymentMethod(d.paymentMethod ?? 'cash');
+        setInstrument(d.instrument ?? EMPTY_INSTRUMENT);
+        setNotes(d.notes ?? '');
+        setExpiresAt(d.expiresAt ?? '');
+        setSoucheKind(d.soucheKind ?? 'declared');
+        setClientOrderRef(d.clientOrderRef ?? '');
+        setSalespersonId(d.salespersonId ?? '');
+        setDeliveryDate(d.deliveryDate ?? '');
+        setDriverInfo(d.driverInfo ?? '');
+        setTransporterName(d.transporterName ?? '');
+        setBlStatus(d.blStatus ?? 'in_transit');
+        setInstrumentBankOther(d.instrumentBankOther ?? false);
+        setAvoirAllocations(d.avoirAllocations ?? []);
+        setMixAvoirEnabled(d.mixAvoirEnabled ?? false);
+    };
+
+    const discardDraft = () => {
+        setDismissedDraftBanner(true);
+        clearDraft();
+    };
+
     const methodDef = PAYMENT_METHODS.find(m => m.value === paymentMethod)!;
     const showInstrumentFields = needsInstrumentAtSubmit && methodDef.needsInstrument;
     const showAvoirFields = needsInstrumentAtSubmit && methodDef.needsAvoirAllocation;
@@ -564,6 +634,7 @@ export function GcomCatalogEntryScreen<TResult>({
             setShowConfirmModal(false);
             if (renderSuccess) setResult(created);
             onSubmitted?.(created);
+            clearDraft();
         } catch (err: unknown) {
             toast.error((err as { message?: string })?.message ?? 'Erreur lors de la soumission');
         } finally {
@@ -575,6 +646,7 @@ export function GcomCatalogEntryScreen<TResult>({
         setResult(null);
         clearSelection();
         changePartner();
+        clearDraft();
         setPaymentMethod('cash');
         setInstrument(EMPTY_INSTRUMENT);
         setNotes('');
@@ -642,6 +714,42 @@ export function GcomCatalogEntryScreen<TResult>({
                             <User className="w-4 h-4 text-sage-600" />
                             <h2 className="text-sm font-bold text-gray-900">Client</h2>
                         </div>
+
+                        {pendingDraft && !dismissedDraftBanner && !selectedPartner && (
+                            <div className="mb-2 rounded-xl border border-amber-200 bg-amber-50 overflow-hidden">
+                                <div className="px-3 py-2 flex items-center gap-2">
+                                    <BookOpen className="w-3.5 h-3.5 text-amber-500 shrink-0" />
+                                    <span className="text-xs font-semibold text-amber-700 flex-1">Brouillon non terminé</span>
+                                    <button
+                                        type="button"
+                                        onClick={discardDraft}
+                                        className="p-0.5 text-amber-400 hover:text-amber-700 rounded transition-colors"
+                                        title="Ignorer"
+                                    >
+                                        <X className="w-3 h-3" />
+                                    </button>
+                                </div>
+                                <div className="px-3 pb-2">
+                                    <button
+                                        type="button"
+                                        onClick={restoreDraft}
+                                        className="w-full flex items-center gap-2 px-2 py-1.5 text-left rounded-lg bg-white border border-amber-100 hover:border-amber-300 hover:bg-amber-50 transition-all shadow-sm"
+                                    >
+                                        <div className="w-5 h-5 rounded-md bg-amber-100 flex items-center justify-center shrink-0">
+                                            <BookOpen className="w-3 h-3 text-amber-600" />
+                                        </div>
+                                        <div className="flex-1 min-w-0">
+                                            <p className="text-[11px] font-semibold text-gray-800 truncate">
+                                                {pendingDraft.partnerName || 'Sans client'}
+                                            </p>
+                                            <p className="text-[10px] text-gray-400">{draftRelativeTime(pendingDraft.savedAt)}</p>
+                                        </div>
+                                        <ChevronRight className="w-3 h-3 text-amber-400 shrink-0" />
+                                    </button>
+                                </div>
+                            </div>
+                        )}
+
                         {selectedPartner ? (
                             <div className="bg-sage-50 border border-sage-100 rounded-lg px-3 py-2.5 space-y-1.5">
                                 <div className="flex items-start justify-between">
