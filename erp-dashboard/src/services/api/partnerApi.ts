@@ -58,8 +58,8 @@ export const getPartners = async (filters: PartnerFilters): Promise<{ partners: 
     return { partners: response.data.partners, priceLists: response.data.priceLists || [] };
 };
 
-export const getPartner = async (id: number): Promise<PartnerShowResponse> => {
-    const response = await apiClient.get<PartnerShowResponse>(`${BASE_PATH}/${id}`);
+export const getPartner = async (id: number, signal?: AbortSignal): Promise<PartnerShowResponse> => {
+    const response = await apiClient.get<PartnerShowResponse>(`${BASE_PATH}/${id}`, { signal });
     return response.data;
 };
 

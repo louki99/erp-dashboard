@@ -229,10 +229,20 @@ export const ReglementForm: React.FC<ReglementFormProps> = ({
                 </div>
                 <div className="flex items-center gap-2 shrink-0">
                     {accountSummary != null && (
+                        // A negative `due` means the client overpaid previously (avance/acompte),
+                        // not a debt — backend fix 2026-08-25. Flagging it here, right before the
+                        // caissier fills in the amount, prevents an accidental double-encaissement.
                         <div className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-xs font-semibold ${
-                            accountSummary.due > 0 ? 'bg-amber-50 border-amber-200 text-amber-700' : 'bg-emerald-50 border-emerald-200 text-emerald-700'
+                            accountSummary.due > 0
+                                ? 'bg-amber-50 border-amber-200 text-amber-700'
+                                : accountSummary.due < 0
+                                    ? 'bg-emerald-50 border-emerald-200 text-emerald-700'
+                                    : 'bg-gray-50 border-gray-200 text-gray-500'
                         }`}>
-                            <Scale className="w-3.5 h-3.5" /> Solde dû : {fmtMAD(accountSummary.due)}
+                            <Scale className="w-3.5 h-3.5" />
+                            {accountSummary.due > 0 && <>Solde dû : {fmtMAD(accountSummary.due)}</>}
+                            {accountSummary.due < 0 && <>Avance disponible : {fmtMAD(Math.abs(accountSummary.due))} — utilisable sur ce règlement</>}
+                            {accountSummary.due === 0 && <>Compte soldé</>}
                         </div>
                     )}
                     <button

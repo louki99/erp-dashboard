@@ -139,6 +139,7 @@
     "network": "Connection error. Please check your internet connection.",
     "unauthorized": "Access denied. You do not have the required permissions.",
     "notFound": "Resource not found.",
+    "tooManyRequests": "Too many requests sent — please wait a few seconds.",
     "serverError": "Server error. Please try again.",
     "sessionExpired": "Session expired. Please log in again.",
     "validationError": "Please correct the errors in the form.",

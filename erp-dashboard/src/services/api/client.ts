@@ -53,26 +53,35 @@ apiClient.interceptors.response.use(
 
             switch (status) {
                 case 401:
-                    toast.error(i18n.t('errors.sessionExpired'));
+                    toast.error(i18n.t('errors.sessionExpired'), { id: 'http-error-401' });
                     localStorage.removeItem('erp_token');
                     localStorage.removeItem('erp_user');
                     window.location.href = '/login';
                     break;
 
                 case 403:
-                    toast.error(i18n.t('errors.unauthorized'));
+                    toast.error(i18n.t('errors.unauthorized'), { id: 'http-error-403' });
                     break;
 
                 case 404:
-                    toast.error(i18n.t('errors.notFound'));
+                    toast.error(i18n.t('errors.notFound'), { id: 'http-error-404' });
                     break;
 
                 case 422:
                     // Validation error — handled in each component
                     break;
 
+                case 429:
+                    // A burst of requests (e.g. rapid clicking through a list,
+                    // or an uncapped-concurrency batch) can trip this many
+                    // times within a second or two — a stable toast `id`
+                    // makes react-hot-toast update the existing toast in
+                    // place instead of stacking one per failed request.
+                    toast.error(i18n.t('errors.tooManyRequests'), { id: 'http-error-429' });
+                    break;
+
                 case 500:
-                    toast.error(data?.message || i18n.t('errors.serverError'));
+                    toast.error(data?.message || i18n.t('errors.serverError'), { id: 'http-error-500' });
                     break;
 
                 case 503: {
@@ -91,12 +100,12 @@ apiClient.interceptors.response.use(
                 }
 
                 default:
-                    toast.error(data?.message || i18n.t('errors.generic'));
+                    toast.error(data?.message || i18n.t('errors.generic'), { id: `http-error-${status}` });
             }
         } else if (error.request) {
-            toast.error(i18n.t('errors.network'));
+            toast.error(i18n.t('errors.network'), { id: 'http-error-network' });
         } else {
-            toast.error(i18n.t('errors.generic'));
+            toast.error(i18n.t('errors.generic'), { id: 'http-error-generic' });
         }
 
         return Promise.reject(error);

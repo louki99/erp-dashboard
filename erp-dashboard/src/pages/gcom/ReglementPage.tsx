@@ -32,6 +32,17 @@ const fmt = (n: number | string | undefined | null, decimals = 2) => {
 const fmtMAD = (n: number | string | undefined | null) => `${fmt(n)} MAD`;
 const fmtDate = (d: string | null | undefined) => d ? new Date(d).toLocaleDateString('fr-MA', { day: '2-digit', month: 'short', year: 'numeric' }) : '—';
 
+// A negative balance means the client overpaid (avance/acompte), not a debt —
+// backend fix 2026-08-25 (current_balance can now legitimately go negative).
+// Never render the raw signed value: it reads as "the client owes -675 MAD",
+// which is backwards. Always show the absolute amount with a sign-derived
+// label/color instead.
+const soldeDisplay = (balance: number): { label: string; amount: string; color: string } => {
+    if (balance === 0) return { label: 'Soldé', amount: fmtMAD(0), color: '#6b7280' };
+    if (balance < 0) return { label: 'Avance', amount: fmtMAD(Math.abs(balance)), color: '#059669' };
+    return { label: 'Dû', amount: fmtMAD(balance), color: '#d97706' };
+};
+
 const CLIENT_PAGE_SIZE = 20;
 
 // ─── Status badges ──────────────────────────────────────────────────────────
@@ -136,16 +147,29 @@ export default function ReglementPage() {
         if (idsToFetch.length === 0) return;
         idsToFetch.forEach(id => soldeLoadingIds.current.add(id));
         clientGridRef.current?.api?.refreshCells({ columns: ['solde'], force: true });
-        await Promise.all(idsToFetch.map(async id => {
-            try {
-                const statement = await gcomApi.partners.statement(id);
-                soldeCache.current.set(id, statement.current_balance);
-            } catch {
-                soldeCache.current.set(id, NaN);
+        // Capped concurrency, not Promise.all on the whole batch — a fresh
+        // page load can have up to CLIENT_PAGE_SIZE (20) rows needing a solde
+        // at once; firing all 20 GET /partners/{id}/statement requests
+        // simultaneously was enough on its own to trip the per-user rate
+        // limiter (2026-08-25, backend report), independent of any click
+        // behavior. Also refreshes cells progressively as each one resolves
+        // instead of one big repaint at the end.
+        const CONCURRENCY = 4;
+        let cursor = 0;
+        const worker = async () => {
+            while (cursor < idsToFetch.length) {
+                const id = idsToFetch[cursor++];
+                try {
+                    const statement = await gcomApi.partners.statement(id);
+                    soldeCache.current.set(id, statement.current_balance);
+                } catch {
+                    soldeCache.current.set(id, NaN);
+                }
+                soldeLoadingIds.current.delete(id);
+                clientGridRef.current?.api?.refreshCells({ columns: ['solde'], force: true });
             }
-        }));
-        idsToFetch.forEach(id => soldeLoadingIds.current.delete(id));
-        clientGridRef.current?.api?.refreshCells({ columns: ['solde'], force: true });
+        };
+        await Promise.all(Array.from({ length: Math.min(CONCURRENCY, idsToFetch.length) }, worker));
     }, []);
 
     // Guards against an older in-flight request (e.g. a stale search) resolving
@@ -209,7 +233,7 @@ export default function ReglementPage() {
             },
         },
         {
-            colId: 'solde', headerName: 'Solde Dû', width: 120, filter: 'agNumberColumnFilter',
+            colId: 'solde', headerName: 'Solde', width: 130, filter: 'agNumberColumnFilter',
             valueGetter: (p: ValueGetterParams<Partner>) => (p.data ? soldeCache.current.get(p.data.id) ?? null : null),
             cellStyle: { textAlign: 'right' },
             headerClass: 'ag-right-aligned-header',
@@ -217,7 +241,12 @@ export default function ReglementPage() {
                 if (p.data && soldeLoadingIds.current.has(p.data.id)) return <Loader2 className="w-3.5 h-3.5 animate-spin text-gray-300 ml-auto" />;
                 const v = p.value;
                 if (v == null || Number.isNaN(v)) return <span style={{ color: '#d1d5db', fontSize: '11px' }}>—</span>;
-                return <span style={{ fontSize: '12px', fontWeight: 700, color: v > 0 ? '#d97706' : '#059669' }}>{fmtMAD(v)}</span>;
+                const { label, amount, color } = soldeDisplay(v);
+                return (
+                    <span style={{ fontSize: '12px', fontWeight: 700, color }}>
+                        {amount}{v !== 0 && <span style={{ fontSize: '9px', fontWeight: 600, marginLeft: 3 }}>({label})</span>}
+                    </span>
+                );
             },
         },
     ], []);
@@ -710,10 +739,14 @@ export default function ReglementPage() {
             cellRenderer: (p: ICellRendererParams<GcomLedgerEntry, number>) => (p.value ? <span style={{ fontSize: '11px', fontWeight: 600, color: '#059669' }}>{fmtMAD(p.value)}</span> : <span style={{ color: '#d1d5db' }}>—</span>),
         },
         {
-            field: 'running_balance', headerName: 'Solde Progressif', width: 140, filter: 'agNumberColumnFilter',
+            field: 'running_balance', headerName: 'Solde Progressif', width: 150, filter: 'agNumberColumnFilter',
             cellRenderer: (p: ICellRendererParams<GcomLedgerEntry, number>) => {
-                const v = p.value ?? 0;
-                return <span style={{ fontSize: '11px', fontWeight: 700, color: v > 0 ? '#d97706' : '#059669' }}>{fmtMAD(v)}</span>;
+                const { label, amount, color } = soldeDisplay(p.value ?? 0);
+                return (
+                    <span style={{ fontSize: '11px', fontWeight: 700, color }}>
+                        {amount}{(p.value ?? 0) !== 0 && <span style={{ fontSize: '9px', fontWeight: 600, marginLeft: 3 }}>({label})</span>}
+                    </span>
+                );
             },
         },
     ], []);
@@ -829,11 +862,11 @@ export default function ReglementPage() {
                                         value={accountSummary ? fmtMAD(accountSummary.paid) : null}
                                     />
                                     <KpiCard
-                                        label="Solde Dû Actuel"
+                                        label={accountSummary && accountSummary.due < 0 ? 'Solde Créditeur (Avance)' : accountSummary && accountSummary.due === 0 ? 'Solde Actuel' : 'Solde Dû Actuel'}
                                         icon={Scale}
-                                        tone={accountSummary && accountSummary.due > 0 ? 'amber' : 'emerald'}
+                                        tone={accountSummary && accountSummary.due > 0 ? 'amber' : accountSummary && accountSummary.due < 0 ? 'emerald' : 'slate'}
                                         loading={loadingSummary}
-                                        value={accountSummary ? fmtMAD(accountSummary.due) : null}
+                                        value={accountSummary ? (accountSummary.due === 0 ? 'Soldé' : fmtMAD(Math.abs(accountSummary.due))) : null}
                                     />
                                     <KpiCard
                                         label="Encours Chèques/Effets"

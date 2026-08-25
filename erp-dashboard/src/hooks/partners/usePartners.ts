@@ -1,9 +1,9 @@
 import { useState, useEffect, useCallback } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import * as partnerApi from '../../services/api/partnerApi';
 import type {
     Partner,
     PartnerFilters,
-    PartnerShowResponse,
     PartnerCreateFormResponse,
     PartnerStatisticsResponse,
     PaginatedPartners,
@@ -82,29 +82,41 @@ export const usePartnersList = (filters: PartnerFilters) => {
 
 // ─── Detail Hook ────────────────────────────────────────────────────────────
 
+// 2026-08-25 — was a plain useState/useEffect with zero caching, refetching
+// unconditionally on every `id` change: rapid row-clicking through a grid
+// (PartnerManagementPage.tsx) fired one full GET per click back-to-back, and
+// StrictMode's dev-only double-effect doubled every one of those on top —
+// enough to trip the backend's per-user rate limiter (429 "Too Many
+// Attempts" reported by backend the same day). Now backed by React Query:
+// - Caching by id (staleTime) — re-selecting a partner already viewed
+//   recently serves from cache instead of refetching, and StrictMode's
+//   double-mount becomes a no-op (React Query dedupes concurrent identical
+//   queries for the same key).
+// - `debouncedId` — browsing/rapid-clicking through several rows only fires
+//   the detail GET for wherever the user actually settles for ~200ms, not
+//   once per row passed through on the way there.
+// - The query's own AbortSignal is threaded into the axios call, so a
+//   superseded in-flight request is actually cancelled, not just ignored.
 export const usePartnerDetail = (id: number | null) => {
-    const [data, setData] = useState<PartnerShowResponse | null>(null);
-    const [loading, setLoading] = useState(false);
-    const [error, setError] = useState<string | null>(null);
-
-    const fetch = useCallback(async () => {
-        if (!id) { setData(null); return; }
-        setLoading(true);
-        setError(null);
-        try {
-            const result = await partnerApi.getPartner(id);
-            setData(result);
-        } catch (err) {
-            setError(err instanceof Error ? err.message : 'Échec du chargement du partenaire');
-            console.error(err);
-        } finally {
-            setLoading(false);
-        }
+    const [debouncedId, setDebouncedId] = useState(id);
+    useEffect(() => {
+        const t = setTimeout(() => setDebouncedId(id), 200);
+        return () => clearTimeout(t);
     }, [id]);
 
-    useEffect(() => { fetch(); }, [fetch]);
+    const query = useQuery({
+        queryKey: ['partner-detail', debouncedId],
+        queryFn: ({ signal }) => partnerApi.getPartner(debouncedId!, signal),
+        enabled: debouncedId != null,
+        staleTime: 30_000,
+    });
 
-    return { data, loading, error, refetch: fetch };
+    return {
+        data: query.data ?? null,
+        loading: query.isLoading,
+        error: query.error ? (query.error instanceof Error ? query.error.message : 'Échec du chargement du partenaire') : null,
+        refetch: query.refetch,
+    };
 };
 
 // ─── Statistics Hook ────────────────────────────────────────────────────────

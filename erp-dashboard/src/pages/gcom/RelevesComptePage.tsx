@@ -23,6 +23,17 @@ const fmtMAD = (n: number | string | undefined | null) => {
     return v == null || Number.isNaN(v) ? '—' : `${v.toLocaleString('fr-MA', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} MAD`;
 };
 
+// A negative balance means the client overpaid (avance/acompte), not a debt —
+// backend fix 2026-08-25 (current_balance can now legitimately go negative).
+// Never render the raw signed value: it reads as "the client owes -675 MAD",
+// which is backwards. Always show the absolute amount with a sign-derived
+// label/color instead.
+const soldeDisplay = (balance: number): { label: string; amount: string; className: string } => {
+    if (balance === 0) return { label: 'Soldé', amount: fmtMAD(0), className: 'text-gray-500' };
+    if (balance < 0) return { label: 'Avance', amount: fmtMAD(Math.abs(balance)), className: 'text-emerald-700' };
+    return { label: 'Dû', amount: fmtMAD(balance), className: 'text-amber-700' };
+};
+
 // ─── Main page ───────────────────────────────────────────────────────────────
 
 export const RelevesComptePage = () => {
@@ -97,11 +108,16 @@ export const RelevesComptePage = () => {
             ),
         },
         {
-            colId: 'current_balance', headerName: 'Solde dû', width: 130, filter: 'agNumberColumnFilter',
+            colId: 'current_balance', headerName: 'Solde', width: 150, filter: 'agNumberColumnFilter',
             valueGetter: (p: ValueGetterParams<GcomPartnerStatementRow>) => Number(p.data?.current_balance) || 0,
-            cellRenderer: (p: ICellRendererParams<GcomPartnerStatementRow, number>) => (
-                <span className={`text-xs font-bold ${p.value! > 0 ? 'text-amber-700' : 'text-gray-700'}`}>{fmtMAD(p.value)}</span>
-            ),
+            cellRenderer: (p: ICellRendererParams<GcomPartnerStatementRow, number>) => {
+                const { label, amount, className } = soldeDisplay(p.value ?? 0);
+                return (
+                    <span className={`text-xs font-bold ${className}`}>
+                        {amount}{(p.value ?? 0) !== 0 && <span className="text-[9px] font-semibold ml-1">({label})</span>}
+                    </span>
+                );
+            },
         },
         {
             colId: 'total_debit', headerName: 'Total débit', width: 120, filter: 'agNumberColumnFilter',

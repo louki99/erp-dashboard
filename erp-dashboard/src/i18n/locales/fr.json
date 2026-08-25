@@ -139,6 +139,7 @@
     "network": "Erreur de connexion. Vérifiez votre connexion internet.",
     "unauthorized": "Accès refusé. Vous n'avez pas les permissions nécessaires.",
     "notFound": "Ressource introuvable.",
+    "tooManyRequests": "Trop de requêtes envoyées — merci de patienter quelques secondes.",
     "serverError": "Erreur serveur. Veuillez réessayer.",
     "sessionExpired": "Session expirée. Veuillez vous reconnecter.",
     "validationError": "Veuillez corriger les erreurs dans le formulaire.",
