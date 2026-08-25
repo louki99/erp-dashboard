@@ -214,7 +214,10 @@
       "Bash(pdftotext /tmp/inv22_def.pdf -)",
       "Bash(pdftotext /tmp/bc_ttc.pdf -)",
       "Bash(git status *)",
-      "WebSearch"
+      "WebSearch",
+      "Bash(curl -sk -X POST https://omni360.local/api/backend/login -H \"Content-Type: application/json\" -d '{\"email\":\"admin@orbis.ma\",\"password\":\"orbis2026\"}' -o /tmp/omni360_login.json -w \"login status: %{http_code}\\\\n\")",
+      "Bash(curl -sk -H 'Authorization: Bearer __CMDSUB_OUTPUT__' -w '\\\\nstatus: %{http_code}\\\\n' https://omni360.local/api/backend/partners/1)",
+      "Bash(curl -sk -H 'Authorization: Bearer __CMDSUB_OUTPUT__' -w '\\\\nstatus: %{http_code}\\\\n' 'https://omni360.local/api/backend/telesales/catalog/products?partner_id=1485&per_page=60&page=1')"
     ],
     "additionalDirectories": [
       "C:\\Users\\louki\\.claude\\projects\\d--project--avenir-omni360-omin360__mobile-erp-dashboard\\memory",

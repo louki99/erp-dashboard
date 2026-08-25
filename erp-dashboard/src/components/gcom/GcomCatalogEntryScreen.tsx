@@ -17,7 +17,7 @@ import { useAuth } from '@/context/AuthContext';
 import { useGcomParameters } from '@/hooks/useGcomParameters';
 import { useGcomDraft, draftRelativeTime } from '@/hooks/useGcomDraft';
 
-import { getPartners, getPaymentTerms } from '@/services/api/partnerApi';
+import { getPartners, getPartner, getPaymentTerms } from '@/services/api/partnerApi';
 import { telesalesApi } from '@/services/api/telesalesApi';
 import { gcomApi } from '@/services/api/gcomApi';
 import { masterdataApi, type Bank } from '@/services/api/masterdataApi';
@@ -613,12 +613,25 @@ export function GcomCatalogEntryScreen<TResult>({
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [draftKey, draftSnapshot]);
 
-    const restoreDraft = () => {
+    const restoreDraft = async () => {
         if (!pendingDraft) return;
         const d = pendingDraft.data as typeof draftSnapshot;
         setDismissedDraftBanner(true);
         if (d.selectedPartner) {
-            selectPartner(d.selectedPartner);
+            // The draft may have been saved against a different backend/
+            // dataset (e.g. a dev environment switch) — verify the partner
+            // still resolves before restoring anything, rather than leaving
+            // the UI half-selected with every subsequent request 404/422ing
+            // against an id that no longer means anything here.
+            let freshPartner: Partner;
+            try {
+                freshPartner = (await getPartner(d.selectedPartner.id)).partner;
+            } catch {
+                toast.error("Ce brouillon référence un client qui n'existe plus sur ce serveur — ignoré.");
+                clearDraft();
+                return;
+            }
+            selectPartner(freshPartner);
             // selectPartner re-fetches payment terms and picks its own default —
             // override with the draft's actual value once that settles.
             setTimeout(() => setPaymentTermId(d.paymentTermId), 0);
