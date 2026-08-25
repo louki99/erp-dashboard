@@ -967,13 +967,12 @@ export default function BonLivraisonPage() {
         },
         {
             field: 'status', headerName: 'Statut', width: 100,
-            filter: 'agSetColumnFilter',
-            filterParams: { valueFormatter: (p: { value: GcomBlStatus }) => BL_STATUS_META[p.value]?.label ?? p.value },
+            filter: 'agTextColumnFilter',
             cellRenderer: (p: ICellRendererParams<GcomDeliveryNote>) => p.data ? <StatusBadge status={p.data.status} /> : null,
         },
         {
             colId: 'facture', headerName: 'Facturé', width: 90,
-            filter: 'agSetColumnFilter',
+            filter: 'agTextColumnFilter',
             valueGetter: (p: ValueGetterParams<GcomDeliveryNote>) => (p.data?.invoice_id ? 'Oui' : 'Non'),
             cellRenderer: (p: ICellRendererParams<GcomDeliveryNote, string>) => (
                 <span className={`inline-flex items-center gap-1 text-[11px] font-medium ${p.value === 'Oui' ? 'text-emerald-700' : 'text-gray-400'}`}>

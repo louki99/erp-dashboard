@@ -401,7 +401,7 @@ export const PortefeuilleInstrumentsPage = () => {
             },
         },
         {
-            field: 'instrument_type', headerName: 'Type', width: 90, filter: 'agSetColumnFilter',
+            field: 'instrument_type', headerName: 'Type', width: 90, filter: 'agTextColumnFilter',
             cellRenderer: (p: ICellRendererParams<GcomFinancialInstrument, string>) => (
                 <span className={`inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold ${p.value === 'CHEQUE' ? 'bg-blue-50 text-blue-700' : 'bg-purple-50 text-purple-700'}`}>{p.value}</span>
             ),
@@ -429,7 +429,7 @@ export const PortefeuilleInstrumentsPage = () => {
             cellRenderer: (p: ICellRendererParams<GcomFinancialInstrument, string>) => <span style={{ fontSize: '11px', color: '#6b7280' }}>{fmtDate(p.value)}</span>,
         },
         {
-            field: 'status', headerName: 'Statut', width: 120, filter: 'agSetColumnFilter',
+            field: 'status', headerName: 'Statut', width: 120, filter: 'agTextColumnFilter',
             cellRenderer: (p: ICellRendererParams<GcomFinancialInstrument>) => p.data ? <InstrumentStatusBadge status={p.data.status} /> : null,
         },
         {
@@ -567,9 +567,8 @@ export const PortefeuilleInstrumentsPage = () => {
                         <button
                             key={opt.key}
                             onClick={() => setStatusFilter(opt.key)}
-                            className={`px-2.5 py-1 text-xs font-semibold rounded-full border transition-colors ${
-                                statusFilter === opt.key ? 'bg-sage-600 text-white border-sage-600' : 'bg-white text-gray-500 border-gray-200 hover:border-sage-300'
-                            }`}
+                            className={`px-2.5 py-1 text-xs font-semibold rounded-full border transition-colors ${statusFilter === opt.key ? 'bg-sage-600 text-white border-sage-600' : 'bg-white text-gray-500 border-gray-200 hover:border-sage-300'
+                                }`}
                         >
                             {opt.label}
                         </button>

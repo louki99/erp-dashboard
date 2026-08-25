@@ -312,8 +312,7 @@ export default function DevisPage() {
         },
         {
             field: 'status', headerName: 'Statut', width: 110,
-            filter: 'agSetColumnFilter',
-            filterParams: { valueFormatter: (p: { value: GcomQuoteStatus }) => QUOTE_STATUS_META[p.value]?.label ?? p.value },
+            filter: 'agTextColumnFilter',
             cellRenderer: (p: ICellRendererParams<GcomQuote>) => p.data ? <StatusBadge status={p.data.status} /> : null,
         },
         {

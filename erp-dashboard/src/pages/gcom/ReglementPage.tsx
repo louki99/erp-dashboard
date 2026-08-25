@@ -197,7 +197,7 @@ export default function ReglementPage() {
             ),
         },
         {
-            field: 'status', headerName: 'Statut', width: 90, filter: 'agSetColumnFilter',
+            field: 'status', headerName: 'Statut', width: 90, filter: 'agTextColumnFilter',
             cellRenderer: (p: ICellRendererParams<Partner, string>) => {
                 const active = p.value === 'ACTIVE';
                 return (
@@ -545,7 +545,7 @@ export default function ReglementPage() {
             cellRenderer: (p: ICellRendererParams<GcomOpenInvoice, string>) => <span style={{ fontFamily: 'monospace', fontSize: '11px', fontWeight: 700, color: '#4338ca' }}>{p.value}</span>,
         },
         {
-            field: 'status', headerName: 'Statut', width: 120, filter: 'agSetColumnFilter',
+            field: 'status', headerName: 'Statut', width: 120, filter: 'agTextColumnFilter',
             cellRenderer: (p: ICellRendererParams<GcomOpenInvoice>) => p.data ? <InvoiceStatusBadge status={p.data.status} /> : null,
         },
         {
@@ -566,7 +566,7 @@ export default function ReglementPage() {
 
     const instrumentsColumnDefs = useMemo<import('ag-grid-community').ColDef[]>(() => [
         {
-            field: 'instrument_type', headerName: 'Type', width: 100, filter: 'agSetColumnFilter',
+            field: 'instrument_type', headerName: 'Type', width: 100, filter: 'agTextColumnFilter',
             cellRenderer: (p: ICellRendererParams<GcomFinancialInstrument, string>) => (
                 <span className={`inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold ${p.value === 'CHEQUE' ? 'bg-blue-50 text-blue-700' : 'bg-purple-50 text-purple-700'}`}>{p.value}</span>
             ),
@@ -589,7 +589,7 @@ export default function ReglementPage() {
             cellRenderer: (p: ICellRendererParams<GcomFinancialInstrument, string>) => <span style={{ fontSize: '11px', color: '#6b7280' }}>{fmtDate(p.value)}</span>,
         },
         {
-            field: 'status', headerName: 'Statut', width: 120, filter: 'agSetColumnFilter',
+            field: 'status', headerName: 'Statut', width: 120, filter: 'agTextColumnFilter',
             cellRenderer: (p: ICellRendererParams<GcomFinancialInstrument>) => p.data ? <InstrumentStatusBadge status={p.data.status} /> : null,
         },
         {
@@ -694,7 +694,7 @@ export default function ReglementPage() {
             cellRenderer: (p: ICellRendererParams<GcomLedgerEntry, string>) => <span style={{ fontSize: '11px', color: '#6b7280' }}>{fmtDate(p.value)}</span>,
         },
         {
-            field: 'type', headerName: 'Type', width: 110, filter: 'agSetColumnFilter',
+            field: 'type', headerName: 'Type', width: 110, filter: 'agTextColumnFilter',
             cellRenderer: (p: ICellRendererParams<GcomLedgerEntry>) => p.data ? <LedgerTypeBadge type={p.data.type} /> : null,
         },
         {

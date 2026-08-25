@@ -318,10 +318,7 @@ export default function FacturesPage() {
         },
         {
             field: 'status', headerName: 'Statut', width: 110,
-            filter: 'agSetColumnFilter',
-            filterParams: {
-                valueFormatter: (p: { value: GcomInvoiceStatus }) => STATUS_META[p.value]?.label ?? p.value,
-            },
+            filter: 'agTextColumnFilter',
             cellRenderer: (p: ICellRendererParams<GcomInvoice>) => p.data ? <StatusBadge status={p.data.status} /> : null,
         },
         {

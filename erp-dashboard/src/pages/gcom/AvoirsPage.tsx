@@ -502,8 +502,7 @@ export const AvoirsPage = () => {
             ),
         },
         {
-            field: 'status', headerName: 'Statut', width: 100, filter: 'agSetColumnFilter',
-            filterParams: { valueFormatter: (p: { value: string }) => CREDIT_NOTE_STATUS_META[p.value]?.label ?? p.value },
+            field: 'status', headerName: 'Statut', width: 100, filter: 'agTextColumnFilter',
             cellRenderer: (p: ICellRendererParams<GcomCreditNote>) => p.data ? <StatusBadge status={p.data.status} /> : null,
         },
     ], []);

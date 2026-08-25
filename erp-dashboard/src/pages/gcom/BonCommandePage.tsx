@@ -683,8 +683,7 @@ export default function BonCommandePage() {
         },
         {
             field: 'bc_status', headerName: 'Statut', width: 100,
-            filter: 'agSetColumnFilter',
-            filterParams: { valueFormatter: (p: { value: GcomBcStatus }) => BC_STATUS_META[p.value]?.label ?? p.value },
+            filter: 'agTextColumnFilter',
             cellRenderer: (p: ICellRendererParams<GcomOrderListViewRow>) => p.data ? <StatusBadge status={p.data.bc_status} /> : null,
         },
         {
