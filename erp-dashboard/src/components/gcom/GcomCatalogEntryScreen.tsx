@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useRef, useEffect, useCallback, useMemo, memo } from 'react';
 import {
     ShoppingCart, Search, X, Trash2, Loader2,
     User, Users, Building2, AlertTriangle, Calendar, Warehouse, LayoutGrid, ListFilter,
@@ -147,6 +147,118 @@ const EMPTY_INSTRUMENT: GcomInstrumentInput = { reference_number: '', due_date: 
 const STAMP_DUTY_RATE = 0.0025; // 0.25%, cash only — see docs/modules/28-gcom.md §4
 const CATALOG_PAGE_SIZE = 60;
 
+// Extracted + memoized (2026-08-24, perf audit Phase 4) — the catalog table
+// can run into the hundreds of rows across "Charger plus" pages. Before this,
+// every row lived inline in the parent's .map(), so ANY keystroke anywhere in
+// the table (search box, or any other row's own qty/price/discount input)
+// re-rendered every row. Props here are deliberately primitives scoped to
+// THIS row (quantity/unitPriceOverride/discountPercent), not the shared
+// quantities/unitPriceOverrides/discountPercents state objects — that's what
+// lets memo's shallow-equality actually skip re-rendering sibling rows when
+// only one row's own value changes. setQuantity/handleQtyKeyDown are
+// useCallback-stabilized by the parent; setUnitPriceOverrides/
+// setDiscountPercents are the raw useState setters (React guarantees their
+// identity is stable across renders, no useCallback needed).
+interface CatalogRowProps {
+    row: CatalogProduct;
+    idx: number;
+    quantity: number;
+    unitPriceOverride: number | undefined;
+    discountPercent: number | undefined;
+    enableNegotiation: boolean;
+    canPriceOverride: boolean;
+    canDiscountLine: boolean;
+    showNegotiationColumns: boolean;
+    hasPartner: boolean;
+    setQuantity: (productId: number, quantity: number) => void;
+    setUnitPriceOverrides: React.Dispatch<React.SetStateAction<Record<number, number>>>;
+    setDiscountPercents: React.Dispatch<React.SetStateAction<Record<number, number>>>;
+    handleQtyKeyDown: (e: React.KeyboardEvent<HTMLInputElement>, idx: number) => void;
+    registerQtyRef: (idx: number, el: HTMLInputElement | null) => void;
+}
+
+const CatalogRow = memo(function CatalogRow({
+    row, idx, quantity, unitPriceOverride, discountPercent, enableNegotiation, canPriceOverride,
+    canDiscountLine, showNegotiationColumns, hasPartner, setQuantity, setUnitPriceOverrides,
+    setDiscountPercents, handleQtyKeyDown, registerQtyRef,
+}: CatalogRowProps) {
+    const netUnitPriceTTC = (unitPriceOverride || Number(row.price) || 0) * (discountPercent ? 1 - discountPercent / 100 : 1);
+    const lineTTC = (enableNegotiation ? netUnitPriceTTC : (Number(row.price) || 0)) * quantity;
+    const short = row.stock_available != null && quantity > row.stock_available;
+    const outOfStock = row.stock_available === 0;
+    const selected = quantity > 0;
+    // Zebra striping on the two-idle states only — a selected or out-of-stock
+    // row already has its own strong background, no need to fight it with
+    // alternating shades.
+    const zebra = idx % 2 === 1 ? 'bg-gray-50/40' : 'bg-white';
+    const rowClass = outOfStock ? 'opacity-60' : selected ? 'bg-sage-50/40 hover:bg-sage-50/70' : `${zebra} hover:bg-gray-50/70 transition-colors`;
+    return (
+        <tr className={rowClass}>
+            <td className="px-3 py-2 font-mono font-bold text-indigo-600 whitespace-nowrap">{row.code}</td>
+            <td className="px-3 py-2 font-medium text-gray-800">{row.name}</td>
+            <td className={`px-3 py-2 text-right font-semibold whitespace-nowrap ${outOfStock ? 'text-red-500' : short ? 'text-red-500' : row.stock_available != null ? 'text-gray-500' : 'text-gray-300'}`}>
+                {row.stock_available == null ? '—' : fmt(row.stock_available, 0)}
+            </td>
+            <td className="px-3 py-2 text-right text-gray-600 whitespace-nowrap">
+                {fmtMAD(priceHT(row))}
+                {hasPartner && row.price_source === 'generic' && (
+                    <span className="block text-[9px] text-amber-600 font-medium">générique</span>
+                )}
+            </td>
+            {enableNegotiation && canPriceOverride && showNegotiationColumns && (
+                <td className="px-2 py-1.5">
+                    <input
+                        type="number" min={0} step="0.01"
+                        value={unitPriceOverride ?? ''}
+                        placeholder={String(row.price ?? '')}
+                        disabled={!hasPartner}
+                        onChange={e => setUnitPriceOverrides(prev => ({ ...prev, [row.id]: parseFloat(e.target.value) || 0 }))}
+                        className="w-full text-center px-2 py-1 text-xs border border-gray-200 rounded-md focus:outline-none focus:ring-1 focus:ring-sage-400 disabled:bg-gray-50 disabled:cursor-not-allowed"
+                    />
+                </td>
+            )}
+            {enableNegotiation && canDiscountLine && showNegotiationColumns && (
+                <td className="px-2 py-1.5">
+                    <input
+                        type="number" min={0} max={100} step="0.1"
+                        value={discountPercent ?? ''}
+                        placeholder="0"
+                        disabled={!hasPartner}
+                        onChange={e => setDiscountPercents(prev => ({ ...prev, [row.id]: parseFloat(e.target.value) || 0 }))}
+                        className="w-full text-center px-2 py-1 text-xs border border-gray-200 rounded-md focus:outline-none focus:ring-1 focus:ring-sage-400 disabled:bg-gray-50 disabled:cursor-not-allowed"
+                    />
+                </td>
+            )}
+            <td className="px-2 py-1.5">
+                {outOfStock ? (
+                    <span className="block text-center text-[10px] font-semibold text-red-500 py-1.5">Rupture</span>
+                ) : (
+                    <input
+                        type="number"
+                        min={0}
+                        value={quantity === 0 ? '' : quantity}
+                        placeholder="0"
+                        disabled={!hasPartner}
+                        ref={el => registerQtyRef(idx, el)}
+                        onChange={e => setQuantity(row.id, e.target.value === '' ? 0 : parseInt(e.target.value, 10) || 0)}
+                        onKeyDown={e => handleQtyKeyDown(e, idx)}
+                        className="w-full text-center px-2 py-1 text-xs border border-gray-200 rounded-md focus:outline-none focus:ring-1 focus:ring-sage-400 disabled:bg-gray-50 disabled:cursor-not-allowed"
+                    />
+                )}
+            </td>
+            <td className="px-3 py-2 text-right font-bold text-gray-900 whitespace-nowrap">{selected ? fmtMAD(lineTTC) : '—'}</td>
+            <td className="px-2 py-2 text-center">
+                {selected && (
+                    <button onClick={() => setQuantity(row.id, 0)} className="text-red-400 hover:text-red-600">
+                        <X className="w-3.5 h-3.5" />
+                    </button>
+                )}
+            </td>
+        </tr>
+    );
+});
+CatalogRow.displayName = 'CatalogRow';
+
 export function GcomCatalogEntryScreen<TResult>({
     submitLabel,
     submitIcon: SubmitIcon,
@@ -294,6 +406,13 @@ export function GcomCatalogEntryScreen<TResult>({
         return () => window.removeEventListener('keydown', handler);
     }, [isExpanded]);
     const qtyRefs = useRef<(HTMLInputElement | null)[]>([]);
+    // CatalogRow can't mutate a ref object passed to it as a prop (React
+    // Compiler's immutability check disallows that) — it calls this
+    // registration callback instead, which does the mutation from inside the
+    // owning component.
+    const registerQtyRef = useCallback((idx: number, el: HTMLInputElement | null) => {
+        qtyRefs.current[idx] = el;
+    }, []);
 
     // ── Resizable bottom panel (payment + totals) ───────────────────────────
     // Grown wide with the negotiation columns (2026-09-01) — a fixed height
@@ -326,9 +445,9 @@ export function GcomCatalogEntryScreen<TResult>({
         window.addEventListener('mouseup', onUp);
     };
 
-    const setQuantity = (productId: number, quantity: number) => {
+    const setQuantity = useCallback((productId: number, quantity: number) => {
         setQuantities(prev => ({ ...prev, [productId]: Math.max(0, quantity) }));
-    };
+    }, []);
 
     const selectedCount = useMemo(() => Object.values(quantities).filter(q => q > 0).length, [quantities]);
 
@@ -393,7 +512,7 @@ export function GcomCatalogEntryScreen<TResult>({
             .filter((l): l is GcomCatalogEntryLine => l !== null);
     }, [quantities]);
 
-    const handleQtyKeyDown = (e: React.KeyboardEvent<HTMLInputElement>, idx: number) => {
+    const handleQtyKeyDown = useCallback((e: React.KeyboardEvent<HTMLInputElement>, idx: number) => {
         if (e.key === 'ArrowDown' || e.key === 'Enter') {
             e.preventDefault();
             (qtyRefs.current[idx + 1] ?? searchInputRef.current)?.focus();
@@ -401,7 +520,7 @@ export function GcomCatalogEntryScreen<TResult>({
             e.preventDefault();
             (qtyRefs.current[idx - 1] ?? searchInputRef.current)?.focus();
         }
-    };
+    }, []);
 
     const handleSearchKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
         if (e.key !== 'Enter') return;
@@ -1105,82 +1224,26 @@ export function GcomCatalogEntryScreen<TResult>({
                                                 </tr>
                                             </thead>
                                             <tbody className="divide-y divide-gray-100">
-                                                {displayedRows.map((row, idx) => {
-                                                    const quantity = quantities[row.id] ?? 0;
-                                                    const lineTTC = (enableNegotiation ? netUnitPriceTTC(row) : (Number(row.price) || 0)) * quantity;
-                                                    const short = row.stock_available != null && quantity > row.stock_available;
-                                                    const outOfStock = row.stock_available === 0;
-                                                    const selected = quantity > 0;
-                                                    // Zebra striping on the two-idle states only — a selected or
-                                                    // out-of-stock row already has its own strong background, no
-                                                    // need to fight it with alternating shades.
-                                                    const zebra = idx % 2 === 1 ? 'bg-gray-50/40' : 'bg-white';
-                                                    const rowClass = outOfStock ? 'opacity-60' : selected ? 'bg-sage-50/40 hover:bg-sage-50/70' : `${zebra} hover:bg-gray-50/70 transition-colors`;
-                                                    return (
-                                                        <tr key={row.id} className={rowClass}>
-                                                            <td className="px-3 py-2 font-mono font-bold text-indigo-600 whitespace-nowrap">{row.code}</td>
-                                                            <td className="px-3 py-2 font-medium text-gray-800">{row.name}</td>
-                                                            <td className={`px-3 py-2 text-right font-semibold whitespace-nowrap ${outOfStock ? 'text-red-500' : short ? 'text-red-500' : row.stock_available != null ? 'text-gray-500' : 'text-gray-300'}`}>
-                                                                {row.stock_available == null ? '—' : fmt(row.stock_available, 0)}
-                                                            </td>
-                                                            <td className="px-3 py-2 text-right text-gray-600 whitespace-nowrap">
-                                                                {fmtMAD(priceHT(row))}
-                                                                {selectedPartner && row.price_source === 'generic' && (
-                                                                    <span className="block text-[9px] text-amber-600 font-medium">générique</span>
-                                                                )}
-                                                            </td>
-                                                            {enableNegotiation && canPriceOverride && showNegotiationColumns && (
-                                                                <td className="px-2 py-1.5">
-                                                                    <input
-                                                                        type="number" min={0} step="0.01"
-                                                                        value={unitPriceOverrides[row.id] ?? ''}
-                                                                        placeholder={String(row.price ?? '')}
-                                                                        disabled={!selectedPartner}
-                                                                        onChange={e => setUnitPriceOverrides(prev => ({ ...prev, [row.id]: parseFloat(e.target.value) || 0 }))}
-                                                                        className="w-full text-center px-2 py-1 text-xs border border-gray-200 rounded-md focus:outline-none focus:ring-1 focus:ring-sage-400 disabled:bg-gray-50 disabled:cursor-not-allowed"
-                                                                    />
-                                                                </td>
-                                                            )}
-                                                            {enableNegotiation && canDiscountLine && showNegotiationColumns && (
-                                                                <td className="px-2 py-1.5">
-                                                                    <input
-                                                                        type="number" min={0} max={100} step="0.1"
-                                                                        value={discountPercents[row.id] ?? ''}
-                                                                        placeholder="0"
-                                                                        disabled={!selectedPartner}
-                                                                        onChange={e => setDiscountPercents(prev => ({ ...prev, [row.id]: parseFloat(e.target.value) || 0 }))}
-                                                                        className="w-full text-center px-2 py-1 text-xs border border-gray-200 rounded-md focus:outline-none focus:ring-1 focus:ring-sage-400 disabled:bg-gray-50 disabled:cursor-not-allowed"
-                                                                    />
-                                                                </td>
-                                                            )}
-                                                            <td className="px-2 py-1.5">
-                                                                {outOfStock ? (
-                                                                    <span className="block text-center text-[10px] font-semibold text-red-500 py-1.5">Rupture</span>
-                                                                ) : (
-                                                                    <input
-                                                                        type="number"
-                                                                        min={0}
-                                                                        value={quantity === 0 ? '' : quantity}
-                                                                        placeholder="0"
-                                                                        disabled={!selectedPartner}
-                                                                        ref={el => { qtyRefs.current[idx] = el; }}
-                                                                        onChange={e => setQuantity(row.id, e.target.value === '' ? 0 : parseInt(e.target.value, 10) || 0)}
-                                                                        onKeyDown={e => handleQtyKeyDown(e, idx)}
-                                                                        className="w-full text-center px-2 py-1 text-xs border border-gray-200 rounded-md focus:outline-none focus:ring-1 focus:ring-sage-400 disabled:bg-gray-50 disabled:cursor-not-allowed"
-                                                                    />
-                                                                )}
-                                                            </td>
-                                                            <td className="px-3 py-2 text-right font-bold text-gray-900 whitespace-nowrap">{selected ? fmtMAD(lineTTC) : '—'}</td>
-                                                            <td className="px-2 py-2 text-center">
-                                                                {selected && (
-                                                                    <button onClick={() => setQuantity(row.id, 0)} className="text-red-400 hover:text-red-600">
-                                                                        <X className="w-3.5 h-3.5" />
-                                                                    </button>
-                                                                )}
-                                                            </td>
-                                                        </tr>
-                                                    );
-                                                })}
+                                                {displayedRows.map((row, idx) => (
+                                                    <CatalogRow
+                                                        key={row.id}
+                                                        row={row}
+                                                        idx={idx}
+                                                        quantity={quantities[row.id] ?? 0}
+                                                        unitPriceOverride={unitPriceOverrides[row.id]}
+                                                        discountPercent={discountPercents[row.id]}
+                                                        enableNegotiation={enableNegotiation}
+                                                        canPriceOverride={canPriceOverride}
+                                                        canDiscountLine={canDiscountLine}
+                                                        showNegotiationColumns={showNegotiationColumns}
+                                                        hasPartner={!!selectedPartner}
+                                                        setQuantity={setQuantity}
+                                                        setUnitPriceOverrides={setUnitPriceOverrides}
+                                                        setDiscountPercents={setDiscountPercents}
+                                                        handleQtyKeyDown={handleQtyKeyDown}
+                                                        registerQtyRef={registerQtyRef}
+                                                    />
+                                                ))}
                                             </tbody>
                                         </table>
                                         {!showOnlySelected && catalogPage < catalogLastPage && (

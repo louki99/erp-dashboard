@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useCallback } from 'react';
+import { useState, useEffect, useMemo, useCallback, memo } from 'react';
 import {
     Route,
     Loader2,
@@ -82,12 +82,12 @@ function HealthBadge({ status }: { status: 'healthy' | 'degraded' | 'unhealthy' 
 
 // ─── OrderRow ─────────────────────────────────────────────────────────────────
 
-function OrderRow({ order, selected, onToggle, hasCoords }: {
-    order: DispatcherOrder; selected: boolean; onToggle: () => void; hasCoords: boolean;
+const OrderRow = memo(function OrderRow({ order, selected, onToggle, hasCoords }: {
+    order: DispatcherOrder; selected: boolean; onToggle: (id: number) => void; hasCoords: boolean;
 }) {
     return (
         <button
-            onClick={onToggle}
+            onClick={() => onToggle(order.id)}
             disabled={!hasCoords}
             className={`w-full flex items-start gap-3 px-3 py-2.5 rounded-lg transition-colors text-left border ${
                 selected
@@ -126,7 +126,8 @@ function OrderRow({ order, selected, onToggle, hasCoords }: {
             </div>
         </button>
     );
-}
+});
+OrderRow.displayName = 'OrderRow';
 
 // ─── TourCard ─────────────────────────────────────────────────────────────────
 
@@ -389,7 +390,7 @@ export function DispatcherRouteOptimizerPage() {
                                 key={order.id}
                                 order={order}
                                 selected={selectedIds.has(order.id)}
-                                onToggle={() => toggleOrder(order.id)}
+                                onToggle={toggleOrder}
                                 hasCoords={!!coords}
                             />
                         ))}
