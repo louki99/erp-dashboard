@@ -212,7 +212,9 @@
       "Bash(python3 -c \"print\\('python3 ok'\\)\")",
       "Bash(python -c \"print\\('python ok'\\)\")",
       "Bash(pdftotext /tmp/inv22_def.pdf -)",
-      "Bash(pdftotext /tmp/bc_ttc.pdf -)"
+      "Bash(pdftotext /tmp/bc_ttc.pdf -)",
+      "Bash(git status *)",
+      "WebSearch"
     ],
     "additionalDirectories": [
       "C:\\Users\\louki\\.claude\\projects\\d--project--avenir-omni360-omin360__mobile-erp-dashboard\\memory",

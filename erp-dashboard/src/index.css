@@ -665,6 +665,21 @@ tbody tr:hover {
   }
 }
 
+/* Route change fallback — src/components/layout/RouteProgress.tsx */
+@keyframes route-fallback-fade-in {
+  from {
+    opacity: 0;
+  }
+
+  to {
+    opacity: 1;
+  }
+}
+
+.route-fallback-fade-in {
+  animation: route-fallback-fade-in 180ms ease-in;
+}
+
 /* Professional Focus Styles */
 .focus-ring {
   @apply focus:ring-2 focus:ring-sage-500 focus:ring-offset-2 focus:outline-none;

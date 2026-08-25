@@ -1,5 +1,6 @@
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { lazy, Suspense } from 'react';
+import { RouteProgressProvider, RouteFallback } from '@/components/layout/RouteProgress';
 import { Toaster } from 'react-hot-toast';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import '@/i18n';
@@ -160,15 +161,9 @@ function DefaultRedirect() {
   return <Navigate to={getDefaultRoute(user)} replace />;
 }
 
-const routeFallback = (
-  <div className="flex items-center justify-center min-h-screen">
-    <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-sage-600"></div>
-  </div>
-);
-
 function AppRoutes() {
   return (
-    <Suspense fallback={routeFallback}>
+    <Suspense fallback={<RouteFallback />}>
     <Routes>
       <Route path="/login" element={<Login />} />
 
@@ -960,11 +955,22 @@ const queryClient = new QueryClient({
 function App() {
   return (
     <QueryClientProvider client={queryClient}>
-      <BrowserRouter>
+      {/* React Router v7 wraps all navigation state updates in
+          React.startTransition by default, which per React's Suspense
+          contract keeps the previously-committed page on screen instead of
+          showing our lazy-route <Suspense fallback> — this made every
+          route change (Phase 3 code splitting) look frozen with zero
+          feedback until the new chunk finished loading. Opting out restores
+          the fallback showing immediately on navigation, matching the
+          behavior route-level code splitting was actually built for.
+          https://reactrouter.com/explanation/react-transitions */}
+      <BrowserRouter unstable_useTransitions={false}>
         <AuthProvider>
           <ThemeProvider>
             <LanguageProvider>
-              <AppRoutes />
+              <RouteProgressProvider>
+                <AppRoutes />
+              </RouteProgressProvider>
               <DispatcherNewOrderAlert />
               <Toaster position="top-right" />
               <MaintenanceBanner />
