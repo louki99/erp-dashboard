@@ -45,6 +45,16 @@ export interface TokenSerieNumbering {
     session_next_number: number;
     expense_prefix: string | null;
     expense_next_number: number;
+    // Achats families — added 2026-08-26 (docs/modules/30-achats-purchase-orders.md §3.9).
+    // brc, not br — br is already GCOM's Bon de Retour prefix (return_*).
+    bcf_prefix: string | null;
+    bcf_next_number: number;
+    brc_prefix: string | null;
+    brc_next_number: number;
+    facf_prefix: string | null;
+    facf_next_number: number;
+    decf_prefix: string | null;
+    decf_next_number: number;
 }
 
 export interface TokenSerie extends TokenSerieNumbering {
@@ -73,6 +83,11 @@ export interface TokenSerieUsage {
 export interface TokenSerieDetail {
     data: TokenSerie;
     usage: TokenSerieUsage;
+    // Added 2026-08-26 alongside the PUT governance rule — only on the
+    // single-resource GET, not on list rows (TokenSerie itself never carries
+    // this). A locked-status check on an edit form fed only from the list
+    // needs to fetch this detail first.
+    numbering_families?: NumberingFamiliesMap;
 }
 
 export interface CreateTokenSeriePayload {
@@ -120,9 +135,55 @@ export interface CreateTokenSeriePayload {
     session_next_number?: number;
     expense_prefix?: string;
     expense_next_number?: number;
+    bcf_prefix?: string;
+    bcf_next_number?: number;
+    brc_prefix?: string;
+    brc_next_number?: number;
+    facf_prefix?: string;
+    facf_next_number?: number;
+    decf_prefix?: string;
+    decf_next_number?: number;
 }
 
 export type UpdateTokenSeriePayload = Partial<CreateTokenSeriePayload>;
+
+// ─── Numbering governance (added 2026-08-26) ─────────────────────────────────
+// PUT /{code} now enforces a per-family lock: next_number > 1 (already
+// consumed) rejects ANY edit to that family with a 422, no exception even for
+// root. GET /{code} exposes this pre-computed via `numbering_families` — use
+// its `locked` flag directly to disable the matching form fields, don't
+// recompute "next_number > 1" client-side (the doc is explicit that this is
+// the backend's job).
+export interface NumberingFamilyStatus {
+    document_type_code: string;
+    prefix: string | null;
+    next_number: number;
+    locked: boolean;
+}
+
+export type NumberingFamiliesMap = Record<string, NumberingFamilyStatus>;
+
+// The "clôture d'exercice" escape hatch — POST /{code}/reset-family. Gated by
+// a permission distinct from general access-control.manage
+// (reset-token-series-counter, root-only per doc) — passing the general
+// admin/root route guard is NOT sufficient on its own, an admin without this
+// specific permission still gets a 403. Not a real fiscal-period workflow —
+// no such entity exists in this codebase, it's a manual action a root runs
+// at the moment they choose.
+export interface ResetTokenSerieFamilyPayload {
+    family: string;
+    new_prefix?: string;
+    new_next_number?: number;
+    reason: string;
+}
+
+// 422 shape when a family is locked — note `errors[family]` is a plain
+// string here (backend's own message), not the usual Laravel array-of-
+// strings-per-field shape seen elsewhere in this app.
+export interface TokenSerieLockedFamilyError {
+    message: string;
+    errors: Record<string, string>;
+}
 
 export interface TokenSerieListMeta {
     current_page: number;

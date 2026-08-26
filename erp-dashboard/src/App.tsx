@@ -60,6 +60,8 @@ const MagasinierDechargePage = lazy(() => import('@/pages/magasinier/MagasinierD
 const MagasinierReturnsPage = lazy(() => import('@/pages/magasinier/MagasinierReturnsPage').then(m => ({ default: m.MagasinierReturnsPage })));
 const PurchaseOrderPage = lazy(() => import('@/pages/achats/PurchaseOrderPage'));
 const PurchaseReceptionPage = lazy(() => import('@/pages/achats/PurchaseReceptionPage'));
+const SupplierInvoicePage = lazy(() => import('@/pages/achats/SupplierInvoicePage'));
+const SupplierPaymentPage = lazy(() => import('@/pages/achats/SupplierPaymentPage'));
 const TelesalesSchedulesPage = lazy(() => import('@/pages/telesales/TelesalesSchedulesPage'));
 const TelesalesAssignmentsPage = lazy(() => import('@/pages/telesales/TelesalesAssignmentsPage'));
 const TelesalesMonitoringPage = lazy(() => import('@/pages/telesales/TelesalesMonitoringPage'));
@@ -473,6 +475,18 @@ function AppRoutes() {
       <Route path="/achats/receptions" element={
         <ProtectedRoute requiredPermission={PERMISSIONS.DYNAMIC.BROWSE_PURCHASE_RECEPTIONS}>
           <PurchaseReceptionPage />
+        </ProtectedRoute>
+      } />
+
+      <Route path="/achats/factures" element={
+        <ProtectedRoute requiredPermission={PERMISSIONS.DYNAMIC.BROWSE_SUPPLIER_INVOICES}>
+          <SupplierInvoicePage />
+        </ProtectedRoute>
+      } />
+
+      <Route path="/achats/reglements" element={
+        <ProtectedRoute requiredPermission={PERMISSIONS.DYNAMIC.BROWSE_SUPPLIER_PAYMENTS}>
+          <SupplierPaymentPage />
         </ProtectedRoute>
       } />
 

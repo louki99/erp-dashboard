@@ -2,7 +2,7 @@ import { useState, useMemo, useCallback, useEffect } from 'react';
 import type { ICellRendererParams } from 'ag-grid-community';
 import {
     PackageCheck, Plus, Loader2, CheckCircle2, Ban, RotateCcw,
-    Building2, Calendar, Trash2, Link2,
+    Building2, Calendar, Trash2, Link2, FileText,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 
@@ -17,7 +17,6 @@ import {
 } from '@/hooks/achats/usePurchaseReceptions';
 import { usePurchaseOrder } from '@/hooks/achats/usePurchaseOrders';
 import { achatsApi } from '@/services/api/achatsApi';
-import { getPartners } from '@/services/api/partnerApi';
 import { financeApi } from '@/services/api/financeApi';
 import { searchProducts } from '@/services/api/pricingApi';
 import type { PurchaseReception, PurchaseReceptionStatus, QcStatus, PurchaseReceptionLinePayload } from '@/types/achats.types';
@@ -64,9 +63,16 @@ const STATUS_FILTERS: { value: 'all' | PurchaseReceptionStatus; label: string }[
 type DraftLine = { _key: string; product: ComboboxOption | null; received_quantity: string; unit_cost: string; remainingHint?: number };
 const emptyLine = (): DraftLine => ({ _key: crypto.randomUUID(), product: null, received_quantity: '', unit_cost: '' });
 
+// GET /purchase-orders/suppliers (doc §3.8), NOT GET /partners (customers)
+// nor /suppliers|/master-data/suppliers (root/admin-only, a magasinier would
+// 403). No server-side search — flat unpaginated list, filtered here.
 const searchSuppliers = async (q: string): Promise<ComboboxOption[]> => {
-    const res = await getPartners({ q, per_page: 20 });
-    return (res.partners.data ?? []).map(p => ({ id: p.id, label: p.name, sub: p.code }));
+    const suppliers = await achatsApi.purchaseOrders.suppliers();
+    const query = q.trim().toLowerCase();
+    const filtered = query
+        ? suppliers.filter(s => s.name.toLowerCase().includes(query) || (s.contact_name ?? '').toLowerCase().includes(query))
+        : suppliers;
+    return filtered.map(s => ({ id: s.id, label: s.name, sub: s.contact_name ?? s.phone ?? undefined }));
 };
 const searchBranchesOptions = async (q: string): Promise<ComboboxOption[]> => {
     const res = await financeApi.getHelperBranches({ search: q, limit: 30 });
@@ -170,8 +176,13 @@ export default function PurchaseReceptionPage() {
         for (const l of newLines) {
             if (!l.product) continue;
             const qty = parseFloat(l.received_quantity);
-            if (!qty || qty <= 0) { toast.error('Quantité invalide sur une ligne.'); return; }
-            lines.push({ product_id: Number(l.product.id), received_quantity: qty, unit_cost: l.unit_cost ? parseFloat(l.unit_cost) : undefined });
+            if (!qty || qty <= 0) { toast.error(`Quantité invalide sur ${l.product.label}.`); return; }
+            const cost = parseFloat(l.unit_cost);
+            // Confirmed live 2026-08-26 — the API 422s without unit_cost on
+            // every reception line, unlike purchase-order lines where it's
+            // genuinely optional. See the type's own comment.
+            if (!cost || cost <= 0) { toast.error(`Coût unitaire requis sur ${l.product.label}.`); return; }
+            lines.push({ product_id: Number(l.product.id), received_quantity: qty, unit_cost: cost });
         }
         if (lines.length === 0) { toast.error('Ajoutez au moins une ligne avec un produit.'); return; }
 
@@ -190,6 +201,20 @@ export default function PurchaseReceptionPage() {
         } catch (err: unknown) {
             const msg = (err as { response?: { data?: { message?: string } } })?.response?.data?.message;
             toast.error(msg ?? 'Erreur lors de la création de la réception.');
+        }
+    };
+
+    const [pdfLoading, setPdfLoading] = useState(false);
+    const handlePrintPdf = async () => {
+        if (!selected) return;
+        setPdfLoading(true);
+        try {
+            const url = await achatsApi.purchaseReceptions.getPdfBlobUrl(selected.id);
+            if (url) window.open(url, '_blank');
+        } catch {
+            toast.error('Impossible de charger le PDF');
+        } finally {
+            setPdfLoading(false);
         }
     };
 
@@ -260,7 +285,9 @@ export default function PurchaseReceptionPage() {
         { items: [{ icon: Plus, label: 'Nouvelle réception', variant: 'sage', onClick: openCreateForm }] },
     ];
     if (selected && !showCreateForm) {
-        const items: ActionItemProps[] = [];
+        const items: ActionItemProps[] = [
+            { icon: FileText, label: 'Imprimer PDF', variant: 'default', onClick: handlePrintPdf, disabled: pdfLoading },
+        ];
         if (selected.status === 'draft') {
             items.push({ icon: CheckCircle2, label: 'Valider', variant: 'success', onClick: handleValidate, disabled: !selected.lines?.length || validateMutation.isPending });
             items.push({ icon: Ban, label: 'Annuler', variant: 'danger', onClick: () => setShowReasonForm(v => v === 'cancel' ? null : 'cancel') });
@@ -342,7 +369,7 @@ export default function PurchaseReceptionPage() {
                                             <div className="grid grid-cols-[1fr_130px_110px_28px] gap-2 items-center">
                                                 <AsyncCombobox value={line.product} onChange={opt => setNewLines(prev => prev.map(l => l._key === line._key ? { ...l, product: opt } : l))} onSearch={searchProductOptions} placeholder="Produit…" />
                                                 <input type="number" min="0" step="0.001" value={line.received_quantity} onChange={e => setNewLines(prev => prev.map(l => l._key === line._key ? { ...l, received_quantity: e.target.value } : l))} placeholder="Qté reçue" className="px-2.5 py-1.5 text-xs border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-sage-400" />
-                                                <input type="number" min="0" step="0.01" value={line.unit_cost} onChange={e => setNewLines(prev => prev.map(l => l._key === line._key ? { ...l, unit_cost: e.target.value } : l))} placeholder="Coût (opt.)" className="px-2.5 py-1.5 text-xs border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-sage-400" />
+                                                <input type="number" min="0" step="0.01" value={line.unit_cost} onChange={e => setNewLines(prev => prev.map(l => l._key === line._key ? { ...l, unit_cost: e.target.value } : l))} placeholder="Coût *" className="px-2.5 py-1.5 text-xs border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-sage-400" />
                                                 <button onClick={() => setNewLines(prev => prev.length > 1 ? prev.filter(l => l._key !== line._key) : prev)} disabled={newLines.length === 1} className="text-gray-300 hover:text-red-500 disabled:opacity-30"><Trash2 className="w-3.5 h-3.5" /></button>
                                             </div>
                                             {line.remainingHint != null && (

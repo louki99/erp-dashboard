@@ -223,7 +223,13 @@
       "Bash(tee /c/Users/louki/AppData/Local/Temp/claude/d--project--avenir-omni360-omin360__mobile-erp-dashboard-erp-dashboard/567f8a53-5b10-44bd-9aa8-d5df88983a3b/scratchpad/tsc_solde.txt)",
       "Bash(tee /c/Users/louki/AppData/Local/Temp/claude/d--project--avenir-omni360-omin360__mobile-erp-dashboard-erp-dashboard/567f8a53-5b10-44bd-9aa8-d5df88983a3b/scratchpad/tsc_achats1.txt)",
       "Bash(echo \"ESLINT_EXIT:$?\")",
-      "Bash(tee /c/Users/louki/AppData/Local/Temp/claude/d--project--avenir-omni360-omin360__mobile-erp-dashboard-erp-dashboard/567f8a53-5b10-44bd-9aa8-d5df88983a3b/scratchpad/tsc_achats2.txt)"
+      "Bash(tee /c/Users/louki/AppData/Local/Temp/claude/d--project--avenir-omni360-omin360__mobile-erp-dashboard-erp-dashboard/567f8a53-5b10-44bd-9aa8-d5df88983a3b/scratchpad/tsc_achats2.txt)",
+      "Bash(grep -n \"^## 11\\\\|^## 12\\\\|^---$\" docs/modules/30-achats-purchase-orders.md)",
+      "Bash(tee /c/Users/louki/AppData/Local/Temp/claude/d--project--avenir-omni360-omin360__mobile-erp-dashboard-erp-dashboard/567f8a53-5b10-44bd-9aa8-d5df88983a3b/scratchpad/tsc_final2.txt)",
+      "Bash(tee /c/Users/louki/AppData/Local/Temp/claude/d--project--avenir-omni360-omin360__mobile-erp-dashboard-erp-dashboard/567f8a53-5b10-44bd-9aa8-d5df88983a3b/scratchpad/tsc_pdf.txt)",
+      "Bash(grep -n \"^## 12\\\\|^## 13\\\\|^---$\" docs/modules/30-achats-purchase-orders.md)",
+      "Bash(tee /c/Users/louki/AppData/Local/Temp/claude/d--project--avenir-omni360-omin360__mobile-erp-dashboard-erp-dashboard/567f8a53-5b10-44bd-9aa8-d5df88983a3b/scratchpad/tsc_payments.txt)",
+      "Bash(tee /c/Users/louki/AppData/Local/Temp/claude/d--project--avenir-omni360-omin360__mobile-erp-dashboard-erp-dashboard/567f8a53-5b10-44bd-9aa8-d5df88983a3b/scratchpad/tsc_tokenseries.txt)"
     ],
     "additionalDirectories": [
       "C:\\Users\\louki\\.claude\\projects\\d--project--avenir-omni360-omin360__mobile-erp-dashboard\\memory",

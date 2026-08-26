@@ -162,8 +162,18 @@ export const MENU_MODULES: MenuModule[] = [
         id: 'factures',
         title: 'Factures',
         items: [
-          { id: 'purch:fac:factures', label: 'Factures', route: '/dashboard', permission: 'admin.procurement.invoices' },
+          // Facture Fournisseur / 3-way matching — live since docs/modules/30-achats-purchase-orders.md §11 (2026-08-26).
+          { id: 'purch:fac:factures', label: 'Factures Fournisseur', route: '/achats/factures', permission: 'browse-supplier-invoices' },
           { id: 'purch:fac:avoirs', label: 'Avoirs', route: '/dashboard', permission: 'admin.procurement.credits' },
+        ],
+      },
+      {
+        // New category — no prior placeholder existed for this one.
+        // Règlements Fournisseurs / lettrage — live since §12 (2026-08-26).
+        id: 'reglements',
+        title: 'Règlements',
+        items: [
+          { id: 'purch:regl:reglements', label: 'Règlements Fournisseurs', route: '/achats/reglements', permission: 'browse-supplier-payments' },
         ],
       },
     ],

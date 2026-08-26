@@ -366,6 +366,7 @@ export const BUSINESS_DOMAINS: BusinessDomain[] = [
                 actions: [
                     { id: 'achats-commandes',  label: 'BC Fournisseur',   route: '/achats/commandes',  icon: ShoppingCart },
                     { id: 'achats-receptions', label: 'Réception Achat',  route: '/achats/receptions', icon: PackageCheck },
+                    { id: 'achats-factures',   label: 'Factures Fournisseur', route: '/achats/factures', icon: Banknote },
                 ],
             },
         ],
@@ -599,6 +600,26 @@ export const BUSINESS_DOMAINS: BusinessDomain[] = [
                 ],
             },
             {
+                // Same page as Magasinier's "inventaires" process
+                // (StockConsultationPage, reads GET /stocks* — confirmed the
+                // reliable source for both Achats reception paths, see
+                // [[project_achats_module]]). Note: this route is currently
+                // requiredRole-gated to admin/root/dispatcher/magasinier
+                // (App.tsx) — a plain GCOM/sales user will 403 here, same
+                // known limitation as "Catalogue & Référentiel" below
+                // (reuses an admin-gated /products page too). Not fixed here;
+                // flag to backend/product if GCOM commercials need real read
+                // access to stock availability.
+                id: 'gcom-stock',
+                label: 'Stock',
+                description: 'Consultation stock temps réel — physique, réservé, disponible et valorisation PMP',
+                route: '/stock/consultation',
+                icon: Warehouse,
+                actions: [
+                    { id: 'gcom-stock-consultation', label: 'Consultation Stock', route: '/stock/consultation', icon: FileSearch },
+                ],
+            },
+            {
                 // Same pages as the 'achats-fournisseur' process under the
                 // Magasinier domain (hubData.ts) — reused, not duplicated.
                 // Page-level access is still gated by the real
@@ -613,6 +634,15 @@ export const BUSINESS_DOMAINS: BusinessDomain[] = [
                 actions: [
                     { id: 'gcom-achats-commandes', label: 'BC Fournisseur', route: '/achats/commandes', icon: ShoppingCart },
                     { id: 'gcom-achats-receptions', label: 'Réception Achat', route: '/achats/receptions', icon: PackageCheck },
+                    { id: 'gcom-achats-factures', label: 'Factures Fournisseur', route: '/achats/factures', icon: Banknote },
+                    // Deliberately NOT added to the Magasinier domain's
+                    // 'achats-fournisseur' process — §12.5 excludes
+                    // magasinier from supplier-payments entirely (root/
+                    // admin/comptable only), unlike supplier-invoices where
+                    // magasinier does have access. A link every actual
+                    // magasinier user would 403 on isn't worth surfacing
+                    // there, unlike the Stock card's partial-access case.
+                    { id: 'gcom-achats-reglements', label: 'Règlements Fournisseurs', route: '/achats/reglements', icon: Banknote },
                 ],
             },
         ],

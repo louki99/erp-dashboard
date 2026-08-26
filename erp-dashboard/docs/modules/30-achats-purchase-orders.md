@@ -1,16 +1,17 @@
-# Module 30 — Achats (BC Fournisseur → Réception → Facture → Stock)
+# Module 30 — Achats (BC Fournisseur → Réception → Facture → Règlement → Stock)
 
 > **Audience:** Frontend developers (ERP Webapp) — écrans Achats : Commande
 > Fournisseur, Réception de Marchandise, Facture Fournisseur (3-way
-> matching), Consultation Stock.
+> matching), Règlements Fournisseurs & Relevé de Compte, Consultation Stock.
 > **Base URL:** `https://api.omni360.cloud/api/backend`
 > **Auth:** `Authorization: Bearer <token>` — permissions listées en §2.
-> **Statut:** BC Fournisseur/Réception/Stock (§1-9) déployés et vérifiés en
-> staging le 2026-08-26 (commit `c3e74a14`). Facture Fournisseur (§11) est
-> neuve, construite le 2026-08-26 suite au design sign-off — **migrations
-> pas encore jouées sur staging au moment de la rédaction**, exemples JSON
-> de cette section construits à partir des modèles/contrôleurs réels, pas
-> des captures live.
+> **Statut:** BC Fournisseur/Réception/Stock (§1-9), Facture Fournisseur/
+> 3-way matching (§11), numérotation TokenSerie (§3.9) et PDF (§3.10/§4.6/
+> §11.6bis) déployés et vérifiés en staging (dernier commit vérifié
+> `f78e71e1`). Règlements Fournisseurs & Lettrage Achat (§12) sont neufs,
+> construits le 2026-08-26 — **migrations pas encore jouées sur staging au
+> moment de la rédaction**, exemples JSON de cette section construits à
+> partir des modèles/contrôleurs réels, pas des captures live.
 
 Avant ce chantier, `purchase_receptions` existait déjà (réception de
 marchandise, montée du stock Tier 1 + PMP pondéré) mais n'avait **aucune
@@ -42,6 +43,7 @@ BC Fournisseur (PurchaseOrder)  --confirmer-->  CONFIRMÉ  --réception(s)-->  P
 9. [Statut du déploiement / ce qui reste à faire](#9-statut-du-déploiement--ce-qui-reste-à-faire)
 10. [Testing](#10-testing)
 11. [Facture Fournisseur & 3-Way Matching — `/supplier-invoices`](#11-facture-fournisseur--3-way-matching--supplier-invoices)
+12. [Règlements Fournisseurs & Lettrage Achat — `/supplier-payments`](#12-règlements-fournisseurs--lettrage-achat--supplier-payments)
 
 ---
 
@@ -108,7 +110,7 @@ curl "https://api.omni360.cloud/api/backend/purchase-orders?status=confirmed" \
     "data": [
       {
         "id": 12,
-        "order_number": "PO-A0001-20260826-0001",
+        "order_number": "BCFA001-A01-000012",
         "supplier_id": 7,
         "branch_code": "A0001",
         "ordered_by": 3,
@@ -180,6 +182,71 @@ Garde : `draft` ou `confirmed` uniquement (pas `partially_received`/
 `received`/`cancelled`). `reason` obligatoire, 10-500 caractères — même
 convention que `purchase-receptions.cancel`/`.reverse`.
 
+### 3.8 Sélecteur fournisseur — `GET /purchase-orders/suppliers`
+
+**Ajouté le 2026-08-26** — c'est LE bon endpoint pour le champ "Fournisseur"
+de l'écran Nouveau BC Fournisseur. Ne pas utiliser `GET /partners` (ce sont
+les clients, pas les fournisseurs — un vrai bug observé côté UI le
+2026-08-26, l'onglet Réseau montrait `partners?per_page=20` appelé depuis
+cet écran) ni `GET /suppliers` ou `GET /master-data/suppliers` (existent
+mais gatés `manage-products`/`manage-master-data` — root/admin uniquement,
+un magasinier qui crée un BC n'a pas forcément ces permissions). Celui-ci
+est gated `browse-purchase-orders` (root/admin/magasinier), cohérent avec
+qui peut réellement créer un BC.
+
+```bash
+curl "https://api.omni360.cloud/api/backend/purchase-orders/suppliers" \
+  -H "Authorization: Bearer {TOKEN}"
+```
+
+**Response `200` :**
+```json
+{
+  "success": true,
+  "data": [
+    { "id": 7, "name": "Fournisseur X", "contact_name": "M. Alaoui", "phone": "0600000000" }
+  ]
+}
+```
+
+### 3.9 Numérotation officielle (TokenSerie)
+
+**Changement le 2026-08-26** — `order_number` (et `reception_number`,
+`invoice_number` en §4/§11) ne sont plus générés par une séquence maison
+par branche/jour ; ils sont tirés du même mécanisme officiel que tous les
+documents GCOM (`DocumentNumberingService`, table `token_series`), avec
+verrouillage de ligne et registre d'unicité (`document_numbers`) —
+supprime un vrai risque de collision qui existait dans la version
+précédente (deux réceptions simultanées sur la même branche pouvaient
+théoriquement tirer le même numéro).
+
+| Document | Code | Format | Colonnes `token_series` |
+|---|---|---|---|
+| BC Fournisseur | `BCF` | `BCF{code}-{seq}` | `bcf_prefix` / `bcf_next_number` |
+| Bon de Réception | `BRC` | `BRC{code}-{seq}` | `brc_prefix` / `brc_next_number` |
+| Facture Fournisseur | `FACF` | `FACF{code}-{seq}` | `facf_prefix` / `facf_next_number` |
+
+> ⚠️ **`BRC`, pas `BR`** — `BR` est déjà le code GCOM du Bon de Retour
+> (`return_prefix`/`return_next_number`). Piège identifié avant
+> implémentation, voir le commit de la migration
+> `2026_08_26_120000_add_achats_prefixes_to_token_series_table` pour le
+> détail.
+
+Ancien format (avant ce commit, à ne plus attendre) : `PO-{branch}-{Ymd}-{seq}`,
+`PR-{branch}-{Ymd}-{seq}`, `SI-{branch}-{Ymd}-{seq}`.
+
+### 3.10 PDF — `GET /purchase-orders/{id}/pdf`
+
+```bash
+curl "https://api.omni360.cloud/api/backend/purchase-orders/{id}/pdf?download=1" \
+  -H "Authorization: Bearer {TOKEN}"
+```
+
+Retourne le PDF binaire (`Content-Type: application/pdf`). `download=1`
+force `Content-Disposition: attachment` (sinon `inline`). Même pipeline
+Document Studio que tous les autres documents (cache MinIO, invalidation
+via `scheduleRegeneration`) — gated `browse-purchase-orders`.
+
 ---
 
 ## 4. Réception Achat — `/purchase-receptions`
@@ -216,7 +283,7 @@ besoin de l'envoyer**, c'est calculé serveur.
   "message": "Réception créée avec succès",
   "data": {
     "id": 34,
-    "reception_number": "PR-A0001-20260828-0001",
+    "reception_number": "BRCA001-A01-000034",
     "purchase_order_id": 12,
     "status": "draft",
     "total_quantity": "18.000",
@@ -260,6 +327,17 @@ reste).
 `GET /purchase-receptions`, `GET /{id}`, `PUT /{id}`, `POST/DELETE
 .../lines`, `POST .../cancel` (draft-only, pas de reversal stock), `GET
 /stats`, `GET /suppliers`, `GET /suppliers/{id}/products`.
+
+### 4.5 Numérotation — `BRC`, pas `BR`
+
+Voir §3.9 — `reception_number` est désormais tiré de TokenSerie (code
+`BRC`, format `BRC{code}-{seq}`), plus l'ancien `PR-{branch}-{Ymd}-{seq}`.
+
+### 4.6 PDF — `GET /purchase-receptions/{id}/pdf`
+
+Bon de Réception, pour émargement magasinier / contrôle à quai à l'arrivée
+du camion. Même contrat que §3.10 (`download=1`, gated
+`browse-purchase-receptions`).
 
 ---
 
@@ -337,7 +415,7 @@ type QcStatus = 'pending' | 'passed' | 'failed' | 'stock_added';
 
 interface PurchaseOrder {
   id: number;
-  order_number: string;               // PO-{branch}-{Ymd}-{seq}
+  order_number: string;               // {bcf_prefix}-{padded seq} — drawn from TokenSerie (code 'BCF'), see §3.9
   supplier_id: number;
   branch_code: string;
   ordered_by: number;
@@ -367,7 +445,7 @@ interface PurchaseOrderLine {
 
 interface PurchaseReception {
   id: number;
-  reception_number: string;           // PR-{branch}-{Ymd}-{seq}
+  reception_number: string;           // {brc_prefix}-{padded seq} — TokenSerie code 'BRC' (not 'BR', see §3.9)
   supplier_id: number;
   branch_code: string;
   purchase_order_id: number | null;   // was purchase_order_number (free text) — removed
@@ -457,6 +535,7 @@ interface Stock {
 | `tests/Feature/Warehouse/WmsReceiptTier1AlignmentTest.php` | `/wms/receipts` (2026-08-26) — un entrepôt CENTRAL monte le Tier 1 + PMP, un entrepôt VAN ne touche pas l'agrégat central de la branche |
 | `tests/Feature/Warehouse/SupplierInvoiceMatchingTest.php` | §11 3-way matching — dans la tolérance = `matched` + `invoiced_quantity` bouge à l'approbation ; hors tolérance = `discrepancy`, approbation bloquée sans `override-purchase-matching-tolerance` ; override approuve et réconcilie ; annulation d'une facture approuvée redescend `invoiced_quantity` ; facturer sans rien reçu = discrepancy à 100% |
 | `tests/Feature/Warehouse/SupplierInvoicePermissionsTest.php` | §11 — les 4 permissions `supplier-invoices`, y compris le cas manage-sans-override bloqué sur une discrepancy |
+| `tests/Feature/Warehouse/AchatsTokenSerieNumberingTest.php` | §3.9 — `order_number`/`reception_number`/`invoice_number` tirés des séries `BCF`/`BRC`/`FACF`, compteurs indépendants entre eux et des séries GCOM existantes (`BC`/`BR` sur la même ligne `token_series` restent à `1`) |
 
 ---
 
@@ -525,7 +604,7 @@ le statut de la facture se déduit de l'état de ses lignes.
   "message": "Facture fournisseur créée avec succès",
   "data": {
     "id": 5,
-    "invoice_number": "SI-A0001-20260828-0001",
+    "invoice_number": "FACFA001-A01-000005",
     "status": "matched",
     "has_discrepancy": false,
     "subtotal": "450.00",
@@ -544,6 +623,11 @@ le statut de la facture se déduit de l'état de ses lignes.
   }
 }
 ```
+
+### 11.3bis Numérotation — `FACF`
+
+Voir §3.9 — `invoice_number` tiré de TokenSerie (code `FACF`), plus l'ancien
+`SI-{branch}-{Ymd}-{seq}`.
 
 ### 11.4 Approuver — `POST /supplier-invoices/{id}/approve`
 
@@ -579,15 +663,25 @@ ligne de BC sans `unit_cost` renseigné (prix pas encore connu à la commande)
 ne bloque pas le matching sur le prix — l'écart prix est simplement ignoré
 faute de référence.
 
+### 11.6bis PDF — `GET /supplier-invoices/{id}/pdf`
+
+Récapitulatif du rapprochement 3-way matching — montre chaque ligne avec
+Commandé/Reçu/Facturé, les écarts %, et le statut de matching. Utile aussi
+bien pour une facture `pending_review` (donner au comptable de quoi
+statuer sur l'écart) qu'`approved` (preuve archivable du rapprochement).
+Même contrat que §3.10, gated `browse-supplier-invoices`.
+
 ### 11.7 TypeScript
 
 ```typescript
 type SupplierInvoiceStatus = 'pending_review' | 'matched' | 'approved' | 'cancelled';
 type MatchStatus = 'matched' | 'discrepancy' | 'unmatched';
 
+type SupplierInvoicePaymentStatus = 'unpaid' | 'partially_paid' | 'paid';
+
 interface SupplierInvoice {
   id: number;
-  invoice_number: string;              // SI-{branch}-{Ymd}-{seq}
+  invoice_number: string;              // {facf_prefix}-{padded seq} — TokenSerie code 'FACF'
   supplier_invoice_reference: string | null;
   supplier_id: number;
   branch_code: string;
@@ -597,6 +691,16 @@ interface SupplierInvoice {
   subtotal: string;
   tax_amount: string;
   total_amount: string;
+  // Added 2026-08-26 alongside §12 (Règlements Fournisseurs) — missing
+  // from this interface until now, a real doc gap (the fields were live
+  // in the API the whole time; only this TypeScript block was stale).
+  // remaining_amount/payment_status only mean something once the invoice
+  // is `approved` — see §12.1's canBeLettered() note. Before that,
+  // remaining_amount is "0.00" (not yet initialized) — don't treat that
+  // as "fully paid".
+  paid_amount: string;
+  remaining_amount: string;
+  payment_status: SupplierInvoicePaymentStatus;
   has_discrepancy: boolean;
   created_by: number;
   approved_by: number | null;
@@ -621,3 +725,152 @@ interface SupplierInvoiceLine {
   product?: { id: number; name: string; code: string };
 }
 ```
+
+---
+
+## 12. Règlements Fournisseurs & Lettrage Achat — `/supplier-payments`
+
+**Neuf le 2026-08-26**, ferme le cycle Achats complet (BC → Réception →
+Facture → **Règlement**). Mirror du système règlement/lettrage côté ventes
+(`PaymentTransfer`/`Lettering`), construit correct dès le départ sur les
+deux points qui avaient nécessité un vrai correctif côté ventes : la somme
+agrégée des imputations est validée **avant** toute écriture ligne par
+ligne, et `remaining_amount` n'est **jamais tronqué** — un règlement qui
+dépasse la facture laisse un vrai acompte/avance chez le fournisseur,
+lisible, pas silencieusement perdu.
+
+> ⚠️ **Convention de signe — inversée par rapport au relevé client.**
+> `credit` = Facturé (une `SupplierInvoice` augmente ce qu'on doit),
+> `debit` = Réglé (un décaissement le réduit). `current_balance` =
+> `credit - debit` = ce qu'on doit encore au fournisseur. Ne pas copier le
+> mapping du relevé client (où facture = débit, paiement = crédit) — c'est
+> volontairement inversé, cf. terminologie métier demandée.
+
+### 12.1 Décaissement — `POST /supplier-payments`
+
+```json
+{
+  "supplier_id": 7,
+  "branch_code": "A0001",
+  "amount": 1000.0,
+  "payment_method_id": 3,
+  "allocations": [
+    { "supplier_invoice_id": 5, "amount": 325.0 }
+  ]
+}
+```
+
+`allocations` omis → lettrage automatique sur les factures `approved` les
+plus anciennes du fournisseur (`auto_letter`, défaut `true`) ; passer
+`"auto_letter": false` sans `allocations` enregistre un décaissement sans
+imputation (avance pure). Une facture doit être **`approved`** (cf. §11)
+pour être lettrable — `pending_review`/`cancelled` sont rejetées.
+
+`code` tiré de TokenSerie (`DECF`, même mécanisme que §3.9). Chèque/effet
+(`payment_method_id` résolvant sur `CHEQUE`/`EFFET`) exige
+`instrument_reference` + `maturity_date` ; cycle de vie volontairement
+minimal (`issued` → `cleared`/`rejected`, pas de remise bancaire complète —
+décision de scope 2026-08-26).
+
+### 12.2 Trésorerie
+
+Chaque décaissement débite immédiatement la caisse (`TYPE_USER_CAISSE`) de
+l'utilisateur qui l'enregistre — même mécanisme `treasury_intake_lines`
+que les encaissements côté ventes, avec une ligne de montant **négatif**
+et un `operation_type` d'audit dédié (`SUPPLIER_PAYMENT_OUTFLOW`), pas de
+nouvelle table. Aucune caisse assignée pour la méthode → `422`
+(`NoCaisseAssignedException`, même comportement que côté ventes).
+
+### 12.1bis Lister / détail — `GET /supplier-payments`, `GET /supplier-payments/{id}`
+
+**Absents de la rédaction initiale de ce paragraphe — un vrai trou de doc,
+pas un manque côté API : ces deux endpoints existent et sont déployés
+depuis le même commit que §12.1 (`5c5176ee`).**
+
+```bash
+curl "https://api.omni360.cloud/api/backend/supplier-payments?supplier_id=7&status=validated" \
+  -H "Authorization: Bearer {TOKEN}"
+```
+
+Filtres : `supplier_id`, `status` (`validated`/`reconciled`/`cancelled`),
+`branch_code`, `per_page`. Triés par `payment_date` décroissant.
+`GET /supplier-payments/{id}` charge en plus `letterings.supplierInvoice`
+— nécessaire pour retrouver les imputations d'un décaissement passé avant
+d'appeler `letter`/`unletter` dessus (§12.3).
+
+### 12.3 Lettrage explicite / annulation
+
+- `POST /supplier-payments/{id}/letter` — imputer un décaissement déjà
+  enregistré (allocations explicites).
+- `POST /supplier-payments/letterings/{id}/unletter` — retire une
+  imputation, restaure `paid_amount`/`remaining_amount` sur la facture et
+  `reconciled_amount`/`remaining_amount`/`status` sur le décaissement.
+  Body : `{ "reason": "..." }` (10-500 caractères, obligatoire).
+- `POST /supplier-payments/{id}/cancel` — annule tout le décaissement :
+  délettre chaque imputation, **puis** reverse la sortie de trésorerie
+  (écriture de compensation positive, jamais un simple second débit).
+  Body : `{ "reason": "..." }` (10-500 caractères, obligatoire — même
+  convention que `purchase-orders`/`purchase-receptions`/`supplier-invoices`
+  cancel ; manquait par erreur dans cette section jusqu'ici, cf.
+  `SupplierPaymentController::cancel()`).
+
+### 12.4 Relevé de Compte — `GET /supplier-payments/suppliers/{id}/{statement,ledger}`
+
+```bash
+curl "https://api.omni360.cloud/api/backend/supplier-payments/suppliers/7/statement" \
+  -H "Authorization: Bearer {TOKEN}"
+```
+```json
+{
+  "success": true,
+  "data": {
+    "supplier_id": 7,
+    "supplier_name": "Fournisseur X",
+    "total_credit": 5400.0,
+    "total_debit": 3200.0,
+    "current_balance": 2200.0
+  }
+}
+```
+
+`GET .../ledger?from=&to=` renvoie le grand livre chronologique (mêmes
+entrées que le statement, détaillées + solde courant). `GET
+/supplier-payments/suppliers/statements` liste tous les fournisseurs avec
+solde (revue de fin de mois), filtrable par `min_balance`.
+
+> Chemin délibérément pas sous `/suppliers/{id}/...` — `Route::apiResource('suppliers', ...)`
+> existe déjà sans préfixe (CRUD master-data) et aurait intercepté
+> `/suppliers/statements` comme `show($supplier="statements")` selon
+> l'ordre d'enregistrement des routes. Imbriqué sous `supplier-payments/`
+> pour éviter la collision.
+
+### 12.5 Permissions
+
+| Permission | Rôles | Donne accès à |
+|---|---|---|
+| `browse-supplier-payments` | `root`, `admin`, `comptable` | Liste, détail, relevé, grand livre |
+| `create-supplier-payments` | `root`, `admin`, `comptable` | Enregistrer un décaissement |
+| `manage-supplier-payments` | `root`, `admin`, `comptable` | Lettrage explicite, délettrage, annulation |
+
+Contrairement aux factures fournisseurs (§11.2, `magasinier` a
+browse/create), **aucun accès `magasinier`** ici — un décaissement est
+strictement comptabilité/admin, pas une saisie liée à la réception
+physique.
+
+### 12.6 Ce qui reste hors scope (2026-08-26)
+
+- **Retours Fournisseurs & Avoirs d'Achat** — sortie de stock + note de
+  crédit liée au lettrage, mentionné par l'équipe UI mais volontairement
+  reporté à une passe séparée (mirror du module Retours Clients existant).
+- **PDF "Reçu de Décaissement"** — pas construit dans cette passe (contrairement
+  aux 3 PDF Achats de §3.10/§4.6/§11.6bis) ; peut suivre le même pattern
+  Document Studio si besoin.
+- **Cycle bancaire complet chèque/effet** — remise en banque, compensation
+  — décision de scope explicite (§12.1), peut évoluer vers le modèle
+  `FinancialInstrument` complet côté ventes si le besoin se confirme.
+
+### 12.7 Testing
+
+| File | Covers |
+|---|---|
+| `tests/Feature/Warehouse/SupplierPaymentLetteringTest.php` | Règlement exact = `reconciled`/`remaining_amount` à 0 des deux côtés ; sur-paiement = imputation partielle, `remaining_amount` jamais tronqué (même classe de bug corrigée côté ventes cette session) ; annulation délettre + restaure la facture + reverse la sortie de trésorerie (pas un second débit) |

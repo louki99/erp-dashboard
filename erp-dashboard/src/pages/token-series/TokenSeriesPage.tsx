@@ -15,16 +15,20 @@ import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { DetailCard } from '@/components/common/DetailCard';
+import { Textarea } from '@/components/ui/textarea';
 import { TokenSeriesForm, TokenSeriesTable } from '@/components/token-series';
 import {
     useCreateTokenSerie,
     useDeleteTokenSerie,
+    useResetTokenSerieFamily,
     useTokenSerie,
     useTokenSeries,
     useUpdateTokenSerie,
 } from '@/hooks/tokenSeries/useTokenSeries';
+import { usePermissions } from '@/hooks/usePermissions';
 import type {
     CreateTokenSeriePayload,
+    NumberingFamiliesMap,
     TokenSerie,
     TokenSerieConflictResponse,
     TokenSerieFilters,
@@ -33,10 +37,11 @@ import type {
 import {
     Plus, Hash, AlertTriangle, Edit2, Trash2, X,
     RotateCcw, Globe, Building2, Smartphone, Settings2,
-    FileDigit, Save, ArrowLeft,
+    FileDigit, Save, ArrowLeft, Lock,
 } from 'lucide-react';
 import { isAxiosError } from 'axios';
 import { getScopeLabel, NUMBERING_FIELDS } from '@/lib/tokenSeries';
+import { cn } from '@/lib/utils';
 
 function getErrorMessage(error: unknown): string {
     if (isAxiosError(error)) return error.response?.data?.message ?? error.message;
@@ -52,7 +57,7 @@ const DEFAULT_FILTERS: TokenSerieFilters = { per_page: 50, page: 1 };
 
 // ─── Detail view ──────────────────────────────────────────────────────────────
 
-function TokenSeriesDetail({ serie }: { serie: TokenSerie }) {
+function TokenSeriesDetail({ serie, numberingFamilies }: { serie: TokenSerie; numberingFamilies?: NumberingFamiliesMap }) {
     const ScopeIcon = serie.scope === 'global' ? Globe : serie.scope === 'branch' ? Building2 : Smartphone;
     const scopeAccent = serie.scope === 'global' ? 'blue' : serie.scope === 'branch' ? 'amber' : 'sage';
 
@@ -131,9 +136,15 @@ function TokenSeriesDetail({ serie }: { serie: TokenSerie }) {
                             const src = serie as unknown as Record<string, unknown>;
                             const prefix = src[field.prefixKey] as string | null;
                             const counter = src[field.counterKey] as number;
+                            const locked = numberingFamilies?.[field.key]?.locked;
                             return (
-                                <div key={field.key} className="rounded-lg border border-gray-100 bg-white p-3 shadow-sm">
-                                    <p className="text-[10px] uppercase tracking-wide text-muted-foreground mb-1">{field.label}</p>
+                                <div key={field.key} className={cn('rounded-lg border p-3 shadow-sm', locked ? 'bg-amber-50 border-amber-200' : 'bg-white border-gray-100')}>
+                                    <p className="text-[10px] uppercase tracking-wide text-muted-foreground mb-1 flex items-center gap-1">
+                                        {field.label}
+                                        {locked != null && (locked
+                                            ? <Lock className="h-2.5 w-2.5 text-amber-600" />
+                                            : <span className="text-[9px] font-semibold text-emerald-600">éditable</span>)}
+                                    </p>
                                     <p className="font-mono text-sm font-medium truncate">{prefix ?? '—'}</p>
                                     <p className="text-xs text-muted-foreground mt-0.5">prochain : {counter}</p>
                                 </div>
@@ -152,18 +163,35 @@ export function TokenSeriesPage() {
     const [filters, setFilters] = useState<TokenSerieFilters>(DEFAULT_FILTERS);
     const { data, isLoading, refetch } = useTokenSeries(filters);
 
+    const { isRoot } = usePermissions();
+
     const [viewSelected, setViewSelected] = useState<TokenSerie | null>(null);
     const [formMode, setFormMode] = useState<'view' | 'create' | 'edit'>('view');
     const [editTarget, setEditTarget] = useState<TokenSerie | null>(null);
     const [serieToDelete, setSerieToDelete] = useState<TokenSerie | null>(null);
     const [conflictRefs, setConflictRefs] = useState<string[] | null>(null);
+    // Reset-family dialog — root-only per doc §12 governance (a general
+    // admin.access-control.manage grant is NOT enough, the backend checks a
+    // separate reset-token-series-counter permission). `isRoot` gates
+    // whether the trigger even renders (TokenSeriesForm's onResetFamily prop).
+    const [resetTarget, setResetTarget] = useState<{ family: string; currentPrefix: string | null } | null>(null);
+    const [resetNewPrefix, setResetNewPrefix] = useState('');
+    const [resetNewNextNumber, setResetNewNextNumber] = useState('1');
+    const [resetReason, setResetReason] = useState('');
 
     const formRef = useRef<HTMLFormElement>(null);
 
     const { data: detailData } = useTokenSerie(serieToDelete?.code ?? null);
+    // Edit mode needs the full detail (numbering_families' locked flags) —
+    // the list row (`TokenSerie`) never carries it, only GET /{code} does.
+    const { data: editDetailData } = useTokenSerie(formMode === 'edit' ? editTarget?.code ?? null : null);
+    // Same for the read-only detail view — "quelle famille est verrouillée"
+    // is exactly what was asked for there too, not just the edit form.
+    const { data: viewDetailData } = useTokenSerie(formMode === 'view' ? viewSelected?.code ?? null : null);
     const createSerie = useCreateTokenSerie();
     const updateSerie = useUpdateTokenSerie(editTarget?.code ?? '');
     const deleteSerie = useDeleteTokenSerie();
+    const resetFamily = useResetTokenSerieFamily(editTarget?.code ?? '');
 
     // ── Form actions ──────────────────────────────────────────────────────────
     const openCreate = () => {
@@ -179,6 +207,33 @@ export function TokenSeriesPage() {
     const cancelForm = () => {
         setEditTarget(null);
         setFormMode('view');
+    };
+
+    // ── Reset-family (clôture d'exercice) ─────────────────────────────────────
+    const openResetFamily = (family: string, currentPrefix: string | null) => {
+        setResetTarget({ family, currentPrefix });
+        setResetNewPrefix(currentPrefix ?? '');
+        setResetNewNextNumber('1');
+        setResetReason('');
+    };
+
+    const closeResetFamily = () => setResetTarget(null);
+
+    const handleResetSubmit = async () => {
+        if (!resetTarget || !editTarget) return;
+        if (resetReason.trim().length < 10) { toast.error('Le motif doit contenir au moins 10 caractères.'); return; }
+        try {
+            await resetFamily.mutateAsync({
+                family: resetTarget.family,
+                new_prefix: resetNewPrefix.trim() || undefined,
+                new_next_number: resetNewNextNumber ? Number(resetNewNextNumber) : undefined,
+                reason: resetReason.trim(),
+            });
+            toast.success('Famille réinitialisée.');
+            closeResetFamily();
+        } catch (error) {
+            toast.error(getErrorMessage(error));
+        }
     };
 
     const handleFormSubmit = async (payload: CreateTokenSeriePayload | UpdateTokenSeriePayload) => {
@@ -341,12 +396,14 @@ export function TokenSeriesPage() {
                                         loading={createSerie.isPending || updateSerie.isPending}
                                         formRef={formRef}
                                         hideFooter
+                                        numberingFamilies={formMode === 'edit' ? editDetailData?.numbering_families : undefined}
+                                        onResetFamily={isRoot ? openResetFamily : undefined}
                                     />
                                 </div>
                             </div>
                         ) : viewSelected ? (
                             /* ── Detail view ── */
-                            <TokenSeriesDetail serie={viewSelected} />
+                            <TokenSeriesDetail serie={viewSelected} numberingFamilies={viewDetailData?.numbering_families} />
                         ) : (
                             /* ── Empty state ── */
                             <div className="flex-1 flex flex-col items-center justify-center p-10 text-center bg-slate-50/60">
@@ -413,6 +470,61 @@ export function TokenSeriesPage() {
                     </DialogHeader>
                     <DialogFooter>
                         <Button onClick={() => setConflictRefs(null)}>Compris</Button>
+                    </DialogFooter>
+                </DialogContent>
+            </Dialog>
+
+            {/* Reset-family dialog — clôture d'exercice escape hatch, root-only.
+                Not a real fiscal-period workflow (no such entity exists here) —
+                just the one sanctioned action a root runs to unlock an
+                already-consumed family, per the doc's own framing. */}
+            <Dialog open={!!resetTarget} onOpenChange={(open) => !open && closeResetFamily()}>
+                <DialogContent className="max-w-md">
+                    <DialogHeader>
+                        <DialogTitle className="flex items-center gap-2 text-amber-700">
+                            <AlertTriangle className="h-5 w-5" />
+                            Réinitialiser la famille « {resetTarget?.family} »
+                        </DialogTitle>
+                        <DialogDescription>
+                            Cette famille est déjà consommée (un numéro a suffi pour la verrouiller). La réinitialiser change le préfixe et/ou repart le compteur à un nouveau numéro — action tracée dans les logs avec l'avant/après.
+                        </DialogDescription>
+                    </DialogHeader>
+                    <div className="space-y-3 py-2">
+                        <div className="space-y-1.5">
+                            <Label htmlFor="reset-prefix">Nouveau préfixe</Label>
+                            <Input
+                                id="reset-prefix"
+                                value={resetNewPrefix}
+                                onChange={(e) => setResetNewPrefix(e.target.value)}
+                                placeholder={resetTarget?.currentPrefix ?? 'Préfixe'}
+                            />
+                        </div>
+                        <div className="space-y-1.5">
+                            <Label htmlFor="reset-next-number">Nouveau compteur</Label>
+                            <Input
+                                id="reset-next-number"
+                                type="number"
+                                min={1}
+                                value={resetNewNextNumber}
+                                onChange={(e) => setResetNewNextNumber(e.target.value)}
+                            />
+                        </div>
+                        <div className="space-y-1.5">
+                            <Label htmlFor="reset-reason">Motif (10-500 caractères) <span className="text-destructive">*</span></Label>
+                            <Textarea
+                                id="reset-reason"
+                                value={resetReason}
+                                onChange={(e) => setResetReason(e.target.value)}
+                                placeholder="Ex : Clôture exercice 2026 - nouvelle série 2027"
+                                rows={3}
+                            />
+                        </div>
+                    </div>
+                    <DialogFooter>
+                        <Button variant="outline" onClick={closeResetFamily}>Annuler</Button>
+                        <Button variant="destructive" onClick={handleResetSubmit} disabled={resetFamily.isPending}>
+                            Réinitialiser
+                        </Button>
                     </DialogFooter>
                 </DialogContent>
             </Dialog>

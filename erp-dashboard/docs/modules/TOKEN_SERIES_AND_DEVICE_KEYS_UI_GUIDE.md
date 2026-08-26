@@ -74,6 +74,14 @@ Sans Token Serie correctement configurée et assignée à un device :
 | `unloading_prefix` | `unloading_next_number` | Déchargement |
 | `session_prefix` | `session_next_number` | Session de travail |
 | `expense_prefix` | `expense_next_number` | Note de frais |
+| `bcf_prefix` | `bcf_next_number` | BC Fournisseur (Achats) |
+| `brc_prefix` | `brc_next_number` | Bon de Réception (Achats) — pas `BR`, déjà pris par `return_*` |
+| `facf_prefix` | `facf_next_number` | Facture Fournisseur (Achats) |
+| `decf_prefix` | `decf_next_number` | Décaissement Fournisseur (Règlements) |
+
+> Liste exhaustive : `App\Models\TokenSerie::NUMBERING_FAMILIES` (clé =
+> préfixe de colonne, valeur = code `document_type` utilisé par
+> `DocumentNumberingService`).
 
 ### Auto-génération
 
@@ -347,13 +355,38 @@ Content-Type: application/json
 {
   "name": "Série Casablanca Centre — Mise à jour",
   "is_active": true,
-  "order_next_number": 500
+  "bcf_prefix": "BCFCASB01",
+  "bcf_next_number": 1
 }
 ```
 
 > Tous les champs sont optionnels (`sometimes`). Seuls les champs envoyés sont modifiés.
 
-> ⚠️ **Attention :** Modifier `{document}_next_number` en arrière peut créer des **collisions de numéros** si des documents ont déjà été générés. Ne jamais diminuer un compteur en production.
+**Gouvernance de numérotation (2026-08-26, feu vert équipe UI)** — chaque
+famille (`{family}_prefix`/`{family}_next_number`, liste complète §1) suit
+sa **propre** règle de verrouillage, indépendante des autres familles sur
+la même ligne :
+
+- **Famille jamais tirée** (`next_number == 1`, valeur par défaut) →
+  `prefix` et `next_number` librement éditables. C'est le cas "on définit
+  le format avant la première utilisation".
+- **Famille déjà consommée** (`next_number > 1` — un seul numéro a suffi
+  pour verrouiller) → **toute tentative de modification renvoie `422`**,
+  message explicite pointant vers l'endpoint de reset ci-dessous. Aucune
+  exception, y compris pour `root`.
+- Modifier une famille non verrouillée ne touche jamais aux autres — un BC
+  déjà consommé (`order_next_number > 1`) n'empêche pas d'éditer
+  `bcf_prefix` si cette famille-là est encore vierge.
+
+**Erreur 422 — famille verrouillée :**
+```json
+{
+  "message": "Numbering update rejected.",
+  "errors": {
+    "order": "Série 'order' (BC) déjà consommée (next_number > 1) — verrouillée. Utilisez POST .../reset-family."
+  }
+}
+```
 
 **Réponse 200 :**
 
@@ -362,6 +395,52 @@ Content-Type: application/json
   "data": { "id": 14, "code": "CAS-B01", ... }
 }
 ```
+
+---
+
+### `POST /{code}/reset-family` — Réinitialiser une famille verrouillée
+
+**Seul moyen sanctionné** de reconfigurer une famille déjà consommée —
+l'échappatoire "clôture d'exercice / changement d'année fiscale" demandée
+par l'équipe UI. Volontairement une action séparée, plus verrouillée que
+le `PUT` ci-dessus : passer la garde de route (`root`/`admin` ou
+`admin.access-control.manage`) **ne suffit pas** — il faut en plus la
+permission dédiée `reset-token-series-counter`, seedée `root` uniquement.
+Un `admin` qui n'a pas cette permission reçoit un `403`, même s'il peut
+éditer une famille non-consommée via `PUT`.
+
+```http
+POST /api/backend/access-control/token-series/CAS-B01/reset-family
+Authorization: Bearer {token}
+Content-Type: application/json
+
+{
+  "family": "bcf",
+  "new_prefix": "BCFCASB01-2027",
+  "new_next_number": 1,
+  "reason": "Clôture exercice 2026 - nouvelle série 2027"
+}
+```
+
+- `family` — une des clés de `TokenSerie::NUMBERING_FAMILIES` (§1), pas un nom de colonne arbitraire.
+- `new_prefix` — optionnel, sinon le préfixe existant est conservé.
+- `new_next_number` — optionnel, défaut `1`.
+- `reason` — **obligatoire**, 10-500 caractères. Écrit dans les logs (`TokenSerie numbering family reset`) avec l'avant/après complet et l'auteur — ce n'est pas une simple UX, c'est la piste d'audit qui justifie de laisser cette porte ouverte.
+
+**Réponse 200 :**
+```json
+{ "data": { "id": 14, "code": "CAS-B01", "bcf_prefix": "BCFCASB01-2027", "bcf_next_number": 1, ... } }
+```
+
+**Erreur 403 — permission manquante :**
+```json
+{ "message": "Forbidden. Requires permission reset-token-series-counter." }
+```
+
+> Ce endpoint ne modélise pas un exercice fiscal/une période comptable en
+> tant qu'entité — rien de tel n'existe dans ce codebase aujourd'hui.
+> C'est l'action manuelle qu'un admin root exécute AU moment de la clôture ;
+> un futur workflow de clôture automatisé pourra appeler ce même endpoint.
 
 ---
 

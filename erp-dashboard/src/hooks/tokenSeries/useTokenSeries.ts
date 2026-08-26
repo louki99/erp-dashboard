@@ -3,6 +3,7 @@ import type { AxiosError } from 'axios';
 import * as tokenSeriesApi from '@/services/api/tokenSeriesApi';
 import type {
     CreateTokenSeriePayload,
+    ResetTokenSerieFamilyPayload,
     TokenSerie,
     TokenSerieDeleteResponse,
     TokenSerieDetail,
@@ -64,6 +65,21 @@ export function useDeleteTokenSerie() {
     return useMutation<TokenSerieDeleteResponse, AxiosError, string>({
         mutationFn: (code) => tokenSeriesApi.deleteTokenSerie(code) as Promise<TokenSerieDeleteResponse>,
         onSuccess: () => {
+            queryClient.invalidateQueries({ queryKey: tokenSeriesKeys.all });
+        },
+    });
+}
+
+export function useResetTokenSerieFamily(code: string) {
+    const queryClient = useQueryClient();
+
+    return useMutation<TokenSerie, AxiosError, ResetTokenSerieFamilyPayload>({
+        mutationFn: (payload) => tokenSeriesApi.resetTokenSerieFamily(code, payload),
+        onSuccess: () => {
+            // Busts the detail cache too — numbering_families' locked flags
+            // change for the reset family (and its own counter/prefix reset),
+            // not just the flat TokenSerie fields setQueryData below already covers.
+            queryClient.invalidateQueries({ queryKey: tokenSeriesKeys.detail(code) });
             queryClient.invalidateQueries({ queryKey: tokenSeriesKeys.all });
         },
     });

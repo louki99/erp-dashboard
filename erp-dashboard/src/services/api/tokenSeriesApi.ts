@@ -9,6 +9,7 @@ import type {
     DeviceKeyMessageResponse,
     DeviceKeySingleResponse,
     PinOperationResult,
+    ResetTokenSerieFamilyPayload,
     RotateKeyPayload,
     SetPinPayload,
     TokenSerie,
@@ -50,6 +51,15 @@ export const updateTokenSerie = async (code: string, payload: UpdateTokenSeriePa
 export const deleteTokenSerie = async (code: string): Promise<TokenSerieDeleteResponse | TokenSerieConflictResponse> => {
     const response = await apiClient.delete<TokenSerieDeleteResponse | TokenSerieConflictResponse>(`${TOKEN_SERIES_BASE}/${code}`);
     return response.data;
+};
+
+// The "clôture d'exercice" escape hatch for an already-consumed family
+// (next_number > 1) — the only sanctioned way to reconfigure one. Requires
+// reset-token-series-counter, root-only; passing the general access-control
+// route guard alone still 403s here (see TokenSerieLockedFamilyError's comment).
+export const resetTokenSerieFamily = async (code: string, payload: ResetTokenSerieFamilyPayload): Promise<TokenSerie> => {
+    const response = await apiClient.post<TokenSerieSingleResponse>(`${TOKEN_SERIES_BASE}/${code}/reset-family`, payload);
+    return response.data.data;
 };
 
 // ─── Device Keys ─────────────────────────────────────────────────────────────

@@ -336,6 +336,18 @@ export const PERMISSIONS = {
         BROWSE_PURCHASE_RECEPTIONS: 'browse-purchase-receptions',
         CREATE_PURCHASE_RECEPTIONS: 'create-purchase-receptions',
         MANAGE_PURCHASE_RECEPTIONS: 'manage-purchase-receptions',
+
+        // Facture Fournisseur / 3-Way Matching (§11, 2026-08-26)
+        BROWSE_SUPPLIER_INVOICES: 'browse-supplier-invoices',
+        CREATE_SUPPLIER_INVOICES: 'create-supplier-invoices',
+        MANAGE_SUPPLIER_INVOICES: 'manage-supplier-invoices',
+        OVERRIDE_PURCHASE_MATCHING_TOLERANCE: 'override-purchase-matching-tolerance',
+
+        // Règlements Fournisseurs & Lettrage Achat (§12, 2026-08-26) — no
+        // magasinier access, unlike supplier invoices (root/admin/comptable only).
+        BROWSE_SUPPLIER_PAYMENTS: 'browse-supplier-payments',
+        CREATE_SUPPLIER_PAYMENTS: 'create-supplier-payments',
+        MANAGE_SUPPLIER_PAYMENTS: 'manage-supplier-payments',
     },
 
     // Settings
@@ -478,6 +490,8 @@ export const PAGE_PERMISSIONS: Record<string, string | string[]> = {
     // Achats Module
     '/achats/commandes': PERMISSIONS.DYNAMIC.BROWSE_PURCHASE_ORDERS,
     '/achats/receptions': PERMISSIONS.DYNAMIC.BROWSE_PURCHASE_RECEPTIONS,
+    '/achats/factures': PERMISSIONS.DYNAMIC.BROWSE_SUPPLIER_INVOICES,
+    '/achats/reglements': PERMISSIONS.DYNAMIC.BROWSE_SUPPLIER_PAYMENTS,
 
     // Payments
     '/payments': PERMISSIONS.PAYMENTS.DASHBOARD,

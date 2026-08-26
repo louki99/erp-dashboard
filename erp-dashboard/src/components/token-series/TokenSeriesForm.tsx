@@ -7,13 +7,14 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import SearchableSelect from '@/components/common/SearchableSelect';
 import type {
     CreateTokenSeriePayload,
+    NumberingFamiliesMap,
     TokenSerie,
     TokenSerieScope,
     UpdateTokenSeriePayload,
 } from '@/types/tokenSeries.types';
 import { TOKEN_SERIE_SCOPES } from '@/types/tokenSeries.types';
 import { NUMBERING_FIELDS, SCOPE_LABELS } from '@/lib/tokenSeries';
-import { Save, X } from 'lucide-react';
+import { Save, X, Lock, RotateCcw } from 'lucide-react';
 import { useBranchesOptions } from '@/hooks/tokenSeries/useEntitySelectors';
 import { cn } from '@/lib/utils';
 
@@ -24,6 +25,16 @@ interface TokenSeriesFormProps {
     loading?: boolean;
     formRef?: React.RefObject<HTMLFormElement>;
     hideFooter?: boolean;
+    // Only present when editing (from GET /{code}'s numbering_families — not
+    // on list rows). undefined while that detail is still loading — fields
+    // stay enabled rather than flash-locked, `onResetFamily` still works
+    // once the user's actually looking at the numbering tab (by then the
+    // detail fetch has almost always resolved).
+    numberingFamilies?: NumberingFamiliesMap;
+    // Only rendered when the current user actually has
+    // reset-token-series-counter (root-only, checked by the page, not
+    // guessed here) — omit entirely to hide the "Réinitialiser" trigger.
+    onResetFamily?: (fieldKey: string, currentPrefix: string | null) => void;
 }
 
 const SCOPE_OPTIONS = TOKEN_SERIE_SCOPES.map((scope: TokenSerieScope) => ({ value: scope, label: SCOPE_LABELS[scope] }));
@@ -59,7 +70,7 @@ function getInitialForm(serie: TokenSerie | null | undefined): CreateTokenSerieP
     };
 }
 
-export function TokenSeriesForm({ serie, onSubmit, onCancel, loading, formRef, hideFooter }: TokenSeriesFormProps) {
+export function TokenSeriesForm({ serie, onSubmit, onCancel, loading, formRef, hideFooter, numberingFamilies, onResetFamily }: TokenSeriesFormProps) {
     const [form, setForm] = useState<CreateTokenSeriePayload>(() => getInitialForm(serie));
     const [activeTab, setActiveTab] = useState<'general' | 'numbering'>('general');
     const isEdit = Boolean(serie);
@@ -105,9 +116,28 @@ export function TokenSeriesForm({ serie, onSubmit, onCancel, loading, formRef, h
 
     const handleSubmit = (e: React.FormEvent) => {
         e.preventDefault();
-        const payload = isEdit
-            ? ({ ...form, code: undefined } as UpdateTokenSeriePayload)
-            : form;
+        // Strip locked families entirely rather than rely on "value round-
+        // trips unchanged, so it's harmless" — the doc says "any
+        // modification attempt" 422s a locked family, and it's unclear
+        // whether that means "value differs" or "key present in the
+        // payload at all" (Laravel `sometimes` typically means the latter).
+        // Safer to just not send them. Built as a fresh object (not a
+        // mutation of `form`/its shallow copy) — React Compiler flags any
+        // `delete` on a value derived from useState as an immutability
+        // violation even inside a branch that only runs for the edit case.
+        const lockedKeys = new Set<string>();
+        if (isEdit && numberingFamilies) {
+            for (const field of NUMBERING_FIELDS) {
+                if (numberingFamilies[field.key]?.locked) {
+                    lockedKeys.add(field.prefixKey);
+                    lockedKeys.add(field.counterKey);
+                }
+            }
+        }
+        const source: Record<string, unknown> = isEdit ? { ...form, code: undefined } : { ...form };
+        const payload = Object.fromEntries(
+            Object.entries(source).filter(([key]) => !lockedKeys.has(key)),
+        ) as CreateTokenSeriePayload | UpdateTokenSeriePayload;
         onSubmit(payload);
     };
 
@@ -253,26 +283,54 @@ export function TokenSeriesForm({ serie, onSubmit, onCancel, loading, formRef, h
 
                     {activeTab === 'numbering' && (
                         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 max-h-[400px] overflow-y-auto pr-1">
-                            {NUMBERING_FIELDS.map((field) => (
-                                <div key={field.key} className="rounded-lg border p-3 space-y-2">
-                                    <Label className="text-xs font-semibold">{field.label}</Label>
-                                    <div className="grid grid-cols-[1fr,80px] gap-2">
-                                        <Input
-                                            value={(form as unknown as Record<string, unknown>)[field.prefixKey] as string ?? ''}
-                                            onChange={(e) => setForm((prev) => ({ ...prev, [field.prefixKey]: e.target.value }))}
-                                            placeholder="Préfixe"
-                                            className="h-8 text-xs"
-                                        />
-                                        <Input
-                                            type="number"
-                                            min={0}
-                                            value={(form as unknown as Record<string, unknown>)[field.counterKey] as number ?? 1}
-                                            onChange={(e) => handleNumberChange(field.counterKey, e.target.value)}
-                                            className="h-8 text-xs"
-                                        />
+                            {NUMBERING_FIELDS.map((field) => {
+                                // Governance rule lives entirely server-side (doc's
+                                // explicit instruction) — use the pre-computed flag,
+                                // never recompute "next_number > 1" here.
+                                const locked = isEdit && numberingFamilies?.[field.key]?.locked === true;
+                                const prefixValue = (form as unknown as Record<string, unknown>)[field.prefixKey] as string ?? '';
+                                return (
+                                    <div key={field.key} className={cn('rounded-lg border p-3 space-y-2', locked && 'bg-muted/50 border-amber-200')}>
+                                        <div className="flex items-center justify-between gap-1">
+                                            <Label className="text-xs font-semibold flex items-center gap-1">
+                                                {field.label}
+                                                {locked && <Lock className="h-3 w-3 text-amber-600" />}
+                                            </Label>
+                                            {locked && onResetFamily && (
+                                                <button
+                                                    type="button"
+                                                    onClick={() => onResetFamily(field.key, prefixValue || null)}
+                                                    className="text-[10px] font-medium text-amber-700 hover:text-amber-900 flex items-center gap-0.5"
+                                                >
+                                                    <RotateCcw className="h-2.5 w-2.5" /> Réinitialiser
+                                                </button>
+                                            )}
+                                        </div>
+                                        <div className="grid grid-cols-[1fr,80px] gap-2">
+                                            <Input
+                                                value={prefixValue}
+                                                onChange={(e) => setForm((prev) => ({ ...prev, [field.prefixKey]: e.target.value }))}
+                                                placeholder="Préfixe"
+                                                className="h-8 text-xs"
+                                                disabled={locked}
+                                            />
+                                            <Input
+                                                type="number"
+                                                min={0}
+                                                value={(form as unknown as Record<string, unknown>)[field.counterKey] as number ?? 1}
+                                                onChange={(e) => handleNumberChange(field.counterKey, e.target.value)}
+                                                className="h-8 text-xs"
+                                                disabled={locked}
+                                            />
+                                        </div>
+                                        {locked && (
+                                            <p className="text-[10px] text-amber-700">
+                                                Déjà consommée — utilisez « Réinitialiser » (clôture d'exercice).
+                                            </p>
+                                        )}
                                     </div>
-                                </div>
-                            ))}
+                                );
+                            })}
                         </div>
                     )}
 

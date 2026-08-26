@@ -2,7 +2,7 @@ import { useState, useRef, useMemo, useCallback } from 'react';
 import type { ICellRendererParams } from 'ag-grid-community';
 import {
     ShoppingCart, Search, X, Plus, Loader2, CheckCircle2, Ban, Package,
-    Building2, Calendar, Trash2,
+    Building2, Calendar, Trash2, FileText,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 
@@ -15,7 +15,7 @@ import {
     usePurchaseOrders, usePurchaseOrder, useCreatePurchaseOrder, useConfirmPurchaseOrder,
     useCancelPurchaseOrder, useAddPurchaseOrderLine, useDeletePurchaseOrderLine,
 } from '@/hooks/achats/usePurchaseOrders';
-import { getPartners } from '@/services/api/partnerApi';
+import { achatsApi } from '@/services/api/achatsApi';
 import { financeApi } from '@/services/api/financeApi';
 import { searchProducts } from '@/services/api/pricingApi';
 import type { PurchaseOrder, PurchaseOrderStatus, PurchaseOrderLinePayload } from '@/types/achats.types';
@@ -53,12 +53,18 @@ const STATUS_FILTERS: { value: 'all' | PurchaseOrderStatus; label: string }[] = 
 type DraftLine = { _key: string; product: ComboboxOption | null; ordered_quantity: string; unit_cost: string };
 const emptyLine = (): DraftLine => ({ _key: crypto.randomUUID(), product: null, ordered_quantity: '', unit_cost: '' });
 
+// GET /purchase-orders/suppliers (doc §3.8), NOT GET /partners — that's
+// customers, a real bug caught 2026-08-26 (this exact screen's Network tab
+// showed partners?per_page=20). Also NOT /suppliers or /master-data/suppliers
+// — those are root/admin-only, a magasinier creating a BC would 403. No
+// server-side search on this endpoint — flat unpaginated list, filtered here.
 const searchSuppliers = async (q: string): Promise<ComboboxOption[]> => {
-    // No confirmed backend `partner_type` slug for "supplier" yet — same
-    // unfiltered partner search every other GCOM combobox uses. Narrow this
-    // if/when backend confirms a filter value.
-    const res = await getPartners({ q, per_page: 20 });
-    return (res.partners.data ?? []).map(p => ({ id: p.id, label: p.name, sub: p.code }));
+    const suppliers = await achatsApi.purchaseOrders.suppliers();
+    const query = q.trim().toLowerCase();
+    const filtered = query
+        ? suppliers.filter(s => s.name.toLowerCase().includes(query) || (s.contact_name ?? '').toLowerCase().includes(query))
+        : suppliers;
+    return filtered.map(s => ({ id: s.id, label: s.name, sub: s.contact_name ?? s.phone ?? undefined }));
 };
 const searchBranchesOptions = async (q: string): Promise<ComboboxOption[]> => {
     const res = await financeApi.getHelperBranches({ search: q, limit: 30 });
@@ -199,6 +205,20 @@ export default function PurchaseOrderPage() {
         }
     };
 
+    const [pdfLoading, setPdfLoading] = useState(false);
+    const handlePrintPdf = async () => {
+        if (!selected) return;
+        setPdfLoading(true);
+        try {
+            const url = await achatsApi.purchaseOrders.getPdfBlobUrl(selected.id);
+            if (url) window.open(url, '_blank');
+        } catch {
+            toast.error('Impossible de charger le PDF');
+        } finally {
+            setPdfLoading(false);
+        }
+    };
+
     const handleAddLine = async () => {
         if (!selected) return;
         if (!addLineProduct) { toast.error('Sélectionnez un produit.'); return; }
@@ -270,7 +290,9 @@ export default function PurchaseOrderPage() {
         { items: [{ icon: Plus, label: 'Nouveau BC', variant: 'sage', onClick: openCreateForm }] },
     ];
     if (selected && !showCreateForm) {
-        const items: ActionItemProps[] = [];
+        const items: ActionItemProps[] = [
+            { icon: FileText, label: 'Imprimer PDF', variant: 'default', onClick: handlePrintPdf, disabled: pdfLoading },
+        ];
         if (selected.status === 'draft') {
             items.push({ icon: CheckCircle2, label: 'Confirmer', variant: 'success', onClick: handleConfirm, disabled: !selected.lines?.length || confirmMutation.isPending });
             items.push({ icon: Package, label: 'Ajouter une ligne', variant: 'default', onClick: () => setShowAddLineForm(v => !v) });

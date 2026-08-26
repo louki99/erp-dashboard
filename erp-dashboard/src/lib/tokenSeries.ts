@@ -33,6 +33,12 @@ export const NUMBERING_FIELDS: NumberingField[] = [
     { key: 'unloading', prefixKey: 'unloading_prefix', counterKey: 'unloading_next_number', label: 'Déchargement', shortLabel: 'Déch.' },
     { key: 'session', prefixKey: 'session_prefix', counterKey: 'session_next_number', label: 'Session de travail', shortLabel: 'Sess.' },
     { key: 'expense', prefixKey: 'expense_prefix', counterKey: 'expense_next_number', label: 'Note de frais', shortLabel: 'Frais' },
+    // Achats families — added 2026-08-26. `key` matches numbering_families'
+    // map keys exactly (bcf/brc/facf/decf) — used to look up the `locked` flag.
+    { key: 'bcf', prefixKey: 'bcf_prefix', counterKey: 'bcf_next_number', label: 'BC Fournisseur (Achats)', shortLabel: 'BCF' },
+    { key: 'brc', prefixKey: 'brc_prefix', counterKey: 'brc_next_number', label: 'Bon de Réception (Achats)', shortLabel: 'BRC' },
+    { key: 'facf', prefixKey: 'facf_prefix', counterKey: 'facf_next_number', label: 'Facture Fournisseur (Achats)', shortLabel: 'FACF' },
+    { key: 'decf', prefixKey: 'decf_prefix', counterKey: 'decf_next_number', label: 'Décaissement Fournisseur (Achats)', shortLabel: 'DECF' },
 ];
 
 export function getScopeLabel(scope: TokenSerieScope): string {
