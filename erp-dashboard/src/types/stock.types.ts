@@ -541,6 +541,11 @@ export interface GoodsReceiptItemPayload {
     batch_number?: string;
     production_date?: string;
     expiry_date?: string;
+    // Optional, added 2026-08-26 (backend commit c3e74a14) — central-warehouse
+    // receptions only. When sent, Tier 1 stock + PMP now update correctly on
+    // this endpoint too (previously only /purchase-receptions did that); a
+    // van "retour de tournée" reception is unaffected either way.
+    unit_cost?: number;
 }
 
 export interface GoodsReceiptPayload {

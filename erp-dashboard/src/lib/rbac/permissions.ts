@@ -328,6 +328,14 @@ export const PERMISSIONS = {
         MANAGE_CHRONOLOGIES: 'manage-chronologies',
         MANAGE_EMPLOYEES: 'manage-employees',
         MANAGE_GCOM: 'manage-gcom',
+
+        // Achats — BC Fournisseur / Réception (docs/modules/30-achats-purchase-orders.md, 2026-08-26)
+        BROWSE_PURCHASE_ORDERS: 'browse-purchase-orders',
+        CREATE_PURCHASE_ORDERS: 'create-purchase-orders',
+        MANAGE_PURCHASE_ORDERS: 'manage-purchase-orders',
+        BROWSE_PURCHASE_RECEPTIONS: 'browse-purchase-receptions',
+        CREATE_PURCHASE_RECEPTIONS: 'create-purchase-receptions',
+        MANAGE_PURCHASE_RECEPTIONS: 'manage-purchase-receptions',
     },
 
     // Settings
@@ -466,7 +474,11 @@ export const PAGE_PERMISSIONS: Record<string, string | string[]> = {
     '/magasinier/orders': PERMISSIONS.MAGASINIER.PREPARATIONS_PENDING,
     '/magasinier/stock': PERMISSIONS.MAGASINIER.STOCK_INDEX,
     '/magasinier/batch-picking': PERMISSIONS.MAGASINIER.PREPARATIONS_PENDING,
-    
+
+    // Achats Module
+    '/achats/commandes': PERMISSIONS.DYNAMIC.BROWSE_PURCHASE_ORDERS,
+    '/achats/receptions': PERMISSIONS.DYNAMIC.BROWSE_PURCHASE_RECEPTIONS,
+
     // Payments
     '/payments': PERMISSIONS.PAYMENTS.DASHBOARD,
     '/payments/pending': PERMISSIONS.PAYMENTS.PENDING,

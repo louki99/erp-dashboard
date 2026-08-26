@@ -32,6 +32,7 @@ const emptyItem = (): GoodsReceiptItemPayload & { _key: string } => ({
     batch_number: '',
     production_date: '',
     expiry_date: '',
+    unit_cost: undefined,
 });
 
 // ─── Result Panel ─────────────────────────────────────────────────────────────
@@ -204,6 +205,20 @@ const ItemRow = ({ item, index, locations, onChange, onRemove, canRemove }: Item
                     />
                 </div>
 
+                {/* Unit cost (optional — feeds Tier 1 PMP since 2026-08-26) */}
+                <div>
+                    <label className="block text-[10px] font-semibold text-gray-500 uppercase tracking-wider mb-1">
+                        Coût unitaire <span className="text-[10px] font-normal text-gray-400">(optionnel — alimente le PMP)</span>
+                    </label>
+                    <input
+                        type="number" min="0" step="0.01"
+                        value={item.unit_cost ?? ''}
+                        onChange={e => onChange(item._key, 'unit_cost', e.target.value === '' ? undefined : parseFloat(e.target.value))}
+                        placeholder="ex. 25.00"
+                        className="w-full px-3 py-1.5 text-xs border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-teal-400 focus:bg-white bg-gray-50 transition-all"
+                    />
+                </div>
+
                 {/* Storage Location */}
                 <div>
                     <label className="block text-[10px] font-semibold text-gray-500 uppercase tracking-wider mb-1">
@@ -324,6 +339,7 @@ export const WmsReceiptPage = () => {
                 product_id: it.product_id,
                 quantity: it.quantity,
                 storage_location_id: it.storage_location_id,
+                ...(it.unit_cost != null ? { unit_cost: it.unit_cost } : {}),
                 ...(it.batch_number ? {
                     batch_number: it.batch_number,
                     ...(it.production_date ? { production_date: it.production_date } : {}),

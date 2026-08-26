@@ -3167,11 +3167,14 @@ Still open:
   field.** Works today (see §2) but requires a join to walk backward from
   an invoice to its quote. Revisit only if a single-query "full document
   history" view is actually needed.
-- **No dedicated Inventaire/Purchase-Reception UI-facing docs in this
-  file** — those are generic (not GCOM-scoped) backend features, not
-  documented here; see `app/Http/Controllers/Backend/
-  InventoryCheckController.php` and `PurchaseReceptionController.php`
-  directly if a GCOM screen needs to trigger a stock count or receipt.
+- **No dedicated Inventaire UI-facing docs in this file** — generic (not
+  GCOM-scoped) backend feature, not documented here; see
+  `InventoryCheckController.php` directly if a GCOM screen needs to
+  trigger a stock count. Achats (BC Fournisseur / Réception / Stock) now
+  has its own doc: [30-achats-purchase-orders.md](30-achats-purchase-orders.md)
+  (2026-08-26) — the `purchase_order_number` free-text field on
+  `purchase_receptions` was replaced by a real `purchase_order_id` FK as
+  part of that work.
 - ~~`partners.invoicing_mode` is not consulted anywhere in GCOM.~~
   **Built 2026-08-31** (confirmed status 2026-08-31, real question from
   the UI team; "architecture propre à GCOM" — explicit decision to NOT

@@ -58,6 +58,8 @@ const MagasinierConventionalLoadingPage = lazy(() => import('@/pages/magasinier/
 const MagasinierDechargeReconciliationPage = lazy(() => import('@/pages/magasinier/MagasinierDechargeReconciliationPage').then(m => ({ default: m.MagasinierDechargeReconciliationPage })));
 const MagasinierDechargePage = lazy(() => import('@/pages/magasinier/MagasinierDechargePage').then(m => ({ default: m.MagasinierDechargePage })));
 const MagasinierReturnsPage = lazy(() => import('@/pages/magasinier/MagasinierReturnsPage').then(m => ({ default: m.MagasinierReturnsPage })));
+const PurchaseOrderPage = lazy(() => import('@/pages/achats/PurchaseOrderPage'));
+const PurchaseReceptionPage = lazy(() => import('@/pages/achats/PurchaseReceptionPage'));
 const TelesalesSchedulesPage = lazy(() => import('@/pages/telesales/TelesalesSchedulesPage'));
 const TelesalesAssignmentsPage = lazy(() => import('@/pages/telesales/TelesalesAssignmentsPage'));
 const TelesalesMonitoringPage = lazy(() => import('@/pages/telesales/TelesalesMonitoringPage'));
@@ -458,6 +460,19 @@ function AppRoutes() {
       <Route path="/magasinier/returns" element={
         <ProtectedRoute requiredRole={['admin', 'root', 'magasinier']}>
           <MagasinierReturnsPage />
+        </ProtectedRoute>
+      } />
+
+      {/* Achats Module — BC Fournisseur / Réception (docs/modules/30-achats-purchase-orders.md, 2026-08-26) */}
+      <Route path="/achats/commandes" element={
+        <ProtectedRoute requiredPermission={PERMISSIONS.DYNAMIC.BROWSE_PURCHASE_ORDERS}>
+          <PurchaseOrderPage />
+        </ProtectedRoute>
+      } />
+
+      <Route path="/achats/receptions" element={
+        <ProtectedRoute requiredPermission={PERMISSIONS.DYNAMIC.BROWSE_PURCHASE_RECEPTIONS}>
+          <PurchaseReceptionPage />
         </ProtectedRoute>
       } />
 

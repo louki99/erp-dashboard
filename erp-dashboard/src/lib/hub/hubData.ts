@@ -354,6 +354,20 @@ export const BUSINESS_DOMAINS: BusinessDomain[] = [
                     { id: 'returns-close',     label: 'Clôturer un retour',     route: '/magasinier/returns', icon: CheckCircle2 },
                 ],
             },
+            {
+                // Achats Fournisseur — docs/modules/30-achats-purchase-orders.md (2026-08-26).
+                // Same permission grant (root/admin/magasinier) as the rest of this domain,
+                // so this lives here rather than as its own top-level BusinessDomain.
+                id: 'achats-fournisseur',
+                label: 'Achats Fournisseur',
+                description: 'BC Fournisseur, réception de marchandise et rapprochement commandé/reçu',
+                route: '/achats/commandes',
+                icon: ShoppingCart,
+                actions: [
+                    { id: 'achats-commandes',  label: 'BC Fournisseur',   route: '/achats/commandes',  icon: ShoppingCart },
+                    { id: 'achats-receptions', label: 'Réception Achat',  route: '/achats/receptions', icon: PackageCheck },
+                ],
+            },
         ],
     },
 
@@ -521,10 +535,11 @@ export const BUSINESS_DOMAINS: BusinessDomain[] = [
         color: 'emerald',
         permission: 'manage-gcom',
         // Grouped by function (2026-08-19) — was one flat 10-item list under
-        // a single "Ventes & Facturation" process, hard to scan. No "Achat"
-        // group exists because GCOM has no purchasing/achat flow today (it's
-        // a pure sales/B2B module, see docs/modules/28-gcom.md's own framing)
-        // — don't add one without a real feature behind it.
+        // a single "Ventes & Facturation" process, hard to scan. An "Achats"
+        // group was added 2026-08-26 once the BC Fournisseur/Réception module
+        // shipped (docs/modules/30-achats-purchase-orders.md) — before that,
+        // GCOM had no purchasing/achat flow at all, so there was nothing to
+        // link here.
         processes: [
             {
                 id: 'gcom-ventes',
@@ -581,6 +596,23 @@ export const BUSINESS_DOMAINS: BusinessDomain[] = [
                 actions: [
                     { id: 'gcom-products', label: 'Catalogue Produits', route: '/products', icon: Package },
                     { id: 'gcom-products-master-data', label: 'Master Data Produits (TVA, marques…)', route: '/products/master-data', icon: Database },
+                ],
+            },
+            {
+                // Same pages as the 'achats-fournisseur' process under the
+                // Magasinier domain (hubData.ts) — reused, not duplicated.
+                // Page-level access is still gated by the real
+                // browse-purchase-orders/-receptions permissions on the
+                // route itself, so surfacing the link from both domains is
+                // safe (same pattern as "Catalogue & Référentiel" above).
+                id: 'gcom-achats',
+                label: 'Achats',
+                description: 'BC Fournisseur, réception de marchandise et rapprochement commandé/reçu',
+                route: '/achats/commandes',
+                icon: ShoppingCart,
+                actions: [
+                    { id: 'gcom-achats-commandes', label: 'BC Fournisseur', route: '/achats/commandes', icon: ShoppingCart },
+                    { id: 'gcom-achats-receptions', label: 'Réception Achat', route: '/achats/receptions', icon: PackageCheck },
                 ],
             },
         ],

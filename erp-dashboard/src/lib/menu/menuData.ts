@@ -144,8 +144,8 @@ export const MENU_MODULES: MenuModule[] = [
         id: 'commandes',
         title: 'Commandes',
         items: [
-          { id: 'purch:cmd:commandes', label: 'Commandes', route: '/orders', permission: 'admin.procurement.orders' },
-          { id: 'purch:cmd:ouvertes', label: 'Commandes ouvertes', route: '/dashboard', permission: 'admin.procurement.orders' },
+          // BC Fournisseur — live since docs/modules/30-achats-purchase-orders.md (2026-08-26).
+          { id: 'purch:cmd:commandes', label: 'Commandes Fournisseur', route: '/achats/commandes', permission: 'browse-purchase-orders' },
           { id: 'purch:cmd:signatures', label: 'Signatures', route: '/dashboard', permission: 'admin.procurement.approve' },
         ],
       },
@@ -153,7 +153,8 @@ export const MENU_MODULES: MenuModule[] = [
         id: 'receptions',
         title: 'Réceptions',
         items: [
-          { id: 'purch:rec:receptions', label: 'Réceptions', route: '/dashboard', permission: 'admin.procurement.receipts' },
+          // Réception Achat — live since docs/modules/30-achats-purchase-orders.md (2026-08-26).
+          { id: 'purch:rec:receptions', label: 'Réceptions', route: '/achats/receptions', permission: 'browse-purchase-receptions' },
           { id: 'purch:rec:retours', label: 'Retours', route: '/dashboard', permission: 'admin.procurement.returns' },
         ],
       },

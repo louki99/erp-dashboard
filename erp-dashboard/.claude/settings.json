@@ -220,7 +220,10 @@
       "Bash(curl -sk -H 'Authorization: Bearer __CMDSUB_OUTPUT__' -w '\\\\nstatus: %{http_code}\\\\n' 'https://omni360.local/api/backend/telesales/catalog/products?partner_id=1485&per_page=60&page=1')",
       "Bash(tee /c/Users/louki/AppData/Local/Temp/claude/d--project--avenir-omni360-omin360--mobile-erp-dashboard-erp-dashboard/567f8a53-5b10-44bd-9aa8-d5df88983a3b/scratchpad/tsc_final.txt)",
       "Bash(tee /c/Users/louki/AppData/Local/Temp/claude/d--project--avenir-omni360-omin360__mobile-erp-dashboard-erp-dashboard/567f8a53-5b10-44bd-9aa8-d5df88983a3b/scratchpad/tsc_final.txt)",
-      "Bash(tee /c/Users/louki/AppData/Local/Temp/claude/d--project--avenir-omni360-omin360__mobile-erp-dashboard-erp-dashboard/567f8a53-5b10-44bd-9aa8-d5df88983a3b/scratchpad/tsc_solde.txt)"
+      "Bash(tee /c/Users/louki/AppData/Local/Temp/claude/d--project--avenir-omni360-omin360__mobile-erp-dashboard-erp-dashboard/567f8a53-5b10-44bd-9aa8-d5df88983a3b/scratchpad/tsc_solde.txt)",
+      "Bash(tee /c/Users/louki/AppData/Local/Temp/claude/d--project--avenir-omni360-omin360__mobile-erp-dashboard-erp-dashboard/567f8a53-5b10-44bd-9aa8-d5df88983a3b/scratchpad/tsc_achats1.txt)",
+      "Bash(echo \"ESLINT_EXIT:$?\")",
+      "Bash(tee /c/Users/louki/AppData/Local/Temp/claude/d--project--avenir-omni360-omin360__mobile-erp-dashboard-erp-dashboard/567f8a53-5b10-44bd-9aa8-d5df88983a3b/scratchpad/tsc_achats2.txt)"
     ],
     "additionalDirectories": [
       "C:\\Users\\louki\\.claude\\projects\\d--project--avenir-omni360-omin360__mobile-erp-dashboard\\memory",

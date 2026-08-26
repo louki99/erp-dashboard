@@ -33,6 +33,7 @@ Tier 2/3 (PutAwayEngine, PickTaskEngine, capacité, FEFO), voir
 7. [Deep Review — points de vigilance validés](#7-deep-review--points-de-vigilance-validés)
 8. [Gating (paramètres wms.*)](#8-gating-paramètres-wms)
 9. [TypeScript Interfaces](#9-typescript-interfaces)
+10. [Van-Loading / Décharge — Deep Review (2026-07-21)](#10-van-loading--décharge--deep-review-2026-07-21)
 
 ---
 
@@ -287,6 +288,23 @@ de tournée). Dépose directement dans le bin donné (`storage_location_id` est
 le magasinier sait déjà où il range). Crée un `stock_movements` de type
 `purchase`, et un `stock_batches` dès que `batch_number` est renseigné.
 
+> **2026-08-26 — nouveau champ `items[].unit_cost` (optionnel) + alignement
+> Tier 1/PMP pour un `warehouse_id` de type CENTRAL uniquement.** Avant ce
+> correctif, cet endpoint ne touchait QUE le bin (Tier 2) : la ligne agrégat
+> `stocks` de la branche (Tier 1, celle que lisent `GET /stocks*` et le garde-
+> fou anti-vente-à-perte sur `pmp_cost`) restait invisible à toute réception
+> passée par ici. Un dépôt central qui recevait exclusivement via cet
+> endpoint voyait son stock Tier 1 dériver silencieusement de la réalité.
+> Fixé en réutilisant le même appel que `PurchaseReceptionService`
+> (`StockUpdateService::addStock()`) — PMP ne bouge que si `unit_cost` est
+> fourni sur la ligne, sinon la quantité Tier 1 monte quand même mais le PMP
+> reste inchangé (même convention que partout ailleurs dans `addStock()`).
+> **Volontairement PAS appliqué pour un `warehouse_id` de type VAN** (retour
+> de tournée) — le Tier 1 d'un van est une ligne différente (indexée par
+> `warehouse_code`, pas `branch_id`), et router par `addStock()` aurait
+> silencieusement crédité le dépôt central de la branche à la place. Une
+> réception VAN garde le comportement bin-only d'avant ce correctif.
+
 ```bash
 curl -X POST "https://api.omni360.cloud/api/backend/wms/receipts" \
   -H "Authorization: Bearer {TOKEN}" \
@@ -300,6 +318,7 @@ curl -X POST "https://api.omni360.cloud/api/backend/wms/receipts" \
         "product_id": 1,
         "quantity": 150.00,
         "storage_location_id": 1,
+        "unit_cost": 12.50,
         "batch_number": "LOT-2026-07-15",
         "production_date": "2026-07-15",
         "expiry_date": "2026-10-15"
@@ -350,13 +369,17 @@ curl -X POST "https://api.omni360.cloud/api/backend/wms/receipts" \
 ```
 
 > `reference_id` sur le mouvement = `supplier_id` (pas un lien vers une table
-> `purchase_receptions` — ce nouvel endpoint est indépendant du flux
-> `PurchaseReceptionController`/`purchase-receptions` existant, qui, lui, gère
-> un vrai cycle brouillon→validation avec contrôle qualité mais **n'a jamais
-> créé de `stock_batches`**. Les deux flux coexistent : celui-ci pour une
-> saisie WMS directe et rapide, l'autre pour un processus de réception
-> formalisé avec QC — voir [13-wms-logistics.md](13-wms-logistics.md) pour le
-> détail du second si l'écran en a besoin).
+> `purchase_receptions` — ce endpoint reste indépendant du flux
+> `PurchaseReceptionController`/`purchase-receptions`
+> ([30-achats-purchase-orders.md](30-achats-purchase-orders.md)), qui, lui,
+> gère un vrai cycle brouillon→validation avec contrôle qualité et
+> rapprochement BC Fournisseur mais **n'a jamais créé de `stock_batches`**.
+> Les deux flux coexistent et partagent désormais le même mécanisme Tier 1/
+> PMP (`StockUpdateService::addStock()`, voir l'encadré ci-dessus) : celui-ci
+> pour une saisie WMS directe et rapide avec lots/emplacements, l'autre pour
+> un processus de réception formalisé avec QC et lien BC — voir
+> [13-wms-logistics.md](13-wms-logistics.md) pour le détail du premier si
+> l'écran en a besoin).
 >
 > `batch_number` est **optionnel** — l'omettre crée uniquement le mouvement
 > d'entrée + le stock d'emplacement, sans lot (utile pour un produit non
@@ -819,3 +842,81 @@ interface AdjustmentResponse {
   };
 }
 ```
+
+---
+
+## 10. Van-Loading / Décharge — Deep Review (2026-07-21)
+
+Deep audit of the conventional-salesperson van loading/unloading cycle (`LoadingRequest` →
+`WarehouseTransfer` → `DechargeReconciliationRequest`), separate from the Tier 2/3 API above.
+Domain shape confirmed: stock physically leaves the central warehouse and lands on the van
+**at the salesperson's QR-scan confirm** (`WarehouseTransferService::confirmLoadingRequestSalesperson`
+→ `StockService::transferFromCentralToVan`), not at magasinier approval/fulfillment — both of
+those stages only reserve/prepare, no physical move.
+
+**Fix 1 — phantom van stock after a décharge shortage.** When physical return < theoretical,
+`StockService::transferFromVanToCentral()` only moves back what was physically found — the
+shortfall used to stay on the van's `stocks` row forever, inflating every subsequent loading
+cycle's theoretical baseline (theoretical is computed as *confirmed loads − direct van sales*,
+which assumes the van's ledger is accurate). Added `StockService::purgeVanDechargeShortage()`,
+called from `WarehouseTransferService::confirmDechargeReconciliationWarehouse()` right after the
+shortage is computed: zeroes the van's residual quantity for each affected product via a
+write-off movement referencing the SDR liability. No more carry-forward drift.
+
+**Fix 2 — breakage/avarie now a first-class movement type, split from unexplained loss.**
+`stock_movements.type` had no `damage`/`avarie` value — declared breakage was indistinguishable
+from an unexplained shortage (theft/unrecorded sale), and the full shortage value was always
+charged to the salesperson as a liability. Added:
+- `damage` to the `stock_movements.type` CHECK constraint (migration
+  `2026_08_03_000000_add_damage_to_stock_movements_type.php`).
+- `decharge_reconciliation_requests.damaged_by_product` / `.damage_value_total` (migration
+  `2026_08_03_000100_...`) — the warehouse can now declare, per product, how much of a shortage
+  is breakage (clamped to the actual shortage found).
+- `purgeVanDechargeShortage()` splits the write-off: the declared-damage portion is booked as a
+  `damage` movement (not charged), the remainder as `adjustment` (charged, drives
+  `salesperson_liability_ref`). A shortage fully declared as damage generates **no** liability ref.
+- `POST /backend/decharge-reconciliation-requests/{id}/confirm` accepts an optional
+  `damaged_by_product` map alongside the existing `physical_by_product`.
+
+**Fix 3 — legacy BCH admin bypass removed (dead code, not a live bug).** The audit initially
+flagged `WarehouseTransferService::createFromShipment()` for moving stock immediately at WT
+creation, unlike `createFromMission()` (which defers to a rider-explicit accept step, fixed
+2026-06-23). Investigation of the actual call graph showed this doesn't reproduce the same bug:
+the only **routed** entry point is `RiderController::acceptBch` (`POST /bch/{bchId}/accept` in
+`routes/api.php`), scoped to `where('rider_id', Auth::id())` — the rider's own explicit action,
+which already IS the accept step. The other three call sites
+(`Backend\WarehouseTransferController::acceptBch()`/`createFromBch()`,
+`API\WarehouseTransferController::acceptBch()`) were **entirely unrouted** (zero references in
+`routes/*.php`, zero internal callers) — dead code that, if ever wired up, would have let an
+admin/dispatcher action create a WT and move stock without any rider consent check, identical to
+the pre-2026-06-23 mission bug. Removed `acceptBch()`/`createFromBch()` from
+`Backend\WarehouseTransferController` rather than adding restrictions to unreachable code.
+`API\WarehouseTransferController` is also fully unrouted (legacy `bonChargement`-relation based,
+superseded by the mission flow) but was left as-is — out of scope for this pass, flagged for a
+future cleanup pass if this area is revisited.
+
+**Bonus bug found and fixed:** `ConventionalDechargeReconciliationService::runStartTransaction()`
+read `$session->branch_code` to stamp the new `DechargeReconciliationRequest` — but
+`work_sessions.branch_code` was dropped by the 3NF normalization migration
+(`2026_06_24_000000_normalize_branch_code_to_branch_id.php`); `WorkSession` has no accessor for
+it. This silently stored an empty `branch_code` on every DRR, which then failed branch
+resolution inside `createDechargeReconciliationWarehouseTransfer()` — **`start()` was broken for
+every real work session in production.** Fixed to `$session->branch?->code`.
+
+**New regression tests:** `tests/Feature/Sfa/DechargeShortagePurgeTest.php` — two tests driving
+the real `ConventionalDechargeReconciliationService::start()` → `confirmWarehouse()` cycle
+end-to-end, asserting zero phantom van stock, correct `damage`/`adjustment` movement split, and
+correct liability-ref behavior (present when unexplained loss > 0, absent when the whole
+shortage is declared damage).
+
+**Pre-existing test staleness found, not fixed (unrelated to the above):**
+- `tests/Property/QrTokenConfirmationGuardPropertyTest.php` and
+  `tests/Property/DechargeTheoreticalStockComputationPropertyTest.php` use
+  `Warehouse::query()->create(['vehicle_id' => ...])` instead of `updateOrCreate()` — collides
+  with `VehicleObserver::created()`'s auto-provisioned van warehouse
+  (`warehouses_van_vehicle_unique`), and also use `'transfer_type' => 'loading'`, no longer a
+  valid value since the `warehouse_transfers_transfer_type_check` constraint (only `salesman`,
+  `dispatcher`, `controller`).
+- `tests/Feature/Sales/BugConditionBchGenerationTest.php` — hits the already-documented
+  `users.branch_code` legacy-column bug, plus a `ClassMorphViolationException` on
+  `App\Models\LoadingRequest` (no morph map entry registered), unrelated to this chapter's work.
