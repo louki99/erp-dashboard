@@ -12,6 +12,8 @@ import type {
     CreateSupplierPaymentPayload, SupplierPaymentMutationResponse, LetterSupplierPaymentPayload,
     SupplierAccountStatementResponse, SupplierLedgerFilters, SupplierLedgerResponse,
     SupplierPaymentsStatementsListFilters, SupplierPaymentsStatementsListResponse,
+    CancelSupplierPaymentPayload, SupplierPaymentListFilters, SupplierPaymentListResponse,
+    SupplierPaymentShowResponse,
 } from '@/types/achats.types';
 
 const BASE = '/api/backend';
@@ -131,12 +133,20 @@ export const achatsApi = {
         getPdfBlobUrl: (id: number): Promise<string | null> =>
             fetchPdfBlobUrl(`${BASE}/supplier-invoices/${id}/pdf`),
     },
-    // §12 — no plain GET /supplier-payments list endpoint is documented
-    // (only create/letter/unletter/cancel + statement/ledger/statements-list).
-    // Don't invent one — a "history of past décaissements" screen isn't
-    // buildable against the confirmed contract; flagged to backend/product,
-    // see [[project_achats_module]].
+    // §12.1bis (added 2026-08-27, doc fix — endpoint existed since the same
+    // commit as POST, just wasn't documented) — list/select a past
+    // décaissement to letter/unletter/cancel against.
     supplierPayments: {
+        list: async (filters?: SupplierPaymentListFilters): Promise<SupplierPaymentListResponse['data']> => {
+            const response = await apiClient.get<SupplierPaymentListResponse>(`${BASE}/supplier-payments`, { params: filters });
+            return response.data.data;
+        },
+        // Loads letterings.supplierInvoice — the detail view a
+        // list/select screen needs, not present on list rows.
+        get: async (id: number): Promise<SupplierPaymentShowResponse['data']> => {
+            const response = await apiClient.get<SupplierPaymentShowResponse>(`${BASE}/supplier-payments/${id}`);
+            return response.data.data;
+        },
         create: async (payload: CreateSupplierPaymentPayload) => {
             const response = await apiClient.post<SupplierPaymentMutationResponse>(`${BASE}/supplier-payments`, payload);
             return response.data;
@@ -149,13 +159,11 @@ export const achatsApi = {
             const response = await apiClient.post<SupplierPaymentMutationResponse>(`${BASE}/supplier-payments/letterings/${letteringId}/unletter`);
             return response.data;
         },
-        // Doc's §12.3 prose never shows a request body for cancel (unlike
-        // purchase-orders/-receptions/supplier-invoices, which all explicitly
-        // require {reason}, 10-500 chars) — sent with no body here rather
-        // than guessing a required field the doc never confirmed. If a live
-        // 422 says otherwise, fix this then (see [[project_achats_module]]).
-        cancel: async (id: number) => {
-            const response = await apiClient.post<SupplierPaymentMutationResponse>(`${BASE}/supplier-payments/${id}/cancel`);
+        // Confirmed live 2026-08-27 — {reason} required, 10-500 chars, same
+        // convention as every other cancel in this module (doc's §12.3
+        // example was just missing it).
+        cancel: async (id: number, payload: CancelSupplierPaymentPayload) => {
+            const response = await apiClient.post<SupplierPaymentMutationResponse>(`${BASE}/supplier-payments/${id}/cancel`, payload);
             return response.data;
         },
         statement: async (supplierId: number): Promise<SupplierAccountStatementResponse['data']> => {

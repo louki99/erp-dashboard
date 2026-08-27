@@ -127,9 +127,15 @@ export interface PurchaseOrderLinePayload {
     unit_cost?: number;
 }
 
+// branch_code REMOVED from the payload 2026-08-27 (security fix, commit
+// 50f9379e) — a cross-tenant vuln let a client-supplied branch_code bypass
+// company ownership checks (existence was verified, not ownership). No
+// override, even for admin/root — the branch is now always resolved
+// server-side from the authenticated user. Sending it is silently ignored,
+// not rejected, but don't send it — removed the field entirely rather than
+// leave a dead client-side picker.
 export interface CreatePurchaseOrderPayload {
     supplier_id: number;
-    branch_code: string;
     order_date?: string;
     expected_delivery_date?: string;
     notes?: string;
@@ -180,9 +186,9 @@ export interface PurchaseReceptionLinePayload {
     unit_cost: number;
 }
 
+// branch_code REMOVED 2026-08-27 — see CreatePurchaseOrderPayload's comment.
 export interface CreatePurchaseReceptionPayload {
     supplier_id: number;
-    branch_code: string;
     purchase_order_id?: number | null;
     reception_date?: string;
     supplier_invoice_number?: string;
@@ -209,6 +215,7 @@ export interface CancelPurchaseReceptionPayload {
 
 export type SupplierInvoiceStatus = 'pending_review' | 'matched' | 'approved' | 'cancelled';
 export type MatchStatus = 'matched' | 'discrepancy' | 'unmatched';
+export type SupplierInvoicePaymentStatus = 'unpaid' | 'partially_paid' | 'paid';
 
 export interface SupplierInvoice {
     id: number;
@@ -228,6 +235,14 @@ export interface SupplierInvoice {
     approved_at: string | null;
     lines: SupplierInvoiceLine[];
     supplier?: { id: number; name: string };
+    // Confirmed live on staging 2026-08-27 — the original §11.7 TS block
+    // predated the Règlements Fournisseurs migration and was never updated.
+    // `remaining_amount` is the real outstanding balance — use this for the
+    // manual-lettering picker, not `total_amount` (see the fixed gap note
+    // in [[project_achats_module]]).
+    paid_amount: string;
+    remaining_amount: string;
+    payment_status: SupplierInvoicePaymentStatus;
 }
 
 export interface SupplierInvoiceLine {
@@ -273,9 +288,9 @@ export interface SupplierInvoiceLinePayload {
     purchase_reception_line_id?: number;
 }
 
+// branch_code REMOVED 2026-08-27 — see CreatePurchaseOrderPayload's comment.
 export interface CreateSupplierInvoicePayload {
     supplier_id: number;
-    branch_code: string;
     supplier_invoice_reference?: string;
     invoice_date?: string;
     lines: SupplierInvoiceLinePayload[];
@@ -344,9 +359,9 @@ export interface SupplierPaymentAllocationInput {
     amount: number;
 }
 
+// branch_code REMOVED 2026-08-27 — see CreatePurchaseOrderPayload's comment.
 export interface CreateSupplierPaymentPayload {
     supplier_id: number;
-    branch_code: string;
     amount: number;
     payment_method_id: number;
     instrument_reference?: string;
@@ -367,6 +382,35 @@ export interface SupplierPaymentMutationResponse {
 
 export interface LetterSupplierPaymentPayload {
     allocations: SupplierPaymentAllocationInput[];
+}
+
+// Confirmed live 2026-08-27 — required, 10-500 chars, same convention as
+// every other cancel in this module (was omitted from the §12.3 example).
+export interface CancelSupplierPaymentPayload {
+    reason: string;
+}
+
+// GET /supplier-payments — confirmed live 2026-08-27, existed since the same
+// commit as POST but was undocumented in §12 (a doc gap, not a missing
+// endpoint — see [[project_achats_module]]).
+export interface SupplierPaymentListFilters {
+    supplier_id?: number;
+    status?: string;
+    branch_code?: string;
+    per_page?: number;
+    page?: number;
+}
+
+export interface SupplierPaymentListResponse {
+    success: boolean;
+    data: AchatsPaginator<SupplierPayment>;
+}
+
+// GET /supplier-payments/{id} — loads letterings.supplierInvoice, needed to
+// letter/unletter/cancel an existing (not just just-created) payment.
+export interface SupplierPaymentShowResponse {
+    success: boolean;
+    data: SupplierPayment;
 }
 
 export interface SupplierAccountStatement {

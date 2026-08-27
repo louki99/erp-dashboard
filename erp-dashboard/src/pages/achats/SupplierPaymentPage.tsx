@@ -1,20 +1,19 @@
 import { useState, useRef, useMemo, useCallback, useEffect } from 'react';
 import type { ICellRendererParams } from 'ag-grid-community';
 import {
-    Banknote, Search, X, Plus, Loader2, CheckCircle2, Ban, Building2, ShieldAlert,
+    Banknote, Search, X, Plus, Loader2, CheckCircle2, Ban, Building2, ShieldAlert, Link2, Unlink,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 
 import { MasterLayout } from '@/components/layout/MasterLayout';
 import { ActionPanel, type ActionItemProps } from '@/components/layout/ActionPanel';
 import { DataGrid } from '@/components/common/DataGrid';
-import { AsyncCombobox, type ComboboxOption } from '@/components/common/AsyncCombobox';
 
 import {
     useSupplierStatement, useSupplierLedger, useCreateSupplierPayment, useCancelSupplierPayment,
+    useSupplierPayments, useSupplierPayment, useLetterSupplierPayment, useUnletterSupplierPayment,
 } from '@/hooks/achats/useSupplierPayments';
 import { achatsApi } from '@/services/api/achatsApi';
-import { financeApi } from '@/services/api/financeApi';
 import { masterdataApi, type PaymentMethod } from '@/services/api/masterdataApi';
 import type { PurchaseOrderSupplier, SupplierInvoice, SupplierPayment, SupplierLedgerEntry } from '@/types/achats.types';
 
@@ -40,10 +39,12 @@ const soldeDisplay = (balance: number): { label: string; amount: string; classNa
 type AllocationMode = 'auto' | 'manual' | 'none';
 type ManualAllocation = { invoice: SupplierInvoice; amount: string };
 
-const searchBranchesOptions = async (q: string): Promise<ComboboxOption[]> => {
-    const res = await financeApi.getHelperBranches({ search: q, limit: 30 });
-    return (res.data ?? []).map(b => ({ id: b.code, label: b.name, sub: b.code }));
-};
+// Fetches the supplier's approved invoices for a lettering picker (create
+// form's manual mode, and the existing-payment "Lettrer" panel). Uses
+// remaining_amount (confirmed live 2026-08-27 — the real outstanding
+// balance) as the reference/prefill amount, not total_amount.
+const loadApprovedInvoices = (supplierId: number) =>
+    achatsApi.supplierInvoices.list({ supplier_id: supplierId, status: 'approved', per_page: 50 }).then(res => res.data);
 
 // ─── Component ───────────────────────────────────────────────────────────────
 
@@ -104,9 +105,16 @@ export default function SupplierPaymentPage() {
     const { data: statement, isLoading: loadingStatement } = useSupplierStatement(selectedSupplier?.id ?? null);
     const { data: ledgerData, isLoading: loadingLedger } = useSupplierLedger(selectedSupplier?.id ?? null);
 
+    // §12.1bis (2026-08-27, doc fix) — history of past décaissements for the
+    // selected supplier, selectable to letter/unletter/cancel.
+    const { data: paymentsData, isLoading: loadingPayments } = useSupplierPayments({ supplier_id: selectedSupplier?.id });
+    const payments = useMemo(() => paymentsData?.pages.flatMap(p => p.data) ?? [], [paymentsData]);
+
+    const [selectedPaymentId, setSelectedPaymentId] = useState<number | null>(null);
+    const { data: selectedPayment, isLoading: loadingSelectedPayment } = useSupplierPayment(selectedPaymentId);
+
     // ── Create payment form ───────────────────────────────────────────────────
     const [showCreateForm, setShowCreateForm] = useState(false);
-    const [newBranch, setNewBranch] = useState<ComboboxOption | null>(null);
     const [newAmount, setNewAmount] = useState('');
     const [paymentMethods, setPaymentMethods] = useState<PaymentMethod[]>([]);
     const [newMethodId, setNewMethodId] = useState<number | ''>('');
@@ -116,7 +124,6 @@ export default function SupplierPaymentPage() {
     const [allocationMode, setAllocationMode] = useState<AllocationMode>('auto');
     const [approvedInvoices, setApprovedInvoices] = useState<SupplierInvoice[]>([]);
     const [manualAllocations, setManualAllocations] = useState<ManualAllocation[]>([]);
-    const [justCreated, setJustCreated] = useState<SupplierPayment | null>(null);
 
     useEffect(() => {
         masterdataApi.paymentMethods.getAll().then(setPaymentMethods).catch(() => setPaymentMethods([]));
@@ -126,37 +133,45 @@ export default function SupplierPaymentPage() {
     const needsInstrument = selectedMethod?.type === 'check';
 
     const resetCreateForm = () => {
-        setNewBranch(null); setNewAmount(''); setNewMethodId(''); setNewInstrumentRef(''); setNewMaturityDate('');
-        setNewNotes(''); setAllocationMode('auto'); setManualAllocations([]); setJustCreated(null);
+        setNewAmount(''); setNewMethodId(''); setNewInstrumentRef(''); setNewMaturityDate('');
+        setNewNotes(''); setAllocationMode('auto'); setManualAllocations([]);
     };
 
     const openCreateForm = useCallback((supplier: PurchaseOrderSupplier) => {
         setSelectedSupplier(supplier);
+        setSelectedPaymentId(null);
         resetCreateForm();
         setShowCreateForm(true);
     }, []);
 
-    const selectRow = useCallback((supplier: PurchaseOrderSupplier) => {
+    const selectSupplierRow = useCallback((supplier: PurchaseOrderSupplier) => {
         setShowCreateForm(false);
+        setSelectedPaymentId(null);
         setSelectedSupplier(supplier);
+    }, []);
+
+    const selectPaymentRow = useCallback((payment: SupplierPayment) => {
+        setShowCreateForm(false);
+        setSelectedPaymentId(payment.id);
     }, []);
 
     useEffect(() => {
         if (allocationMode !== 'manual' || !selectedSupplier) { setApprovedInvoices([]); return; }
-        achatsApi.supplierInvoices.list({ supplier_id: selectedSupplier.id, status: 'approved', per_page: 50 })
-            .then(res => {
-                setApprovedInvoices(res.data);
-                setManualAllocations(res.data.map(inv => ({ invoice: inv, amount: '' })));
+        loadApprovedInvoices(selectedSupplier.id)
+            .then(invoices => {
+                setApprovedInvoices(invoices);
+                setManualAllocations(invoices.map(inv => ({ invoice: inv, amount: '' })));
             })
             .catch(() => toast.error('Erreur chargement des factures approuvées'));
     }, [allocationMode, selectedSupplier]);
 
     const createMutation = useCreateSupplierPayment();
     const cancelMutation = useCancelSupplierPayment();
+    const letterMutation = useLetterSupplierPayment();
+    const unletterMutation = useUnletterSupplierPayment();
 
     const handleCreateSubmit = async () => {
         if (!selectedSupplier) return;
-        if (!newBranch) { toast.error('Sélectionnez une agence.'); return; }
         const amount = parseFloat(newAmount);
         if (!amount || amount <= 0) { toast.error('Montant invalide.'); return; }
         if (!newMethodId) { toast.error('Sélectionnez un mode de paiement.'); return; }
@@ -181,7 +196,6 @@ export default function SupplierPaymentPage() {
         try {
             const res = await createMutation.mutateAsync({
                 supplier_id: selectedSupplier.id,
-                branch_code: String(newBranch.id),
                 amount,
                 payment_method_id: Number(newMethodId),
                 instrument_reference: needsInstrument ? newInstrumentRef : undefined,
@@ -192,26 +206,73 @@ export default function SupplierPaymentPage() {
             });
             toast.success('Décaissement enregistré.');
             soldeCache.current.delete(selectedSupplier.id);
-            setJustCreated(res.data);
+            setShowCreateForm(false);
+            setSelectedPaymentId(res.data.id);
         } catch (err: unknown) {
             const msg = (err as { response?: { data?: { message?: string } } })?.response?.data?.message;
             toast.error(msg ?? "Erreur lors de l'enregistrement du décaissement.");
         }
     };
 
-    const handleCancelPayment = async () => {
-        if (!justCreated) return;
+    // ── Existing-payment panel: letter / unletter / cancel ────────────────────
+    const [showLetterForm, setShowLetterForm] = useState(false);
+    const [letterInvoices, setLetterInvoices] = useState<SupplierInvoice[]>([]);
+    const [letterAllocations, setLetterAllocations] = useState<ManualAllocation[]>([]);
+    const [showCancelForm, setShowCancelForm] = useState(false);
+    const [cancelReason, setCancelReason] = useState('');
+
+    const openLetterForm = useCallback(() => {
+        if (!selectedSupplier) return;
+        loadApprovedInvoices(selectedSupplier.id)
+            .then(invoices => {
+                setLetterInvoices(invoices);
+                setLetterAllocations(invoices.map(inv => ({ invoice: inv, amount: '' })));
+            })
+            .catch(() => toast.error('Erreur chargement des factures approuvées'));
+        setShowLetterForm(true);
+    }, [selectedSupplier]);
+
+    const handleLetterSubmit = async () => {
+        if (!selectedPayment) return;
+        const allocations = letterAllocations
+            .filter(a => a.amount && parseFloat(a.amount) > 0)
+            .map(a => ({ supplier_invoice_id: a.invoice.id, amount: parseFloat(a.amount) }));
+        if (allocations.length === 0) { toast.error('Saisissez au moins un montant imputé.'); return; }
         try {
-            await cancelMutation.mutateAsync(justCreated.id);
+            await letterMutation.mutateAsync({ id: selectedPayment.id, payload: { allocations } });
+            toast.success('Lettrage enregistré.');
+            setShowLetterForm(false);
+        } catch (err: unknown) {
+            const msg = (err as { response?: { data?: { message?: string } } })?.response?.data?.message;
+            toast.error(msg ?? "Erreur lors du lettrage.");
+        }
+    };
+
+    const handleUnletter = async (letteringId: number) => {
+        try {
+            await unletterMutation.mutateAsync(letteringId);
+            toast.success('Imputation retirée.');
+        } catch (err: unknown) {
+            const msg = (err as { response?: { data?: { message?: string } } })?.response?.data?.message;
+            toast.error(msg ?? "Erreur lors du délettrage.");
+        }
+    };
+
+    const handleCancelPayment = async () => {
+        if (!selectedPayment) return;
+        if (cancelReason.trim().length < 10) { toast.error('Le motif doit contenir au moins 10 caractères.'); return; }
+        try {
+            await cancelMutation.mutateAsync({ id: selectedPayment.id, payload: { reason: cancelReason.trim() } });
             toast.success('Décaissement annulé.');
-            setShowCreateForm(false);
+            setShowCancelForm(false);
+            setCancelReason('');
         } catch (err: unknown) {
             const msg = (err as { response?: { data?: { message?: string } } })?.response?.data?.message;
             toast.error(msg ?? "Erreur lors de l'annulation.");
         }
     };
 
-    // ── Grid ──────────────────────────────────────────────────────────────────
+    // ── Grid: suppliers ────────────────────────────────────────────────────────
     const columnDefs = useMemo<import('ag-grid-community').ColDef[]>(() => [
         {
             colId: 'name', headerName: 'Fournisseur', flex: 1, minWidth: 140,
@@ -240,11 +301,12 @@ export default function SupplierPaymentPage() {
     // ── Actions ───────────────────────────────────────────────────────────────
     const actionGroups: { items: ActionItemProps[] }[] = [];
     if (selectedSupplier) {
-        const items: ActionItemProps[] = [];
-        if (!showCreateForm) {
-            items.push({ icon: Plus, label: 'Nouveau Décaissement', variant: 'sage', onClick: () => openCreateForm(selectedSupplier) });
-        } else if (justCreated) {
-            items.push({ icon: Ban, label: 'Annuler ce décaissement', variant: 'danger', onClick: handleCancelPayment, disabled: cancelMutation.isPending });
+        const items: ActionItemProps[] = [
+            { icon: Plus, label: 'Nouveau Décaissement', variant: 'sage', onClick: () => openCreateForm(selectedSupplier) },
+        ];
+        if (selectedPayment && !showCreateForm) {
+            items.push({ icon: Link2, label: 'Lettrer', variant: 'default', onClick: openLetterForm, disabled: showLetterForm });
+            items.push({ icon: Ban, label: 'Annuler ce décaissement', variant: 'danger', onClick: () => setShowCancelForm(v => !v) });
         }
         actionGroups.push({ items });
     }
@@ -273,7 +335,7 @@ export default function SupplierPaymentPage() {
                         </div>
                     </div>
                     <div className="flex-1 overflow-hidden">
-                        <DataGrid rowData={filteredSuppliers} columnDefs={columnDefs} loading={suppliersLoading} onRowClicked={e => selectRow(e.data)} />
+                        <DataGrid rowData={filteredSuppliers} columnDefs={columnDefs} loading={suppliersLoading} onRowClicked={e => selectSupplierRow(e.data)} />
                     </div>
                 </div>
             }
@@ -305,14 +367,10 @@ export default function SupplierPaymentPage() {
                                     </div>
                                 </div>
 
-                                {showCreateForm && !justCreated && (
+                                {showCreateForm && (
                                     <div className="bg-white border border-gray-200 rounded-xl p-6 mb-4">
                                         <h3 className="text-sm font-bold text-gray-900 mb-4 flex items-center gap-2"><Plus className="w-4 h-4 text-sage-600" /> Nouveau Décaissement</h3>
                                         <div className="grid grid-cols-2 gap-4 mb-4">
-                                            <div>
-                                                <label className="block text-[11px] font-medium text-gray-500 uppercase tracking-wide mb-1">Agence <span className="text-red-500">*</span></label>
-                                                <AsyncCombobox value={newBranch} onChange={setNewBranch} onSearch={searchBranchesOptions} placeholder="Rechercher une agence…" />
-                                            </div>
                                             <div>
                                                 <label className="block text-[11px] font-medium text-gray-500 uppercase tracking-wide mb-1">Montant <span className="text-red-500">*</span></label>
                                                 <input type="number" min="0" step="0.01" value={newAmount} onChange={e => setNewAmount(e.target.value)} className="w-full px-3 py-1.5 text-xs border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-sage-400" />
@@ -361,10 +419,7 @@ export default function SupplierPaymentPage() {
                                                 {manualAllocations.map((a, idx) => (
                                                     <div key={a.invoice.id} className="grid grid-cols-[1fr_120px_110px] gap-2 items-center">
                                                         <span className="text-xs font-mono text-indigo-600">{a.invoice.invoice_number}</span>
-                                                        {/* No remaining_amount exposed on SupplierInvoice — total_amount
-                                                            shown as a reference upper bound only, backend is the
-                                                            authority on actual outstanding balance. */}
-                                                        <span className="text-[10px] text-gray-400">Total : {fmtMAD(a.invoice.total_amount)}</span>
+                                                        <span className="text-[10px] text-gray-400">Reste : {fmtMAD(a.invoice.remaining_amount)}</span>
                                                         <input
                                                             type="number" min="0" step="0.01" value={a.amount}
                                                             onChange={e => setManualAllocations(prev => prev.map((p, i) => i === idx ? { ...p, amount: e.target.value } : p))}
@@ -385,24 +440,102 @@ export default function SupplierPaymentPage() {
                                     </div>
                                 )}
 
-                                {justCreated && (
-                                    <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-4 mb-4">
-                                        <div className="flex items-start gap-2.5">
-                                            <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" />
-                                            <div className="text-xs text-emerald-800">
-                                                <p className="font-semibold mb-1">Décaissement {justCreated.code} enregistré — {fmtMAD(justCreated.amount)}</p>
-                                                {justCreated.letterings && justCreated.letterings.length > 0 ? (
-                                                    <ul className="list-disc list-inside space-y-0.5">
-                                                        {justCreated.letterings.map(l => (
-                                                            <li key={l.id}>{fmtMAD(l.amount)} imputé sur {l.supplier_invoice?.invoice_number ?? `facture #${l.supplier_invoice_id}`}</li>
-                                                        ))}
-                                                    </ul>
-                                                ) : (
-                                                    <p>Aucune imputation — avance pure, remaining_amount : {fmtMAD(justCreated.remaining_amount)}.</p>
+                                {!showCreateForm && (
+                                    <div className="bg-white border border-gray-200 rounded-xl overflow-hidden mb-4">
+                                        <div className="px-4 py-2.5 border-b border-gray-200 bg-gray-50 text-[10px] font-semibold text-gray-500 uppercase tracking-wide">Historique des Décaissements</div>
+                                        <table className="w-full text-xs">
+                                            <thead>
+                                                <tr className="bg-gray-50 border-b border-gray-200 text-[10px] uppercase tracking-wide text-gray-500">
+                                                    <th className="text-left px-3 py-2">Code</th>
+                                                    <th className="text-left px-3 py-2">Statut</th>
+                                                    <th className="text-right px-3 py-2">Montant</th>
+                                                    <th className="text-right px-3 py-2">Restant</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody className="divide-y divide-gray-100">
+                                                {loadingPayments ? (
+                                                    <tr><td colSpan={4} className="px-3 py-6 text-center"><Loader2 className="w-4 h-4 animate-spin mx-auto text-gray-300" /></td></tr>
+                                                ) : payments.map(p => (
+                                                    <tr
+                                                        key={p.id}
+                                                        onClick={() => selectPaymentRow(p)}
+                                                        className={`cursor-pointer hover:bg-sage-50 ${selectedPaymentId === p.id ? 'bg-sage-50' : ''}`}
+                                                    >
+                                                        <td className="px-3 py-2 font-mono text-indigo-600">{p.code}</td>
+                                                        <td className="px-3 py-2 text-gray-600">{p.status}</td>
+                                                        <td className="px-3 py-2 text-right tabular-nums font-semibold">{fmtMAD(p.amount)}</td>
+                                                        <td className="px-3 py-2 text-right tabular-nums text-amber-600">{fmtMAD(p.remaining_amount)}</td>
+                                                    </tr>
+                                                ))}
+                                                {!loadingPayments && payments.length === 0 && (
+                                                    <tr><td colSpan={4} className="px-3 py-6 text-center text-gray-300">Aucun décaissement</td></tr>
                                                 )}
-                                            </div>
-                                        </div>
+                                            </tbody>
+                                        </table>
                                     </div>
+                                )}
+
+                                {!showCreateForm && selectedPaymentId && (
+                                    loadingSelectedPayment ? (
+                                        <div className="bg-white border border-gray-200 rounded-xl p-6 mb-4 flex justify-center"><Loader2 className="w-5 h-5 animate-spin text-gray-300" /></div>
+                                    ) : selectedPayment && (
+                                        <div className="bg-white border border-gray-200 rounded-xl p-4 mb-4">
+                                            <div className="flex items-start justify-between mb-2">
+                                                <p className="text-xs font-bold text-gray-900 font-mono">{selectedPayment.code} — {fmtMAD(selectedPayment.amount)}</p>
+                                                <span className="text-[10px] font-semibold text-gray-500 uppercase">{selectedPayment.status}</span>
+                                            </div>
+                                            {selectedPayment.letterings && selectedPayment.letterings.length > 0 ? (
+                                                <ul className="space-y-1 mb-2">
+                                                    {selectedPayment.letterings.map(l => (
+                                                        <li key={l.id} className="flex items-center justify-between text-xs">
+                                                            <span>{fmtMAD(l.amount)} imputé sur <span className="font-mono text-indigo-600">{l.supplier_invoice?.invoice_number ?? `facture #${l.supplier_invoice_id}`}</span></span>
+                                                            <button onClick={() => handleUnletter(l.id)} disabled={unletterMutation.isPending} className="text-gray-400 hover:text-red-500 flex items-center gap-1 text-[10px]">
+                                                                <Unlink className="w-3 h-3" /> Délettrer
+                                                            </button>
+                                                        </li>
+                                                    ))}
+                                                </ul>
+                                            ) : (
+                                                <p className="text-xs text-gray-500 mb-2">Aucune imputation — restant : {fmtMAD(selectedPayment.remaining_amount)}.</p>
+                                            )}
+
+                                            {showLetterForm && (
+                                                <div className="bg-sage-50 border border-sage-200 rounded-lg p-3 mt-2">
+                                                    <p className="text-[11px] font-semibold text-sage-700 uppercase tracking-wide mb-2">Nouvelle imputation</p>
+                                                    {letterInvoices.length === 0 && <p className="text-xs text-gray-400 italic">Aucune facture approuvée pour ce fournisseur.</p>}
+                                                    <div className="space-y-1.5 mb-2">
+                                                        {letterAllocations.map((a, idx) => (
+                                                            <div key={a.invoice.id} className="grid grid-cols-[1fr_120px_110px] gap-2 items-center">
+                                                                <span className="text-xs font-mono text-indigo-600">{a.invoice.invoice_number}</span>
+                                                                <span className="text-[10px] text-gray-400">Reste : {fmtMAD(a.invoice.remaining_amount)}</span>
+                                                                <input
+                                                                    type="number" min="0" step="0.01" value={a.amount}
+                                                                    onChange={e => setLetterAllocations(prev => prev.map((p, i) => i === idx ? { ...p, amount: e.target.value } : p))}
+                                                                    placeholder="Montant"
+                                                                    className="px-2.5 py-1.5 text-xs border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-sage-400"
+                                                                />
+                                                            </div>
+                                                        ))}
+                                                    </div>
+                                                    <div className="flex items-center gap-2">
+                                                        <button onClick={handleLetterSubmit} disabled={letterMutation.isPending} className="px-3 py-1.5 text-xs font-semibold text-white bg-sage-600 hover:bg-sage-700 rounded-lg disabled:opacity-50">Enregistrer</button>
+                                                        <button onClick={() => setShowLetterForm(false)} className="px-3 py-1.5 text-xs font-semibold text-gray-500 hover:bg-gray-100 rounded-lg">Fermer</button>
+                                                    </div>
+                                                </div>
+                                            )}
+
+                                            {showCancelForm && (
+                                                <div className="bg-red-50 border border-red-200 rounded-lg p-3 mt-2">
+                                                    <label className="block text-[11px] font-semibold text-red-700 uppercase tracking-wide mb-1.5">Motif d'annulation (10-500 caractères)</label>
+                                                    <textarea value={cancelReason} onChange={e => setCancelReason(e.target.value)} rows={2} className="w-full px-3 py-1.5 text-xs border border-red-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-red-400 mb-2" />
+                                                    <div className="flex items-center gap-2">
+                                                        <button onClick={handleCancelPayment} disabled={cancelMutation.isPending} className="px-3 py-1.5 text-xs font-semibold text-white bg-red-600 hover:bg-red-700 rounded-lg disabled:opacity-50">Confirmer l'annulation</button>
+                                                        <button onClick={() => setShowCancelForm(false)} className="px-3 py-1.5 text-xs font-semibold text-gray-500 hover:bg-gray-100 rounded-lg">Fermer</button>
+                                                    </div>
+                                                </div>
+                                            )}
+                                        </div>
+                                    )
                                 )}
 
                                 <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">

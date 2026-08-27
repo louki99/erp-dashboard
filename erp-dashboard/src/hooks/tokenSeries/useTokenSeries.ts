@@ -64,8 +64,23 @@ export function useDeleteTokenSerie() {
 
     return useMutation<TokenSerieDeleteResponse, AxiosError, string>({
         mutationFn: (code) => tokenSeriesApi.deleteTokenSerie(code) as Promise<TokenSerieDeleteResponse>,
-        onSuccess: () => {
-            queryClient.invalidateQueries({ queryKey: tokenSeriesKeys.all });
+        // Live bug (2026-08-27): invalidating tokenSeriesKeys.all here used to
+        // also match the just-deleted code's OWN detail query
+        // (['token-series','detail',code]). If a component still had that
+        // exact query enabled at this moment (e.g. the delete-confirm
+        // dialog's own usage check, or the detail view for the series being
+        // deleted) — which it always does, since this onSuccess runs BEFORE
+        // the page's own post-delete state-clearing runs, see
+        // TokenSeriesPage.tsx's handleDelete — invalidation triggered an
+        // immediate refetch against a resource that no longer exists, 404ing
+        // and popping a spurious "Ressource introuvable" toast right after a
+        // successful delete. Scoped to `lists()` + an explicit `removeQueries`
+        // for the specific deleted code's detail entry instead of a blanket
+        // `all` invalidation, which also collaterally busted unrelated
+        // detail queries for other series.
+        onSuccess: (_data, code) => {
+            queryClient.removeQueries({ queryKey: tokenSeriesKeys.detail(code) });
+            queryClient.invalidateQueries({ queryKey: tokenSeriesKeys.lists() });
         },
     });
 }

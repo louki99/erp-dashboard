@@ -266,12 +266,25 @@ export function TokenSeriesPage() {
             ]);
             return;
         }
+        const codeToDelete = serieToDelete.code;
+        // Clear every state var that keeps a useTokenSerie(code) query enabled
+        // for this code BEFORE calling the mutation, not after — a live bug:
+        // the mutation's own onSuccess invalidates the cache synchronously,
+        // before this async function resumes past the `await` below. If
+        // `viewSelected`/`serieToDelete` still pointed at the just-deleted
+        // code at that moment, their still-enabled detail queries refetched
+        // immediately against a 404ing resource, popping a spurious
+        // "Ressource introuvable" toast right after a successful delete (see
+        // useDeleteTokenSerie's own comment). Clearing here first means
+        // React has already re-rendered with the query disabled by the time
+        // the network round-trip completes.
+        setSerieToDelete(null);
+        if (viewSelected?.code === codeToDelete) setViewSelected(null);
+        if (editTarget?.code === codeToDelete) { setEditTarget(null); setFormMode('view'); }
         try {
-            const result = await deleteSerie.mutateAsync(serieToDelete.code);
+            const result = await deleteSerie.mutateAsync(codeToDelete);
             if (isConflictResponse(result)) { setConflictRefs(result.references); return; }
             toast.success('Série supprimée.');
-            setSerieToDelete(null);
-            if (viewSelected?.code === serieToDelete.code) setViewSelected(null);
         } catch (error) {
             if (isAxiosError(error) && error.response?.status === 409) {
                 setConflictRefs(error.response.data.references ?? []);

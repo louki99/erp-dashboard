@@ -181,7 +181,6 @@ export default function SupplierInvoicePage() {
         try {
             const res = await createMutation.mutateAsync({
                 supplier_id: Number(newSupplier.id),
-                branch_code: bcDetail.branch_code,
                 supplier_invoice_reference: newReference || undefined,
                 invoice_date: newInvoiceDate || undefined,
                 lines,

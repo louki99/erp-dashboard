@@ -16,7 +16,6 @@ import {
     useCancelPurchaseOrder, useAddPurchaseOrderLine, useDeletePurchaseOrderLine,
 } from '@/hooks/achats/usePurchaseOrders';
 import { achatsApi } from '@/services/api/achatsApi';
-import { financeApi } from '@/services/api/financeApi';
 import { searchProducts } from '@/services/api/pricingApi';
 import type { PurchaseOrder, PurchaseOrderStatus, PurchaseOrderLinePayload } from '@/types/achats.types';
 
@@ -66,12 +65,6 @@ const searchSuppliers = async (q: string): Promise<ComboboxOption[]> => {
         : suppliers;
     return filtered.map(s => ({ id: s.id, label: s.name, sub: s.contact_name ?? s.phone ?? undefined }));
 };
-const searchBranchesOptions = async (q: string): Promise<ComboboxOption[]> => {
-    const res = await financeApi.getHelperBranches({ search: q, limit: 30 });
-    // `id` holds the branch CODE (not the numeric id) — the Achats API takes
-    // branch_code directly, not branch_id (doc §3.3).
-    return (res.data ?? []).map(b => ({ id: b.code, label: b.name, sub: b.code }));
-};
 const searchProductOptions = async (q: string): Promise<ComboboxOption[]> => {
     const res = await searchProducts(q);
     return (res ?? []).map(p => ({ id: p.id, label: p.name, sub: p.code }));
@@ -108,14 +101,13 @@ export default function PurchaseOrderPage() {
     // ── Create form ───────────────────────────────────────────────────────────
     const [showCreateForm, setShowCreateForm] = useState(false);
     const [newSupplier, setNewSupplier] = useState<ComboboxOption | null>(null);
-    const [newBranch, setNewBranch] = useState<ComboboxOption | null>(null);
     const [newOrderDate, setNewOrderDate] = useState('');
     const [newExpectedDate, setNewExpectedDate] = useState('');
     const [newNotes, setNewNotes] = useState('');
     const [newLines, setNewLines] = useState<DraftLine[]>([emptyLine()]);
 
     const resetCreateForm = () => {
-        setNewSupplier(null); setNewBranch(null); setNewOrderDate(''); setNewExpectedDate('');
+        setNewSupplier(null); setNewOrderDate(''); setNewExpectedDate('');
         setNewNotes(''); setNewLines([emptyLine()]);
     };
 
@@ -152,7 +144,6 @@ export default function PurchaseOrderPage() {
 
     const handleCreateSubmit = async () => {
         if (!newSupplier) { toast.error('Sélectionnez un fournisseur.'); return; }
-        if (!newBranch) { toast.error('Sélectionnez une agence.'); return; }
         const lines: PurchaseOrderLinePayload[] = [];
         for (const l of newLines) {
             if (!l.product) continue;
@@ -165,7 +156,6 @@ export default function PurchaseOrderPage() {
         try {
             const res = await createMutation.mutateAsync({
                 supplier_id: Number(newSupplier.id),
-                branch_code: String(newBranch.id),
                 order_date: newOrderDate || undefined,
                 expected_delivery_date: newExpectedDate || undefined,
                 notes: newNotes || undefined,
@@ -358,10 +348,6 @@ export default function PurchaseOrderPage() {
                                     <div>
                                         <label className="block text-[11px] font-medium text-gray-500 uppercase tracking-wide mb-1">Fournisseur <span className="text-red-500">*</span></label>
                                         <AsyncCombobox value={newSupplier} onChange={setNewSupplier} onSearch={searchSuppliers} placeholder="Rechercher un fournisseur…" />
-                                    </div>
-                                    <div>
-                                        <label className="block text-[11px] font-medium text-gray-500 uppercase tracking-wide mb-1">Agence <span className="text-red-500">*</span></label>
-                                        <AsyncCombobox value={newBranch} onChange={setNewBranch} onSearch={searchBranchesOptions} placeholder="Rechercher une agence…" />
                                     </div>
                                     <div>
                                         <label className="block text-[11px] font-medium text-gray-500 uppercase tracking-wide mb-1">Date commande</label>

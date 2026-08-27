@@ -138,10 +138,19 @@ draft/annulées — utile pour reconstituer l'historique complet d'un BC).
 
 ### 3.3 Créer — `POST /purchase-orders`
 
+> ⚠️ **Changement 2026-08-26 (breaking) : `branch_code` n'est plus accepté
+> dans le body.** Faille cross-tenant réelle trouvée en revue production :
+> un `branch_code` fourni par le client n'était vérifié que pour son
+> existence, pas son appartenance à la société de l'utilisateur — une BC
+> pouvait être créée contre la branche d'une AUTRE société. La branche est
+> désormais **toujours dérivée côté serveur** de l'utilisateur authentifié
+> (même mécanisme que `GcomOrderService` pour BC/BL/Facture GCOM), sans
+> exception pour aucun rôle. Envoyer `branch_code` ne fait plus rien
+> (silencieusement ignoré par la validation) — retirez-le du payload.
+
 ```json
 {
   "supplier_id": 7,
-  "branch_code": "A0001",
   "order_date": "2026-08-26",
   "expected_delivery_date": "2026-08-30",
   "notes": "Commande mensuelle",
@@ -257,10 +266,14 @@ Contrat globalement inchangé depuis avant ce chantier, **sauf** :
 
 ### 4.1 Créer une réception liée à un BC — `POST /purchase-receptions`
 
+> ⚠️ Même changement 2026-08-26 que §3.3 — `branch_code` n'est plus
+> accepté, toujours dérivé côté serveur. `purchase_order_id` est
+> maintenant vérifié pour appartenir à la société de l'acteur (`422` sinon
+> — pas seulement son existence).
+
 ```json
 {
   "supplier_id": 7,
-  "branch_code": "A0001",
   "purchase_order_id": 12,
   "reception_date": "2026-08-28",
   "supplier_invoice_number": "FACT-2026-0456",
@@ -581,10 +594,14 @@ modification d'une facture, donc une facture persistée est toujours déjà
 
 ### 11.3 Créer une facture — `POST /supplier-invoices`
 
+> ⚠️ Même changement 2026-08-26 que §3.3 — `branch_code` n'est plus
+> accepté. `purchase_order_line_id`/`purchase_reception_line_id` sont
+> vérifiés pour appartenir à une commande/réception de la société de
+> l'acteur (`422` sinon).
+
 ```json
 {
   "supplier_id": 7,
-  "branch_code": "A0001",
   "supplier_invoice_reference": "FACT-2026-0456",
   "invoice_date": "2026-08-28",
   "lines": [
@@ -748,10 +765,12 @@ lisible, pas silencieusement perdu.
 
 ### 12.1 Décaissement — `POST /supplier-payments`
 
+> ⚠️ Même changement 2026-08-26 que §3.3 — `branch_code` n'est plus
+> accepté.
+
 ```json
 {
   "supplier_id": 7,
-  "branch_code": "A0001",
   "amount": 1000.0,
   "payment_method_id": 3,
   "allocations": [

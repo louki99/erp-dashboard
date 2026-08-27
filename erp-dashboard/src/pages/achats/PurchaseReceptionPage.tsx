@@ -17,7 +17,6 @@ import {
 } from '@/hooks/achats/usePurchaseReceptions';
 import { usePurchaseOrder } from '@/hooks/achats/usePurchaseOrders';
 import { achatsApi } from '@/services/api/achatsApi';
-import { financeApi } from '@/services/api/financeApi';
 import { searchProducts } from '@/services/api/pricingApi';
 import type { PurchaseReception, PurchaseReceptionStatus, QcStatus, PurchaseReceptionLinePayload } from '@/types/achats.types';
 
@@ -74,10 +73,6 @@ const searchSuppliers = async (q: string): Promise<ComboboxOption[]> => {
         : suppliers;
     return filtered.map(s => ({ id: s.id, label: s.name, sub: s.contact_name ?? s.phone ?? undefined }));
 };
-const searchBranchesOptions = async (q: string): Promise<ComboboxOption[]> => {
-    const res = await financeApi.getHelperBranches({ search: q, limit: 30 });
-    return (res.data ?? []).map(b => ({ id: b.code, label: b.name, sub: b.code }));
-};
 const searchProductOptions = async (q: string): Promise<ComboboxOption[]> => {
     const res = await searchProducts(q);
     return (res ?? []).map(p => ({ id: p.id, label: p.name, sub: p.code }));
@@ -105,26 +100,24 @@ export default function PurchaseReceptionPage() {
     // ── Create form ───────────────────────────────────────────────────────────
     const [showCreateForm, setShowCreateForm] = useState(false);
     const [newSupplier, setNewSupplier] = useState<ComboboxOption | null>(null);
-    const [newBranch, setNewBranch] = useState<ComboboxOption | null>(null);
     const [newBc, setNewBc] = useState<ComboboxOption | null>(null);
     const [newReceptionDate, setNewReceptionDate] = useState('');
     const [newInvoiceNumber, setNewInvoiceNumber] = useState('');
     const [newLines, setNewLines] = useState<DraftLine[]>([emptyLine()]);
 
     const resetCreateForm = () => {
-        setNewSupplier(null); setNewBranch(null); setNewBc(null);
+        setNewSupplier(null); setNewBc(null);
         setNewReceptionDate(''); setNewInvoiceNumber(''); setNewLines([emptyLine()]);
     };
 
-    // Selecting a BC fetches its detail (lines + supplier/branch) to prefill —
-    // the core reconciliation UX payoff of this whole module (doc §5): only
-    // lines with remaining quantity > 0 are prefilled, pre-filled with what's
+    // Selecting a BC fetches its detail (lines) to prefill — the core
+    // reconciliation UX payoff of this whole module (doc §5): only lines
+    // with remaining quantity > 0 are prefilled, pre-filled with what's
     // still owed, not the full ordered_quantity.
     const selectedBcId = newBc ? Number(newBc.id) : null;
     const { data: bcDetail } = usePurchaseOrder(selectedBcId);
     useEffect(() => {
         if (!bcDetail) return;
-        setNewBranch({ id: bcDetail.branch_code, label: bcDetail.branch?.name ?? bcDetail.branch_code, sub: bcDetail.branch_code });
         const remainingLines = (bcDetail.lines ?? [])
             .map(l => ({ l, remaining: (parseFloat(l.ordered_quantity) || 0) - (parseFloat(l.received_quantity) || 0) }))
             .filter(({ remaining }) => remaining > 0);
@@ -171,7 +164,6 @@ export default function PurchaseReceptionPage() {
 
     const handleCreateSubmit = async () => {
         if (!newSupplier) { toast.error('Sélectionnez un fournisseur.'); return; }
-        if (!newBranch) { toast.error('Sélectionnez une agence.'); return; }
         const lines: PurchaseReceptionLinePayload[] = [];
         for (const l of newLines) {
             if (!l.product) continue;
@@ -189,7 +181,6 @@ export default function PurchaseReceptionPage() {
         try {
             const res = await createMutation.mutateAsync({
                 supplier_id: Number(newSupplier.id),
-                branch_code: String(newBranch.id),
                 purchase_order_id: selectedBcId ?? undefined,
                 reception_date: newReceptionDate || undefined,
                 supplier_invoice_number: newInvoiceNumber || undefined,
@@ -344,10 +335,6 @@ export default function PurchaseReceptionPage() {
                                     <div>
                                         <label className="block text-[11px] font-medium text-gray-500 uppercase tracking-wide mb-1">BC lié <span className="text-[10px] font-normal text-gray-400">(optionnel — préremplit les lignes)</span></label>
                                         <AsyncCombobox value={newBc} onChange={setNewBc} onSearch={searchPurchaseOrdersForSupplier} placeholder={newSupplier ? 'Rechercher un BC confirmé…' : 'Choisir un fournisseur d\'abord'} disabled={!newSupplier} />
-                                    </div>
-                                    <div>
-                                        <label className="block text-[11px] font-medium text-gray-500 uppercase tracking-wide mb-1">Agence <span className="text-red-500">*</span></label>
-                                        <AsyncCombobox value={newBranch} onChange={setNewBranch} onSearch={searchBranchesOptions} placeholder="Rechercher une agence…" disabled={!!newBc} />
                                     </div>
                                     <div>
                                         <label className="block text-[11px] font-medium text-gray-500 uppercase tracking-wide mb-1">Date réception</label>
