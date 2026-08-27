@@ -232,7 +232,11 @@
       "Bash(tee /c/Users/louki/AppData/Local/Temp/claude/d--project--avenir-omni360-omin360__mobile-erp-dashboard-erp-dashboard/567f8a53-5b10-44bd-9aa8-d5df88983a3b/scratchpad/tsc_tokenseries.txt)",
       "Bash(tee /c/Users/louki/AppData/Local/Temp/claude/d--project--avenir-omni360-omin360__mobile-erp-dashboard-erp-dashboard/567f8a53-5b10-44bd-9aa8-d5df88983a3b/scratchpad/tsc_paymentfix.txt)",
       "Bash(tee /c/Users/louki/AppData/Local/Temp/claude/d--project--avenir-omni360-omin360__mobile-erp-dashboard-erp-dashboard/567f8a53-5b10-44bd-9aa8-d5df88983a3b/scratchpad/tsc_branchfix.txt)",
-      "Bash(tee /c/Users/louki/AppData/Local/Temp/claude/d--project--avenir-omni360-omin360__mobile-erp-dashboard-erp-dashboard/567f8a53-5b10-44bd-9aa8-d5df88983a3b/scratchpad/tsc_deletefix.txt)"
+      "Bash(tee /c/Users/louki/AppData/Local/Temp/claude/d--project--avenir-omni360-omin360__mobile-erp-dashboard-erp-dashboard/567f8a53-5b10-44bd-9aa8-d5df88983a3b/scratchpad/tsc_deletefix.txt)",
+      "Bash(tee /c/Users/louki/AppData/Local/Temp/claude/d--project--avenir-omni360-omin360__mobile-erp-dashboard-erp-dashboard/567f8a53-5b10-44bd-9aa8-d5df88983a3b/scratchpad/tsc_reviewpass.txt)",
+      "Bash(sort -k5 -n -r)",
+      "Bash(echo \"TSC_EXIT:$?\")",
+      "Bash(echo \"BUILD_EXIT:$?\")"
     ],
     "additionalDirectories": [
       "C:\\Users\\louki\\.claude\\projects\\d--project--avenir-omni360-omin360__mobile-erp-dashboard\\memory",

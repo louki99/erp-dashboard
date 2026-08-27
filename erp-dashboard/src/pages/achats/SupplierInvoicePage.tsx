@@ -147,14 +147,14 @@ export default function SupplierInvoicePage() {
 
     const openCreateForm = useCallback(() => {
         setSelectedId(null);
-        setShowCancelForm(false);
+        setShowCancelForm(false); setCancelReason('');
         resetCreateForm();
         setShowCreateForm(true);
     }, []);
 
     const selectRow = useCallback((row: SupplierInvoice) => {
         setShowCreateForm(false);
-        setShowCancelForm(false);
+        setShowCancelForm(false); setCancelReason('');
         setSelectedId(row.id);
     }, []);
 
@@ -443,7 +443,7 @@ export default function SupplierInvoicePage() {
                                         )}
                                         <div className="flex items-center gap-2">
                                             <button onClick={handleCancel} disabled={cancelMutation.isPending} className="px-3 py-1.5 text-xs font-semibold text-white bg-red-600 hover:bg-red-700 rounded-lg disabled:opacity-50">Confirmer l'annulation</button>
-                                            <button onClick={() => setShowCancelForm(false)} className="px-3 py-1.5 text-xs font-semibold text-gray-500 hover:bg-gray-100 rounded-lg">Fermer</button>
+                                            <button onClick={() => { setShowCancelForm(false); setCancelReason(''); }} className="px-3 py-1.5 text-xs font-semibold text-gray-500 hover:bg-gray-100 rounded-lg">Fermer</button>
                                         </div>
                                     </div>
                                 )}

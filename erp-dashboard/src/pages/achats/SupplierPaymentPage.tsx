@@ -137,9 +137,19 @@ export default function SupplierPaymentPage() {
         setNewNotes(''); setAllocationMode('auto'); setManualAllocations([]);
     };
 
+    // Clears the letter/cancel panels' own visibility AND their transient
+    // fields — without this, switching to a different supplier/payment (or
+    // reopening a panel later) left the previous payment's reason text or
+    // in-progress allocation amounts behind.
+    const resetTransientPanels = () => {
+        setShowLetterForm(false); setLetterInvoices([]); setLetterAllocations([]);
+        setShowCancelForm(false); setCancelReason('');
+    };
+
     const openCreateForm = useCallback((supplier: PurchaseOrderSupplier) => {
         setSelectedSupplier(supplier);
         setSelectedPaymentId(null);
+        resetTransientPanels();
         resetCreateForm();
         setShowCreateForm(true);
     }, []);
@@ -147,11 +157,13 @@ export default function SupplierPaymentPage() {
     const selectSupplierRow = useCallback((supplier: PurchaseOrderSupplier) => {
         setShowCreateForm(false);
         setSelectedPaymentId(null);
+        resetTransientPanels();
         setSelectedSupplier(supplier);
     }, []);
 
     const selectPaymentRow = useCallback((payment: SupplierPayment) => {
         setShowCreateForm(false);
+        resetTransientPanels();
         setSelectedPaymentId(payment.id);
     }, []);
 
@@ -519,7 +531,7 @@ export default function SupplierPaymentPage() {
                                                     </div>
                                                     <div className="flex items-center gap-2">
                                                         <button onClick={handleLetterSubmit} disabled={letterMutation.isPending} className="px-3 py-1.5 text-xs font-semibold text-white bg-sage-600 hover:bg-sage-700 rounded-lg disabled:opacity-50">Enregistrer</button>
-                                                        <button onClick={() => setShowLetterForm(false)} className="px-3 py-1.5 text-xs font-semibold text-gray-500 hover:bg-gray-100 rounded-lg">Fermer</button>
+                                                        <button onClick={() => { setShowLetterForm(false); setLetterInvoices([]); setLetterAllocations([]); }} className="px-3 py-1.5 text-xs font-semibold text-gray-500 hover:bg-gray-100 rounded-lg">Fermer</button>
                                                     </div>
                                                 </div>
                                             )}
@@ -530,7 +542,7 @@ export default function SupplierPaymentPage() {
                                                     <textarea value={cancelReason} onChange={e => setCancelReason(e.target.value)} rows={2} className="w-full px-3 py-1.5 text-xs border border-red-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-red-400 mb-2" />
                                                     <div className="flex items-center gap-2">
                                                         <button onClick={handleCancelPayment} disabled={cancelMutation.isPending} className="px-3 py-1.5 text-xs font-semibold text-white bg-red-600 hover:bg-red-700 rounded-lg disabled:opacity-50">Confirmer l'annulation</button>
-                                                        <button onClick={() => setShowCancelForm(false)} className="px-3 py-1.5 text-xs font-semibold text-gray-500 hover:bg-gray-100 rounded-lg">Fermer</button>
+                                                        <button onClick={() => { setShowCancelForm(false); setCancelReason(''); }} className="px-3 py-1.5 text-xs font-semibold text-gray-500 hover:bg-gray-100 rounded-lg">Fermer</button>
                                                     </div>
                                                 </div>
                                             )}

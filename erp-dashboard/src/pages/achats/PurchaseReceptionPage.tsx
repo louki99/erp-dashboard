@@ -135,8 +135,14 @@ export default function PurchaseReceptionPage() {
     const searchPurchaseOrdersForSupplier = useCallback(async (q: string): Promise<ComboboxOption[]> => {
         if (!newSupplier) return [];
         const res = await achatsApi.purchaseOrders.list({ supplier_id: Number(newSupplier.id), search: q || undefined, per_page: 20 });
+        // Includes 'received' too, not just 'confirmed'/'partially_received' —
+        // doc §5 explicitly allows over-receiving against a line ("pas une
+        // contrainte technique"), so a fully-received BC is still a valid
+        // target for a follow-up/correction reception. Matches
+        // SupplierInvoicePage.tsx's own 3-status BC filter.
         return (res.data ?? [])
-            .filter((po): po is typeof po & { status: 'confirmed' | 'partially_received' } => po.status === 'confirmed' || po.status === 'partially_received')
+            .filter((po): po is typeof po & { status: 'confirmed' | 'partially_received' | 'received' } =>
+                po.status === 'confirmed' || po.status === 'partially_received' || po.status === 'received')
             .map(po => ({ id: po.id, label: po.order_number, sub: STATUS_META_LABEL(po.status) }));
     }, [newSupplier]);
 
@@ -151,14 +157,14 @@ export default function PurchaseReceptionPage() {
 
     const openCreateForm = useCallback(() => {
         setSelectedId(null);
-        setShowReasonForm(null);
+        setShowReasonForm(null); setReason('');
         resetCreateForm();
         setShowCreateForm(true);
     }, []);
 
     const selectRow = useCallback((row: PurchaseReception) => {
         setShowCreateForm(false);
-        setShowReasonForm(null);
+        setShowReasonForm(null); setReason('');
         setSelectedId(row.id);
     }, []);
 
@@ -466,6 +472,8 @@ export default function PurchaseReceptionPage() {
     );
 }
 
-function STATUS_META_LABEL(status: 'confirmed' | 'partially_received') {
-    return status === 'confirmed' ? 'Confirmé' : 'Partiellement reçu';
+function STATUS_META_LABEL(status: 'confirmed' | 'partially_received' | 'received') {
+    if (status === 'confirmed') return 'Confirmé';
+    if (status === 'partially_received') return 'Partiellement reçu';
+    return 'Reçu';
 }

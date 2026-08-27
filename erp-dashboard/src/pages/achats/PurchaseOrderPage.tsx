@@ -127,18 +127,25 @@ export default function PurchaseOrderPage() {
     const addLineMutation = useAddPurchaseOrderLine();
     const deleteLineMutation = useDeletePurchaseOrderLine();
 
+    // Clears every transient field belonging to the cancel/add-line panels —
+    // not just their visibility flags. Without this, closing a panel (or
+    // switching to a different BC) left stale text behind: reopen "Annuler"
+    // on a different BC and the previous one's reason was still there.
+    const resetTransientPanels = () => {
+        setShowAddLineForm(false); setAddLineProduct(null); setAddLineQty(''); setAddLineCost('');
+        setShowCancelForm(false); setCancelReason('');
+    };
+
     const openCreateForm = useCallback(() => {
         setSelectedId(null);
-        setShowAddLineForm(false);
-        setShowCancelForm(false);
+        resetTransientPanels();
         resetCreateForm();
         setShowCreateForm(true);
     }, []);
 
     const selectRow = useCallback((row: PurchaseOrder) => {
         setShowCreateForm(false);
-        setShowAddLineForm(false);
-        setShowCancelForm(false);
+        resetTransientPanels();
         setSelectedId(row.id);
     }, []);
 
@@ -417,7 +424,7 @@ export default function PurchaseOrderPage() {
                                         <textarea value={cancelReason} onChange={e => setCancelReason(e.target.value)} rows={2} className="w-full px-3 py-1.5 text-xs border border-red-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-red-400 mb-2" />
                                         <div className="flex items-center gap-2">
                                             <button onClick={handleCancel} disabled={cancelMutation.isPending} className="px-3 py-1.5 text-xs font-semibold text-white bg-red-600 hover:bg-red-700 rounded-lg disabled:opacity-50">Confirmer l'annulation</button>
-                                            <button onClick={() => setShowCancelForm(false)} className="px-3 py-1.5 text-xs font-semibold text-gray-500 hover:bg-gray-100 rounded-lg">Fermer</button>
+                                            <button onClick={() => { setShowCancelForm(false); setCancelReason(''); }} className="px-3 py-1.5 text-xs font-semibold text-gray-500 hover:bg-gray-100 rounded-lg">Fermer</button>
                                         </div>
                                     </div>
                                 )}
@@ -432,7 +439,7 @@ export default function PurchaseOrderPage() {
                                         </div>
                                         <div className="flex items-center gap-2">
                                             <button onClick={handleAddLine} disabled={addLineMutation.isPending} className="px-3 py-1.5 text-xs font-semibold text-white bg-sage-600 hover:bg-sage-700 rounded-lg disabled:opacity-50">Ajouter</button>
-                                            <button onClick={() => setShowAddLineForm(false)} className="px-3 py-1.5 text-xs font-semibold text-gray-500 hover:bg-gray-100 rounded-lg">Fermer</button>
+                                            <button onClick={() => { setShowAddLineForm(false); setAddLineProduct(null); setAddLineQty(''); setAddLineCost(''); }} className="px-3 py-1.5 text-xs font-semibold text-gray-500 hover:bg-gray-100 rounded-lg">Fermer</button>
                                         </div>
                                     </div>
                                 )}
