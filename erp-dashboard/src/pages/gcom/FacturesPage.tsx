@@ -14,6 +14,7 @@ import { SageTabs, type TabItem } from '@/components/common/SageTabs';
 import { SageCollapsible } from '@/components/common/SageCollapsible';
 import { GcomLinesTable } from '@/components/gcom/GcomLinesTable';
 import { PdfPriceModeModal } from '@/components/gcom/PdfPriceModeModal';
+import { GcomBreadcrumb } from '@/components/gcom/GcomBreadcrumb';
 
 import { gcomApi } from '@/services/api/gcomApi';
 import { useInvoices, useInvoice, useInvoiceCreditNotes, useCreateCreditNote } from '@/hooks/gcom/useGcomInvoices';
@@ -490,6 +491,11 @@ export default function FacturesPage() {
 
             mainContent={
                 <div className="h-full flex flex-col overflow-hidden bg-gray-50">
+                    <GcomBreadcrumb
+                        section="Ventes"
+                        page={{ label: 'Factures', icon: FileText, onClick: () => setSelectedId(null) }}
+                        current={selected ? { label: selected.invoice_number ?? `#${selected.id}` } : null}
+                    />
                     {!selected ? (
                         <div className="flex-1 flex flex-col items-center justify-center text-center p-8 text-gray-400">
                             <FileText className="w-12 h-12 mb-3 text-gray-200" />

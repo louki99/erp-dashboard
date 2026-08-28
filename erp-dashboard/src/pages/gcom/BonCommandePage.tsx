@@ -18,6 +18,7 @@ import { GcomLinesTable } from '@/components/gcom/GcomLinesTable';
 import { PdfPriceModeModal } from '@/components/gcom/PdfPriceModeModal';
 import { AvoirAllocationPicker } from '@/components/gcom/AvoirAllocationPicker';
 import { ConvertToInvoicePaymentFields } from '@/components/gcom/ConvertToInvoicePaymentFields';
+import { GcomBreadcrumb } from '@/components/gcom/GcomBreadcrumb';
 import { avoirAllocationsMatchTotal, avoirAllocationsWithinTotal } from '@/lib/gcom/avoirAllocations';
 
 import { gcomApi } from '@/services/api/gcomApi';
@@ -887,6 +888,11 @@ export default function BonCommandePage() {
 
                 mainContent={
                     <div className="h-full flex flex-col overflow-hidden bg-gray-50">
+                        <GcomBreadcrumb
+                            section="Ventes"
+                            page={{ label: 'Bons de commande', icon: ClipboardList, onClick: () => setSelectedId(null) }}
+                            current={selected ? { label: selected.order_code ?? `#${selected.id}` } : null}
+                        />
                         {!selected ? (
                             // ── EMPTY ─────────────────────────────────────────
                             <div className="flex-1 flex flex-col items-center justify-center text-center p-8 text-gray-400">

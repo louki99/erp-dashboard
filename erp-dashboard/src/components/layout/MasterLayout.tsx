@@ -12,6 +12,7 @@ import { LanguageSwitcher } from '@/components/common/LanguageSwitcher';
 import { GcomAlertsBell } from '@/components/gcom/GcomAlertsBell';
 import { useWorkspaceFavorites } from '@/hooks/useWorkspaceFavorites';
 import { trackRecentPage } from '@/hooks/useRecentPages';
+import { useAppLauncherStore } from '@/stores/appLauncherStore';
 
 interface MasterLayoutProps {
     children?: React.ReactNode;
@@ -42,7 +43,10 @@ export const MasterLayout: React.FC<MasterLayoutProps> = ({
     const [isMobile, setIsMobile] = useState(false);
 
     const [mode, setMode] = useState<LayoutMode>('split');
-    const [isLauncherOpen, setIsLauncherOpen] = useState(false);
+    const isLauncherOpen = useAppLauncherStore(s => s.isOpen);
+    const openLauncher = useAppLauncherStore(s => s.open);
+    const closeLauncher = useAppLauncherStore(s => s.close);
+    const toggleLauncher = useAppLauncherStore(s => s.toggle);
     const [isCommandMenuOpen, setIsCommandMenuOpen] = useState(false);
     const [showUserMenu, setShowUserMenu] = useState(false);
     const [showFavoritesMenu, setShowFavoritesMenu] = useState(false);
@@ -103,8 +107,8 @@ export const MasterLayout: React.FC<MasterLayoutProps> = ({
 
     // Close launcher automatically on navigation
     useEffect(() => {
-        setIsLauncherOpen(false);
-    }, [location.pathname]);
+        closeLauncher();
+    }, [location.pathname, closeLauncher]);
 
     const handleHeaderSearch = (e: React.KeyboardEvent<HTMLInputElement>) => {
         if (e.key === 'Enter') {
@@ -158,7 +162,7 @@ export const MasterLayout: React.FC<MasterLayoutProps> = ({
                 <div className="flex items-center gap-4">
                     {/* App Launcher button */}
                     <button
-                        onClick={() => setIsLauncherOpen(o => !o)}
+                        onClick={toggleLauncher}
                         aria-label="Application Launcher"
                         aria-expanded={isLauncherOpen}
                         className={cn(
@@ -239,7 +243,7 @@ export const MasterLayout: React.FC<MasterLayoutProps> = ({
                                             <button
                                                 onClick={() => {
                                                     setShowFavoritesMenu(false);
-                                                    setIsLauncherOpen(true);
+                                                    openLauncher();
                                                 }}
                                                 className="text-xs text-sage-600 dark:text-sage-400 hover:text-sage-700 dark:hover:text-sage-300"
                                             >
@@ -368,7 +372,7 @@ export const MasterLayout: React.FC<MasterLayoutProps> = ({
             {/* App Launcher Overlay */}
             <AppLauncher
                 isOpen={isLauncherOpen}
-                onClose={() => setIsLauncherOpen(false)}
+                onClose={closeLauncher}
             />
 
             {/* Main Content Area — full width, no permanent sidebar */}

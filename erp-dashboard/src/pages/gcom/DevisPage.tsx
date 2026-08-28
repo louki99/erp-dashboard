@@ -15,6 +15,7 @@ import { SageCollapsible } from '@/components/common/SageCollapsible';
 import { GcomCatalogEntryScreen, type GcomCatalogEntrySubmitPayload } from '@/components/gcom/GcomCatalogEntryScreen';
 import { GcomLinesTable } from '@/components/gcom/GcomLinesTable';
 import { PdfPriceModeModal } from '@/components/gcom/PdfPriceModeModal';
+import { GcomBreadcrumb } from '@/components/gcom/GcomBreadcrumb';
 
 import { gcomApi } from '@/services/api/gcomApi';
 import { useQuotes, useQuote, useCreateQuote, useConvertQuoteToOrder, useConvertQuoteToInvoice } from '@/hooks/gcom/useGcomQuotes';
@@ -435,6 +436,11 @@ export default function DevisPage() {
 
                 mainContent={
                     <div className="h-full flex flex-col overflow-hidden bg-gray-50">
+                        <GcomBreadcrumb
+                            section="Ventes"
+                            page={{ label: 'Devis', icon: FileSignature, onClick: () => setSelectedId(null) }}
+                            current={selected ? { label: selected.quote_number ?? `#${selected.id}` } : null}
+                        />
                         {!selected ? (
                             // ── EMPTY ─────────────────────────────────────────
                             <div className="flex-1 flex flex-col items-center justify-center text-center p-8 text-gray-400">

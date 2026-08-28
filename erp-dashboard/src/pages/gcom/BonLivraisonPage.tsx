@@ -16,6 +16,7 @@ import { SageTabs, type TabItem } from '@/components/common/SageTabs';
 import { SageCollapsible } from '@/components/common/SageCollapsible';
 import { GcomCatalogEntryScreen, type GcomCatalogEntrySubmitPayload } from '@/components/gcom/GcomCatalogEntryScreen';
 import { GcomLinesTable } from '@/components/gcom/GcomLinesTable';
+import { GcomBreadcrumb } from '@/components/gcom/GcomBreadcrumb';
 import { PdfPriceModeModal } from '@/components/gcom/PdfPriceModeModal';
 import { AvoirAllocationPicker } from '@/components/gcom/AvoirAllocationPicker';
 import { ConvertToInvoicePaymentFields } from '@/components/gcom/ConvertToInvoicePaymentFields';
@@ -1187,6 +1188,11 @@ export default function BonLivraisonPage() {
 
                 mainContent={
                     <div className="h-full flex flex-col overflow-hidden bg-gray-50">
+                        <GcomBreadcrumb
+                            section="Ventes"
+                            page={{ label: 'Bons de livraison', icon: Truck, onClick: () => setSelectedId(null) }}
+                            current={selected ? { label: selected.delivery_number ?? `#${selected.id}` } : null}
+                        />
                         {!selected ? (
                             // ── EMPTY ─────────────────────────────────────────
                             <div className="flex-1 flex flex-col items-center justify-center text-center p-8 text-gray-400">
