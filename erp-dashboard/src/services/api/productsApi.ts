@@ -486,6 +486,20 @@ export const productsApi = {
         return response.data;
     },
 
+    uploadCategoryImage: async (id: number, file: File): Promise<{ success: boolean; data?: { id: number; file_name: string; thumbnail: string } }> => {
+        const form = new FormData();
+        form.append('image', file);
+        const response = await apiClient.post(`/api/backend/master-data/categories/${id}/image`, form, {
+            headers: { 'Content-Type': 'multipart/form-data' },
+        });
+        return response.data;
+    },
+
+    deleteCategoryImage: async (id: number): Promise<ApiSuccessResponse> => {
+        const response = await apiClient.delete<ApiSuccessResponse>(`/api/backend/master-data/categories/${id}/image`);
+        return response.data;
+    },
+
     getSubcategories: async (params?: { search?: string; active_only?: boolean; paginate?: boolean }): Promise<{ success: boolean; data?: Category[] }> => {
         const response = await apiClient.get<{ success: boolean; data?: Category[] }>('/api/backend/master-data/sub-categories', { params });
         return response.data;

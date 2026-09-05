@@ -1,10 +1,32 @@
 # Token Series & Device Keys — Guide UI
 
-> **Audience :** équipe Frontend (Admin Panel)
+> **Audience :** équipe Frontend (Admin Panel + écrans GCOM)
 > **Base URL access-control :** `/api/backend/access-control`
 > **Base URL backend :** `/api/backend`
 > **Auth :** Sanctum Bearer — rôle `admin` ou `root`, ou permission `admin.access-control.manage`
-> **Date :** 2026-07-07
+> **Date :** 2026-09-02 (voir §10 — nouveauté "Sales Souches")
+
+---
+
+> ## ⚠️ Breaking change (2026-09-02) — lire avant de toucher aux écrans GCOM
+>
+> Les écrans qui créent/convertissent une facture GCOM (BC → Facture, BL →
+> Facture, facture directe comptoir, consolidation de BLs) envoyaient un
+> champ **`souche_kind`** (`"declared"` ou `"internal"`, 2 valeurs figées).
+> Ce champ **n'existe plus** — il est remplacé par **`sales_souche_id`**
+> (entier, l'id d'une nouvelle entité `SalesSouche` — voir §10). Aucune
+> compatibilité double n'est maintenue côté backend : tout payload envoyant
+> encore `souche_kind` sera simplement ignoré (le champ n'est plus dans la
+> liste des champs validés).
+>
+> **Ce qui doit changer côté UI :**
+> - Tout `<select>`/toggle "Déclarée / Interne" codé en dur doit devenir un
+>   sélecteur de souche alimenté par `GET /api/backend/access-control/sales-souches`
+>   (voir §10.3 pour la liste des endpoints concernés).
+> - La plupart des écrans n'ont **rien à changer** s'ils n'envoyaient jamais
+>   ce champ : le comportement par défaut (aucune valeur envoyée) est
+>   préservé à l'identique — la résolution automatique de la souche par
+>   branche continue de fonctionner exactement comme avant.
 
 ---
 
@@ -19,6 +41,7 @@
 7. [React Query hooks](#7-react-query-hooks)
 8. [Erreurs et codes de retour](#8-erreurs-et-codes-de-retour)
 9. [Scénarios complets](#9-scénarios-complets)
+10. [Sales Souches — nouveauté 2026-09-02](#10-sales-souches--nouveauté-2026-09-02)
 
 ---
 
@@ -1426,6 +1449,407 @@ const handleDelete = async (code: string) => {
 
 ---
 
+## 10. Sales Souches — nouveauté 2026-09-02
+
+### 10.1 Pourquoi cette entité existe
+
+Avant, une facture GCOM était classée par un champ figé `souche_kind` sur la
+`TokenSerie` : seulement 2 valeurs possibles, `declared` ("déclarée",
+fiscale/export) ou `internal` ("interne", hors export). Aucune interface
+d'admin ne permettait de créer/lier ce classement — c'était réglé une fois
+en base par les devs.
+
+Le client a besoin de **plus de 2 souches** par branche/société, avec un
+**nom libre** ("Souche Export", "Vente Comptoir", "Casse & Dons"…), chacune
+tirant d'un **compteur dédié** (une numérotation qui n'entre jamais en
+collision avec une autre souche). `souche_kind` — un booléen déguisé — ne
+pouvait pas exprimer ça. `SalesSouche` le remplace : une **vraie entité**,
+administrable en CRUD, dont chaque ligne pointe vers **sa propre**
+`TokenSerie` (relation 1:1 — jamais deux souches ne partagent un compteur).
+
+`TokenSerie.souche_kind` reste en base (legacy/informatif, pour ne pas
+casser l'historique) mais n'est **plus lu** par la résolution de
+numérotation — tout passe désormais par `SalesSouche`.
+
+### 10.2 Le modèle SalesSouche
+
+| Champ | Type | Description |
+|-------|------|--------------|
+| `id` | int | — |
+| `company_id` | int \| null | `null` = souche partagée par toute la société (portée globale) |
+| `branch_code` | string \| null | `null` = souche globale, pas limitée à une branche |
+| `code` | string (≤20) | Code court défini par l'admin — unique par `(company_id, branch_code)`, pas globalement |
+| `name` | string (≤150) | Nom libre, ex. "Souche Export" |
+| `fiscal_type` | `"declared"` \| `"internal"` | Seul champ à vocabulaire figé — c'est lui qui pilote la résolution automatique (§10.5), pas le nom/code |
+| `token_serie_id` | int | La `TokenSerie` qui fournit le compteur — **1 série = au plus 1 souche** |
+| `is_active` | boolean | Une souche inactive n'est jamais choisie automatiquement, et un `sales_souche_id` explicite pointant dessus est rejeté (`422`) |
+| `is_default` | boolean | Au plus **une** souche active par `(company_id, branch_code)` peut être `is_default=true` — contrainte base, `409` sinon |
+
+### 10.3 Workflow admin — toujours en 2 étapes, jamais automatique
+
+1. **Créer/configurer la `TokenSerie`** via l'endpoint existant
+   (`POST /api/backend/access-control/token-series`, §4) — c'est elle qui
+   porte les 22 familles de préfixes/compteurs (facture, BC, BL, avoir…).
+2. **Créer la `SalesSouche`** qui pointe vers cette série
+   (`POST /api/backend/access-control/sales-souches`, ci-dessous).
+
+Ce endpoint **ne crée jamais** de `TokenSerie` à votre place — si
+`token_serie_id` ne correspond à aucune série existante, `422`.
+
+### 10.4 API Reference
+
+**Base :** `/api/backend/access-control/sales-souches` (même garde d'accès
+que `token-series` — rôle `admin`/`root` ou `admin.access-control.manage`).
+
+---
+
+#### `GET /` — Lister
+
+```http
+GET /api/backend/access-control/sales-souches?branch_code=CAS001&active_only=1
+Authorization: Bearer {token}
+```
+
+| Paramètre | Type | Description |
+|-----------|------|--------------|
+| `branch_code` | string | Filtrer par branche |
+| `active_only` | boolean | `true` pour n'afficher que les souches actives |
+| `per_page` | int | 1–500, défaut 100 |
+
+**Réponse 200 :**
+
+```json
+{
+  "data": [
+    {
+      "id": 7,
+      "company_id": 1,
+      "branch_code": "CAS001",
+      "code": "EXPORT",
+      "name": "Souche Export",
+      "fiscal_type": "declared",
+      "token_serie_id": 14,
+      "token_serie": { "id": 14, "code": "CAS-B01", "name": "Série Casablanca Branch B01" },
+      "is_active": true,
+      "is_default": true,
+      "created_at": "2026-09-02T09:00:00.000Z",
+      "updated_at": "2026-09-02T09:00:00.000Z"
+    }
+  ],
+  "links": { ... },
+  "meta": { "current_page": 1, "total": 3 }
+}
+```
+
+---
+
+#### `POST /` — Créer une souche
+
+```http
+POST /api/backend/access-control/sales-souches
+Authorization: Bearer {token}
+Content-Type: application/json
+
+{
+  "branch_code": "CAS001",
+  "code": "EXPORT",
+  "name": "Souche Export",
+  "fiscal_type": "declared",
+  "token_serie_id": 14,
+  "is_active": true,
+  "is_default": true
+}
+```
+
+**Champs requis :** `code`, `name`, `fiscal_type` (`declared`\|`internal`), `token_serie_id`.
+
+**Réponse 201 :**
+
+```json
+{ "data": { "id": 7, "code": "EXPORT", "token_serie": { "id": 14, "code": "CAS-B01", "name": "..." }, ... } }
+```
+
+**Erreur 409 — série déjà liée à une autre souche :**
+
+```json
+{ "message": "Cette série est déjà liée à une autre souche — une série ne peut alimenter qu'une seule souche." }
+```
+
+**Erreur 409 — une souche par défaut existe déjà pour cette branche/société :**
+
+```json
+{
+  "message": "Une souche par défaut est déjà active pour cette portée : Souche Déclarée (CAS-B01). Désactivez-la d'abord.",
+  "conflicting_sales_souche_id": 3
+}
+```
+
+---
+
+#### `GET /{id}` — Détail
+
+```http
+GET /api/backend/access-control/sales-souches/7
+```
+
+**Réponse 200 :** `{ "data": { "id": 7, ..., "token_serie": { ...détail complet de la TokenSerie... } } }`
+
+---
+
+#### `PUT /{id}` — Modifier
+
+```http
+PUT /api/backend/access-control/sales-souches/7
+Content-Type: application/json
+
+{ "name": "Souche Export (Europe)", "is_default": false }
+```
+
+> `token_serie_id` n'est **volontairement pas modifiable** ici — ré-attacher
+> une souche existante à une autre série redémarrerait son compteur sous la
+> même identité, un risque fiscal plus grave qu'une simple erreur de nom.
+> Pour changer de série : supprimer la souche et en recréer une.
+
+Même conflit `409 conflicting_sales_souche_id` que `POST` si vous passez `is_default: true` alors qu'une autre souche active l'est déjà pour la même portée.
+
+---
+
+#### `DELETE /{id}` — Supprimer
+
+```http
+DELETE /api/backend/access-control/sales-souches/7
+```
+
+**Erreur 409 — souche référencée :**
+
+```json
+{
+  "message": "Cannot delete sales souche while referenced.",
+  "references": ["is_default (déliez-la comme souche par défaut avant de la supprimer)", "payment_terms.default_sales_souche_id"]
+}
+```
+
+### 10.5 Résolution automatique — quand aucun `sales_souche_id` n'est envoyé
+
+C'est le comportement à connaître pour savoir **si un écran doit changer ou
+non** (voir l'encadré breaking-change en haut de page). Quand une facture
+GCOM est créée **sans** `sales_souche_id` explicite, le backend choisit
+dans cet ordre, et s'arrête au premier trouvé :
+
+1. La souche `is_default=true` de la **branche** de l'acteur (fiscal_type `declared` uniquement).
+2. À défaut, la souche `is_default=true` **globale** (`branch_code = null`, fiscal_type `declared`).
+3. À défaut, s'il n'existe qu'**une seule** souche `declared` active pour la branche, elle est prise.
+4. Sinon → `422` (`No active default sales souche available for ... numbering.`) — l'admin doit configurer une souche par défaut.
+
+**Garantie importante pour les écrans qui n'envoient jamais d'override** :
+ces 3 tiers ne considèrent **que** les souches `fiscal_type=declared` — un
+document sans `sales_souche_id` explicite ne tombe **jamais** sur une
+souche `internal`, même si elle est flaguée `is_default`. Seul un
+`sales_souche_id` envoyé explicitement par l'UI peut sélectionner une
+souche `internal`.
+
+### 10.6 Impact sur les 4 endpoints GCOM concernés
+
+| Endpoint | Avant | Après |
+|----------|-------|-------|
+| `POST /api/backend/gcom/orders/{order}/convert-to-invoice` | `souche_kind?: 'declared'\|'internal'` | `sales_souche_id?: int` |
+| `POST /api/backend/gcom/direct-invoices` (facture directe comptoir) | `souche_kind?: 'declared'\|'internal'` | `sales_souche_id?: int` |
+| `POST /api/backend/gcom/delivery-notes/{deliveryNote}/convert-to-invoice` | `souche_kind?: 'declared'\|'internal'` | `sales_souche_id?: int` |
+| `POST /api/backend/gcom/invoices/consolidate` | `souche_kind?: 'declared'\|'internal'` | `sales_souche_id?: int` |
+
+Dans les 4 cas, le champ reste **optionnel** — voir §10.5 pour ce qui se
+passe s'il est omis. La réponse de chacun de ces endpoints inclut désormais
+`sales_souche_id` (en plus de `souche_kind`, conservé pour compat
+affichage/legacy) dans l'objet `invoice` retourné.
+
+### 10.7 PaymentTerm — nouveau champ + nouveaux endpoints d'écriture
+
+`PaymentTerm.is_internal_souche` (booléen) est **supprimé** — remplacé par
+`default_sales_souche_id` (int \| null, FK vers `sales_souches`). Un moyen
+de terme de paiement de crédit sans souche par défaut explicite (`null`)
+signifie "utiliser la souche par défaut de la branche" (§10.5).
+
+Nouveauté également : `POST`/`PUT` sur les termes de paiement n'existaient
+pas avant (seuls liste + suppression existaient). Contrairement aux autres
+routes de ce groupe `masterdata` (aucune permission requise), ces deux-là
+sont protégées par la permission **`manage-master-data`** — c'est un
+levier fiscal, pas une simple donnée de référence.
+
+```http
+POST /api/backend/masterdata/payment-terms
+Authorization: Bearer {token}
+Content-Type: application/json
+
+{
+  "code": "CREDIT_30J_EXPORT",
+  "name": "Crédit 30j (Export)",
+  "days_number": 30,
+  "is_credit": true,
+  "default_sales_souche_id": 7,
+  "active": true
+}
+```
+
+```http
+PUT /api/backend/masterdata/payment-terms/{id}
+Content-Type: application/json
+
+{ "default_sales_souche_id": null }
+```
+
+**Réponse 403 sans la permission `manage-master-data` :**
+
+```json
+{ "message": "This action is unauthorized." }
+```
+
+### 10.8 Types TypeScript
+
+```typescript
+export type SalesSoucheFiscalType = 'declared' | 'internal';
+
+export interface SalesSouche {
+  id: number;
+  company_id: number | null;
+  branch_code: string | null;
+  code: string;
+  name: string;
+  fiscal_type: SalesSoucheFiscalType;
+  token_serie_id: number;
+  token_serie?: { id: number; code: string; name: string };
+  is_active: boolean;
+  is_default: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface CreateSalesSouchePayload {
+  branch_code?: string | null;
+  code: string;
+  name: string;
+  fiscal_type: SalesSoucheFiscalType;
+  token_serie_id: number;
+  is_active?: boolean;
+  is_default?: boolean;
+}
+
+export interface UpdateSalesSouchePayload {
+  branch_code?: string | null;
+  code?: string;
+  name?: string;
+  fiscal_type?: SalesSoucheFiscalType;
+  // token_serie_id n'est pas modifiable — voir §10.4
+  is_active?: boolean;
+  is_default?: boolean;
+}
+
+export interface SalesSoucheFilters {
+  branch_code?: string;
+  active_only?: boolean;
+  per_page?: number;
+}
+
+// Sur les 4 endpoints GCOM (§10.6) — remplace l'ancien souche_kind
+export interface SalesSoucheOverride {
+  sales_souche_id?: number;
+}
+```
+
+### 10.9 React Query hooks
+
+```typescript
+const AC_BASE = '/api/backend/access-control';
+
+export function useSalesSouches(filters: SalesSoucheFilters = {}) {
+  return useQuery({
+    queryKey: ['sales-souches', filters],
+    queryFn: () => axios.get(`${AC_BASE}/sales-souches`, { params: filters }).then((r) => r.data),
+  });
+}
+
+export function useSalesSouche(id: number) {
+  return useQuery({
+    queryKey: ['sales-souches', id],
+    queryFn: () => axios.get(`${AC_BASE}/sales-souches/${id}`).then((r) => r.data),
+    enabled: !!id,
+  });
+}
+
+export function useCreateSalesSouche() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (payload: CreateSalesSouchePayload) =>
+      axios.post(`${AC_BASE}/sales-souches`, payload).then((r) => r.data),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['sales-souches'] }),
+  });
+}
+
+export function useUpdateSalesSouche(id: number) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (payload: UpdateSalesSouchePayload) =>
+      axios.put(`${AC_BASE}/sales-souches/${id}`, payload).then((r) => r.data),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['sales-souches'] });
+      qc.invalidateQueries({ queryKey: ['sales-souches', id] });
+    },
+  });
+}
+
+export function useDeleteSalesSouche() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: number) => axios.delete(`${AC_BASE}/sales-souches/${id}`).then((r) => r.data),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['sales-souches'] }),
+  });
+}
+```
+
+### 10.10 Erreurs spécifiques à Sales Souches
+
+| Code | Cause | Action UI |
+|------|-------|-----------|
+| `409` (`store`/`update`) | `token_serie_id` déjà lié à une autre souche | Message direct — proposer de choisir une autre série ou d'en créer une |
+| `409` (`store`/`update`) | Une souche par défaut existe déjà pour cette portée | Utiliser `conflicting_sales_souche_id` pour proposer un lien direct vers elle |
+| `409` (`destroy`) | Souche encore `is_default` ou référencée par un `payment_terms.default_sales_souche_id` | Modal listant `references[]`, bloquer la suppression |
+| `422` (endpoints GCOM §10.6) | `sales_souche_id` inconnu ou inactif | "Cette souche n'est pas disponible — vérifier la configuration" |
+| `422` (endpoints GCOM §10.6, aucun override envoyé) | Aucune souche par défaut active pour la branche (§10.5, cas 4) | "Aucune souche configurée pour cette branche — contacter un admin" |
+
+### 10.11 Scénario complet — configurer une nouvelle souche "Export"
+
+```typescript
+// 1. La série existe déjà (créée via §4) — sinon la créer d'abord
+const serie = await axios.get(`${AC_BASE}/token-series/CAS-EXPORT-01`);
+
+// 2. Créer la souche qui pointe vers elle
+const createSouche = useCreateSalesSouche();
+const { data: souche } = await createSouche.mutateAsync({
+  branch_code: 'CAS001',
+  code: 'EXPORT',
+  name: 'Souche Export',
+  fiscal_type: 'declared',
+  token_serie_id: serie.data.id,
+  is_active: true,
+  is_default: false, // ne remplace pas le default existant
+});
+
+// 3. (Optionnel) lier un terme de paiement à cette souche par défaut
+await axios.put(`/api/backend/masterdata/payment-terms/${termId}`, {
+  default_sales_souche_id: souche.data.id,
+});
+
+// 4. Ou : l'écran de facturation directe passe l'id explicitement
+await axios.post('/api/backend/gcom/direct-invoices', {
+  partner_id: 42,
+  items: [...],
+  payment_method: 'credit',
+  payment_term_id: termId,
+  sales_souche_id: souche.data.id, // au lieu de l'ancien souche_kind: 'declared'
+});
+```
+
+---
+
 ## Résumé des endpoints
 
 ### Token Series
@@ -1437,6 +1861,18 @@ const handleDelete = async (code: string) => {
 | `GET` | `/api/backend/access-control/token-series/{code}` | Détail + usage |
 | `PUT` | `/api/backend/access-control/token-series/{code}` | Modifier |
 | `DELETE` | `/api/backend/access-control/token-series/{code}` | Supprimer |
+
+### Sales Souches (nouveau, 2026-09-02)
+
+| Méthode | URL | Action |
+|---------|-----|--------|
+| `GET` | `/api/backend/access-control/sales-souches` | Lister |
+| `POST` | `/api/backend/access-control/sales-souches` | Créer |
+| `GET` | `/api/backend/access-control/sales-souches/{id}` | Détail |
+| `PUT` | `/api/backend/access-control/sales-souches/{id}` | Modifier |
+| `DELETE` | `/api/backend/access-control/sales-souches/{id}` | Supprimer |
+| `POST` | `/api/backend/masterdata/payment-terms` | Créer un terme de paiement (`manage-master-data`) |
+| `PUT` | `/api/backend/masterdata/payment-terms/{id}` | Modifier (`manage-master-data`) |
 
 ### Device Keys
 

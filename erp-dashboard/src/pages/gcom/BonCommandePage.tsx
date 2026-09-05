@@ -36,7 +36,7 @@ import { useGcomParameters } from '@/hooks/useGcomParameters';
 import type { Partner, PaymentTermOption } from '@/types/partner.types';
 import type { CatalogProduct } from '@/types/telesalesAgent.types';
 import type {
-    GcomPaymentMethod, GcomOrder, GcomOrderProduct, GcomOrderListViewRow, GcomBcStatus, GcomInstrumentInput, GcomPdfPriceMode, GcomSoucheKind, GcomAvoirAllocation,
+    GcomPaymentMethod, GcomOrder, GcomOrderProduct, GcomOrderListViewRow, GcomBcStatus, GcomInstrumentInput, GcomPdfPriceMode, GcomAvoirAllocation,
 } from '@/types/gcom.types';
 
 // ─── helpers ─────────────────────────────────────────────────────────────────
@@ -333,8 +333,8 @@ export default function BonCommandePage() {
     const [convertAvoirOverrideMethod, setConvertAvoirOverrideMethod] = useState<'' | 'cash' | 'card'>('');
     const [convertInstrument, setConvertInstrument] = useState<GcomInstrumentInput>(EMPTY_INSTRUMENT);
     const [convertingToInvoice, setConvertingToInvoice] = useState(false);
-    // §17 — explicit override, 'declared' is the safe/common default.
-    const [convertSoucheKind, setConvertSoucheKind] = useState<GcomSoucheKind>('declared');
+    // §10 (2026-09-02) — null = "Auto", backend resolves the branch's default declared souche.
+    const [convertSalesSoucheId, setConvertSalesSoucheId] = useState<number | null>(null);
     // 2026-08-21 — see BonLivraisonPage.tsx's identical comment: the
     // partner's billing mode isn't embedded on the order payload, fetched
     // once when the conversion flow opens. 1_FAC_PER_ORDER doesn't support
@@ -360,7 +360,7 @@ export default function BonCommandePage() {
     const openConvertToInvoice = async (target: ConvertTarget) => {
         if (!selected) return;
         setConvertTarget(target);
-        setConvertSoucheKind('declared');
+        setConvertSalesSoucheId(null);
         setConvertAvoirAllocations([]);
         setConvertMixAvoirEnabled(false);
         setConvertAvoirOverrideMethod('');
@@ -419,14 +419,14 @@ export default function BonCommandePage() {
     const doConvertToInvoice = async (target: ConvertTarget, instrument: GcomInstrumentInput | null, avoirAllocations?: GcomAvoirAllocation[], paymentMethodOverride?: Exclude<GcomPaymentMethod, 'avoir'>, paymentTermId?: number | null) => {
         setConvertingToInvoice(true);
         try {
-            // 1_FAC_PER_ORDER doesn't support an explicit souche_kind or
+            // 1_FAC_PER_ORDER doesn't support an explicit souche override or
             // payment_method override yet — let backend pick its own defaults
             // rather than risk a silent mismatch.
-            const soucheKindArg = convertInvoicingMode === '1_FAC_PER_ORDER' ? undefined : convertSoucheKind;
+            const salesSoucheIdArg = convertInvoicingMode === '1_FAC_PER_ORDER' ? undefined : convertSalesSoucheId;
             const overrideArg = convertInvoicingMode === '1_FAC_PER_ORDER' ? undefined : paymentMethodOverride;
             const termIdArg = convertInvoicingMode === '1_FAC_PER_ORDER' ? undefined : paymentTermId;
             const invoice = await convertToInvoice.mutateAsync({
-                target, instrument, soucheKind: soucheKindArg, avoirAllocations,
+                target, instrument, salesSoucheId: salesSoucheIdArg, avoirAllocations,
                 paymentMethodOverride: overrideArg, paymentTermId: termIdArg,
             });
             toast.success(`Facture ${invoice.invoice_number ?? `#${invoice.id}`} créée${invoice.souche_kind === 'internal' ? ' (souche interne)' : ''}`);
@@ -942,8 +942,8 @@ export default function BonCommandePage() {
                                                 creditTerms={convertOverrideCreditTerms}
                                                 termId={convertOverrideTermId}
                                                 onTermIdChange={setConvertOverrideTermId}
-                                                soucheKind={convertSoucheKind}
-                                                onSoucheKindChange={setConvertSoucheKind}
+                                                salesSoucheId={convertSalesSoucheId}
+                                                onSalesSoucheIdChange={setConvertSalesSoucheId}
                                                 mixAvoirEnabled={convertMixAvoirEnabled}
                                                 onMixAvoirEnabledChange={setConvertMixAvoirEnabled}
                                                 avoirAllocations={convertAvoirAllocations}
@@ -1567,8 +1567,8 @@ export default function BonCommandePage() {
                                 creditTerms={convertOverrideCreditTerms}
                                 termId={convertOverrideTermId}
                                 onTermIdChange={setConvertOverrideTermId}
-                                soucheKind={convertSoucheKind}
-                                onSoucheKindChange={setConvertSoucheKind}
+                                salesSoucheId={convertSalesSoucheId}
+                                onSalesSoucheIdChange={setConvertSalesSoucheId}
                                 mixAvoirEnabled={convertMixAvoirEnabled}
                                 onMixAvoirEnabledChange={setConvertMixAvoirEnabled}
                                 avoirAllocations={convertAvoirAllocations}

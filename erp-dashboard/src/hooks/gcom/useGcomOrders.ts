@@ -5,7 +5,7 @@ import { invoiceKeys } from '@/hooks/gcom/useGcomInvoices';
 import type {
     GcomOrderListFilters, GcomConvertToBlPayload, GcomCancelOrderPayload,
     GcomCancelOrderLinePayload, GcomUpdateOrderLinePayload, GcomAddOrderLinePayload,
-    GcomInstrumentInput, GcomSoucheKind, GcomAvoirAllocation, GcomPaymentMethod,
+    GcomInstrumentInput, GcomAvoirAllocation, GcomPaymentMethod,
 } from '@/types/gcom.types';
 
 export const orderKeys = {
@@ -56,23 +56,22 @@ export const useConvertOrderToBl = () => {
 interface ConvertToInvoiceVars {
     target: { type: 'order' | 'bl'; id: number };
     instrument?: GcomInstrumentInput | null;
-    soucheKind?: GcomSoucheKind | null;
+    salesSoucheId?: number | null;
     avoirAllocations?: GcomAvoirAllocation[];
     paymentMethodOverride?: Exclude<GcomPaymentMethod, 'avoir'>;
     paymentTermId?: number | null;
 }
 
-// Shared by BC's "Convertir en Facture" (order target) and its "Convertir le
-// BL en Facture" action (bl target, when the order already hopped to a BL) —
-// same two backend endpoints BonLivraisonPage.tsx will call directly once it
-// migrates.
+// Shared by BC's "Convertir en Facture" (order target) and BonLivraisonPage's
+// "Convertir en Facture" (bl target) — both screens call this same hook,
+// discriminated by target.type.
 export const useConvertToInvoice = () => {
     const qc = useQueryClient();
     return useMutation({
         mutationFn: (vars: ConvertToInvoiceVars) =>
             vars.target.type === 'order'
-                ? gcomApi.orders.convertToInvoice(vars.target.id, vars.instrument, vars.soucheKind, vars.avoirAllocations, vars.paymentMethodOverride, vars.paymentTermId)
-                : gcomApi.deliveryNotes.convertToInvoice(vars.target.id, vars.instrument, vars.soucheKind, vars.avoirAllocations, vars.paymentMethodOverride, vars.paymentTermId),
+                ? gcomApi.orders.convertToInvoice(vars.target.id, vars.instrument, vars.salesSoucheId, vars.avoirAllocations, vars.paymentMethodOverride, vars.paymentTermId)
+                : gcomApi.deliveryNotes.convertToInvoice(vars.target.id, vars.instrument, vars.salesSoucheId, vars.avoirAllocations, vars.paymentMethodOverride, vars.paymentTermId),
         onSuccess: (_data, vars) => {
             qc.invalidateQueries({ queryKey: orderKeys.all });
             qc.invalidateQueries({ queryKey: noteKeys.all });

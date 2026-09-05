@@ -187,7 +187,11 @@ export const duplicateLine = async (priceListId: number, data: DuplicateLineRequ
 
 export const importLineCsv = async (priceListId: number, lineNumber: number, params: ImportCsvParams) => {
     const formData = new FormData();
-    formData.append('file', params.file);
+    // This endpoint (POST /pricing/{id}/lines/{lineNumber}/import) expects the
+    // upload under "csv", not "file" — confirmed via a live 422
+    // ("The csv field is required") distinct from the whole-price-list import
+    // below (POST /pricing/{id}/import), which does use "file".
+    formData.append('csv', params.file);
     formData.append('mode', params.mode);
     formData.append('has_header', params.has_header ? '1' : '0');
     formData.append('product_identifier', params.product_identifier);

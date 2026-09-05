@@ -29,6 +29,11 @@ export interface Category {
     name: string;
     slug?: string;
     parent_id?: number;
+    code?: string | null;
+    // Always a usable URL (falls back to a default placeholder server-side)
+    // — never null. Use this, not media[].original_url which resolves to an
+    // internal Docker hostname unreachable from the browser.
+    thumbnail?: string;
 }
 
 export interface VatTax {

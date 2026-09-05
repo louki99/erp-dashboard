@@ -409,6 +409,7 @@ export const BUSINESS_DOMAINS: BusinessDomain[] = [
                     { id: 'data-rules',       label: 'Règles Données',         route: '/data-rules',             icon: Cog      },
                     { id: 'workflows',        label: 'Gestion des workflows',  route: '/workflows',              icon: GitBranch},
                     { id: 'token-series',     label: 'Séries numérotation',    route: '/token-series',           icon: Hash     },
+                    { id: 'sales-souches',    label: 'Souches de vente',       route: '/sales-souches',          icon: Landmark },
                     { id: 'device-keys',      label: 'Clés Devices',           route: '/device-keys',            icon: Key      },
                     { id: 'translations',     label: 'Traductions',            route: '/translations',           icon: Globe    },
                 ],

@@ -118,6 +118,7 @@ const ReportingAdminPage = lazy(() => import('@/pages/reporting/ReportingAdminPa
 const DocumentStudioPage = lazy(() => import('@/pages/document-studio/DocumentStudioPage'));
 const DataRulesPage = lazy(() => import('@/pages/data-rules/DataRulesPage').then(m => ({ default: m.DataRulesPage })));
 const TokenSeriesPage = lazy(() => import('@/pages/token-series/TokenSeriesPage').then(m => ({ default: m.TokenSeriesPage })));
+const SalesSouchesPage = lazy(() => import('@/pages/sales-souches/SalesSouchesPage').then(m => ({ default: m.SalesSouchesPage })));
 const DeviceKeysPage = lazy(() => import('@/pages/device-keys/DeviceKeysPage').then(m => ({ default: m.DeviceKeysPage })));
 const JournalsPage = lazy(() => import('@/pages/finance/JournalsPage'));
 const LedgerPage = lazy(() => import('@/pages/finance/LedgerPage'));
@@ -856,6 +857,11 @@ function AppRoutes() {
       <Route path="/token-series" element={
         <ProtectedRoute requiredPermission={PERMISSIONS.TOKEN_SERIES.MANAGE}>
           <TokenSeriesPage />
+        </ProtectedRoute>
+      } />
+      <Route path="/sales-souches" element={
+        <ProtectedRoute requiredPermission={PERMISSIONS.SALES_SOUCHES.MANAGE}>
+          <SalesSouchesPage />
         </ProtectedRoute>
       } />
       <Route path="/device-keys" element={

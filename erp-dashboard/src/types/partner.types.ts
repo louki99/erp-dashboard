@@ -286,6 +286,11 @@ export interface PaymentTermOption {
     // proxy for "will this require bank_id" (verified live: a term with
     // is_bank_transfer=false but payment_method_id set still required one).
     payment_method_id?: number | null;
+    // §10.7 (2026-09-02) — FK to SalesSouche. null = use the branch's default
+    // souche (§10.5). No frontend screen writes this yet (payment-terms admin
+    // CRUD is out of scope here) — added so the field round-trips if/when one
+    // reads a term carrying it.
+    default_sales_souche_id?: number | null;
     // Only present when this term comes from a partner's attached-terms list
     // (paymentTerms/payment_terms), not the generic available-terms list.
     // pivot.is_default marks the partner's configured default term.

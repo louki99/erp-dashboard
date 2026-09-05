@@ -88,7 +88,6 @@ import type {
     GcomFinancialInstrumentsGlobalFilters,
     GcomBatchDepositPayload,
     GcomBatchDepositResponse,
-    GcomSoucheKind,
     GcomAccountStatement,
     GcomAccountStatementResponse,
     GcomPartnerStatementRow,
@@ -260,8 +259,9 @@ export const gcomApi = {
 
         // Flow #3 — BC → Facture, no BL. `instrument` required if the BC's payment_method
         // is cheque/effet. Idempotent: re-calling on an already-invoiced order returns
-        // the existing invoice instead of erroring. `souche_kind` (§17, 2026-08-26) —
-        // explicit override, beats the PaymentTerm-derived default; omit to keep it.
+        // the existing invoice instead of erroring. `salesSoucheId` (§10, 2026-09-02,
+        // replaces the old souche_kind) — explicit override, beats the
+        // PaymentTerm-derived default; omit to keep it.
         // `avoirAllocations` (2026-08-20) — required (and must sum exactly to the
         // sale total) when the BC's payment_method is 'avoir'.
         // `paymentMethodOverride` — generalized 2026-09-01: any real settlement
@@ -278,10 +278,10 @@ export const gcomApi = {
         // document is already invoiced (closes the old silent-ignore gap: a
         // retry/double-click used to 200 and silently keep the original
         // method). Not supported at all yet for a 1_FAC_PER_ORDER partner.
-        convertToInvoice: async (orderId: number, instrument?: GcomInstrumentInput | null, soucheKind?: GcomSoucheKind | null, avoirAllocations?: GcomAvoirAllocation[], paymentMethodOverride?: Exclude<GcomPaymentMethod, 'avoir'>, paymentTermId?: number | null): Promise<GcomInvoice> => {
+        convertToInvoice: async (orderId: number, instrument?: GcomInstrumentInput | null, salesSoucheId?: number | null, avoirAllocations?: GcomAvoirAllocation[], paymentMethodOverride?: Exclude<GcomPaymentMethod, 'avoir'>, paymentTermId?: number | null): Promise<GcomInvoice> => {
             const response = await apiClient.post<GcomConvertToInvoiceResponse>(
                 `${BASE}/orders/${orderId}/convert-to-invoice`,
-                { instrument: instrument ?? null, souche_kind: soucheKind ?? null, avoir_allocations: avoirAllocations ?? undefined, payment_method: paymentMethodOverride ?? undefined, payment_term_id: paymentTermId ?? undefined },
+                { instrument: instrument ?? null, sales_souche_id: salesSoucheId ?? null, avoir_allocations: avoirAllocations ?? undefined, payment_method: paymentMethodOverride ?? undefined, payment_term_id: paymentTermId ?? undefined },
                 idempotent(),
             );
             return response.data.invoice;
@@ -390,8 +390,9 @@ export const gcomApi = {
         },
 
         // Flow #4's second hop — BC → BL → Facture. `instrument` required if the
-        // underlying BC's payment_method is cheque/effet. `souche_kind` (§17,
-        // 2026-08-26) — explicit override, beats the PaymentTerm-derived default.
+        // underlying BC's payment_method is cheque/effet. `salesSoucheId` (§10,
+        // 2026-09-02, replaces the old souche_kind) — explicit override, beats
+        // the PaymentTerm-derived default.
         // 2026-08-29: 422s if the BL is still in_transit — call confirmDelivery
         // first (the UI should gate this action on status === 'delivered', not
         // just rely on the 422).
@@ -405,10 +406,10 @@ export const gcomApi = {
         // delivery_note.total_amount. Verified live on this exact endpoint
         // (BC→BL→Facture chain, cash override + partial avoir, and again for
         // the generalized any-method override).
-        convertToInvoice: async (deliveryNoteId: number, instrument?: GcomInstrumentInput | null, soucheKind?: GcomSoucheKind | null, avoirAllocations?: GcomAvoirAllocation[], paymentMethodOverride?: Exclude<GcomPaymentMethod, 'avoir'>, paymentTermId?: number | null): Promise<GcomInvoice> => {
+        convertToInvoice: async (deliveryNoteId: number, instrument?: GcomInstrumentInput | null, salesSoucheId?: number | null, avoirAllocations?: GcomAvoirAllocation[], paymentMethodOverride?: Exclude<GcomPaymentMethod, 'avoir'>, paymentTermId?: number | null): Promise<GcomInvoice> => {
             const response = await apiClient.post<GcomConvertToInvoiceResponse>(
                 `${BASE}/delivery-notes/${deliveryNoteId}/convert-to-invoice`,
-                { instrument: instrument ?? null, souche_kind: soucheKind ?? null, avoir_allocations: avoirAllocations ?? undefined, payment_method: paymentMethodOverride ?? undefined, payment_term_id: paymentTermId ?? undefined },
+                { instrument: instrument ?? null, sales_souche_id: salesSoucheId ?? null, avoir_allocations: avoirAllocations ?? undefined, payment_method: paymentMethodOverride ?? undefined, payment_term_id: paymentTermId ?? undefined },
                 idempotent(),
             );
             return response.data.invoice;

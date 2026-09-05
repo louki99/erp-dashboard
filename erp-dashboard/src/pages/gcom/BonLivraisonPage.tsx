@@ -38,7 +38,7 @@ import { RETURN_CONDITIONS, RETURN_CONDITION_LABEL } from '@/lib/gcom/returnCond
 import { RETURN_REASONS, RETURN_REASON_LABEL } from '@/lib/gcom/returnReasons';
 import type { Partner, PaymentTermOption } from '@/types/partner.types';
 import type {
-    GcomDeliveryNote, GcomDeliveryNoteItem, GcomBlStatus, GcomInstrumentInput, GcomPdfPriceMode, GcomReturnCondition, GcomReturnReason, GcomSoucheKind, GcomAvoirAllocation, GcomPaymentMethod,
+    GcomDeliveryNote, GcomDeliveryNoteItem, GcomBlStatus, GcomInstrumentInput, GcomPdfPriceMode, GcomReturnCondition, GcomReturnReason, GcomAvoirAllocation, GcomPaymentMethod,
 } from '@/types/gcom.types';
 
 // ─── helpers ─────────────────────────────────────────────────────────────────
@@ -102,11 +102,12 @@ const ConsolidateModal = ({ notes, onClose, onDone }: { notes: GcomDeliveryNote[
     const total = notes.reduce((sum, n) => sum + (Number(n.total_amount) || 0), 0);
     const consolidateInvoices = useConsolidateInvoices();
 
-    // Off by default — payment_method/souche_kind are only REQUIRED when the
-    // selected orders disagree; most manual groupings are a single wholesale
-    // client whose orders already naturally agree, so the common path needs
-    // no override at all. If the API 422s asking for one, confirm() reveals
-    // this section automatically rather than leaving the user to guess why.
+    // Off by default — payment_method/sales_souche_id are only REQUIRED when
+    // the selected orders disagree; most manual groupings are a single
+    // wholesale client whose orders already naturally agree, so the common
+    // path needs no override at all. If the API 422s asking for one,
+    // confirm() reveals this section automatically rather than leaving the
+    // user to guess why.
     const [overrideEnabled, setOverrideEnabled] = useState(false);
     const [method, setMethod] = useState<Exclude<GcomPaymentMethod, 'avoir'>>('cash');
     const [instrument, setInstrument] = useState<GcomInstrumentInput>(EMPTY_INSTRUMENT);
@@ -114,7 +115,8 @@ const ConsolidateModal = ({ notes, onClose, onDone }: { notes: GcomDeliveryNote[
     const [banks, setBanks] = useState<Bank[]>([]);
     const [creditTerms, setCreditTerms] = useState<PaymentTermOption[]>([]);
     const [termId, setTermId] = useState<number | null>(null);
-    const [soucheKind, setSoucheKind] = useState<GcomSoucheKind>('declared');
+    // §10 (2026-09-02) — null = "Auto", replaces the old souche_kind toggle.
+    const [salesSoucheId, setSalesSoucheId] = useState<number | null>(null);
     const [submitting, setSubmitting] = useState(false);
 
     useEffect(() => {
@@ -150,7 +152,7 @@ const ConsolidateModal = ({ notes, onClose, onDone }: { notes: GcomDeliveryNote[
                 payment_method: overrideEnabled ? method : undefined,
                 payment_term_id: needsTermNow ? termId : undefined,
                 instrument: needsInstrumentNow ? instrument : undefined,
-                souche_kind: overrideEnabled ? soucheKind : undefined,
+                sales_souche_id: overrideEnabled ? (salesSoucheId ?? undefined) : undefined,
             });
             toast.success(`Facture ${invoice.invoice_number ?? `#${invoice.id}`} créée — ${notes.length} BL consolidés`);
             onDone();
@@ -211,8 +213,8 @@ const ConsolidateModal = ({ notes, onClose, onDone }: { notes: GcomDeliveryNote[
                             creditTerms={creditTerms}
                             termId={termId}
                             onTermIdChange={setTermId}
-                            soucheKind={soucheKind}
-                            onSoucheKindChange={setSoucheKind}
+                            salesSoucheId={salesSoucheId}
+                            onSalesSoucheIdChange={setSalesSoucheId}
                             mixAvoirEnabled={false}
                             onMixAvoirEnabledChange={() => {}}
                             avoirAllocations={[]}
@@ -557,17 +559,17 @@ export default function BonLivraisonPage() {
     const [convertAvoirOverrideMethod, setConvertAvoirOverrideMethod] = useState<'' | 'cash' | 'card'>('');
     const [convertInstrument, setConvertInstrument] = useState<GcomInstrumentInput>(EMPTY_INSTRUMENT);
     const [convertingToInvoice, setConvertingToInvoice] = useState(false);
-    // §17 — explicit override, 'declared' is the safe/common default.
-    const [convertSoucheKind, setConvertSoucheKind] = useState<GcomSoucheKind>('declared');
+    // §10 (2026-09-02) — null = "Auto", replaces the old souche_kind toggle.
+    const [convertSalesSoucheId, setConvertSalesSoucheId] = useState<number | null>(null);
     // 2026-08-21 — the partner's billing mode (per-order/BL consolidation,
     // periodic fin-de-mois) isn't embedded on the order/BL payload itself,
     // so it's fetched once when the conversion flow opens. 1_FAC_PER_ORDER
-    // doesn't support an explicit souche_kind or payment_method override yet
-    // (backend either 422s or, verified live 2026-08-21, silently swaps the
-    // souche to its own default instead of honoring ours — hide both
-    // controls rather than risk a declared/internal mismatch the user never
-    // asked for). PERIODIC_FIN_DE_MOIS never allows manual conversion at
-    // all — blocked at openConvertToInvoice, before any modal opens.
+    // doesn't support an explicit souche override or payment_method override
+    // yet (backend either 422s or, verified live 2026-08-21, silently swaps
+    // the souche to its own default instead of honoring ours — hide both
+    // controls rather than risk a mismatch the user never asked for).
+    // PERIODIC_FIN_DE_MOIS never allows manual conversion at all — blocked
+    // at openConvertToInvoice, before any modal opens.
     const [convertInvoicingMode, setConvertInvoicingMode] = useState<'1_FAC_PER_BL' | '1_FAC_PER_ORDER' | 'PERIODIC_FIN_DE_MOIS' | null>(null);
     const [convertModeChecking, setConvertModeChecking] = useState(false);
     // 2026-09-01 — generalized payment_method override at convert-to-invoice:
@@ -577,7 +579,7 @@ export default function BonLivraisonPage() {
     // Defaults to the BL's own stored method (openConvertToInvoice) so the
     // common "no change" path never sends an override. Not offered at all
     // for 1_FAC_PER_ORDER (doc: "not supported at all yet for this mode",
-    // matches the souche_kind restriction already gated on the same flag).
+    // matches the souche-override restriction already gated on the same flag).
     const [convertMethodOverride, setConvertMethodOverride] = useState<Exclude<GcomPaymentMethod, 'avoir'>>('cash');
     const [convertOverrideCreditTerms, setConvertOverrideCreditTerms] = useState<PaymentTermOption[]>([]);
     const [convertOverrideTermId, setConvertOverrideTermId] = useState<number | null>(null);
@@ -589,7 +591,7 @@ export default function BonLivraisonPage() {
 
     const openConvertToInvoice = async () => {
         if (!selected) return;
-        setConvertSoucheKind('declared');
+        setConvertSalesSoucheId(null);
         setConvertAvoirAllocations([]);
         setConvertMixAvoirEnabled(false);
         setConvertAvoirOverrideMethod('');
@@ -646,14 +648,14 @@ export default function BonLivraisonPage() {
         if (!selected) return;
         setConvertingToInvoice(true);
         try {
-            // 1_FAC_PER_ORDER doesn't support an explicit souche_kind or
+            // 1_FAC_PER_ORDER doesn't support an explicit souche override or
             // payment_method override yet — let backend pick its own defaults
             // rather than risk a silent mismatch.
-            const soucheKindArg = convertInvoicingMode === '1_FAC_PER_ORDER' ? undefined : convertSoucheKind;
+            const salesSoucheIdArg = convertInvoicingMode === '1_FAC_PER_ORDER' ? undefined : convertSalesSoucheId;
             const overrideArg = convertInvoicingMode === '1_FAC_PER_ORDER' ? undefined : paymentMethodOverride;
             const termIdArg = convertInvoicingMode === '1_FAC_PER_ORDER' ? undefined : paymentTermId;
             const invoice = await convertToInvoice.mutateAsync({
-                target: { type: 'bl', id: selected.id }, instrument, soucheKind: soucheKindArg, avoirAllocations,
+                target: { type: 'bl', id: selected.id }, instrument, salesSoucheId: salesSoucheIdArg, avoirAllocations,
                 paymentMethodOverride: overrideArg, paymentTermId: termIdArg,
             });
             toast.success(`Facture ${invoice.invoice_number ?? `#${invoice.id}`} créée${invoice.souche_kind === 'internal' ? ' (souche interne)' : ''}`);
@@ -1240,8 +1242,8 @@ export default function BonLivraisonPage() {
                                                 creditTerms={convertOverrideCreditTerms}
                                                 termId={convertOverrideTermId}
                                                 onTermIdChange={setConvertOverrideTermId}
-                                                soucheKind={convertSoucheKind}
-                                                onSoucheKindChange={setConvertSoucheKind}
+                                                salesSoucheId={convertSalesSoucheId}
+                                                onSalesSoucheIdChange={setConvertSalesSoucheId}
                                                 mixAvoirEnabled={convertMixAvoirEnabled}
                                                 onMixAvoirEnabledChange={setConvertMixAvoirEnabled}
                                                 avoirAllocations={convertAvoirAllocations}
@@ -1613,8 +1615,8 @@ export default function BonLivraisonPage() {
                                 creditTerms={convertOverrideCreditTerms}
                                 termId={convertOverrideTermId}
                                 onTermIdChange={setConvertOverrideTermId}
-                                soucheKind={convertSoucheKind}
-                                onSoucheKindChange={setConvertSoucheKind}
+                                salesSoucheId={convertSalesSoucheId}
+                                onSalesSoucheIdChange={setConvertSalesSoucheId}
                                 mixAvoirEnabled={convertMixAvoirEnabled}
                                 onMixAvoirEnabledChange={setConvertMixAvoirEnabled}
                                 avoirAllocations={convertAvoirAllocations}

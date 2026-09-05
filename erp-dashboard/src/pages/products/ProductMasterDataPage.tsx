@@ -1,4 +1,4 @@
-import { useMemo, useState, useRef } from 'react';
+import { useMemo, useState, useRef, type DragEvent } from 'react';
 import type { LucideIcon } from 'lucide-react';
 import {
     Database,
@@ -30,7 +30,7 @@ import { MasterLayout } from '@/components/layout/MasterLayout';
 import { ActionPanel } from '@/components/layout/ActionPanel';
 import { DataGrid } from '@/components/common/DataGrid';
 import { productsApi } from '@/services/api/productsApi';
-import type { ProductPage } from '@/types/product.types';
+import type { ProductPage, Category } from '@/types/product.types';
 import type { TabItem } from '@/components/common/SageTabs';
 import {
     Dialog,
@@ -50,6 +50,8 @@ import {
     useUpdateCategory,
     useDeleteCategory,
     useToggleCategory,
+    useUploadCategoryImage,
+    useDeleteCategoryImage,
     useSubcategories,
     useCreateSubcategory,
     useUpdateSubcategory,
@@ -104,6 +106,12 @@ interface ResourceConfig {
     useDelete: () => { execute: (id: any) => Promise<any>; loading: boolean };
     useToggle?: () => { execute: (id: any) => Promise<any>; loading: boolean };
     fields: FormField[];
+    // Optional thumbnail column, injected right after "code" — item's image
+    // field (e.g. Category.thumbnail) + a click handler the page wires up to
+    // open its own upload modal (kept outside ResourceTab so every other
+    // resource using this same generic table is unaffected).
+    imageField?: string;
+    onImageClick?: (item: any) => void;
 }
 
 const ActiveBadge = ({ active }: { active: boolean }) => {
@@ -252,6 +260,30 @@ const ResourceTab = ({ config }: { config: ResourceConfig }) => {
                     return <span className="text-xs font-mono text-gray-500">{val}</span>;
                 },
             },
+            ...(config.imageField ? [{
+                headerName: t('products.masterData.images'),
+                field: config.imageField,
+                width: 60,
+                flex: 0,
+                sortable: false,
+                filter: false,
+                cellRenderer: (params: any) => {
+                    const item = params.data;
+                    if (!item) return null;
+                    const src = item[config.imageField!];
+                    return (
+                        <button
+                            onClick={() => config.onImageClick?.(item)}
+                            className="w-8 h-8 rounded-md overflow-hidden border border-gray-200 hover:border-sage-400 transition-colors"
+                            title={t('products.masterData.images')}
+                        >
+                            {src
+                                ? <img src={src} alt={item[config.nameKey]} className="w-full h-full object-cover" />
+                                : <div className="w-full h-full bg-gray-50 flex items-center justify-center"><ImagePlus className="w-3.5 h-3.5 text-gray-300" /></div>}
+                        </button>
+                    );
+                },
+            }] : []),
             {
                 headerName: t('common.name'),
                 field: config.nameKey,
@@ -797,11 +829,173 @@ const ProductPagesTab = ({ config }: { config: ResourceConfig }) => {
     );
 };
 
+// ── Image Upload Modal for Categories — single slot, with remove ───────────────
+// Unlike product-pages (logo+photo, upload-only), a category has one image and
+// backend gives us a real DELETE that reverts it to the default placeholder
+// (thumbnail is never null — see Category.thumbnail).
+
+interface CategoryImageUploadModalProps {
+    category: Category;
+    onClose: () => void;
+    onUploaded: () => void;
+}
+
+const CategoryImageUploadModal = ({ category, onClose, onUploaded }: CategoryImageUploadModalProps) => {
+    const { t } = useTranslation();
+    const { execute: uploadImage, loading: uploading } = useUploadCategoryImage();
+    const { execute: removeImage, loading: removing } = useDeleteCategoryImage();
+    const [file, setFile] = useState<File | null>(null);
+    const [preview, setPreview] = useState<string | null>(null);
+    const [isDragOver, setIsDragOver] = useState(false);
+    const inputRef = useRef<HTMLInputElement>(null);
+
+    const handleFile = (f: File | null) => {
+        if (!f) return;
+        if (!f.type.startsWith('image/')) { toast.error(t('errors.uploadFailed')); return; }
+        setFile(f);
+        setPreview(URL.createObjectURL(f));
+    };
+
+    const handleDrop = (e: DragEvent<HTMLDivElement>) => {
+        e.preventDefault();
+        setIsDragOver(false);
+        handleFile(e.dataTransfer.files?.[0] ?? null);
+    };
+
+    const clear = () => {
+        if (preview) URL.revokeObjectURL(preview);
+        setFile(null);
+        setPreview(null);
+        if (inputRef.current) inputRef.current.value = '';
+    };
+
+    const handleUpload = async () => {
+        if (!file) { toast.error(t('common.noImage')); return; }
+        const toastId = toast.loading(t('products.masterData.sending'));
+        try {
+            const res = await uploadImage(category.id, file);
+            toast.dismiss(toastId);
+            if (res.success) {
+                toast.success(t('products.masterData.updated'));
+                onUploaded();
+                onClose();
+            } else {
+                toast.error(t('errors.uploadFailed'));
+            }
+        } catch (e: any) {
+            toast.dismiss(toastId);
+            toast.error(e?.response?.data?.message || t('errors.uploadFailed'));
+        }
+    };
+
+    const handleRemove = async () => {
+        const toastId = toast.loading(t('common.saving'));
+        try {
+            const res = await removeImage(category.id);
+            toast.dismiss(toastId);
+            if (res.success) {
+                toast.success(t('products.masterData.updated'));
+                onUploaded();
+                onClose();
+            } else {
+                toast.error(res.message || t('errors.generic'));
+            }
+        } catch (e: any) {
+            toast.dismiss(toastId);
+            toast.error(e?.response?.data?.message || t('errors.generic'));
+        }
+    };
+
+    const displaySrc = preview ?? category.thumbnail;
+    const busy = uploading || removing;
+
+    return (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
+            <div className="bg-white rounded-xl shadow-2xl w-full max-w-sm overflow-hidden">
+                <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100">
+                    <h2 className="text-sm font-bold text-gray-900">{t('products.masterData.images')} — {category.name}</h2>
+                    <button onClick={onClose} className="p-1.5 text-gray-400 hover:text-gray-700 hover:bg-gray-100 rounded-lg">
+                        <X className="w-4 h-4" />
+                    </button>
+                </div>
+
+                <div className="p-5 flex flex-col items-center gap-3">
+                    <div
+                        className={`relative group w-40 h-40 rounded-xl border-2 border-dashed flex items-center justify-center cursor-pointer transition-colors overflow-hidden ${
+                            isDragOver ? 'border-sage-500 bg-sage-50' : 'border-gray-200 bg-gray-50 hover:border-sage-400 hover:bg-sage-50/30'
+                        }`}
+                        onClick={() => inputRef.current?.click()}
+                        onDragOver={(e) => { e.preventDefault(); setIsDragOver(true); }}
+                        onDragLeave={() => setIsDragOver(false)}
+                        onDrop={handleDrop}
+                    >
+                        {displaySrc ? (
+                            <>
+                                <img src={displaySrc} alt={category.name} className="w-full h-full object-cover" />
+                                <div className={`absolute inset-0 bg-black/40 flex items-center justify-center transition-opacity ${isDragOver ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'}`}>
+                                    <Upload className="w-6 h-6 text-white" />
+                                </div>
+                            </>
+                        ) : (
+                            <div className="flex flex-col items-center gap-1.5 text-gray-400 pointer-events-none">
+                                <ImagePlus className="w-8 h-8" />
+                                <span className="text-xs">{isDragOver ? t('products.masterData.dropHere') : t('products.masterData.clickToChoose')}</span>
+                            </div>
+                        )}
+                        {file && (
+                            <div className="absolute top-2 right-2 bg-sage-600 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full">
+                                {t('common.new')}
+                            </div>
+                        )}
+                    </div>
+
+                    {file ? (
+                        <div className="flex items-center gap-1.5">
+                            <span className="text-[10px] text-gray-500 truncate max-w-[180px]">{file.name}</span>
+                            <button onClick={clear} className="shrink-0 p-0.5 text-gray-400 hover:text-red-500">
+                                <X className="w-3 h-3" />
+                            </button>
+                        </div>
+                    ) : (
+                        <span className="text-[10px] text-gray-400">{t('products.masterData.currentImage')}</span>
+                    )}
+
+                    <input ref={inputRef} type="file" accept="image/*" className="hidden" onChange={e => handleFile(e.target.files?.[0] ?? null)} />
+                </div>
+
+                <div className="flex items-center justify-between gap-2 px-5 py-4 border-t border-gray-100 bg-gray-50">
+                    <button
+                        onClick={handleRemove}
+                        disabled={busy}
+                        className="flex items-center gap-1.5 px-3 py-2 text-xs font-medium text-red-600 hover:bg-red-50 rounded-lg disabled:opacity-40 transition-colors"
+                    >
+                        <Trash2 className="w-3.5 h-3.5" /> {t('common.delete')}
+                    </button>
+                    <div className="flex items-center gap-2">
+                        <button onClick={onClose} className="px-4 py-2 text-sm text-gray-600 hover:bg-gray-200 rounded-lg transition-colors">
+                            {t('common.cancel')}
+                        </button>
+                        <button
+                            onClick={handleUpload}
+                            disabled={busy || !file}
+                            className="flex items-center gap-2 px-4 py-2 text-sm font-semibold text-white bg-sage-600 rounded-lg hover:bg-sage-700 disabled:opacity-40 transition-colors shadow-sm"
+                        >
+                            {uploading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Upload className="w-3.5 h-3.5" />}
+                            {t('common.send')}
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    );
+};
+
 export const ProductMasterDataPage = () => {
     const { t } = useTranslation();
     const { data: categories, refetch: refetchCategories } = useCategories();
     const { data: pages, refetch: refetchPages } = useProductPagesList();
     const [activeTab, setActiveTab] = useState('brands');
+    const [categoryImageTarget, setCategoryImageTarget] = useState<Category | null>(null);
 
     const categoryOptions = useMemo(
         () => categories.map((c) => ({ value: c.id, label: c.name })),
@@ -858,8 +1052,11 @@ export const ProductMasterDataPage = () => {
                 useUpdate: useUpdateCategory,
                 useDelete: useDeleteCategory,
                 useToggle: useToggleCategory,
+                imageField: 'thumbnail',
+                onImageClick: (item: Category) => setCategoryImageTarget(item),
                 fields: [
                     { key: 'name', label: t('common.name'), type: 'text', required: true },
+                    { key: 'code', label: t('common.code'), type: 'text' },
                     { key: 'parent_id', label: t('modules.products.categories'), type: 'select', options: categoryOptions },
                     { key: 'is_active', label: t('common.active'), type: 'checkbox' },
                 ],
@@ -982,6 +1179,7 @@ export const ProductMasterDataPage = () => {
     const activeConfig = configs[activeTab];
 
     return (
+        <>
         <MasterLayout
             leftContent={
                 <div className="h-full bg-white border-r border-gray-100 flex flex-col">
@@ -1039,5 +1237,13 @@ export const ProductMasterDataPage = () => {
                 />
             }
         />
+        {categoryImageTarget && (
+            <CategoryImageUploadModal
+                category={categoryImageTarget}
+                onClose={() => setCategoryImageTarget(null)}
+                onUploaded={refetchCategories}
+            />
+        )}
+        </>
     );
 };

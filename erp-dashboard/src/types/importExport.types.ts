@@ -41,7 +41,9 @@ export interface TemplateField {
     field_name: string;
     label: string;
     link: string | null;
-    data_type: 'string' | 'integer' | 'decimal' | 'boolean' | 'date' | 'datetime' | 'text';
+    // 'text' is NOT accepted by POST/PUT /templates (422) — text/longText
+    // columns map to 'string', see handleColumnSelect in TemplateDetailPage.tsx.
+    data_type: 'string' | 'integer' | 'decimal' | 'boolean' | 'date' | 'datetime';
     input_output: 'input' | 'output' | 'both';
     is_required: boolean;
     is_identifier: boolean;

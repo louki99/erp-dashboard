@@ -236,7 +236,14 @@
       "Bash(tee /c/Users/louki/AppData/Local/Temp/claude/d--project--avenir-omni360-omin360__mobile-erp-dashboard-erp-dashboard/567f8a53-5b10-44bd-9aa8-d5df88983a3b/scratchpad/tsc_reviewpass.txt)",
       "Bash(sort -k5 -n -r)",
       "Bash(echo \"TSC_EXIT:$?\")",
-      "Bash(echo \"BUILD_EXIT:$?\")"
+      "Bash(echo \"BUILD_EXIT:$?\")",
+      "Bash(npm run *)",
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\\\\n\" http://localhost:5173/)",
+      "Bash(grep -n \"^const CategoriesTab\\\\|^};$\\\\|^// ── Categories tab\\\\|^export const ProductMasterDataPage\" src/pages/products/ProductMasterDataPage.tsx)",
+      "Bash(grep -n \"^};$\\\\|activeConfig\\\\|^    return \\(\" src/pages/products/ProductMasterDataPage.tsx)",
+      "Bash(awk '{print $NF, $\\(NF-1\\)}' /tmp/gcom_baseline_eslint.txt)",
+      "Bash(awk '{print $NF, $\\(NF-1\\)}' /tmp/gcom_current_eslint.txt)",
+      "Bash(grep -n \"^const FieldEditModal\\\\|^};$\" src/pages/import-export/TemplateDetailPage.tsx)"
     ],
     "additionalDirectories": [
       "C:\\Users\\louki\\.claude\\projects\\d--project--avenir-omni360-omin360__mobile-erp-dashboard\\memory",

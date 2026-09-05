@@ -262,6 +262,10 @@ export const PERMISSIONS = {
         INDEX: 'admin.access-control.device-keys.index',
         MANAGE: 'admin.access-control.device-keys.manage',
     },
+    SALES_SOUCHES: {
+        INDEX: 'admin.access-control.sales-souches.index',
+        MANAGE: 'admin.access-control.sales-souches.manage',
+    },
 
     // Finance / Treasury Module
     FINANCE: {
@@ -521,6 +525,7 @@ export const PAGE_PERMISSIONS: Record<string, string | string[]> = {
     // Token Series & Device Keys
     '/token-series': PERMISSIONS.TOKEN_SERIES.MANAGE,
     '/device-keys': PERMISSIONS.DEVICE_KEYS.MANAGE,
+    '/sales-souches': PERMISSIONS.SALES_SOUCHES.MANAGE,
 
     // Routing
     '/routing/geo-areas': PERMISSIONS.ROUTING.GEO_AREAS_MANAGE,

@@ -25,6 +25,8 @@ import type { Template, TemplateField } from '@/types/importExport.types';
 import toast from 'react-hot-toast';
 import { DataGrid } from '@/components/common/DataGrid';
 import { SageTabs, type TabItem } from '@/components/common/SageTabs';
+import SearchableSelect from '@/components/common/SearchableSelect';
+import { useDbTables, useDbTableColumns } from '@/hooks/import-export/useImportExportMetadata';
 import type { ColDef } from 'ag-grid-community';
 
 type TabType = 'general' | 'fields' | 'settings';
@@ -36,27 +38,15 @@ export const TemplateDetailPage = () => {
     const [template, setTemplate] = useState<Template | null>(null);
     const [loading, setLoading] = useState(true);
     const [saving, setSaving] = useState(false);
-    const [availableTables, setAvailableTables] = useState<Array<{ id: string; display_name: string; row_count: number; size: string }>>([]);
-    const [loadingTables, setLoadingTables] = useState(false);
+    const { data: tablesData, isLoading: loadingTables } = useDbTables();
+    const availableTables = tablesData?.tables ?? [];
 
     useEffect(() => {
         if (id) {
             loadTemplate();
         }
-        loadAvailableTables();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [id]);
-
-    const loadAvailableTables = async () => {
-        try {
-            setLoadingTables(true);
-            const data = await importExportApi.metadata.getTables();
-            setAvailableTables(data.tables);
-        } catch (error) {
-            console.error('Failed to load tables:', error);
-        } finally {
-            setLoadingTables(false);
-        }
-    };
 
     const loadTemplate = async () => {
         if (!id) {
@@ -424,21 +414,22 @@ const GeneralTab = ({
                             Table principale (Objet) <span className="text-red-500">*</span>
                         </label>
                         <div className="flex items-center gap-2">
-                            <Database className="w-5 h-5 text-gray-400" />
-                            <select
-                                value={availableTables.find(t => importExportApi.metadata.decodeTableId(t.id) === template.primary_table)?.id || ''}
-                                onChange={(e) => handleTableChange(e.target.value)}
-                                disabled={loadingTables}
-                                className="flex-1 px-3 py-2 border border-gray-300 rounded-md focus:ring-sage-500 focus:border-sage-500 disabled:bg-gray-50"
-                            >
-                                <option value="">Sélectionner une table...</option>
-                                {availableTables.map((table) => (
-                                    <option key={table.id} value={table.id}>
-                                        {table.display_name} ({table.row_count} lignes, {table.size})
-                                    </option>
-                                ))}
-                            </select>
-                            {loadingTables && <Loader2 className="w-4 h-4 animate-spin text-sage-600" />}
+                            <Database className="w-5 h-5 text-gray-400 shrink-0" />
+                            <div className="flex-1">
+                                <SearchableSelect
+                                    options={availableTables.map(t => ({
+                                        value: t.id,
+                                        label: t.display_name,
+                                        sublabel: `${t.row_count} lignes`,
+                                        badge: t.size,
+                                    }))}
+                                    value={availableTables.find(t => importExportApi.metadata.decodeTableId(t.id) === template.primary_table)?.id ?? ''}
+                                    onChange={(val) => handleTableChange(String(val ?? ''))}
+                                    placeholder="Sélectionner une table..."
+                                    disabled={loadingTables}
+                                />
+                            </div>
+                            {loadingTables && <Loader2 className="w-4 h-4 animate-spin text-sage-600 shrink-0" />}
                         </div>
                         {template.primary_table && (
                             <p className="text-xs text-gray-500 mt-1">
@@ -800,75 +791,33 @@ const FieldEditModal = ({
     onSave: () => void;
     onCancel: () => void;
 }) => {
-    const [availableTables, setAvailableTables] = useState<Array<{ id: string; display_name: string }>>([]);
-    const [availableColumns, setAvailableColumns] = useState<Array<{ 
-        name: string; 
-        type: string; 
-        laravel_type: string; 
-        nullable: boolean;
-        max_length: number | null;
-        is_primary_key: boolean;
-        is_unique: boolean;
-        default: string | null;
-    }>>([]);
-    const [loadingTables, setLoadingTables] = useState(false);
-    const [loadingColumns, setLoadingColumns] = useState(false);
-    const [selectedTableId, setSelectedTableId] = useState<string>('');
-
-    useEffect(() => {
-        loadTables();
-    }, []);
-
-    useEffect(() => {
-        if (field.source_table || field.table_name) {
-            const tableName = field.source_table || field.table_name;
-            const table = availableTables.find(t => importExportApi.metadata.decodeTableId(t.id) === tableName);
-            if (table) {
-                setSelectedTableId(table.id);
-                loadColumns(table.id);
-            }
-        }
+    // Same query key as the parent page's own useDbTables() call — whichever
+    // fetches first primes the cache, so opening this modal repeatedly (once
+    // per field being mapped) never re-hits /metadata/tables after the first time.
+    const { data: tablesData, isLoading: loadingTables } = useDbTables();
+    const availableTables = useMemo(() => tablesData?.tables ?? [], [tablesData]);
+    // Derived, not state-synced-via-effect: the encoded table id is fully
+    // determined by field.source_table (set by handleTableChange below) plus
+    // the loaded table list — no need to duplicate it in its own state.
+    const selectedTableId = useMemo(() => {
+        const tableName = field.source_table || field.table_name;
+        if (!tableName) return '';
+        return availableTables.find(t => importExportApi.metadata.decodeTableId(t.id) === tableName)?.id ?? '';
     }, [field.source_table, field.table_name, availableTables]);
-
-    const loadTables = async () => {
-        try {
-            setLoadingTables(true);
-            const data = await importExportApi.metadata.getTables();
-            setAvailableTables(data.tables);
-        } catch (error) {
-            console.error('Failed to load tables:', error);
-        } finally {
-            setLoadingTables(false);
-        }
-    };
-
-    const loadColumns = async (tableId: string) => {
-        if (!tableId) return;
-        try {
-            setLoadingColumns(true);
-            const data = await importExportApi.metadata.getTableColumns(tableId);
-            setAvailableColumns(data.columns);
-        } catch (error) {
-            console.error('Failed to load columns:', error);
-            toast.error('Échec du chargement des colonnes');
-        } finally {
-            setLoadingColumns(false);
-        }
-    };
+    const { data: columnsData, isLoading: loadingColumns } = useDbTableColumns(selectedTableId || null);
+    const availableColumns = columnsData?.columns ?? [];
 
     const handleTableChange = (tableId: string) => {
-        setSelectedTableId(tableId);
         const selectedTable = availableTables.find(t => t.id === tableId);
         if (selectedTable) {
             const actualTableName = importExportApi.metadata.decodeTableId(tableId);
-            onUpdate({ 
-                ...field, 
-                source_table: actualTableName, 
-                table_name: actualTableName, 
+            onUpdate({
+                ...field,
+                source_table: actualTableName,
+                table_name: actualTableName,
                 source_column: '',
                 field_name: ''
             });
-            loadColumns(tableId);
         }
     };
 
@@ -879,7 +828,13 @@ const FieldEditModal = ({
                 columnName.split('_').map(word => word.charAt(0).toUpperCase() + word.slice(1)).join(' ');
             
             // Map Laravel types to valid data_type enum values
-            const dataTypeMap: Record<string, 'string' | 'integer' | 'decimal' | 'boolean' | 'date' | 'datetime' | 'text'> = {
+            // POST /templates only accepts data_type in {string, integer,
+            // decimal, boolean, date, datetime, json} — 'text'/'longText' is
+            // NOT a valid value (422 "The selected fields.N.data_type is
+            // invalid"), confirmed by every example payload in
+            // docs/dev/GUIDELINE_EXIMPO.md always using "string" for
+            // text/longText columns (short_description, description, ...).
+            const dataTypeMap: Record<string, 'string' | 'integer' | 'decimal' | 'boolean' | 'date' | 'datetime'> = {
                 'string': 'string',
                 'bigInteger': 'integer',
                 'integer': 'integer',
@@ -890,8 +845,8 @@ const FieldEditModal = ({
                 'date': 'date',
                 'datetime': 'datetime',
                 'timestamp': 'datetime',
-                'text': 'text',
-                'longText': 'text'
+                'text': 'string',
+                'longText': 'string'
             };
             
             const mappedDataType = dataTypeMap[column.laravel_type] || 'string';
@@ -934,21 +889,17 @@ const FieldEditModal = ({
                                 Table source <span className="text-red-500">*</span>
                             </label>
                             <div className="flex items-center gap-2">
-                                <Database className="w-4 h-4 text-gray-400" />
-                                <select
-                                    value={selectedTableId}
-                                    onChange={(e) => handleTableChange(e.target.value)}
-                                    disabled={loadingTables}
-                                    className="flex-1 px-3 py-2 border border-gray-300 rounded-md focus:ring-sage-500 focus:border-sage-500 disabled:bg-gray-50"
-                                >
-                                    <option value="">Sélectionner une table...</option>
-                                    {availableTables.map((table) => (
-                                        <option key={table.id} value={table.id}>
-                                            {table.display_name}
-                                        </option>
-                                    ))}
-                                </select>
-                                {loadingTables && <Loader2 className="w-4 h-4 animate-spin text-sage-600" />}
+                                <Database className="w-4 h-4 text-gray-400 shrink-0" />
+                                <div className="flex-1">
+                                    <SearchableSelect
+                                        options={availableTables.map(t => ({ value: t.id, label: t.display_name }))}
+                                        value={selectedTableId || ''}
+                                        onChange={(val) => handleTableChange(String(val ?? ''))}
+                                        placeholder="Sélectionner une table..."
+                                        disabled={loadingTables}
+                                    />
+                                </div>
+                                {loadingTables && <Loader2 className="w-4 h-4 animate-spin text-sage-600 shrink-0" />}
                             </div>
                             {field.source_table && (
                                 <div className="mt-2 p-2 bg-sage-50 border border-sage-200 rounded">
@@ -968,30 +919,28 @@ const FieldEditModal = ({
                                 Colonne (Nom du champ) <span className="text-red-500">*</span>
                             </label>
                             <div className="flex items-center gap-2">
-                                <select
-                                    value={field.field_name}
-                                    onChange={(e) => handleColumnSelect(e.target.value)}
-                                    disabled={loadingColumns || !field.source_table}
-                                    className="flex-1 px-3 py-2 border border-gray-300 rounded-md focus:ring-sage-500 focus:border-sage-500 disabled:bg-gray-50"
-                                >
-                                    <option value="">Sélectionner une colonne...</option>
-                                    {availableColumns.map((column) => {
-                                        const metadata = [];
-                                        if (column.is_primary_key) metadata.push('PK');
-                                        if (column.is_unique) metadata.push('UNIQUE');
-                                        if (!column.nullable) metadata.push('REQUIRED');
-                                        if (column.max_length) metadata.push(`max:${column.max_length}`);
-                                        
-                                        const metaStr = metadata.length > 0 ? ` [${metadata.join(', ')}]` : '';
-                                        
-                                        return (
-                                            <option key={column.name} value={column.name}>
-                                                {column.name} ({column.laravel_type}){metaStr}
-                                            </option>
-                                        );
-                                    })}
-                                </select>
-                                {loadingColumns && <Loader2 className="w-4 h-4 animate-spin text-sage-600" />}
+                                <div className="flex-1">
+                                    <SearchableSelect
+                                        options={availableColumns.map((column) => {
+                                            const metadata: string[] = [];
+                                            if (column.is_primary_key) metadata.push('PK');
+                                            if (column.is_unique) metadata.push('UNIQUE');
+                                            if (!column.nullable) metadata.push('REQUIRED');
+                                            if (column.max_length) metadata.push(`max:${column.max_length}`);
+                                            return {
+                                                value: column.name,
+                                                label: column.name,
+                                                sublabel: column.laravel_type,
+                                                badge: metadata.join(', ') || undefined,
+                                            };
+                                        })}
+                                        value={field.field_name || ''}
+                                        onChange={(val) => handleColumnSelect(String(val ?? ''))}
+                                        placeholder="Sélectionner une colonne..."
+                                        disabled={loadingColumns || !field.source_table}
+                                    />
+                                </div>
+                                {loadingColumns && <Loader2 className="w-4 h-4 animate-spin text-sage-600 shrink-0" />}
                             </div>
                             <p className="text-xs text-gray-500 mt-1">
                                 Ou saisissez manuellement:

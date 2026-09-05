@@ -1,9 +1,11 @@
 import { PAYMENT_METHODS } from '@/lib/gcom/paymentMethods';
 import { AvoirAllocationPicker } from '@/components/gcom/AvoirAllocationPicker';
 import { canMixAvoirWith } from '@/lib/gcom/avoirAllocations';
+import { useSalesSouches } from '@/hooks/salesSouches/useSalesSouches';
+import SearchableSelect from '@/components/common/SearchableSelect';
 import type { Bank } from '@/services/api/masterdataApi';
 import type { PaymentTermOption } from '@/types/partner.types';
-import type { GcomAvoirAllocation, GcomInstrumentInput, GcomPaymentMethod, GcomSoucheKind } from '@/types/gcom.types';
+import type { GcomAvoirAllocation, GcomInstrumentInput, GcomPaymentMethod } from '@/types/gcom.types';
 
 // 2026-09-01 — the shared "which method, and whatever that method needs"
 // block used at convert-to-invoice (BC→Facture and BL→Facture alike), in
@@ -27,8 +29,11 @@ export interface ConvertToInvoicePaymentFieldsProps {
     creditTerms: PaymentTermOption[];
     termId: number | null;
     onTermIdChange: (id: number | null) => void;
-    soucheKind: GcomSoucheKind;
-    onSoucheKindChange: (k: GcomSoucheKind) => void;
+    // §10 (2026-09-02) — replaces the old fixed 2-value souche_kind toggle.
+    // null = "Auto" (no override sent, backend resolves the branch's default
+    // declared souche — §10.5). An explicit id (declared or internal) always wins.
+    salesSoucheId: number | null;
+    onSalesSoucheIdChange: (id: number | null) => void;
     mixAvoirEnabled: boolean;
     onMixAvoirEnabledChange: (v: boolean) => void;
     avoirAllocations: GcomAvoirAllocation[];
@@ -44,15 +49,25 @@ export interface ConvertToInvoicePaymentFieldsProps {
 
 export const ConvertToInvoicePaymentFields = ({
     invoicingMode, method, onMethodChange, instrument, onInstrumentChange, banks, bankOther, onBankOtherChange,
-    creditTerms, termId, onTermIdChange, soucheKind, onSoucheKindChange, hideAvoirMix = false,
+    creditTerms, termId, onTermIdChange, salesSoucheId, onSalesSoucheIdChange, hideAvoirMix = false,
     mixAvoirEnabled, onMixAvoirEnabledChange, avoirAllocations, onAvoirAllocationsChange, partnerId, total,
 }: ConvertToInvoicePaymentFieldsProps) => {
     // 1_FAC_PER_ORDER — doc: "not supported at all yet for a 1_FAC_PER_ORDER
-    // partner" — same restriction already applied to souche_kind. The method
-    // stays whatever the document was created with, no picker shown.
+    // partner" — same restriction already applied to the souche override. The
+    // method stays whatever the document was created with, no picker shown.
     const overrideDisabled = invoicingMode === '1_FAC_PER_ORDER';
     const needsInstrument = method === 'cheque' || method === 'effet';
     const needsTerm = method === 'credit' || method === 'transfer';
+
+    const { data: souchesData } = useSalesSouches({ active_only: true });
+    const soucheOptions = [
+        { value: 'auto', label: 'Auto (par défaut)' },
+        ...(souchesData?.data ?? []).map(s => ({
+            value: s.id,
+            label: s.name,
+            badge: s.fiscal_type === 'declared' ? 'Déclarée' : 'Interne',
+        })),
+    ];
 
     return (
         <>
@@ -117,20 +132,14 @@ export const ConvertToInvoicePaymentFields = ({
             )}
 
             {!overrideDisabled && (
-                <div className="flex items-center gap-1.5">
-                    <span className="text-[10px] text-gray-400 mr-0.5">Souche :</span>
-                    {(['declared', 'internal'] as GcomSoucheKind[]).map(k => (
-                        <button
-                            key={k}
-                            type="button"
-                            onClick={() => onSoucheKindChange(k)}
-                            className={`px-2.5 py-1 rounded-lg border text-[11px] font-medium transition-colors ${
-                                soucheKind === k ? 'bg-indigo-600 border-indigo-600 text-white' : 'bg-white border-gray-200 text-gray-600 hover:bg-gray-50'
-                            }`}
-                        >
-                            {k === 'declared' ? 'Déclarée' : 'Interne'}
-                        </button>
-                    ))}
+                <div className="space-y-1">
+                    <span className="text-[10px] text-gray-400">Souche :</span>
+                    <SearchableSelect
+                        options={soucheOptions}
+                        value={salesSoucheId ?? 'auto'}
+                        onChange={(val) => onSalesSoucheIdChange(val === 'auto' || val == null ? null : Number(val))}
+                        placeholder="Auto (par défaut)"
+                    />
                 </div>
             )}
 

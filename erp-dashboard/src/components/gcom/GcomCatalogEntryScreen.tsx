@@ -22,9 +22,11 @@ import { telesalesApi } from '@/services/api/telesalesApi';
 import { gcomApi } from '@/services/api/gcomApi';
 import { masterdataApi, type Bank } from '@/services/api/masterdataApi';
 import { PAYMENT_METHODS } from '@/lib/gcom/paymentMethods';
+import { useSalesSouches } from '@/hooks/salesSouches/useSalesSouches';
+import SearchableSelect from '@/components/common/SearchableSelect';
 import type { Partner, PaymentTermOption } from '@/types/partner.types';
 import type { CatalogProduct } from '@/types/telesalesAgent.types';
-import type { GcomPaymentMethod, GcomInstrumentInput, GcomItemInput, GcomSoucheKind, GcomRepresentative, GcomAvoirAllocation } from '@/types/gcom.types';
+import type { GcomPaymentMethod, GcomInstrumentInput, GcomItemInput, GcomRepresentative, GcomAvoirAllocation } from '@/types/gcom.types';
 
 // ─── Shared "catalog quick-pad" entry experience ──────────────────────────────
 // Powers both the Comptoir (direct invoice) and BC creation screens: pick a
@@ -62,8 +64,9 @@ export interface GcomCatalogEntrySubmitPayload {
     instrument: GcomInstrumentInput | null;
     /** Only meaningful when `showExpiresAt` is set on the screen (Devis). */
     expires_at?: string;
-    /** Only meaningful when `showSoucheKindSelector` is set (Comptoir). §17. */
-    souche_kind?: GcomSoucheKind | null;
+    /** Only meaningful when `showSoucheKindSelector` is set (Comptoir).
+     * §10 (2026-09-02) — replaces the old souche_kind, now a real FK. */
+    sales_souche_id?: number | null;
     /** 2026-08-27 — customer's own PO/reference number, hidden on Devis (not
      * accepted by `POST /quotes`). Gated the same way as payment_method:
      * `!hidePaymentSection`. */
@@ -542,9 +545,18 @@ export function GcomCatalogEntryScreen<TResult>({
     const [instrument, setInstrument] = useState<GcomInstrumentInput>(EMPTY_INSTRUMENT);
     const [notes, setNotes] = useState('');
     const [expiresAt, setExpiresAt] = useState('');
-    // §17 — 'declared' is the safe/common default, matching the backend's own
-    // fallback when the field is omitted entirely.
-    const [soucheKind, setSoucheKind] = useState<GcomSoucheKind>('declared');
+    // §10 (2026-09-02) — null = "Auto", let the backend resolve the branch's
+    // default declared souche (§10.5); matches the fallback when omitted.
+    const [salesSoucheId, setSalesSoucheId] = useState<number | null>(null);
+    const { data: souchesData } = useSalesSouches({ active_only: true }, { enabled: showSoucheKindSelector });
+    const soucheOptions = [
+        { value: 'auto', label: 'Auto (par défaut)' },
+        ...(souchesData?.data ?? []).map(s => ({
+            value: s.id,
+            label: s.name,
+            badge: s.fiscal_type === 'declared' ? 'Déclarée' : 'Interne',
+        })),
+    ];
     // 2026-08-27 — client_order_ref/salesperson_id/delivery_date.
     const [clientOrderRef, setClientOrderRef] = useState('');
     const [salespersonId, setSalespersonId] = useState<number | ''>('');
@@ -595,12 +607,12 @@ export function GcomCatalogEntryScreen<TResult>({
     const draftSnapshot = useMemo(() => ({
         selectedPartner, paymentTermId, quantities, unitPriceOverrides, discountPercents,
         globalDiscountMode, globalDiscountValue, paymentMethod, instrument, notes, expiresAt,
-        soucheKind, clientOrderRef, salespersonId, deliveryDate, driverInfo, transporterName,
+        salesSoucheId, clientOrderRef, salespersonId, deliveryDate, driverInfo, transporterName,
         blStatus, instrumentBankOther, avoirAllocations, mixAvoirEnabled,
     }), [
         selectedPartner, paymentTermId, quantities, unitPriceOverrides, discountPercents,
         globalDiscountMode, globalDiscountValue, paymentMethod, instrument, notes, expiresAt,
-        soucheKind, clientOrderRef, salespersonId, deliveryDate, driverInfo, transporterName,
+        salesSoucheId, clientOrderRef, salespersonId, deliveryDate, driverInfo, transporterName,
         blStatus, instrumentBankOther, avoirAllocations, mixAvoirEnabled,
     ]);
     useEffect(() => {
@@ -645,7 +657,7 @@ export function GcomCatalogEntryScreen<TResult>({
         setInstrument(d.instrument ?? EMPTY_INSTRUMENT);
         setNotes(d.notes ?? '');
         setExpiresAt(d.expiresAt ?? '');
-        setSoucheKind(d.soucheKind ?? 'declared');
+        setSalesSoucheId(d.salesSoucheId ?? null);
         setClientOrderRef(d.clientOrderRef ?? '');
         setSalespersonId(d.salespersonId ?? '');
         setDeliveryDate(d.deliveryDate ?? '');
@@ -754,7 +766,7 @@ export function GcomCatalogEntryScreen<TResult>({
                 notes: notes.trim() || undefined,
                 instrument: showInstrumentFields ? instrument : null,
                 expires_at: showExpiresAt ? (expiresAt || undefined) : undefined,
-                souche_kind: showSoucheKindSelector ? soucheKind : undefined,
+                sales_souche_id: showSoucheKindSelector ? (salesSoucheId ?? undefined) : undefined,
                 client_order_ref: !hidePaymentSection ? (clientOrderRef.trim() || undefined) : undefined,
                 salesperson_id: !hidePaymentSection ? (salespersonId === '' ? undefined : salespersonId) : undefined,
                 delivery_date: showDeliveryDateField ? (deliveryDate || undefined) : undefined,
@@ -783,7 +795,7 @@ export function GcomCatalogEntryScreen<TResult>({
         setInstrument(EMPTY_INSTRUMENT);
         setNotes('');
         setExpiresAt('');
-        setSoucheKind('declared');
+        setSalesSoucheId(null);
         setClientOrderRef('');
         setSalespersonId('');
         setDeliveryDate('');
@@ -1324,21 +1336,14 @@ export function GcomCatalogEntryScreen<TResult>({
                                         )}
 
                                         {showSoucheKindSelector && (
-                                            <div className="flex items-center gap-1.5">
-                                                <span className="text-[10px] text-gray-400 mr-0.5">Souche :</span>
-                                                {(['declared', 'internal'] as GcomSoucheKind[]).map(k => (
-                                                    <button
-                                                        key={k}
-                                                        onClick={() => setSoucheKind(k)}
-                                                        className={`px-2.5 py-1 rounded-lg border text-[11px] font-medium transition-colors ${
-                                                            soucheKind === k
-                                                                ? 'bg-indigo-600 border-indigo-600 text-white'
-                                                                : 'bg-white border-gray-200 text-gray-600 hover:bg-gray-50'
-                                                        }`}
-                                                    >
-                                                        {k === 'declared' ? 'Déclarée' : 'Interne'}
-                                                    </button>
-                                                ))}
+                                            <div className="space-y-1 max-w-xs">
+                                                <span className="text-[10px] text-gray-400">Souche :</span>
+                                                <SearchableSelect
+                                                    options={soucheOptions}
+                                                    value={salesSoucheId ?? 'auto'}
+                                                    onChange={(val) => setSalesSoucheId(val === 'auto' || val == null ? null : Number(val))}
+                                                    placeholder="Auto (par défaut)"
+                                                />
                                             </div>
                                         )}
 

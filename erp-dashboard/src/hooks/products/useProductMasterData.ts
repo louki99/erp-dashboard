@@ -150,6 +150,8 @@ export const useCreateCategory = createMutationHook<Partial<Category>>((payload)
 export const useUpdateCategory = createIdMutationHook<number, Partial<Category>>((id, payload) => productsApi.updateCategory(id, payload), 'update category');
 export const useDeleteCategory = createDeleteHook<number>((id) => productsApi.deleteCategory(id), 'delete category');
 export const useToggleCategory = createDeleteHook<number>((id) => productsApi.toggleCategory(id), 'toggle category');
+export const useUploadCategoryImage = createIdMutationHook<number, File>((id, file) => productsApi.uploadCategoryImage(id, file), 'upload category image');
+export const useDeleteCategoryImage = createDeleteHook<number>((id) => productsApi.deleteCategoryImage(id), 'delete category image');
 
 // ─── Sub-categories ───────────────────────────────────────────────────────────
 

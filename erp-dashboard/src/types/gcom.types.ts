@@ -63,11 +63,11 @@ export interface GcomItemInput {
     discount_amount?: number;
 }
 
-// §17, built 2026-08-25/26 — 'declared' (fiscal-export series, must stay
-// gap-free) vs 'internal' (tracked for stock/caisse/encours only, never
-// exported). Omit to fall back to the PaymentTerm-derived default
-// (`'declared'` unless the resolved term is flagged is_internal_souche).
-// An explicit value always wins over that default, even if they disagree.
+// §17 (2026-08-25/26), superseded §10 (2026-09-02) — souche_kind was a fixed
+// 2-value enum with no admin screen; replaced by the real SalesSouche entity
+// (src/types/salesSouches.types.ts). Kept only for reading the legacy/display
+// field still returned on GcomInvoice — never send it on the 4 endpoints
+// below anymore, send sales_souche_id instead (§10.6).
 export type GcomSoucheKind = 'declared' | 'internal';
 
 export interface GcomDirectInvoicePayload {
@@ -77,7 +77,10 @@ export interface GcomDirectInvoicePayload {
     notes?: string;
     payment_term_id?: number | null;
     instrument?: GcomInstrumentInput | null;
-    souche_kind?: GcomSoucheKind | null;
+    // §10 (2026-09-02) — replaces souche_kind. Omit to let the backend
+    // resolve a default `declared` souche for the branch (§10.5); an
+    // explicit id (declared or internal) always wins.
+    sales_souche_id?: number | null;
     // Both 2026-08-27 — see GcomCreateOrderPayload's comment, same semantics.
     client_order_ref?: string | null;
     salesperson_id?: number | null;
@@ -189,9 +192,12 @@ export interface GcomInvoice {
     payments?: GcomInvoicePayment[];
     financial_instrument?: GcomInvoiceFinancialInstrument | null;
     // §17 (2026-08-25) — captured at generation time, always present on a
-    // freshly-created/converted invoice regardless of whether souche_kind
+    // freshly-created/converted invoice regardless of whether an override
     // was explicitly sent or auto-derived from the PaymentTerm.
+    // souche_kind kept for legacy display only — sales_souche_id (§10,
+    // 2026-09-02) is the real FK, use it for anything beyond a label.
     souche_kind?: GcomSoucheKind;
+    sales_souche_id?: number;
     token_serie_id?: number;
     // 2026-08-27 — mirrored automatically from the underlying order.
     client_order_ref?: string | null;
@@ -1480,7 +1486,8 @@ export interface GcomConsolidateInvoicePayload {
     payment_method?: Exclude<GcomPaymentMethod, 'avoir'>;
     payment_term_id?: number | null;
     instrument?: GcomInstrumentInput | null;
-    souche_kind?: GcomSoucheKind | null;
+    // §10 (2026-09-02) — replaces souche_kind, see GcomDirectInvoicePayload.
+    sales_souche_id?: number | null;
 }
 
 // 2026-09-02 — GET /gcom/parameters?module=GCOM (note: NOT the bare
